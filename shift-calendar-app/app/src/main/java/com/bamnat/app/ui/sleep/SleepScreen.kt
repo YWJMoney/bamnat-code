@@ -486,6 +486,7 @@ private fun SleepScreenBody(vm: SleepViewModel, wide: Boolean, onBack: () -> Uni
 
     // 2.0.0 [RVP-06] The add button shrinks to its icon while the page scrolls down (검토 UIX-19: it sat on the cards).
     val fab = com.bamnat.app.ui.components.rememberFabOpen()
+    val dockAdd = com.bamnat.app.ui.components.addDocks()
     Scaffold(
         modifier = Modifier.nestedScroll(fab.connection),
         topBar = {
@@ -505,7 +506,11 @@ private fun SleepScreenBody(vm: SleepViewModel, wide: Boolean, onBack: () -> Uni
         },
         snackbarHost = { com.bamnat.app.ui.components.AppSnackHost() },
         floatingActionButton = {
-            com.bamnat.app.ui.components.AddFab("기록 추가", onClick = { adding = true }, open = fab.open)
+            if (!dockAdd) com.bamnat.app.ui.components.AddFab("기록 추가", onClick = { adding = true }, open = fab.open)
+        },
+        bottomBar = {
+            // 2.0.0 갈래 P 5 (HQ-75·HQ-111·조건 9): the add button is the bar under the page, never over a line ([com.bamnat.app.ui.components.addDocks]).
+            if (dockAdd) com.bamnat.app.ui.components.AddDock("기록 추가", onClick = { adding = true })
         },
     ) { padding ->
         val s = state ?: return@Scaffold

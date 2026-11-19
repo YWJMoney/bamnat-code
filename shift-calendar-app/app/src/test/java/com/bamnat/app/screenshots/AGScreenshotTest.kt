@@ -189,6 +189,9 @@ class AGScreenshotTest : ScreenshotBase() {
         tapText("알림 ", prefix = true, scrolls = 0)
         tapText("닫기: $NUDGE", exact = true, scrolls = 0)
         assertTrue(gone(NUDGE, exact = true))
+        // 갈래 P 5 (PC-180): its own two weeks are written once 되돌리기 is gone (the 알림함 closed), as 전체 지움 does (HQ-91).
+        tab(1, wide = false); tab(0, wide = false)
+        settle()
         assertEquals(Today.date(), c.grow.current.inviteClosedOn)
     })
 

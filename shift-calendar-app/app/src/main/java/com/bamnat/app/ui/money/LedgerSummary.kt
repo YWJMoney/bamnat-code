@@ -310,7 +310,8 @@ private fun BudgetLineView(b: BudgetLine, elapsed: Float?, onClick: () -> Unit, 
         // 2.0.0 [RVK-30] (검토 HQ-45, 조건 6) Heading over is 주의 and said as the app says 주의 ([ToneLine]); red is kept for a budget
         // already gone over. Near it is said in plain words beside the bar's caution colour.
         when {
-            b.level == BudgetLevel.OVER -> ToneLine(status, tone = Tone.Danger, style = MaterialTheme.typography.labelMedium)
+            // 검토 HQ-101: over the budget is 주의, not 위험 (조건 6).
+            b.level == BudgetLevel.OVER -> ToneLine(status, tone = Tone.Caution, style = MaterialTheme.typography.labelMedium)
             b.headedOver -> ToneLine(status, tone = Tone.Caution, style = MaterialTheme.typography.labelMedium)
             else -> Text(status, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
@@ -351,7 +352,7 @@ fun BudgetCard(status: BudgetStatus, today: LocalDate, onEdit: () -> Unit) {
     SectionCard(title = if (status.isCycle) "분류별 예산 (${status.from.monthValue}/${status.from.dayOfMonth}~${status.to.monthValue}/${status.to.dayOfMonth})" else "분류별 예산", trailing = { TextButton(onClick = onEdit) { Text("고치기") } }) {
         // [RVK-30] Gone over is 위험 and said in the app's one line for it.
         if (status.over.isNotEmpty()) {
-            ToneLine("${status.over.joinToString(", ") { it.category }} 예산을 넘었어요", Modifier.padding(bottom = 4.dp), tone = Tone.Danger)
+            ToneLine("${status.over.joinToString(", ") { it.category }} 예산을 넘었어요", Modifier.padding(bottom = 4.dp), tone = Tone.Caution)
         }
         status.categories.forEach { b -> BudgetLineView(b, status.elapsed.takeIf { current }, onClick = onEdit) }
     }

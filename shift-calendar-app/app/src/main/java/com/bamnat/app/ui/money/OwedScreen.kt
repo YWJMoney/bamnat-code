@@ -305,10 +305,10 @@ fun OwedScreen(vm: OwedViewModel, wide: Boolean, onBack: () -> Unit, today: Loca
     val doneShown = remember(done, query) { done.filter { query.isBlank() || "${it.who} ${it.name} ${it.note}".contains(query.trim(), ignoreCase = true) } }
     val listState = rememberLazyListState()
     val atTop by remember { derivedStateOf { listState.firstVisibleItemIndex == 0 } }
-    // 2.0.0 [RVK-44] (검토 HQ-75) With big letters the rows fill the width and the button covered the ends of amounts: it steps aside
-    // while the list scrolls down and comes back on the way up (or at the top).
+    // 2.0.0 [RVK-44] (검토 HQ-75·HQ-111) The rows fill the width and the button covered the ends of amounts: it is the bar under the
+    // list (갈래 P 5).
     val fab = com.bamnat.app.ui.components.rememberFabOpen()
-    val bigLetters = com.bamnat.app.ui.components.bigLetters()
+    val dockAdd = com.bamnat.app.ui.components.addDocks()
 
     val actions = RowActions(
         open = { o -> when (o) { is Owed.Written -> openId = o.r.id; is Owed.FromJob -> openJobId = o.job.id } },
@@ -346,10 +346,11 @@ fun OwedScreen(vm: OwedViewModel, wide: Boolean, onBack: () -> Unit, today: Loca
         snackbarHost = { com.bamnat.app.ui.components.AppSnackHost() },
         floatingActionButton = {
             // [RVP-06] The shared rule (icon alone with big letters too).
-            AnimatedVisibility(!bigLetters || fab.open || atTop, enter = fadeIn() + androidx.compose.animation.scaleIn(),
-                exit = fadeOut() + androidx.compose.animation.scaleOut()) {
-                com.bamnat.app.ui.components.AddFab("받을 돈 적기", onClick = { adding = startKinds(style).first() }, open = atTop || wide)
-            }
+            if (!dockAdd) com.bamnat.app.ui.components.AddFab("받을 돈 적기", onClick = { adding = startKinds(style).first() }, open = atTop || wide)
+        },
+        bottomBar = {
+            // 2.0.0 갈래 P 5 (HQ-75·조건 9): the add button is the bar under the list, never over an amount.
+            if (dockAdd) com.bamnat.app.ui.components.AddDock("받을 돈 적기", onClick = { adding = startKinds(style).first() })
         },
     ) { padding ->
         val top: @Composable ColumnScope.() -> Unit = {
@@ -1043,6 +1044,7 @@ private fun ReceivableDialog(
                 }
                 AmountField("얼마", amount, { amount = it })
                 if (amount.toAmount() in 1 until minAmount) {
+                    // It cannot be saved as it is: red (갈래 K [RVK-45]).
                     com.bamnat.app.ui.components.ToneLine("이미 ${Fmt.won(minAmount)} 받았어요. 그보다 적게 할 수 없어요.")
                 }
                 OutlinedTextField(value = title, onValueChange = { title = it.take(40) }, singleLine = true,
@@ -1070,6 +1072,7 @@ private fun ReceivableDialog(
                     FilterChip(selected = other, onClick = { picking = "due" }, label = { Text(if (other) Fmt.shortDate(dueDate!!) else "날짜 고르기") })
                 }
                 if (dueDate != null && dueDate.isBefore(start)) {
+                    // It cannot be saved as it is: red (갈래 K [RVK-45]).
                     com.bamnat.app.ui.components.ToneLine("약속일이 생긴 날보다 앞이에요.")
                 }
                 Row(verticalAlignment = Alignment.CenterVertically) {
