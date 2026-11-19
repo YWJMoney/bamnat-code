@@ -174,7 +174,7 @@ private enum class Area(val label: String, val target: FreeTarget?, val tab: Str
     WIDGET("위젯", null, TabOrder.SETTINGS),
     ALARM("알람 화면", FreeTarget.ALARM, TabOrder.SETTINGS),
     /** 1.38 팀·가게 관리 (리더·사장님): 카드 순서·숨김, 색·배경은 설정 화면과 함께. 기능이 켜진 휴대폰에서만 보여요. */
-    MANAGE("팀·가게 관리", FreeTarget.SETTINGS, TabOrder.SETTINGS),
+    MANAGE(com.bamnat.app.ui.work.MANAGE_NAME, FreeTarget.SETTINGS, TabOrder.SETTINGS),
     // 사용자 2026-11-01 ("스튜디오에 결제 처리방침이 왜 있어"): 결제·처리방침·동의 화면은 꾸미지 않아요 — 늘 앱 기본 모양 ([ScreenSkin]).
     ALL("앱 전체", FreeTarget.ALL, TabOrder.CALENDAR),
     ;
@@ -1468,7 +1468,7 @@ private fun CardsTool(area: Area, style: WorkStyle?, d: com.bamnat.app.data.AppS
         }
         Area.STATS -> PartsEditor("통계 카드", StatsPart.entries.filter { fitsHere(FitSurface.STATS_PARTS, it.id, style) }.map { Triple(it.id, it.label, it.movable) },
             d.statsLayout.ifEmpty { null }) { line -> change { it.copy(statsLayout = line.orEmpty()) } }
-        Area.MANAGE -> PartsEditor("팀·가게 관리 카드", com.bamnat.app.ui.work.ManagePart.editable.map { Triple(it.id, it.label, true) }, d.manageLayout.ifEmpty { null },
+        Area.MANAGE -> PartsEditor("${com.bamnat.app.ui.work.MANAGE_NAME} 카드", com.bamnat.app.ui.work.ManagePart.editable.map { Triple(it.id, it.label, true) }, d.manageLayout.ifEmpty { null },
             note = "할 일은 늘 맨 위에 있어요. 이 순서는 이 휴대폰에만 남고 테마·작품에는 들어가지 않아요") { line -> change { it.copy(manageLayout = line.orEmpty()) } }
         else -> Unit
     }

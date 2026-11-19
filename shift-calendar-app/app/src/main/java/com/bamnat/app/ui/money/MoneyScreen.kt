@@ -434,7 +434,7 @@ class MoneyViewModel(
     override fun deleteJob(job: Job) {
         container.appScope.launch {
             money.delete(job)
-            _undo.tryEmit(UndoMessage("‘${job.title}’ 일감을 지웠어요") { money.save(job) })
+            _undo.tryEmit(UndoMessage("‘${job.title}’ 일감을 지웠어요") { money.restore(job) })
         }
     }
     val rules: StateFlow<Map<String, String>> = money.rules.stateIn(viewModelScope, SharingStarted.Eagerly, emptyMap())
@@ -583,10 +583,16 @@ class MoneyViewModel(
         }
     }
 
-    fun saveBudgets(values: Map<String, Long>) {
+    /**
+     * [LEDG-06] Every month's budgets, and 2.0.0 [RVK-46] (검토 I06aa-05) [month]'s own ones (-1 takes a category of that month back to
+     * every month's).
+     */
+    fun saveBudgets(values: Map<String, Long>, own: Map<String, Long>? = null, month: YearMonth? = null) {
         container.appScope.launch {
             values.forEach { (c, v) -> money.setBudget(c, v) }
-            _undo.tryEmit(UndoMessage("예산을 저장했어요", undo = null))
+            if (month != null) own?.forEach { (c, v) -> money.setBudget(c, v, month) }
+            val monthOnly = month != null && own?.values?.any { it >= 0 } == true
+            _undo.tryEmit(UndoMessage(if (monthOnly) "예산을 저장했어요 · ${month!!.monthValue}월은 따로" else "예산을 저장했어요", undo = null))
         }
     }
 
@@ -889,7 +895,7 @@ fun MoneyScreen(
             onLedgerNet = vm::setLedgerTakeHome) } },
         // [RECV-02] Money owed: receivables and unpaid jobs together, the whole list one tap away.
         MoneyPart.OWED to {
-            OwedCard(owed, today, onOpenAll = { com.bamnat.app.NoticeLinks.open(com.bamnat.app.NoticeLinks.Target.OWED) }) { o ->
+            OwedCard(owed, today, toPay = book.payables.filter { it.left > 0 }, style = style, onOpenAll = { com.bamnat.app.NoticeLinks.open(com.bamnat.app.NoticeLinks.Target.OWED) }) { o ->
                 when (o) {
                     is com.bamnat.core.money.Owed.FromJob -> editingJob = o.job
                     is com.bamnat.core.money.Owed.Written -> com.bamnat.app.NoticeLinks.open(com.bamnat.app.NoticeLinks.Target.OWED)
@@ -967,7 +973,14 @@ fun MoneyScreen(
 
     // 1.37 [LEDH-07] 근무 시간 환산 for the lines and the 돈 적기 sheet of this tab.
     val workTime = remember(style, settings.workTimeFrom, book, today, aheadPay) { WorkTimeSay.of(style, settings.workTimeFrom, book, today, aheadPay?.hourly) }
-    androidx.compose.runtime.CompositionLocalProvider(LocalWorkTime provides workTime) {
+    // 2.0.0 [RVK-46] This calendar's own category looks (the app gives the main calendar's).
+    val looks = remember(book.categories) { com.bamnat.core.money.CategoryLook.byName(book.categories) }
+    androidx.compose.runtime.CompositionLocalProvider(LocalWorkTime provides workTime, LocalCategoryLooks provides looks) {
+    // 2.0.0 갈래 P 5 (검토 HQ-75·HQ-111): 돈 적기 is the bar under the page ([com.bamnat.app.ui.components.addDocks]), never over an amount.
+    val dockAdd = com.bamnat.app.ui.components.addDocks()
+    val barUp = com.bamnat.app.ui.components.AppSnack.current != null || snackbar?.currentSnackbarData != null
+    var fabBack by remember { mutableStateOf(true) }
+    LaunchedEffect(barUp) { if (barUp) fabBack = false else { kotlinx.coroutines.delay(1_200); fabBack = true } }
     Box(Modifier.fillMaxSize().nestedScroll(fabScroll)) {
         Column(Modifier.fillMaxSize()) {
             // At very large text the tab has no room for the 프로 mark (the cards inside still carry it),
@@ -1044,7 +1057,7 @@ fun MoneyScreen(
             }
             // 2.0.0 [RVK-42] (검토 MONEY-21·U06a-12) Each page keeps its own place: 내역을 20일까지 내려 보다가 통계를 보고 돌아와도 그 자리
             // (the pages were drawn in turn by `when`, so the one left threw its scroll away).
-            pages.SaveableStateProvider(page.name) { when (page) {
+            Box(Modifier.weight(1f)) { pages.SaveableStateProvider(page.name) { when (page) {
                 MoneyViewModel.Page.SUMMARY -> if (wide) {
                     Row(Modifier.fillMaxSize().padding(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
                         Column(Modifier.weight(1f).fillMaxHeight().monthSwipe(month) { vm.showMonth(month.plusMonths(it.toLong())) }.verticalScroll(rememberScrollState()).padding(vertical = 12.dp),
@@ -1070,18 +1083,17 @@ fun MoneyScreen(
                         snapshot = snapshot, onMessage = vm::message, budgetLines = budget.categories,
                         onBudget = { c -> budgetFocus = c; budgeting = true })
                 }
-            } }
+            } } }
+            // 2.0.0 갈래 P 5 (HQ-75·HQ-111): 돈 적기 is a bar under the page, so it never sits on an amount (조건 9).
+            if (dockAdd && selection.isEmpty() && page != MoneyViewModel.Page.REPORT)
+                com.bamnat.app.ui.components.AddDock("돈 적기", onClick = { adding = MoneyKind.EXPENSE }, enabled = !barUp && fabBack)
         }
         // PC 4277abca (통계에서 '돈 적기'가 카페 줄 금액·카드 머리를 덮음): 통계 is for reading, so the floating button is not over it;
         // 돈 적기 stays on 요약 and 내역.
         // 1.37 PC 4차: 되돌리기 줄이 '돈 적기'를 덮어, 줄이 사라질 때 누른 손이 돈 적기를 열었어요. 줄이 있는 동안과 사라진 뒤 잠깐은 숨겨요.
-        val barUp = com.bamnat.app.ui.components.AppSnack.current != null || snackbar?.currentSnackbarData != null
-        var fabBack by remember { mutableStateOf(true) }
-        LaunchedEffect(barUp) { if (barUp) fabBack = false else { kotlinx.coroutines.delay(1_200); fabBack = true } }
-        // 2.0.0 [RVK-44] (검토 HQ-75) With big letters the cards fill the width, so the button (already its icon alone) covered the
-        // ends of amounts ('838,282원 / 1,600,000원'): it steps aside while the page scrolls down and comes back on the way up.
-        val bigLetters = com.bamnat.app.ui.components.bigLetters()
-        AnimatedVisibility(selection.isEmpty() && page != MoneyViewModel.Page.REPORT && !barUp && fabBack && (fabExpanded || !bigLetters), enter = fadeIn() + scaleIn(), exit = fadeOut() + scaleOut(),
+        // 2.0.0 [RVK-44] (검토 HQ-75) With big letters the cards fill the width, so the button covered the ends of amounts
+        // ('838,282원 / 1,600,000원', and '-4,500원' at 100%: HQ-111) even at rest; it is the bar under the page (dockAdd, 갈래 P 5) instead.
+        AnimatedVisibility(!dockAdd && selection.isEmpty() && page != MoneyViewModel.Page.REPORT && !barUp && fabBack, enter = fadeIn() + scaleIn(), exit = fadeOut() + scaleOut(),
             modifier = Modifier.align(Alignment.BottomEnd).padding(16.dp)) {
             // 2.0.0 [RVP-06] The shared floating-button rule (icon alone with big letters: 검토 UIX-19 '글자 200%의 가계부').
             com.bamnat.app.ui.components.AddFab("돈 적기", onClick = { adding = MoneyKind.EXPENSE }, open = fabExpanded)
@@ -1098,11 +1110,19 @@ fun MoneyScreen(
         snapshot?.let { s -> com.bamnat.core.design.DayBoundary.dayOf(at, s.resolver::resolve, com.bamnat.core.design.DayBoundary.startAt(settings.dayStartMinutes)) }
             ?.takeIf { at.toLocalDate() == today } ?: today
     }
+    // 2.0.0 [RVK-58] (PC-192): why a new line starts on a day before today, said on the sheet's top line (a night worker at 00:45 saw
+    // '11월 18일 (수)' and '어제' with no reason, and on an unfolded phone the date row was under the keyboard).
+    val addWhy = if (addDate == today) null else {
+        val held = snapshot?.resolver?.resolve(addDate)?.takeIf { it.isWorkDay && it.start != null && it.end != null }
+        if (held != null) (held.shiftType?.name?.takeIf { it.isNotBlank() } ?: "근무").let { if ("근무" in it) it else "$it 근무" } + " 시간이에요"
+        else "하루 시작 ${com.bamnat.core.design.DayBoundary.startAt(settings.dayStartMinutes)} 전이에요"
+    }
     adding?.let { k ->
         // A new round for 저장하고 하나 더, so the sheet starts empty again, on the day and account of the line just saved.
         key(addRound) {
             val done = { nextDay = null; nextAccount = null; adding = null }
             EntryDialog(nextDay?.let(LocalDate::parse) ?: addDate, null, k, onSave = { vm.saveEntry(it); done() }, onDismiss = done,
+                dayWhy = addWhy.takeIf { nextDay == null },
                 frequent = vm::frequentAmounts, rules = rules, book = book,
                 onSaveAndNext = { vm.saveEntry(it); nextDay = it.date.toString(); nextAccount = it.accountId; addRound++ },
                 onEditCategories = { editingCategories = true }, startAccount = nextAccount)
@@ -1135,7 +1155,9 @@ fun MoneyScreen(
         JobDialog(j.date, j, onSave = { vm.saveJob(it); editingJob = null },
             onDelete = { vm.deleteJob(it); editingJob = null }, onDismiss = { editingJob = null })
     }
-    if (budgeting) BudgetEditor(book, month, onSave = { vm.saveBudgets(it); budgeting = false; budgetFocus = null },
+    val budgetMonth = cycle?.let { Budgets.monthOf(it.from, it.to) } ?: month
+    if (budgeting) BudgetEditor(book, month, onSave = { v, own -> vm.saveBudgets(v, own, budgetMonth); budgeting = false; budgetFocus = null },
+        budgetMonth = budgetMonth,
         onDismiss = { budgeting = false; budgetFocus = null }, focus = budgetFocus,
         byPayCycle = settings.moneyByPayCycle.takeIf { profile?.period?.payDay != null && style?.usesPayEngine != false },
         payDayHint = profile?.period?.payDay == null && style?.usesPayEngine != false,
@@ -1216,7 +1238,8 @@ internal fun IncomeCard(m: MonthMoney, style: WorkStyle?, profile: PayProfile?, 
             }
             // [LEDG-29] 세전 of the month's work, or the 실수령 that lands on the pay day (통장에 찍히는 돈).
             // 25f2364b PC 확인 (세전·실수령 칩이 세금·실수령 카드와 겹쳐요): with that card on, the choice is in it.
-            if (hasProfile && !taxSays && (m.payRecorded == 0L || m.payObserved)) Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            if (hasProfile && !taxSays && (m.payRecorded == 0L || m.payObserved)) androidx.compose.foundation.layout.FlowRow(
+                horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 FilterChip(selected = !net, onClick = { onTakeHome(false) }, label = { Text("그달 일한 세전") })
                 FilterChip(selected = net, onClick = { onTakeHome(true) }, label = { Text("지급일 실수령") })
             }
@@ -1250,18 +1273,36 @@ private fun Line(label: String, value: String, muted: Boolean = false, strong: B
     }
 }
 
+/** 2.0.0 [RVK-47] (PC-169) What 받을 돈 is, in the words of the user's kind of work. */
+internal fun owedHint(style: WorkStyle?): String = when (style) {
+    WorkStyle.BUSINESS -> "외상 매출, 거래처 미수금처럼 아직 못 받은 돈을 적어 두면 약속일에 알려 줘요."
+    WorkStyle.FIELD -> "일감 잔금, 밀린 일당처럼 아직 못 받은 돈을 적어 두면 약속일에 알려 줘요."
+    else -> "빌려준 돈, 대신 내 준 돈처럼 아직 못 받은 돈을 적어 두면 약속일에 알려 줘요."
+}
+
 /** [WORK-02][RECV-02] Work done but not fully paid, and money written down as owed; the real worry of field work and shops. */
 @Composable
-private fun OwedCard(owed: List<com.bamnat.core.money.Owed>, today: LocalDate, onOpenAll: () -> Unit, onOpen: (com.bamnat.core.money.Owed) -> Unit) {
+private fun OwedCard(
+    owed: List<com.bamnat.core.money.Owed>, today: LocalDate, onOpenAll: () -> Unit,
+    toPay: List<com.bamnat.core.money.Receivable> = emptyList(), style: WorkStyle? = null, onOpen: (com.bamnat.core.money.Owed) -> Unit,
+) {
     val cal = com.bamnat.app.ui.theme.LocalCalendarColors.current
     val overdue = owed.filter { it.status(today) == com.bamnat.core.money.ReceivableStatus.OVERDUE }
     SectionCard(
         title = if (owed.isEmpty()) "받을 돈 (미수금)" else "받을 돈 ${Fmt.won(owed.sumOf { it.left })}",
         trailing = { TextButton(onClick = onOpenAll) { Text(if (owed.isEmpty()) "적기" else "모두 보기") } },
     ) {
+        // 2.0.0 [RVK-46] (검토 T06a-05·I06ab-03) 줄 돈 under it in one quiet line, never in the 받을 돈 sum; the list is one tap away.
+        val payLine: @Composable () -> Unit = {
+            if (toPay.isNotEmpty()) Text("줄 돈 ${toPay.size}건 · ${Fmt.won(toPay.sumOf { it.left })}", style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.fillMaxWidth().clip(MaterialTheme.shapes.small).clickable(role = Role.Button, onClick = onOpenAll).padding(vertical = 8.dp))
+        }
         if (owed.isEmpty()) {
-            Text("외상, 밀린 일당, 빌려준 돈처럼 아직 못 받은 돈을 적어 두면 약속일에 알려 줘요.",
+            // 2.0.0 [RVK-47] (PC-169) In each kind of work's own words: a shop's 외상 매출, a field's 일감 잔금, everyone else's 빌려준 돈.
+            Text(owedHint(style),
                 style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            payLine()
             return@SectionCard
         }
         if (overdue.isNotEmpty()) {
@@ -1290,6 +1331,8 @@ private fun OwedCard(owed: List<com.bamnat.core.money.Owed>, today: LocalDate, o
         if (owed.size > 4) {
             Text("그 밖에 ${owed.size - 4}건", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
+        if (toPay.isNotEmpty()) HorizontalDivider(Modifier.padding(vertical = 4.dp))
+        payLine()
     }
 }
 

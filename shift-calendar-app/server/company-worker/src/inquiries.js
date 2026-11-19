@@ -4,7 +4,7 @@ import { SORTING, autoAnswer, compareVersions, grams, likeness, needsPerson, nee
 import { replyRisk } from "./ledger.js";
 import { billingWordOf, isBillingRecord, replyRiskOf } from "./ask-check.js";
 import { careAppealOf } from "./community-care.js";
-import { CRASH, CRASH_ASK_DRAFT, crashOf, crashRepeats } from "./crash-repeat.js";
+import { CRASH, CRASH_ASK_DRAFT, crashOf, crashRecord, crashRepeats } from "./crash-repeat.js";
 // 1.37 [ADM2-02] 나간 판.
 import { DESK, OUTBOX_DROPPED, broadcastRisk, isOut, shippedVersion } from "./desk.js";
 import { needFromInquiry } from "./growth.js";
@@ -118,6 +118,8 @@ export const INQUIRY_INFO = [
   ["기기", "model", 80],
   ["Android", "android", 40],
   ["알람 점검", "diag", INQUIRY.diag],
+  // 2.0.0 [RVO-28] 답장으로 새 기록이 오기 전, 처음 문의와 함께 온 점검 기록(서버가 옮겨 둔 것, 앱이 보내지 않아요).
+  ["처음 점검 기록", "diagFirst", INQUIRY.diag],
   // 급여 > 계산이 이상해요: the month's rules and each line's hours and rate, never an amount.
   ["급여 계산", "pay", INQUIRY.pay],
   // [INQ-01] 회사 방식 알려 주기: the kind's settings in words, never an amount.
@@ -173,6 +175,8 @@ export function triage(kind, text, info) {
   // nothing of the topic (every form can send it, and it always starts with 알람 상태), so a question with no word stays 기타
   // instead of 알람 — a settings-search question about 보상 came in as 문제 신고 · 알람.
   else if (/^\[앱 멈춤/.test(info?.diag ?? "")) topic = "app";
+  // 2.0.0 [RVA-68] PC-202: 낱말로 주제를 못 정한 글('app closed itself again')에 멈춘 기록이 실려 오면 앱 동작이에요. 낱말이 고른 주제는 그대로.
+  else if (topic === "etc" && crashRecord(info?.diag) === "has") topic = "app";
   // 1.36 [GRW-01] 스튜디오 요구는 꾸미기예요.
   if (kind === "studio") topic = "look";
   // 2.0.0 [RVQ-30] 앱의 '결제·환불'은 글과 상관없이 결제 주제.
@@ -231,14 +235,18 @@ export async function inquiries(request, env, path) {
     return new Response(null, { status: 204 });
   }
   if (m[2] && method === "POST") {
-    const body = await readJson(request, INQUIRY.bytes);
+    // 2.0.0 [RVO-28] HQ-150: 답장에도 새 문의와 같은 점검 기록(info.diag)이 함께 올 수 있어 그 몫만큼 받아요.
+    const body = await readJson(request, INQUIRY.bytes + INQUIRY.diag * 4);
     const text = inquiryText(body.text);
+    const diag = replyDiag(body.info);
     const now = Date.now();
     { const limitHit = await overLimit(env, now, [["device", `inquiry_msg|${dev}`, INQUIRY.messagesPerHour, HOUR]]); if (limitHit) return limitHit; }
     const count = await one(env, "SELECT COUNT(*) AS n FROM inquiry_messages WHERE inquiry_id = ? AND sender = 'user'", row.id);
     if (count.n >= INQUIRY.messages) return json({ error: "too_many", field: "text" }, 409);
     await batch(env, [
-      stmt(env, "INSERT INTO inquiry_messages (inquiry_id, sender, text, by, at) VALUES (?, 'user', ?, NULL, ?)", row.id, text, now),
+      // [RVO-28] 기록과 함께 온 답장은 by = 'diag'(사용자 줄의 by는 그 표시에만 써요), 문의의 점검 기록은 새 기록으로.
+      stmt(env, "INSERT INTO inquiry_messages (inquiry_id, sender, text, by, at) VALUES (?, 'user', ?, ?, ?)", row.id, text, diag ? DIAG_BY : null, now),
+      ...(diag ? [stmt(env, "UPDATE inquiries SET info = ? WHERE id = ?", JSON.stringify(withReplyDiag(readInfo(row.info), diag, now)), row.id)] : []),
       // 1.36 [INQ-07] A thread that turns to paying or a refund becomes a 결제·환불 record from then on.
       stmt(env, "UPDATE inquiries SET status = 'open', updated_at = ?, billing_at = COALESCE(billing_at, ?) WHERE id = ?", now,
         BILLING_RECORD.test(text) ? now : null, row.id),
@@ -352,6 +360,8 @@ export function inquiryInfo(v) {
   if (typeof v !== "object" || Array.isArray(v)) refuse("info", "info");
   const out = {};
   for (const [, key, longest] of INQUIRY_INFO) {
+    // [RVO-28] 처음 점검 기록은 서버가 옮겨 두는 칸이라 앱에서 받지 않아요.
+    if (key === "diagFirst") continue;
     const x = v[key];
     if (x === undefined || x === null || x === "") continue;
     if (typeof x !== "string" || [...x].length > longest) refuse("info", key);
@@ -360,6 +370,30 @@ export function inquiryInfo(v) {
     out[key] = x.replace(/[\u0000-\u0008\u000b-\u001f\u007f]/g, "");
   }
   return out;
+}
+
+/** 2.0.0 [RVO-28] HQ-150: 점검 기록과 함께 온 사용자 답장 줄의 표시(inquiry_messages.by). */
+export const DIAG_BY = "diag";
+
+/**
+ * [RVO-28] 답장에 함께 온 점검 기록: 새 문의의 info와 같은 검사를 diag 키에만. 없으면 null, 다른 칸은 받지 않아요
+ * (앱 버전·기기는 첫 글에 이미 있어요).
+ */
+export function replyDiag(v) {
+  if (v === undefined || v === null) return null;
+  if (typeof v !== "object" || Array.isArray(v)) refuse("info", "info");
+  for (const key of Object.keys(v)) if (key !== "diag") refuse("info", key);
+  return inquiryInfo({ diag: v.diag }).diag ?? null;
+}
+
+/**
+ * [RVO-28] 문의의 점검 기록을 답장으로 온 새 기록으로. 처음 문의와 함께 온 기록(없었으면 없음 그대로)은 diagFirst로 한 번만
+ * 남겨요(Q2: 처음에 멈춤 기록이 없었다는 것도 운영에 쓸모가 있어요). diagAt은 마지막으로 받은 때(ms).
+ */
+export function withReplyDiag(info, diag, now) {
+  const { unreadable, ...rest } = info;
+  const first = rest.diagAt ? rest.diagFirst : rest.diag;
+  return { ...rest, diag, diagAt: now, ...(first ? { diagFirst: first } : {}) };
 }
 
 export const messagesOf = (env, id) => all(env, "SELECT sender, text, by, at FROM inquiry_messages WHERE inquiry_id = ? ORDER BY id", id);
@@ -373,7 +407,8 @@ export async function inquiryView(env, row, admin = false, app = null) {
     status: row.status,
     createdAt: iso(row.created_at),
     updatedAt: iso(row.updated_at),
-    messages: messages.map((m) => ({ from: m.sender, text: m.text, at: iso(m.at), ...(admin && m.by ? { by: m.by } : {}) })),
+    messages: messages.map((m) => ({ from: m.sender, text: m.text, at: iso(m.at), ...(m.sender === "user" && m.by === DIAG_BY ? { diag: true } : {}),
+      ...(admin && m.by && m.sender !== "user" ? { by: m.by } : {}) })),
     public: row.public === 1,
     same: row.same ?? 0,
     ...(row.hidden ? { hidden: { code: row.hidden, text: INQUIRY_HIDE[row.hidden] ?? "" } } : {}),

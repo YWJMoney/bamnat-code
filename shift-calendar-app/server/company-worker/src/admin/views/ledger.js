@@ -146,10 +146,10 @@ export function ledgerViews(A) {
     if (r.bundle && r.type === "inquiry") {
       parts.push(`<p class="lg-block"><b>묶음</b> <a href="${href("dev", r.bundle.id)}">${esc(r.bundle.title)}</a> · ${esc(r.bundle.statusName)}${r.bundle.releasedIn ? ` ${esc(r.bundle.releasedIn)}${r.bundle.out ? " (나감)" : " (출시 전)"}` : ""} · 묶인 문의 ${r.bundle.asks}건${r.bundle.told ? " · 나왔다고 알림" : ""}</p>`);
     }
-    // [RVA-63] HQ-124: 멈춤 기록이 없으면 '알람 점검 › 보고서 복사'를 부탁하는 답(정리함 답 칸이 있으면 거기, 없으면 문의 화면에서).
+    // [RVA-63] HQ-124, [RVA-67] PC-201: 멈춤 기록이 없으면 점검 기록을 켠 새 문의를 부탁하는 답(정리함 답 칸이 있으면 거기, 없으면 문의 화면에서).
     if (r.crash && r.crash.record !== "has" && !r.closed) {
       const box = r.sort && editAsk ? `lg-reply-${r.id}` : null;
-      parts.push(`<p class="note crash-note"><span>${esc(r.crash.recordName)}${r.repeat ? ` · 7일 안 같은 묶음 ${r.repeat.n}건 중 ${r.repeat.nth}번째` : ""}. 앱의 알람 점검 › 보고서 복사로 받아 봐요.</span>
+      parts.push(`<p class="note crash-note"><span>${esc(r.crash.recordName)}${r.repeat ? ` · 7일 안 같은 묶음 ${r.repeat.n}건 중 ${r.repeat.nth}번째` : ""}. 점검 기록을 켠 새 문의('앱이 이상해요')로 받아 봐요.</span>
         ${box ? `<button type="button" class="btn small" data-act="crash-draft" data-target="${esc(box)}">기록 부탁 답 넣기</button>`
           : `<a class="btn small" href="${href("inquiries", r.id)}">문의에서 답하기</a>`}</p>`);
     }

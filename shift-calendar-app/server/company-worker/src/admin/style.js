@@ -867,7 +867,7 @@ button.tile{font:inherit;text-align:left;cursor:pointer;color:inherit}button.til
 /* PC 확인 8d290ec3: 휴대폰 폭에서 상태는 두 줄로 다 보이고, 단추는 제목 아래 한 줄에 같은 폭으로. */
 hr.split{border:0;border-top:2px dashed var(--line);margin:1.5rem 0}
 .linkish{background:none;border:0;padding:0;color:var(--accent,#2b6cb0);text-decoration:underline;cursor:pointer;font:inherit}
-li.flash{outline:2px solid var(--accent,#2b6cb0);outline-offset:2px;transition:outline-color .3s}
+li.flash,.kv dd.flash{outline:2px solid var(--accent,#2b6cb0);outline-offset:2px;transition:outline-color .3s}
 img.photo-big{display:block;width:100%;max-width:512px;height:auto;margin:0 auto;image-rendering:auto;border-radius:8px}
 @media (max-width:640px){.rows.work .row{flex-wrap:wrap}.rows.work .row-side{width:100%;max-width:none;flex-direction:column;align-items:stretch;gap:.4rem}
 .rows.work .row-acts{flex-wrap:nowrap}.rows.work .row-acts .btn{flex:1 1 0;min-width:0;padding-left:.3rem;padding-right:.3rem}
@@ -1644,6 +1644,8 @@ details.row-more>.menu .btn{justify-content:flex-start;width:100%;border-color:t
 /* 2.0.0 [RVA-25] 검토 U24-07: 카드의 왼쪽 맞춤 단추 줄에서는 ⋯가 왼쪽에 있어 메뉴를 오른쪽으로 펴요(화면 밖으로 나가지 않게). */
 .actions.start details.row-more>.menu{left:0;right:auto}
 .list-note{margin:.5rem 0 .75rem}
+/* 2.0.0 [RVQ-39] 보류된 표의 묶음 줄: 세기·버리기는 한 묶음으로 글 옆이나 그 아래 줄에 함께 놓여요(하나만 다음 줄로 떨어지지 않게). */
+.held-group{display:flex;flex-wrap:wrap;align-items:center;gap:.25rem .5rem}.held-acts{display:inline-flex;gap:.35rem}
 .list-head .lg-bar{display:flex;flex:1 1 8rem;min-width:min(8rem,100%);margin:0}.list-head .lg-bar input[type=search]{flex:1 1 auto;min-width:0}
 .seg .n.hot{color:var(--bad)}
 .ledger-view>.stage-strip{margin:.75rem 0}

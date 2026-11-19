@@ -53,6 +53,10 @@ def check(rs):
         if i in seen:
             problems.append(f"{i}: 같은 번호가 두 줄")
         seen.add(i)
+        # (HQ-153) A note with commas written without quotes spills into extra columns and the tail is lost to readers.
+        if None in r or any(v is None for v in r.values()):
+            problems.append(f"{i}: 칸 수가 맞지 않아요(쉼표가 든 칸은 따옴표로 감싸요)")
+            continue
         s = r["status"]
         if s not in STATUSES:
             problems.append(f"{i}: 모르는 상태 '{s}' (쓸 수 있는 것: {', '.join(STATUSES)})")

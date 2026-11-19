@@ -75,6 +75,7 @@ import com.bamnat.app.ui.components.ColorDot
 import com.bamnat.app.ui.components.LeaveMark
 import com.bamnat.app.ui.components.ShiftBadge
 import com.bamnat.app.ui.theme.LocalCalendarColors
+import com.bamnat.app.ui.theme.bamnat
 import com.bamnat.app.ui.theme.NumberStyle
 import com.bamnat.core.hours.HoursFormat
 import com.bamnat.core.model.Leave
@@ -151,7 +152,8 @@ internal fun MonthSummaryBar(
             // 1.37 PC: 번 돈은 끝난 일감만, 아직 할 일감은 따로.
             Figure("번 돈", Fmt.wonShort(overview.jobEarned), listOfNotNull(overview.jobReceived.takeIf { it > 0 }?.let { "받음 ${Fmt.wonShort(it)}" },
                 overview.jobAhead.takeIf { it > 0 }?.let { "할 일 ${Fmt.wonShort(it)}" }), cal.income),
-            Figure("받을 돈", Fmt.wonShort(overview.jobOwed), null, if (overview.jobOwed > 0) Tone.Caution.color() else null),
+            // 2.0.0 [RVH-82] (조건 6) money still to come is not a warning: the amount in the page's own colour (a late one is marked on its day).
+            Figure("받을 돈", Fmt.wonShort(overview.jobOwed), null, null),
         )
         CalendarFocus.SALES -> listOf(
             Figure("${month}월 매출", Fmt.wonShort(overview.sales), "${overview.openDays}일 적음", cal.income),
@@ -370,7 +372,8 @@ internal fun CalendarLegendSheet(
                 LegendRow("업종 기념일", "날짜 밑 강조색 글자 · ${orgDays.first().name}처럼 업종의 날이고, 공휴일과 달리 쉬는 날은 아니에요") {
                     Text(orgDays.first().name, color = scheme.primary, fontSize = 10.sp, maxLines = 1)
                 }
-            } else if (focus == CalendarFocus.SHIFTS) {
+            } else if (focus == CalendarFocus.SHIFTS && com.bamnat.app.ui.settings.orgDaysFit(style)) {
+                // 2.0.0 [RVO-27] HQ-141: not for 알바 (설정에 그 줄이 없어요).
                 // 1.38 통합 8차 (안내의 경로와 실제 자리가 달라요): the place opens from here, no path to follow.
                 LegendRow("업종 기념일", "꺼져 있어요 · 켜면 소방의 날 같은 날이 날짜 밑에 강조색 글자로 보여요",
                     action = "켜러 가기" to { onDismiss(); com.bamnat.app.ui.settings.SettingsLinks.open(com.bamnat.app.ui.settings.SettingsPage.CALENDAR, "우리 업종 기념일") }) {
@@ -420,7 +423,7 @@ internal fun CalendarLegendSheet(
                 }
                 CalendarFocus.JOBS -> {
                     LegendRow("일감", "일감이 있는 날 · 2건이면 일2") { JobBadge(1, owed = false) }
-                    LegendRow("받을 돈 남음", "아직 다 받지 못한 일감") { JobBadge(1, owed = true) }
+                    LegendRow("받을 날 지남", "약속한 날이 지났는데 다 받지 못한 일감") { JobBadge(1, owed = true) }
                     LegendRow("여러 날 일감", "막대가 이어진 날까지 같은 일감이에요") {
                         Box(Modifier.size(width = 40.dp, height = 8.dp).clip(RoundedCornerShape(4.dp)).background(scheme.secondaryContainer))
                     }
@@ -559,7 +562,7 @@ internal fun TodayJobsCard(today: LocalDate, jobs: List<Job>, onOpen: (LocalDate
                 TextButton(onClick = onAdd) { Text("일감 적기") }
             }
             for (j in todays.take(3)) {
-                JobRow(j, today, onClick = { onOpen(today) }, owedColor = Tone.Caution.color())
+                JobRow(j, today, onClick = { onOpen(today) })
             }
             if (todays.isEmpty() && next != null) {
                 Row(
@@ -581,7 +584,9 @@ internal fun TodayJobsCard(today: LocalDate, jobs: List<Job>, onOpen: (LocalDate
 }
 
 @Composable
-private fun JobRow(j: Job, today: LocalDate, onClick: () -> Unit, owedColor: Color) {
+private fun JobRow(j: Job, today: LocalDate, onClick: () -> Unit) {
+    // 2.0.0 [RVH-82] (조건 6) 받을 돈 in 주의 only once its promised day has passed; before that, quiet.
+    val owedColor = if (j.overdue(today)) MaterialTheme.bamnat.caution else MaterialTheme.colorScheme.onSurfaceVariant
     val time = j.start?.let { Fmt.time(it) } ?: "종일"
     val sub = listOfNotNull(j.place.ifBlank { null },
         if (j.days > 1) "${j.days}일 중 ${(today.toEpochDay() - j.date.toEpochDay()).toInt() + 1}일째" else null).joinToString(" · ")

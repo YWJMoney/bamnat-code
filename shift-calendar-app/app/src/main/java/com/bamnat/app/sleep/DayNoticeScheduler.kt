@@ -38,7 +38,8 @@ object DayNoticeScheduler {
     /** Every notice from yesterday to a few days ahead; none for work that does not come in shifts and hours. */
     fun plan(snapshot: ScheduleSnapshot, settings: AppSettings, now: LocalDateTime): List<DayNotices.Notice> =
         if (settings.workStyle?.usesPayEngine == false) emptyList()
-        else DayNotices.plan(now, snapshot.resolver, settings.alarmsEnabled, wanted(settings), settings.sleepTargetMinutes, settings.commuteMinutes)
+        else DayNotices.plan(now, snapshot.resolver, settings.alarmsEnabled, wanted(settings), settings.sleepTargetMinutes, settings.commuteMinutes,
+            settings.workStyle)
 
     fun reschedule(context: Context, snapshot: ScheduleSnapshot, settings: AppSettings, now: LocalDateTime = Today.dateTime()) {
         val am = context.getSystemService(AlarmManager::class.java) ?: return

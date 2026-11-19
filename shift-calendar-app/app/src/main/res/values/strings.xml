@@ -2,8 +2,8 @@
 <!-- values-ko holds only the library sheet strings it overrides (sheet_strings.xml): the app itself is Korean here. -->
 <resources xmlns:tools="http://schemas.android.com/tools" tools:ignore="MissingTranslation">
     <string name="app_name">밤낮</string>
-    <string name="channel_alarm_name">근무 알람</string>
-    <string name="channel_alarm_description">근무 시작 전에 울리는 알람</string>
+    <string name="channel_alarm_name">알람</string>
+    <string name="channel_alarm_description">근무·영업·일정 전과 정해 둔 시각에 울리는 알람</string>
     <string name="widget_today_desc">오늘과 내일 근무·영업·일정, 다음 알람</string>
     <string name="widget_week_desc">이번 주 근무·영업·일정 (주 시작 요일부터 7일)</string>
     <string name="widget_month_desc">이번 달 달력</string>

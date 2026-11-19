@@ -6,9 +6,13 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import com.bamnat.app.ui.components.AlertDialog
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.WarningAmber
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -22,6 +26,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import com.bamnat.app.ui.theme.Tone
+import com.bamnat.app.ui.theme.color
 import com.bamnat.core.guide.FeatureRegistry
 import com.bamnat.core.guide.WhatsNew
 import com.bamnat.core.work.WorkStyle
@@ -43,6 +49,9 @@ fun WhatsNewDialog(
     onOpenAsks: () -> Unit = {},
     /** [RVH-40] 검토 WORK-14 검토 TYPE-06 The user's kind of work: its own lines first (at most five), the rest folded. */
     style: WorkStyle? = null,
+    /** 2.0.0 [RVH-64] 검토 PC-72 Lines written in 1.36.1~1.39.0 that may be on another day than the one pressed; 0 for none. */
+    slip: Int = 0,
+    onSlip: () -> Unit = {},
 ) {
     val split = remember(releases, style) { WhatsNew.forStyle(releases, style) }
     var more by rememberSaveable { mutableStateOf(false) }
@@ -69,6 +78,18 @@ fun WhatsNewDialog(
                         }
                     }
                 }
+                // [RVH-64] 검토 PC-72 Said before what is new: what the user put in may be on another day (설계 4절).
+                if (slip > 0) {
+                    Surface(shape = MaterialTheme.shapes.medium, color = MaterialTheme.colorScheme.surfaceContainerLow) {
+                        Row(Modifier.fillMaxWidth().padding(start = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Icon(Icons.Outlined.WarningAmber, null, tint = Tone.Caution.color(), modifier = Modifier.size(20.dp))
+                            Text("최근에 넣은 것이 맞는 날에 있는지 한 번 봐 주세요 · ${slip}개",
+                                style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurface,
+                                modifier = Modifier.weight(1f).padding(start = 8.dp, top = 8.dp, bottom = 8.dp))
+                            TextButton(onClick = onSlip, modifier = Modifier.heightIn(min = 48.dp)) { Text("확인") }
+                        }
+                    }
+                }
                 // [ONBOARD-04] Once, for a phone set up before: the recommended features it has off.
                 if (recommendOff > 0) {
                     Surface(shape = MaterialTheme.shapes.medium, color = MaterialTheme.colorScheme.secondaryContainer) {
@@ -84,7 +105,7 @@ fun WhatsNewDialog(
                     Text(release.versionName, style = MaterialTheme.typography.titleSmall)
                     release.lines.forEach { NewLine(it, style, onOpen) }
                 }
-                if (split.mine.isEmpty()) Text("이번에는 다른 일 하시는 분께 새로 생긴 것이 많아요", style = MaterialTheme.typography.bodyMedium)
+                if (split.mine.isEmpty() && releases.isNotEmpty()) Text("이번에는 다른 일 하시는 분께 새로 생긴 것이 많아요", style = MaterialTheme.typography.bodyMedium)
                 // [RVH-40] 검토 U02-08 The rest of one's own and the other kinds' news, folded: open only when asked.
                 val folded = split.moreMine.size + split.others.size
                 if (folded > 0) {

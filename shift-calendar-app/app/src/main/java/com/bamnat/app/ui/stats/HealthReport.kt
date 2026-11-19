@@ -49,6 +49,7 @@ import com.bamnat.app.ui.Fmt
 import com.bamnat.app.data.ScheduleSnapshot
 import com.bamnat.app.ui.components.SectionCard
 import com.bamnat.app.ui.components.StatTile
+import com.bamnat.app.ui.components.StatTiles
 import com.bamnat.app.ui.theme.NumberStyle
 import com.bamnat.core.holiday.KoreanHolidays
 import com.bamnat.core.work.HealthYear
@@ -117,12 +118,12 @@ internal fun HealthYearCard(snapshot: ScheduleSnapshot, calendarId: String? = nu
     SectionCard(title = "${year}년 건강 지표", trailing = {
         TextButton(onClick = { NoticeLinks.open(NoticeLinks.Target.HEALTH_REPORT) }) { Text("자세히") }
     }) {
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        StatTiles {
             StatTile("야간 비율", pct(y.nightShare), Modifier.weight(1f), caption = "근무 ${y.workDays}일 중 야간 ${y.nights}번")
             StatTile("최장 연속 야간", "${y.longestNightRun}일", Modifier.weight(1f))
         }
         Spacer(Modifier.height(8.dp))
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        StatTiles {
             StatTile("짧은 휴식", "${y.quickReturns}번", Modifier.weight(1f), caption = "근무 사이 11시간 미만",
                 onClick = if (y.quickReturns > 0) ({ showShort = true }) else null)
             StatTile("주말·공휴일 근무", "${y.weekendDays + y.holidayDays}일", Modifier.weight(1f),
@@ -172,12 +173,12 @@ fun HealthReportScreen(vm: HealthReportViewModel, onBack: () -> Unit) {
                 now < before -> "작년보다 ${before - now} 적어요"
                 else -> "작년과 같아요"
             }
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            StatTiles {
                 StatTile("야간 비율", pct(y.nightShare), Modifier.weight(1f),
                     caption = if (last.isEmpty) "야간 ${y.nights}번" else "야간 ${y.nights}번 · 작년 ${pct(last.nightShare)}")
                 StatTile("최장 연속 야간", "${y.longestNightRun}일", Modifier.weight(1f), caption = versus(y.longestNightRun, last.longestNightRun))
             }
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            StatTiles {
                 StatTile("짧은 휴식", "${y.quickReturns}번", Modifier.weight(1f), caption = versus(y.quickReturns, last.quickReturns) ?: "근무 사이 11시간 미만")
                 StatTile("주말·공휴일", "${y.weekendDays + y.holidayDays}일", Modifier.weight(1f),
                     caption = versus(y.weekendDays + y.holidayDays, last.weekendDays + last.holidayDays) ?: "주말 ${y.weekendDays} · 공휴일 ${y.holidayDays}")

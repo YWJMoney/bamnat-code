@@ -7,11 +7,24 @@ import java.time.temporal.ChronoUnit
  * [RECV-01] What a 미수금 is, so the app knows whether getting it back is income. A sale on credit
  * (외상) is usually already in that day's sales, and a loan coming back is not income at all.
  */
-enum class ReceivableKind(val label: String, val hint: String, val incomeByDefault: Boolean) {
+enum class ReceivableKind(
+    val label: String, val hint: String, val incomeByDefault: Boolean,
+    /** 2.0.0 [RVK-46] (검토 T06a-05) A kind of 줄 돈 (money the user owes), not of 받을 돈; [OTHER] is both. */
+    val toPay: Boolean = false,
+) {
     SALE("외상·미수 매출", "손님이나 거래처가 아직 안 낸 물건값·서비스값", false),
     WORK("밀린 일당·급여", "일은 했는데 아직 못 받은 돈", true),
     LOAN("빌려준 돈", "돌려받아도 수입이 아니에요", false),
     OTHER("기타", "보증금, 환불 기다리는 돈 등", true),
+    // 2.0.0 [RVK-46] (검토 T06a-05·I06ab-03) 줄 돈: [incomeByDefault] there says whether paying it is written as spending.
+    SUPPLY("외상 매입·자재값", "거래처·자재상에 아직 안 낸 물건값", true, toPay = true),
+    WAGE("못 준 품삯·일당", "같이 일한 사람에게 아직 못 준 돈", true, toPay = true),
+    BORROWED("빌린 돈", "갚아도 지출이 아니에요", false, toPay = true);
+
+    companion object {
+        /** The kinds to pick from for 받을 돈 ([toPay] false) or 줄 돈 (true), 기타 last. */
+        fun of(toPay: Boolean): List<ReceivableKind> = entries.filter { it.toPay == toPay && it != OTHER } + OTHER
+    }
 }
 
 /** [RECV-01] Money that came in for a receivable; [entryId] is its ledger line when it was counted as income. */
@@ -43,6 +56,12 @@ data class Receivable(
     val countAsIncome: Boolean = kind.incomeByDefault,
     val closedOn: LocalDate? = null,
     val payments: List<ReceivablePayment> = emptyList(),
+    /**
+     * 2.0.0 [RVK-46] (검토 T06a-05·I06ab-03) 줄 돈: money the user owes (거래처 외상 매입, 자재상 미지급, 일용직 품삯), on the same screen as
+     * 받을 돈 but never counted as money coming in. [payments] are then what the user paid, and [countAsIncome] whether paying is
+     * written as spending.
+     */
+    val toPay: Boolean = false,
 ) {
     val received: Long get() = payments.sumOf { it.amount }
     val left: Long get() = if (closedOn != null) 0 else (amount - received).coerceAtLeast(0)
@@ -67,8 +86,11 @@ data class Receivable(
     }
 }
 
-enum class ReceivableStatus(val label: String) {
-    OVERDUE("약속일 지남"), DUE_SOON("곧 받을 날"), PARTLY("일부 받음"), OPEN("받을 돈"), PAID("다 받음"), CLOSED("받지 않기로 함"),
+enum class ReceivableStatus(val label: String, /** 2.0.0 [RVK-46] The same state for 줄 돈. */ val payLabel: String) {
+    OVERDUE("약속일 지남", "약속일 지남"), DUE_SOON("곧 받을 날", "곧 갚을 날"), PARTLY("일부 받음", "일부 갚음"), OPEN("받을 돈", "줄 돈"),
+    PAID("다 받음", "다 갚음"), CLOSED("받지 않기로 함", "안 갚아도 됨");
+
+    fun labelFor(toPay: Boolean): String = if (toPay) payLabel else label
 }
 
 /**
@@ -130,17 +152,18 @@ object Receivables {
     val AGING_LABELS = listOf("30일 안", "31~60일", "61~90일", "90일 넘음")
 
     /** Everything still owed up to [today], most pressing first: overdue, due soon, then oldest. */
-    fun owed(receivables: List<Receivable>, jobs: List<Job>, today: LocalDate): List<Owed> {
-        val written = receivables.filter { it.left > 0 }.map { Owed.Written(it) }
-        val fromJobs = MoneyCalculator.unpaid(jobs, today).map { Owed.FromJob(it) }
+    fun owed(receivables: List<Receivable>, jobs: List<Job>, today: LocalDate, toPay: Boolean = false): List<Owed> {
+        // 2.0.0 [RVK-46] 줄 돈 is never money to come in; with [toPay] it is the list (and a job is never money the user owes).
+        val written = receivables.filter { it.toPay == toPay && it.left > 0 }.map { Owed.Written(it) }
+        val fromJobs = if (toPay) emptyList() else MoneyCalculator.unpaid(jobs, today).map { Owed.FromJob(it) }
         val rank = listOf(ReceivableStatus.OVERDUE, ReceivableStatus.DUE_SOON, ReceivableStatus.PARTLY, ReceivableStatus.OPEN)
         return (written + fromJobs).sortedWith(
             compareBy<Owed> { rank.indexOf(it.status(today)) }.thenBy { it.due ?: it.since }.thenBy { it.since }.thenBy { it.name },
         )
     }
 
-    fun summary(receivables: List<Receivable>, jobs: List<Job>, today: LocalDate): OwedSummary {
-        val owed = owed(receivables, jobs, today)
+    fun summary(receivables: List<Receivable>, jobs: List<Job>, today: LocalDate, toPay: Boolean = false): OwedSummary {
+        val owed = owed(receivables, jobs, today, toPay)
         val overdue = owed.filter { it.status(today) == ReceivableStatus.OVERDUE }
         val aging = LongArray(4)
         for (o in owed) {
@@ -158,7 +181,7 @@ object Receivables {
                 .map { (who, list) -> who to list.sumOf { it.left } }
                 .sortedWith(compareByDescending<Pair<String, Long>> { it.second }.thenBy { it.first }),
             aging = aging.toList(),
-            receivedThisMonth = receivables.flatMap { it.payments }.filter { java.time.YearMonth.from(it.date) == month }.sumOf { it.amount },
+            receivedThisMonth = receivables.filter { it.toPay == toPay }.flatMap { it.payments }.filter { java.time.YearMonth.from(it.date) == month }.sumOf { it.amount },
         )
     }
 
@@ -166,13 +189,40 @@ object Receivables {
      * The ledger line for money that came back on [date], or null when it is not income
      * ([Receivable.countAsIncome] off: a loan, or a sale already in that day's sales).
      */
-    fun incomeEntry(r: Receivable, amount: Long, date: LocalDate): MoneyEntry? {
+    fun incomeEntry(r: Receivable, amount: Long, date: LocalDate, style: com.bamnat.core.work.WorkStyle? = null): MoneyEntry? {
         if (!r.countAsIncome || amount <= 0) return null
+        // 2.0.0 [RVK-46] (검토 T06a-05) Paying 줄 돈 is spending, under what it was for in this kind of work.
+        if (r.toPay) return MoneyEntry(
+            date = date, kind = MoneyKind.EXPENSE, amount = amount, category = payCategory(r.kind, style),
+            note = "줄 돈 · ${r.name}", merchant = r.who.trim(), source = MoneySource.MANUAL,
+        )
         val category = if (r.kind == ReceivableKind.WORK) "부수입" else "기타"
         return MoneyEntry(
             date = date, kind = MoneyKind.INCOME, amount = amount, category = category,
             note = "받을 돈 · ${r.name}", merchant = r.who.trim(), source = MoneySource.MANUAL,
         )
+    }
+
+    /** 2.0.0 [RVK-46] The spending category paying 줄 돈 of [kind] goes under: 현장 자재비·외주·인건비, 가게 재료비·인건비. */
+    fun payCategory(kind: ReceivableKind, style: com.bamnat.core.work.WorkStyle?): String = when (kind) {
+        ReceivableKind.SUPPLY -> when (style) {
+            com.bamnat.core.work.WorkStyle.FIELD -> "자재비"
+            com.bamnat.core.work.WorkStyle.BUSINESS -> "재료비"
+            else -> MoneyCategories.OTHER
+        }
+        ReceivableKind.WAGE -> when (style) {
+            com.bamnat.core.work.WorkStyle.FIELD -> "외주·인건비"
+            com.bamnat.core.work.WorkStyle.BUSINESS -> "인건비"
+            else -> MoneyCategories.OTHER
+        }
+        else -> MoneyCategories.OTHER
+    }
+
+    /** 2.0.0 [RVK-46] (검토 T06a-05) 줄 돈 still to pay, most pressing first, as [owed] orders 받을 돈. */
+    fun toPay(receivables: List<Receivable>, today: LocalDate): List<Receivable> {
+        val rank = listOf(ReceivableStatus.OVERDUE, ReceivableStatus.DUE_SOON, ReceivableStatus.PARTLY, ReceivableStatus.OPEN)
+        return receivables.filter { it.toPay && it.left > 0 }
+            .sortedWith(compareBy<Receivable> { rank.indexOf(it.status(today)) }.thenBy { it.due ?: it.date }.thenBy { it.name })
     }
 
     /** What is left to come in, at most; a payment larger than that is cut so the debt never goes below zero. */
@@ -233,6 +283,14 @@ object Receivables {
 enum class OwedFilter(val label: String) {
     ALL("전체"), OVERDUE("약속일 지남"), DUE_SOON("곧 받을 날"), PARTLY("일부 받음"), JOBS("일감 잔금"), WRITTEN("직접 적은 것");
 
+    /** 2.0.0 [RVK-46] The chip's words on the 줄 돈 side. */
+    fun labelFor(toPay: Boolean): String = when {
+        !toPay -> label
+        this == DUE_SOON -> "곧 갚을 날"
+        this == PARTLY -> "일부 갚음"
+        else -> label
+    }
+
     fun keeps(o: Owed, today: LocalDate): Boolean = when (this) {
         ALL -> true
         OVERDUE -> o.status(today) == ReceivableStatus.OVERDUE
@@ -264,6 +322,8 @@ object ReceivableAlerts {
     fun of(r: Receivable): List<Pair<LocalDate, String>> {
         if (r.left <= 0) return emptyList()
         val due = r.due
+        // 2.0.0 [RVK-46] 줄 돈 is reminded on the day it is to be paid, and once a week after, never a month later.
+        if (r.toPay) return if (due != null) listOf(due to "오늘 갚기로 한 날", due.plusDays(7) to "갚기로 한 날이 일주일 지났어요") else emptyList()
         return if (due != null) listOf(due to "오늘 받기로 한 날", due.plusDays(3) to "약속일이 3일 지났어요", due.plusDays(7) to "약속일이 일주일 지났어요")
         else listOf(r.date.plusDays(30) to "받을 돈이 한 달째 남았어요")
     }
