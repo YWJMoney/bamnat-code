@@ -853,6 +853,40 @@ class RvmScreenshotTest : ScreenshotBase() {
     @Test fun undoLeftFoldedDarkBig() = shoot("rvm_94_undo_left_folded_dark_200", DARK, 2f, undoLeft())
     @Test fun undoLeftUnfolded() = shoot("rvm_95_undo_left_unfolded", UNFOLDED, undoLeft())
 
+    /**
+     * 2.0.0 [RVM-59] 검토 U09b-03: 내 서랍 › 받은 것's sheet for a work one piece of which a later work covered — each piece with 쓰는 중
+     * or ‘어두운 위젯’이 덮음, and 이 조각만 되돌리기 under the ones in use.
+     */
+    private fun gotPieces(): Screen.() -> Unit = {
+        fun put(r: Recipe, code: String) = runBlocking {
+            c.recipes.apply(r, code, 1, PersonalCalendar.MAIN, r.pieces.map { com.bamnat.app.recipe.RecipeRepository.Pick(it.kind, com.bamnat.app.recipe.RecipePieces.Mode.REPLACE) }, emptyMap())
+        }
+        val add = com.bamnat.core.formula.LogicButton("야식 기록", "🍜", com.bamnat.core.formula.ButtonPlace.MONEY,
+            com.bamnat.core.formula.LogicAct(com.bamnat.core.formula.LogicVerb.ADD_MONEY, "야식", 5000))
+        put(Recipe("야식 관리판", styles = WorkStyle.entries.toSet(), pieces = listOf(
+            com.bamnat.core.recipe.Piece(PieceKind.LOGIC, Logic(listOf(add)).toValues()),
+            com.bamnat.core.recipe.Piece(PieceKind.MEMO_TEMPLATES, mapOf("items" to listOf(mapOf("title" to "야식 메모", "body" to "무엇을 먹었나")))),
+            com.bamnat.core.recipe.Piece(PieceKind.WIDGET, mapOf("alpha" to 60L, "theme" to "dark")))), "MKT20001")
+        put(Recipe("어두운 위젯", styles = WorkStyle.entries.toSet(), pieces = listOf(
+            com.bamnat.core.recipe.Piece(PieceKind.WIDGET, mapOf("alpha" to 90L)))), "MKT20002")
+        content {
+            Surface {
+                Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    com.bamnat.app.ui.recipe.ThemeDrawer(WorkStyle.SHIFT, onFind = {}, onFix = {}, onStudio = {}, onRecipe = {}, onUpload = {})
+                }
+            }
+        }
+        settle()
+        tapText("야식 관리판", exact = true)
+        settle()
+        check(appears("조각 3개", exact = true)) { "받은 것 창에 조각 목록이 없어요" }
+        check(appears("‘어두운 위젯’이 덮음", exact = true)) { "덮은 작품 이름이 없어요" }
+        check(appears("이 조각만 되돌리기", exact = true)) { "쓰는 조각에 되돌리기가 없어요" }
+    }
+    @Test fun gotPiecesFolded() = shoot("rvm_97_got_pieces_folded", FOLDED, gotPieces())
+    @Test fun gotPiecesFoldedDarkBig() = shoot("rvm_98_got_pieces_folded_dark_200", DARK, 2f, gotPieces())
+    @Test fun gotPiecesUnfolded() = shoot("rvm_99_got_pieces_unfolded", UNFOLDED, gotPieces())
+
     private companion object {
         const val DARK = "w369dp-h905dp-port-night-420dpi"
         const val UNFOLDED_DARK = "w707dp-h823dp-port-night-420dpi"

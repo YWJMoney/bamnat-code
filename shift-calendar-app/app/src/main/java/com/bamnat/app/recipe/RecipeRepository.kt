@@ -151,9 +151,13 @@ class RecipeRepository(private val c: AppContainer, context: Context) {
             if (same && had.any { it in done }) { dao.upsertApplied(e.copy(replacedAt = now)); return@forEach }
             if (had.none { it in takes }) return@forEach
             val left = had.filter { it !in takes }
-            if (left.isEmpty()) dao.upsertApplied(e.copy(replacedAt = now))
-            else dao.upsertApplied(e.copy(pieces = left.joinToString(","),
-                before = runCatching { JSONObject(e.before).also { b -> takes.forEach { b.remove(it) } }.toString() }.getOrDefault(e.before)))
+            // 2.0.0 [RVM-59] 검토 U09b-03: the earlier work keeps which of its pieces this one covered, so 받은 것 says ‘B’이 덮음 per
+            // piece instead of a bare 바뀜 (kept in its 'before', which every reader reads by piece key).
+            val b = runCatching { JSONObject(e.before) }.getOrNull() ?: JSONObject()
+            covered(b, had.filter { it in takes }, r.title, now)
+            takes.forEach { b.remove(it) }
+            if (left.isEmpty()) dao.upsertApplied(e.copy(replacedAt = now, before = b.toString()))
+            else dao.upsertApplied(e.copy(pieces = left.joinToString(","), before = b.toString()))
         }
         val id = dao.insertApplied(AppliedRecipeEntity(
             code = code, version = version, hash = RecipeCodec.hash(r), title = r.title, calendarId = cal, body = RecipeCodec.write(r),
@@ -423,10 +427,25 @@ class RecipeRepository(private val c: AppContainer, context: Context) {
     /** 되돌리기: every piece put back, last first; what the user changed since stays. */
     suspend fun undo(id: Long): Boolean = undoOne(id).also { lastUndo = it.second }.first
 
-    private suspend fun undoOne(id: Long): Pair<Boolean, UndoReport> {
+    /**
+     * 2.0.0 [RVM-59] 검토 U09b-03 (내 서랍 › 받은 것, 조각별 되돌리기): only [keys] of the work put back, the rest of it left on and still
+     * its own (되돌리기 of the rest stays offered). The work is 되돌림 once nothing of it is left on. Said by [undoSay] as [undo] is.
+     */
+    suspend fun undoPieces(id: Long, keys: Set<String>): Boolean = undoOne(id, keys).also { lastUndo = it.second }.first
+
+    private fun covered(before: JSONObject, keys: List<String>, by: String, at: Long) {
+        if (keys.isEmpty()) return
+        val cov = before.optJSONObject(COVERED) ?: JSONObject().also { before.put(COVERED, it) }
+        keys.forEach { cov.put(it, JSONObject().put("by", by.take(30)).put("at", at)) }
+    }
+
+    private suspend fun undoOne(id: Long, only: Set<String>? = null): Pair<Boolean, UndoReport> {
         val e = dao.appliedById(id) ?: return false to UndoReport()
         if (!canUndo(e)) return false to UndoReport()
         val before = runCatching { JSONObject(e.before) }.getOrNull() ?: return false to UndoReport()
+        val all = e.pieces.split(',').filter { it.isNotEmpty() }
+        val now = if (only == null) all else all.filter { it in only }
+        if (now.isEmpty()) return false to UndoReport()
         // 2.0.0 [RVM-45] 검토 RCP-02: a piece that failed was swallowed and the whole record stamped 되돌림, so it could not be tried
         // again. Now the record keeps the pieces still on (and stays undoable); the rest are taken back.
         val failed = ArrayList<String>()
@@ -434,16 +453,19 @@ class RecipeRepository(private val c: AppContainer, context: Context) {
         pieces.keptItems.clear()
         pieces.alarmsOff.clear()
         pieces.undoing = e.id
-        for (key in e.pieces.split(',').reversed()) {
+        for (key in now.reversed()) {
             val kind = PieceKind.of(key) ?: continue
             val snap = before.optJSONObject(key) ?: continue
             runCatching { pieces.restore(kind, snap, e.calendarId) }.onFailure { failed += key }
         }
         pieces.undoing = null
         val report = UndoReport(pieces.kept, failed.mapNotNull(PieceKind::of), pieces.alarmsOff.toList(),
-            e.pieces.split(',').count { PieceKind.of(it) != null && it !in failed && before.has(it) }, pieces.keptItems.toList())
-        if (failed.isNotEmpty()) {
-            dao.upsertApplied(e.copy(pieces = e.pieces.split(',').filter { it in failed }.joinToString(",")))
+            now.count { PieceKind.of(it) != null && it !in failed && before.has(it) }, pieces.keptItems.toList())
+        // [RVM-59] What stays on: the pieces not asked for, and those that failed (to be tried again).
+        val left = all.filter { it !in now || it in failed }
+        if (left.isNotEmpty()) {
+            (now - failed.toSet()).forEach { before.remove(it) }
+            dao.upsertApplied(e.copy(pieces = left.joinToString(","), before = before.toString()))
             return true to report
         }
         dao.upsertApplied(e.copy(undoneAt = Today.millis()))
@@ -535,6 +557,25 @@ class RecipeRepository(private val c: AppContainer, context: Context) {
         /** [RVF-06] Pieces that add to what is there (RecipePieces: 알람은 더하기만, 메모 틀·분류는 더하기, 규칙·단추는 내 것 뒤에). */
         val ADDS: Set<PieceKind> = setOf(PieceKind.LOGIC, PieceKind.ALARMS, PieceKind.MEMO_TEMPLATES, PieceKind.LEDGER, PieceKind.INVEST)
         const val UNDO_DAYS = 7L
+        /** 2.0.0 [RVM-59] U09b-03: in a record's 'before', the pieces a later work covered ({key: {by, at}}); never a piece key. */
+        const val COVERED = "_covered"
+
+        /** 2.0.0 [RVM-59] U09b-03: one piece of a received work, as 받은 것 shows it. */
+        data class PieceState(val key: String, val kind: PieceKind, val on: Boolean, val coveredBy: String? = null)
+
+        /** 2.0.0 [RVM-59] U09b-03: each piece of [e] — still on (its own) or covered by a later work, by name — in the order it went on. */
+        fun pieceStates(e: AppliedRecipeEntity): List<PieceState> {
+            val cov = runCatching { JSONObject(e.before).optJSONObject(COVERED) }.getOrNull()
+            val gone = cov?.keys()?.asSequence()?.toList().orEmpty()
+            // A work covered whole keeps its piece list (only its row is 'replaced'), so what is covered is taken out of it here.
+            val on = e.pieces.split(',').filter { it.isNotEmpty() && it !in gone }
+            return (on.mapNotNull { k -> PieceKind.of(k)?.let { PieceState(k, it, on = true) } } +
+                gone.mapNotNull { k -> PieceKind.of(k)?.let { PieceState(k, it, on = false, coveredBy = cov?.optJSONObject(k)?.optString("by")?.ifEmpty { null }) } })
+        }
+
+        /** 2.0.0 [RVM-59] U09b-03: the work that took the place of all of [e] (its pieces were all covered), if it says so. */
+        fun coveredBy(e: AppliedRecipeEntity): String? = pieceStates(e).filter { !it.on }.mapNotNull { it.coveredBy }.distinct().singleOrNull()
+
         const val KEEP_DAYS = 90L
         const val DAY_MILLIS = 24L * 60 * 60 * 1000
     }

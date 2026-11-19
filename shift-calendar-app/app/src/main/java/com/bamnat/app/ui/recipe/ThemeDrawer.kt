@@ -261,11 +261,13 @@ private fun gather(lease: ThemeLease, kept: List<ThemeWardrobe.Kept>, drafts: Li
     }
     // 받은 것: recipes from 장터 still on (the newest put-on of each); one that was only a theme's (or a tab's) looks shows as that already.
     val themeCodes = lease.history.map { it.code }.toSet() + listOfNotNull(lease.worn?.code) + laid.map { it.code }
-    applied.filter { it.code.isNotEmpty() && it.undoneAt == null && it.replacedAt == null }
+    // 2.0.0 [RVM-59] 검토 U09b-03: one whose pieces a later work all covered stays here too, saying by what (no longer a bare 바뀜).
+    applied.filter { it.code.isNotEmpty() && it.undoneAt == null &&
+        (it.replacedAt == null || (it.replacedAt != com.bamnat.app.data.RecipeBackup.RESTORED && coveredBy(it) != null)) }
         .groupBy { it.code }.values.map { l -> l.maxBy { it.appliedAt } }
         .filterNot { e -> e.code in themeCodes && e.pieces.split(',').all { k -> PieceKind.of(k)?.let { it in BuiltInThemes.LOOK_KINDS } != false } }
         .forEach { e ->
-            val what = e.pieces.split(',').mapNotNull { PieceKind.of(it)?.label }.joinToString(" ")
+            val what = (e.pieces.split(',') + coveredKeys(e)).mapNotNull { PieceKind.of(it)?.label }.distinct().joinToString(" ")
             out += DrawerItem("got:${e.code}", DrawerKind.GOT, e.title, e.appliedAt, words = what) to Held.Got(e)
         }
     kept.forEach { k ->
@@ -346,10 +348,55 @@ private fun status(h: Held?): String? = when (h) {
     is Held.Theme -> (if (h.part) "일부 입는 중 · " else if (h.now) "입는 중 · " else "") +
         when { ThemeWardrobe.isMix(h.w.title) && !h.w.own -> "내가 섞은 것"; h.w.free -> "내 것 · 장터에 있음"; h.w.own && h.w.mixedFrom.isNotBlank() -> "내 것 · 섞음"; h.w.own -> "내 것 · 나만"; h.now -> "남의 테마"; else -> "입었던" }
     is Held.Draft -> if (h.d.step >= 2) "만들던 · 올리던 중" else "만들던 · ${com.bamnat.app.ui.studio.ago(h.d.updatedAt)}"
-    is Held.Got -> "받음 · " + h.e.pieces.split(',').mapNotNull { PieceKind.of(it)?.label }.take(2).joinToString("·")
+    // [RVM-59] U09b-03: covered whole by a later work, it says by which.
+    is Held.Got -> coveredBy(h.e)?.takeIf { h.e.replacedAt != null }?.let { "받음 · ‘$it’${Fmt.iga(it)} 덮음" }
+        ?: ("받음 · " + h.e.pieces.split(',').mapNotNull { PieceKind.of(it)?.label }.take(2).joinToString("·"))
     is Held.Part -> if (h.k.own) "조각 · 내 것" else "조각 · ‘${h.k.fromTitle}’에서"
     is Held.Laid -> "얹은 탭 · ${com.bamnat.core.recipe.LookParts.tabLabel(h.o.tab)}"
     null -> null
+}
+
+/** 2.0.0 [RVM-59] U09b-03: the pieces of [e] a later work covered, and the one work that covered them all (null when none or several). */
+private fun coveredKeys(e: AppliedRecipeEntity): List<String> =
+    runCatching { org.json.JSONObject(e.before).optJSONObject(com.bamnat.app.recipe.RecipeRepository.COVERED)?.keys()?.asSequence()?.toList() }.getOrNull().orEmpty()
+
+private fun coveredBy(e: AppliedRecipeEntity): String? = com.bamnat.app.recipe.RecipeRepository.coveredBy(e)
+
+/**
+ * 2.0.0 [RVM-59] 검토 U09b-03 (뒤 작품에 밀리면 '바뀜'만 보이고 손쓸 길 없음): 받은 것's pieces one by one — 쓰는 중, or ‘B’이 덮음 — and,
+ * while it can still be taken back and more than one piece is in use, 이 조각만 되돌리기 (asked once by [ask]). Words above, the button
+ * under them (as 그대로 둔 것), so 200% on a folded phone keeps words whole.
+ */
+@Composable
+private fun GotPieces(c: com.bamnat.app.AppContainer, e: AppliedRecipeEntity, ask: (String, String, () -> Unit) -> Unit) {
+    val states = remember(e) { com.bamnat.app.recipe.RecipeRepository.pieceStates(e) }
+    if (states.size < 2 && states.all { it.on }) return
+    val canUndo = remember(e) { c.recipes.canUndo(e) }
+    val inUse = states.count { it.on }
+    Column(Modifier.fillMaxWidth()) {
+        Text("조각 ${states.size}개", style = MaterialTheme.typography.titleSmall, modifier = Modifier.semantics { heading() })
+        states.forEach { p ->
+            androidx.compose.material3.HorizontalDivider()
+            Column(Modifier.fillMaxWidth().padding(vertical = 6.dp)) {
+                Text(p.kind.label, style = MaterialTheme.typography.bodyLarge)
+                Text(if (p.on) "쓰는 중" else p.coveredBy?.let { "‘$it’${Fmt.iga(it)} 덮음" } ?: "다른 작품이 덮음",
+                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                if (p.on && canUndo && inUse > 1) Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                    androidx.compose.material3.TextButton(onClick = {
+                        ask("이 조각만 되돌릴까요?", "‘${e.title}’의 ${p.kind.label}만 넣기 전으로 돌아가요. 나머지 조각은 그대로 쓰고, 넣은 뒤 내가 직접 바꾼 것은 그대로예요") {
+                            c.appScope.launch {
+                                val ok = c.recipes.undoPieces(e.id, setOf(p.key))
+                                val r = c.recipes.lastUndo
+                                PutOnNotice.sayWithSee(if (ok && r.kept == 0 && r.failed.isEmpty() && r.alarmsOff.isEmpty()) "‘${e.title}’의 ${p.kind.label}만 되돌렸어요"
+                                    else c.recipes.undoSay(ok), r.items.takeIf { ok && it.isNotEmpty() }?.let { items -> { UndoLeft.show(items) } })
+                            }
+                        }
+                    }, modifier = Modifier.heightIn(min = 48.dp)) { Text("이 조각만 되돌리기") }
+                }
+            }
+        }
+        androidx.compose.material3.HorizontalDivider()
+    }
 }
 
 /** A 장터 code that can be opened and sent as a link (not a built-in look, not "" for mine). */
@@ -425,6 +472,8 @@ private fun ItemSheet(i: DrawerItem, h: Held, onDismiss: () -> Unit, onTry: (Rec
                 }
                 is Held.Got -> {
                     val e = h.e
+                    // 2.0.0 [RVM-59] 검토 U09b-03: each piece, whether it is in use or a later work covered it, and 이 조각만 되돌리기.
+                    GotPieces(c, e) { title, text, go -> asking = Triple(title, text, { go(); onDismiss() }) }
                     Act("장터에서 보기", "넣은 것을 고르거나 새 판을 볼 수 있어요", primary = true) { onRecipe(e.code) }
                     Act("링크 나누기") { share(e.title, e.code) }
                     Act(if (i.folder == null) "묶음에 넣기" else "묶음 바꾸기") { filing = true }
@@ -441,7 +490,8 @@ private fun ItemSheet(i: DrawerItem, h: Held, onDismiss: () -> Unit, onTry: (Rec
                             }
                             onDismiss()
                         }
-                    } else Text("넣은 지 7일이 지나 그대로 쓰고 있어요. 바꾸려면 그 설정 화면에서 고쳐요", style = MaterialTheme.typography.bodySmall,
+                    } else Text(if (e.replacedAt != null) "다른 작품이 조각을 모두 덮었어요. 다시 쓰려면 장터에서 다시 넣어요"
+                        else "넣은 지 7일이 지나 그대로 쓰고 있어요. 바꾸려면 그 설정 화면에서 고쳐요", style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
                 is Held.Part -> {
@@ -494,7 +544,7 @@ private fun ItemSheet(i: DrawerItem, h: Held, onDismiss: () -> Unit, onTry: (Rec
     }
     asking?.let { (title, text, go) ->
         AlertDialog(onDismissRequest = { asking = null }, title = { Text(title) }, text = { Text(text) },
-            confirmButton = { TextButton(onClick = { asking = null; go() }) { Text(if (title.startsWith("되돌")) "되돌리기" else if (title.contains("지울")) "지우기" else "빼기") } },
+            confirmButton = { TextButton(onClick = { asking = null; go() }) { Text(if (title.contains("되돌")) "되돌리기" else if (title.contains("지울")) "지우기" else "빼기") } },
             dismissButton = { TextButton(onClick = { asking = null }) { Text("닫기") } })
     }
     if (filing) FolderPick(i) { filing = false }
