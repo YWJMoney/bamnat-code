@@ -87,7 +87,7 @@ import { bundleInquiries, inboxAnswer, inboxRoute } from "./inbox.js";
 import { DEV, HELD_FOR_PERSON, INQUIRY, INQUIRY_TOPICS, QA, SLA, SLA_SQL, actorName, releaseHeld, rescanBilling, rescanBilling2, adminInquiries, ask, devRoute, expiredInquiries, forgetInquiries, inquiries, page, plainActor, plainText, publicQa, publicRows, readSla, slaKey, slaSetting, slaTargets, templateRoute } from "./inquiries.js";
 import { hasPro, INVITE, MONEY, REWARD_CAP, addMonths, b64url, config, deferFor, installOf, inviteCodeOf, inviteCodeShown, inviteDeadline, invitePage, inviteSettings, inviteSettingsRoute, invites, launchView, familyCode, familyCodeDelete, familyList, familySet, linkCode, money, myPhones, phoneList, phonePreviews, playIntent, playReady, playToken, readSub, recheckLapsed, rewardCounts, rewardWhy, rewardYear, setPhone, stack, stopUnconsentedTrials, storeLink, syncVoided } from "./money.js";
 import { EVENTS, NOTICE, PHOTO_REASONS, PHOTO_SCREENS, STARTUP_BUCKETS, SWITCHES, USAGE, checkOps, kstDay, lookupRows, metrics, noticeList, noticeView, opsItems, opsMonth, opsState, paused, photoWrong, photoWrongMetrics, readAction, readAudience, removeNotice, saveNotice, setSwitch, startupMetrics, startupRows, setupRows, SETUP_TAP_BUCKETS, usage } from "./usage.js";
-import { FLAG_CATALOG, FLAG_KEYS, FLAG_STORE_SQL, SWITCH_FLAGS, fixRequestsOpen, fixedAmountsOpen, flagDef, flagEffects, flagOverview, flagRoute, flagStore, flagTick, migrateFlags, serverEval, storeFrom } from "./flags.js";
+import { FLAG_CATALOG, FLAG_KEYS, FLAG_STORE_SQL, SWITCH_FLAGS, fixRequestsOpen, fixedAmountsOpen, flagDef, flagEffects, flagOverview, flagOn, flagRoute, flagStore, flagTick, migrateFlags, serverEval, storeFrom } from "./flags.js";
 // 1.34 [RCP-28]..[RCP-36] 나눔 판.
 import { CODE as RECIPE_CODE, RECIPE_COLUMNS, lookOf as recipeLookOf, RECIPE_SCHEMA, RECIPE_TABLE, forgetRecipes, makerId, pruneRecipes, recipeAdmin, recipeRoute } from "./recipes.js";
 import { INTEGRITY_SCHEMA, integrityGate, integrityMode, integrityRoute, integrityState } from "./integrity.js";
@@ -8873,7 +8873,7 @@ const recipeDeps = {
   uploadsFull,
   // 1.36 [SEC-11] Play Integrity before a write others see (integrity.js); null to go on.
   integrity: (env, dev, now) => integrityGate(recipeDeps, env, dev, now),
-  legalOpen: async (env, key, now) => serverEval(await flagStore(env), key, now).on,
+  legalOpen: async (env, key, now) => flagOn(await flagStore(env), key, now),
   // 1.39 [FX-17] 기능 작품을 남이 보게 올리는 사람은 프로 (money.js hasPro).
   hasPro: (env, dev, now) => hasPro(env, dev, now),
   hiddenAuthors: async (env, request) => hiddenAuthors(await authorKey(env), request.headers.get("x-hide")),

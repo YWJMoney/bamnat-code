@@ -38,6 +38,12 @@ object FlagCatalog {
     const val STATS_DISC = "stats.disc"
     /** 1.40 [DISC-06]: the 처리방침 판 that first names the four totals (사용자 결정 2026-11-11 '합계 4가지만'). */
     const val DISCOVER_POLICY = "3.13"
+    /** 2.0.0 [RVQ-56] 검토 T21-02: 기능 횟수를 일하는 방식(유형)별로도, 처리방침 3.14(30일 줄 4줄)가 적은 날부터. */
+    const val STATS_KIND_USE = "stats.kind_use"
+    /** 2.0.0 [RVQ-56] 검토 SX-03: 장터 작품을 입은 뒤 30분 안에 뺐는지·글자 크기를 되돌렸는지의 작품별 하루 합계, 처리방침 3.14(30일 줄 7줄)부터. */
+    const val MARKET_WEAR = "market.wear"
+    /** 2.0.0 [RVQ-56] 위 둘을 처음 적는 처리방침 판(30일 줄이라 관리자 앱 일정의 3.14 시행일에 12-21을 넣어요, O 11-19). */
+    const val STATS_314_POLICY = "3.14"
     /** 1.32.1 [STAB-10]: 멈춤 관찰 기록 in the 점검 기록 of an inquiry, once 처리방침 3.6 names it. */
     const val DIAG_OBSERVE = "diag.observe"
     /** 1.33 [SHR-20]: a coworker's 근무표 링크 carries the company setup (no amounts), once 처리방침 3.7 names it. */
@@ -537,6 +543,32 @@ object FlagCatalog {
         default = false, risk = Risk.LEGAL, since = "1.40.0", group = FlagGroup.STATS,
     )
 
+    /**
+     * 2.0.0 [RVQ-56] 검토 T21-02 (처리방침 3.14 30일 줄 4줄, 사용자 '16줄 모두' 11-19): 사용 통계를 켠 휴대폰이 보내는 기능 횟수를 일하는
+     * 방식별로도 세요. 서버는 날짜·판·유형·기능마다 휴대폰 수만 더하고, 휴대폰을 구별하는 값은 남기지 않아요. 3.14 시행일 전에는 받지 않아요.
+     */
+    val STATS_KIND_USE_FLAG = Flag(
+        STATS_KIND_USE, "기능 횟수 유형별로 세기",
+        what = "사용 통계를 켠 휴대폰만, 기능 횟수를 일하는 방식(교대·일근·알바·현장·가게·투자)별로도 세요. 서버에는 날짜·판·유형·기능별 휴대폰 수만 남아요. 관리자 앱이 가게·투자 유형이 어느 기능에서 빠지는지 봐요.",
+        whyOff = "사용 통계 항목이 늘어 처리방침 3.14의 30일 줄 시행일에 저절로 켜져요. 관리자 앱 › 기능 관리 › 일정에 3.14 날짜를 넣으면 그날부터예요. 그 전에는 유형별 기능 횟수를 받지 않아요.",
+        basis = Basis(policy = "3.14 1-9항", requirement = "T21-02", note = "3.14 4줄"),
+        conditions = listOf(Condition.Date(policy = STATS_314_POLICY), Condition.Policy(STATS_314_POLICY), Condition.Consent("usage")),
+        default = false, risk = Risk.LEGAL, since = "2.0.0", group = FlagGroup.STATS,
+    )
+
+    /**
+     * 2.0.0 [RVQ-56] 검토 SX-03 (처리방침 3.14 30일 줄 7줄): 장터 작품을 입은 휴대폰이 30분 안에 다시 뺐는지, 글자 크기를 바로 되돌렸는지를
+     * 작품별·날마다 합계로만 보내요(휴대폰 구별 없음). 관리자 앱이 안 읽히는 작품을 개선 신호로 찾아요. 3.14 시행일 전에는 받지 않아요.
+     */
+    val MARKET_WEAR_FLAG = Flag(
+        MARKET_WEAR, "장터 입은 뒤 숫자 보내기",
+        what = "사용 통계를 켠 휴대폰만, 장터 작품을 입은 뒤 30분 안에 뺐는지·글자 크기를 되돌렸는지를 작품별·날마다 합계로 보내요. 휴대폰 구별은 없어요. 관리자 앱이 바로 벗는 작품을 찾아 만든 분과 함께 고쳐요.",
+        whyOff = "장터 숫자 항목이 늘어 처리방침 3.14의 30일 줄 시행일에 저절로 켜져요. 관리자 앱 › 기능 관리 › 일정에 3.14 날짜를 넣으면 그날부터예요. 그 전에는 세지도 보내지도 않아요.",
+        basis = Basis(policy = "3.14 1-9항", requirement = "SX-03", note = "3.14 7줄"),
+        conditions = listOf(Condition.Date(policy = STATS_314_POLICY), Condition.Policy(STATS_314_POLICY), Condition.Consent("usage")),
+        default = false, risk = Risk.LEGAL, since = "2.0.0", group = FlagGroup.STATS,
+    )
+
     /** [FLAG-10] The six old 기능 스위치, on by default; the server turns one off to rest it. */
     /**
      * 1.39 [CARE-01~06] (사용자 2026-11-07 "악성 유저는 차단을 통해 몇일 의견제시나 커뮤니티 사용중단, 그전에 미리 경고도 부드럽게", "2회는 너무
@@ -592,7 +624,7 @@ object FlagCatalog {
     val ALL: List<Flag> = listOf(BILLING_FLAG, ADS_FLAG) + TYPES + listOf(LEAVE_HOURLY_FLAG, STATS_MORE_FLAG, PHOTO_WRONG_FLAG, PLAZA_FIXED_AMOUNT_FLAG, STATS_LOOKUP_FLAG,
         DIAG_OBSERVE_FLAG, SHARE_SETUP_FLAG, SHARE_LOOK_FLAG, SHARE_WORD_FLAG, RECIPE_BROWSE_FLAG, RECIPE_PUBLISH_FLAG, RECIPE_VOTE_FLAG, RECIPE_TALK_FLAG, TEAM_LEADER_FLAG, BOSS_PAYROLL_FLAG, HEALTH_COMPARE_FLAG,
         SLEEP_AUTO_FLAG, SLEEP_SOUND_FLAG, SLEEP_SHARE_FLAG, PLAZA_FIX_REQUEST_FLAG, COMMUNITY_CARE_FLAG, COMMUNITY_CONFIRMED_FLAG, PLAZA_PEOPLE_FLAG, SLEEP_PLAN_SHARE_FLAG, STATS_SETUP_FLAG,
-        STATS_LIFE_FLAG, STATS_KIND_FLAG, STATS_KEEP_FLAG, STATS_DISC_FLAG, CARD_FONTS_FLAG) +
+        STATS_LIFE_FLAG, STATS_KIND_FLAG, STATS_KEEP_FLAG, STATS_DISC_FLAG, STATS_KIND_USE_FLAG, MARKET_WEAR_FLAG, CARD_FONTS_FLAG) +
         SWITCHES
 
     private val byKey = ALL.associateBy { it.key }

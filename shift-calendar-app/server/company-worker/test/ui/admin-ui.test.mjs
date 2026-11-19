@@ -2214,6 +2214,30 @@ test("[OBS2-08] 유형별 흐름 and 기능과 머묾 show once 처리방침 3.1
   assert.deepEqual(u.errors, []);
 });
 
+// 2.0.0 [RVQ-56] 검토 T21-02: 처리방침 3.14(stats.kind_use) 뒤에는 유형별 흐름 아래에 유형마다 덜 쓰는 기능이 보여요.
+test("[RVQ-56] 유형별로 덜 쓰는 기능 shows under 유형별 흐름 once 처리방침 3.14 is in force", async (t) => {
+  offline(t);
+  const { env } = server();
+  const u = await asOwner(env, t);
+  const db = env.DB.db;
+  db.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES ('policy_overrides', ?)")
+    .run(JSON.stringify({ "3.12": { posted: "2025-01-01", effective: "2025-01-02", heldUntil: null, unfavourable: false },
+      "3.14": { posted: "2025-01-01", effective: "2025-01-31", heldUntil: null, unfavourable: false } }));
+  const day = (n) => new Date(Date.now() + 9 * 3600000 - n * 86400000).toISOString().slice(0, 10);
+  const kind = db.prepare("INSERT INTO usage_kinds (day, app, style, event, phones) VALUES (?, '2.0.0', ?, ?, ?)");
+  kind.run(day(3), "SHIFT", "open", 40); kind.run(day(3), "SHIFT", "pay_view", 30);
+  kind.run(day(3), "BUSINESS", "open", 30); kind.run(day(3), "BUSINESS", "pay_view", 2);
+  await u.go("#/glance");
+  await u.settle(40);
+  const card = u.text("#main .ob-kinds");
+  assert.match(card, /유형별로 덜 쓰는 기능/);
+  assert.match(card, /자영업.*6\.7%.*전체 45\.7%/s, card);
+  assert.match(card, /교대.*전체와 비슷하게 써요/s);
+  assert.ok(!u.$$("#main .ob-gap-list li").some((li) => li.textContent.includes("3.14")), "nothing waits for 3.14");
+  assert.equal(u.$$("#main [style]").length, 0);
+  assert.deepEqual(u.errors, []);
+});
+
 // 1.40 [RVD-06] 검토 ADM-01·ADMX-04: 목록에서 처음 여는 문의의 '이 휴대폰' 패널이 미리 데우기 때 '못 불러옴'으로 굳어 다시 안 읽혔어요.
 test("[RVD-06] an inquiry opened from the list reads its phone panel once, also when the screen was warmed first", async () => {
   const s = await world();
