@@ -1305,7 +1305,8 @@ class AppContainer(context: Context) {
             // [SRCH-09] 1.29 AS: once, not kept (no job of its own, so the startup budget is the same): the most used companies
             // and this phone's company page read ahead, unless the phone saves data, so the first search shows at once.
             appScope.launch {
-                // [SPD-26] 1.31 I2: Cronet (HTTP/3) asked of Play services once, in the background; until then, as before.
+                // [SPD-26] 1.31 I2: the faster engine (HTTP/3) made once, in the background; until then, as before. 2.0.0 [RVN-23]
+                // (PC-187): the phone's own HttpEngine from Android 14, no longer Play services' Cronet (its update killed the app).
                 runCatching { com.bamnat.app.company.NetEngine.start(appContext) }
                 // [SRCH-12] and the public rows' index, so 회사 찾기's first letter does not make it.
                 runCatching { com.bamnat.core.plaza.PublicCycles.warm() }
