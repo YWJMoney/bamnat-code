@@ -74,10 +74,10 @@ object PolicyConsent {
     const val TERMS_VERSION = "1.4"
 
     /**
-     * 2.0.0 [RVO-26] 처리방침 3.14 (사용자 2026-11-19 카드 '16줄 모두', 게시는 사용자 "게시해" 뒤): 3.13처럼 동의 카드 없이 9항대로
+     * 2.0.0 [RVO-26] 처리방침 3.14 (사용자 2026-11-19 카드 '16줄 모두', 11:29 KST 카드로 폰 바꾸기를 빼 15줄, 게시는 사용자 "게시해" 뒤): 3.13처럼 동의 카드 없이 9항대로
      * 앱 공지와 페이지로 먼저 알리고, 실제와 맞추거나 보내는 것을 줄이거나 휴대폰 안에만 두는 줄(광장 방 글 금액·운영 규칙 3, 근무주기
      * 나누기 좁힘, 명세서로 맞춘 분 수, 생년, 모두 지우기 뒤 남는 것, 공유 페이지 열림 합계)은 7일 뒤([REVISION14_EFFECTIVE]),
-     * 새로 받거나 보내는 줄(확인했어요 시각, 피곤해요 하루 표시, 링크 이름 낱말, 사용 통계 셋, 장터 '입은 뒤' 숫자, 폰 바꾸기 열쇠,
+     * 새로 받거나 보내는 줄(확인했어요 시각, 피곤해요 하루 표시, 링크 이름 낱말, 사용 통계 셋, 장터 '입은 뒤' 숫자,
      * 근무표 약어, 앱으로 받는 팀원 수)은 30일 뒤([REVISION14_EFFECTIVE_30])에 시행해요. 3.13의 날짜([REVISION_POSTED])와 따로 움직여요.
      * 게시일은 이 한 줄만: `python3 tools/legal_dates.py <게시일> --rev 3.14`가 이 줄과 페이지의 `r314-` 날짜를 함께 고쳐요.
      * 서버 깃발(`Condition.Date(policy = "3.14")`)은 관리자 앱 › 처리방침 일정의 3.14 시행일(= [REVISION14_EFFECTIVE_30])을 읽고,
@@ -89,7 +89,7 @@ object PolicyConsent {
     val REVISION14_POSTED: LocalDate = LocalDate.of(2026, 11, 21)
     /** 7일 줄: 1-2항 근무주기 나누기·명세서로 맞춘 분 수, 1-4항 방 글 금액(운영 규칙 3), 2항 생년, 6항 지우기 뒤 남는 것, 1항 열림 합계. */
     val REVISION14_EFFECTIVE: LocalDate = REVISION14_POSTED.plusDays(7)
-    /** 30일 줄: 1항·1-14항 링크(확인했어요·피곤해요·낱말·앱으로 받는 수), 1-9항 사용 통계 셋, 1-4항 장터 숫자, 2항 폰 바꾸기, 1-2항 약어. */
+    /** 30일 줄: 1항·1-14항 링크(확인했어요·피곤해요·낱말·앱으로 받는 수), 1-9항 사용 통계 셋, 1-4항 장터 숫자, 1-2항 약어. */
     val REVISION14_EFFECTIVE_30: LocalDate = REVISION14_POSTED.plusDays(30)
 
     /** The newest version the calendar card asks for and a yes writes (a yes to it counts for every older one). */

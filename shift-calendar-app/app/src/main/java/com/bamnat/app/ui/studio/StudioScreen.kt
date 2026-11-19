@@ -805,7 +805,7 @@ fun StudioScreen(vm: StudioViewModel, onBack: () -> Unit, onOpen: (String) -> Un
                         Box {
                             var open by remember { mutableStateOf(false) }
                             val hold = com.bamnat.app.ui.components.LocalFoldHold.current
-                            FilterChip(selected = true, onClick = { hold(); open = true }, label = { Text("화면: ${area.labelFor(vm.style)} ▾") })
+                            FilterChip(selected = true, onClick = { hold(); open = true }, label = { Text("화면: ${area.labelFor(vm.style)}\u00A0▾") })
                             DropdownMenu(open, { open = false }) {
                                 // PC 확인 8d0cddf6 (투자 스튜디오에 '급여' 칩): 급여 has no place for 자영업·투자, as on their bottom tabs.
                                 val manageOn = com.bamnat.app.ui.work.rememberManageOn()
@@ -854,7 +854,7 @@ fun StudioScreen(vm: StudioViewModel, onBack: () -> Unit, onOpen: (String) -> Un
                         if (area != Area.ALL) Box {
                             var open by remember { mutableStateOf(false) }
                             val hold = com.bamnat.app.ui.components.LocalFoldHold.current
-                            FilterChip(selected = false, onClick = { hold(); open = true }, label = { Text("앱 전체 ▾") })
+                            FilterChip(selected = false, onClick = { hold(); open = true }, label = { Text("앱 전체\u00A0▾") })
                             DropdownMenu(open, { open = false }) {
                                 Area.ALL.tools.filter { it != Tool.SHIFT || shiftModes(vm.style).isNotEmpty() }.forEach { t ->
                                     DropdownMenuItem({ Text(t.label) }, onClick = { open = false; openTool(Area.ALL, t) })

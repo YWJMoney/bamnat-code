@@ -341,12 +341,19 @@ export async function waitingNote(env, id, text, topic) {
   }
 }
 
-/** What the user typed: up to 2000 characters, without an email, phone number or amount. */
+/**
+ * 2.0.0 [RVO-29] (PC-204) A Google Play order number (GPA.3312-4459-2207-48812, a renewal's "..0" after it): how a 결제·환불 question
+ * is found, and the app's 결제·환불 example asks for it. It is not an amount, so the check reads the text without it (the app's
+ * InquiryClient.PLAY_ORDER is the same). Amounts, email, phone and account numbers still do not go (처리방침 1-3항).
+ */
+export const PLAY_ORDER = /GPA\.\d{4}-\d{4}-\d{4}-\d{5}(?:\.\.\d{1,3})?(?!\d)/gi;
+
+/** What the user typed: up to 2000 characters, without an email, phone number, account number or amount. */
 export function inquiryText(v) {
   if (typeof v !== "string") refuse("text", "text");
   const text = v.normalize("NFC").replace(/\r\n?/g, "\n").trim();
   if (!text || [...text].length > INQUIRY.text) refuse("text", "text");
-  const why = personal(text);
+  const why = personal(text.replace(PLAY_ORDER, " "));
   if (why) refuse(why, "text");
   return text;
 }

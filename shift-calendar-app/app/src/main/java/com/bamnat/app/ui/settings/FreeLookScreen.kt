@@ -999,7 +999,7 @@ fun ColorPick(label: String, value: Long?, allowNone: Boolean = true, onPick: (L
                     }
                 }
             }
-            com.bamnat.app.ui.components.FoldButton(if (allOut) "접기 ▴" else "모두 펼치기 ▾", if (allOut) "$label 색 한 줄로 접기" else "$label 색 모두 펼쳐 보기") { setAllOut(!allOut) }
+            com.bamnat.app.ui.components.FoldButton(if (allOut) "접기\u00A0▴" else "모두 펼치기\u00A0▾", if (allOut) "$label 색 한 줄로 접기" else "$label 색 모두 펼쳐 보기") { setAllOut(!allOut) }
         }
         if (hint && why) Text("고른 색과 ★ 내 색에 넣은 색은 다음부터 이 줄 맨 앞에 모여요. ★는 색을 고른 뒤 위 ‘☆ 내 색에’로 넣어요",
             style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
