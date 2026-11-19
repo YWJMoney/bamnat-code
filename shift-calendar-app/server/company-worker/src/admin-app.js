@@ -3648,9 +3648,22 @@ function adminApp(L, BUILD, M) {
         <p class="hint">한 휴대폰이 이 기간에 자동으로 받는 보상은 상한까지예요. 넘는 보상은 보상 화면에 남아요.</p>
         <h3>광장 방 글</h3>
         <label class="switch"><input type="checkbox" data-change="room-money"${s.roomMoney ? " checked" : ""}${edit ? "" : " disabled"}><span class="track" aria-hidden="true"></span><span>방 글에 금액 받기</span></label>
-        <p class="hint">켜면 회사 방·유형별 방의 글에 금액을 적을 수 있어요(연락처는 그대로 막아요). 운영 규칙 4항을 고쳐 게시한 날 켜요.</p>
+        <p class="hint">${roomMoneyLine(Boolean(s.roomMoney), S.overview?.roomMoneyFrom ?? null)}</p>
         ${edit ? `<div class="actions">${S.draft ? '<button class="btn ghost" data-act="settings-undo">되돌리기</button>' : ""}<button class="btn primary" data-act="save-settings"${S.draft ? "" : " disabled"}>${S.draft ? "바꾼 것 저장" : "저장"}</button></div>` : '<p class="note">보기 권한이라 바꿀 수 없어요.</p>'}
       </section>`;
+  }
+
+  /**
+   * 2.0.0 [RVN-17] COMP-14 '방 글에 금액 받기'의 한 줄: 켜도 처리방침 3.14 게시일 + 7일(운영 규칙 3판 시행일, 서버 roomMoneyFromPolicy)부터
+   * 받으니, 지금 받는지·언제부터인지·아직 날짜가 없는지를 말해요.
+   */
+  function roomMoneyLine(on, from) {
+    const today = new Date(Date.now() + 9 * 3600e3).toISOString().slice(0, 10);
+    const when = from ? `${Number(from.slice(5, 7))}월 ${Number(from.slice(8, 10))}일` : null;
+    if (!on) return `켜면 회사 방·유형별 방의 글에 금액을 적을 수 있어요(연락처·계좌번호는 그대로 막아요). 처리방침 3.14 게시일 + 7일${when ? `(${when})` : ""}부터 받으니 미리 켜 둬도 돼요.`;
+    if (!from) return "켜 두었어요. 처리방침 일정에 3.14 게시일이 들어오면 그날 + 7일부터 받아요. 그 전에는 지금처럼 금액을 막아요.";
+    if (today < from) return `켜 두었어요. ${when}부터 받아요(처리방침 3.14 게시일 + 7일). 그 전에는 지금처럼 금액을 막아요.`;
+    return `받고 있어요(${when}부터). 연락처·계좌번호는 그대로 막아요.`;
   }
 
   /** [ADMUX-32] 문의 › 답 목표 (1.27 설정's card): the hours to a first answer, per kind of question. */
