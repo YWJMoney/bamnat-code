@@ -77,10 +77,9 @@ class WorkTypePrefs private constructor(context: Context) {
         private const val K_SEL_START = "selstart_"
         private const val K_INCOME = "income_"
 
-        @Volatile private var instance: WorkTypePrefs? = null
+        /** One per app ([PerApp]: a test's new app reads its own settings, not an earlier test's). */
+        private val one = PerApp { WorkTypePrefs(it) }
 
-        fun get(context: Context): WorkTypePrefs = instance ?: synchronized(this) {
-            instance ?: WorkTypePrefs(context).also { instance = it }
-        }
+        fun get(context: Context): WorkTypePrefs = one.of(context)
     }
 }
