@@ -173,20 +173,45 @@ export function toldText(need, how) {
   return `부탁하신 꾸미기("${need.title}")가 ${need.version ? `${need.version} 판에서 ` : "다음 판에서 "}스튜디오의 기본 손잡이로 나와요. 여러분이 부탁해서 생긴 꾸미기로 출시 노트에도 적을게요.`;
 }
 
-/** Answers every asker of [need] not told yet; 문의는 '답함'이 되어 앱의 새 답 알림이 떠요. */
+/**
+ * Answers every asker of [need] not told yet; 문의는 '답함'이 되어 앱의 새 답 알림이 떠요.
+ * 2.0.0 [RVN-24] 검토 SVC-109: 90 askers a batch (two statements each), each batch marking only its own askers told, so a big group never
+ * makes one huge batch and a batch that failed leaves its askers to the next answer.
+ */
 async function tellAskers(env, need, how, now) {
   const links = await all(env, "SELECT src, ref FROM studio_need_links WHERE need_id = ? AND told = 0 AND src = 'inq'", need.id);
   const text = toldText(need, how);
-  const stmts = [];
-  for (const l of links) {
-    stmts.push(stmt(env, "INSERT INTO inquiry_messages (inquiry_id, sender, text, by, at) SELECT id, 'admin', ?, '밤낮', ? FROM inquiries WHERE id = ?", text, now, l.ref));
-    stmts.push(stmt(env, "UPDATE inquiries SET status = 'answered', updated_at = ? WHERE id = ?", now, l.ref));
+  for (let i = 0; i < links.length; i += TELL_CHUNK) {
+    const part = links.slice(i, i + TELL_CHUNK);
+    const stmts = [];
+    for (const l of part) {
+      stmts.push(stmt(env, "INSERT INTO inquiry_messages (inquiry_id, sender, text, by, at) SELECT id, 'admin', ?, '밤낮', ? FROM inquiries WHERE id = ?", text, now, l.ref));
+      stmts.push(stmt(env, "UPDATE inquiries SET status = 'answered', updated_at = ? WHERE id = ?", now, l.ref));
+    }
+    stmts.push(stmt(env, `UPDATE studio_need_links SET told = 1 WHERE need_id = ? AND src = 'inq' AND ref IN (${part.map(() => "?").join(",")})`, need.id, ...part.map((l) => l.ref)));
+    await batch(env, stmts);
   }
-  stmts.push(stmt(env, "UPDATE studio_need_links SET told = 1 WHERE need_id = ? AND src = 'inq'", need.id));
-  if (stmts.length) await batch(env, stmts);
   await fcmTell(env, links.map((l) => l.ref), now);
   return links.length;
 }
+
+export const TELL_CHUNK = 90;
+
+/**
+ * 2.0.0 [RVN-24] 검토 SVC-109: which state each 요구 action may start from. Outside it the action is 409, so an asker who heard '하지 않기로 함'
+ * never hears '나와요' next, and an ended group is opened again ('다시 열기') before it is built or shipped.
+ */
+export const NEED_MOVES = {
+  market: ["open", "ready"],
+  unmarket: ["market"],
+  build: ["open", "ready", "market", "building"],
+  official: ["open", "ready", "market", "building", "solved"],
+  decline: ["open", "ready", "market", "building"],
+  reopen: ["solved", "official", "declined"],
+  title: NEED_STATES,
+  merge: ["open", "ready", "market", "building", "solved", "official", "declined"],
+};
+const NEED_ENDED = { solved: "solved", official: "official", declined: "declined" };
 
 /** [GRW-03] A request on the 요청 판 got its 완성: the group it came from is 풀림, and its askers hear. */
 export async function needSolved(env, requestId, code, now) {
@@ -229,10 +254,13 @@ export async function growthTick(env, now) {
   await ladderTick(env, now);
 }
 
+/** The 요청 판 line of a need: '[영역 › 도구] 제목'. */
+export const marketBody = (n) => [...`${n.area ? `[${n.area}${n.tool ? ` › ${n.tool}` : ""}] ` : ""}${n.title}`].slice(0, 200).join("");
+
 async function toMarket(env, n, now) {
   // [RVQ-29] 다듬은 제목만 나가요(growthAdmin이 거름을 지난 제목을 n.title에 적은 뒤 불러요).
   const id = `q${randomId(12)}`;
-  const body = [...`${n.area ? `[${n.area}${n.tool ? ` › ${n.tool}` : ""}] ` : ""}${n.title}`].slice(0, 200).join("");
+  const body = marketBody(n);
   await batch(env, [
     // style ALL: every kind of work's 요청 판 shows it (rcRequestList), unless the asks said one kind.
     stmt(env, "INSERT INTO recipe_requests (id, device, style, body, askers, created_at, updated_at) VALUES (?, 'operator', ?, ?, ?, ?, ?)",
@@ -396,9 +424,10 @@ export async function growthAdmin(request, env, url, path, now) {
     let told = 0;
     // [RVQ-29] 장터에 올릴 제목: 새로 준 제목이나 이미 다듬은 제목. 요청 판 글과 같은 거름을 지나야 해요.
     const newTitle = typeof body.title === "string" ? [...body.title.replace(/\s+/g, " ").trim()].slice(0, 60).join("") : null;
+    // 2.0.0 [RVN-24] SVC-109: the move table first (409 names the state it is in).
+    if (NEED_MOVES[body.action] && !NEED_MOVES[body.action].includes(n.state)) return json({ error: "state", state: n.state, field: "action" }, 409);
     switch (body.action) {
       case "market": {
-        if (!["open", "ready"].includes(n.state)) return json({ error: "state" }, 409);
         if (newTitle !== null && newTitle.length < 2) return json({ error: "title", field: "title" }, 400);
         if (newTitle === null && !n.titled) return json({ error: "title_first", field: "title" }, 400);
         const t = newTitle ?? n.title;
@@ -417,7 +446,7 @@ export async function growthAdmin(request, env, url, path, now) {
       }
       case "unmarket":
         // 2.0.0 [RVA-04] 검토 ADM-05: '장터에 올리기'를 내려요. 요청 판 줄은 가리고 요구는 열린 채로(줄을 남겨 두어 매시간 저절로 다시 올라가지 않아요).
-        if (n.state !== "market" || !n.request_id) return json({ error: "state" }, 409);
+        if (!n.request_id) return json({ error: "state", state: n.state, field: "action" }, 409);
         await batch(env, [stmt(env, "UPDATE recipe_requests SET hidden = 1 WHERE id = ? AND device = 'operator'", n.request_id),
           stmt(env, "UPDATE studio_needs SET state = 'open', updated_at = ? WHERE id = ?", now, n.id)]);
         break;
@@ -447,19 +476,24 @@ export async function growthAdmin(request, env, url, path, now) {
         const why = marketTitleProblem(t);
         if (why) return json({ error: why, field: "title" }, 400);
         await run(env, "UPDATE studio_needs SET title = ?, titled = 1, updated_at = ? WHERE id = ?", t, now, n.id);
-        if (n.request_id) await run(env, "UPDATE recipe_requests SET body = ? WHERE id = ? AND device = 'operator'", t, n.request_id);
+        // 2.0.0 [RVN-24] SVC-109: the 요청 판 line keeps its '[영역 › 도구]' head, as 장터에 올리기 wrote it.
+        if (n.request_id) await run(env, "UPDATE recipe_requests SET body = ? WHERE id = ? AND device = 'operator'", marketBody({ ...n, title: t }), n.request_id);
         break;
       }
       case "merge": {
         // 같은 요구가 둘로 묶였으면 하나로: 부탁한 분은 휴대폰 기준으로 다시 세요.
         const into = typeof body.into === "string" ? await one(env, "SELECT * FROM studio_needs WHERE id = ?", body.into) : null;
         if (!into || into.id === n.id) return json({ error: "into", field: "into" }, 400);
+        // 2.0.0 [RVN-24] SVC-109: those asking in [n] who were not answered yet hear the answer [into] already gave, so nobody is buried
+        // unanswered in a group that ended.
+        const ended = NEED_ENDED[into.state];
         await batch(env, [
           stmt(env, "UPDATE studio_need_links SET need_id = ? WHERE need_id = ?", into.id, n.id),
           stmt(env, "UPDATE studio_needs SET askers = (SELECT COUNT(DISTINCT device) FROM studio_need_links WHERE need_id = ?), updated_at = ? WHERE id = ?", into.id, now, into.id),
           stmt(env, "DELETE FROM studio_needs WHERE id = ?", n.id),
           ...(n.request_id ? [stmt(env, "UPDATE recipe_requests SET hidden = 1 WHERE id = ? AND device = 'operator'", n.request_id)] : []),
         ]);
+        if (ended) told = await tellAskers(env, into, ended, now);
         break;
       }
       default:

@@ -379,3 +379,51 @@ test("[RVN-24] SVC-108 the release-note line names the maker only while their ma
   DB.db.prepare("UPDATE recipe_makers SET closed = 1 WHERE device = ?").run(owner);
   assert.deepEqual(await lines(), ["모두의 도구에서 기본이 된 것: 새벽 칸 부품"]);
 });
+
+test("[RVN-24] SVC-109 스튜디오 요구: a move table (409 outside it), a merge into an ended group answers the moved askers, 90 a batch, the 요청 판 head stays", async (t) => {
+  t.mock.timers.enable({ apis: ["Date"], now: Date.parse("2026-11-30T03:00:00Z") });
+  const { call, DB } = server({ plaza: true });
+  const h = await signIn(call);
+  const from = (n) => ({ "cf-connecting-ip": `198.51.100.${n}` });
+  const studio = (n, text) => call("POST", "/api/inquiries", { v: 1, device: device(n), kind: "studio", text,
+    info: { app: "1.36.0 (136)", model: "Pixel", android: "16", studio: "SHIFT" } }, from(n));
+  await studio(1, "[스튜디오 › 꾸밈 층 › 스티커] 25일 칸에 돈 스티커 붙이고 싶어요");
+  await studio(2, "[스튜디오 › 달력 칸 › 색] 주말 칸 배경을 그라데이션으로");
+  const needs = (await call("GET", "/api/admin/growth/needs", undefined, h)).data.items;
+  const x = needs.find((n) => n.area === "꾸밈 층");
+  const y = needs.find((n) => n.area === "달력 칸");
+  const act = (id, body) => call("POST", `/api/admin/growth/needs/${id}`, body, h);
+  // (2) An ended group takes no '나와요' or '만드는 중'; '다시 열기' only for an ended one.
+  assert.equal((await act(y.id, { action: "decline", note: "지금은 칸 그림이 무거워져요." })).data.told, 1);
+  for (const body of [{ action: "official", version: "2.0.0" }, { action: "build", note: "x" }, { action: "decline", note: "또" }]) {
+    const r = await act(y.id, body);
+    assert.equal(r.status, 409, body.action);
+    assert.equal(r.data.state, "declined");
+  }
+  assert.equal((await act(x.id, { action: "reopen" })).status, 409);
+  // (1) Merging into the declined group: the moved asker hears that answer, not nothing.
+  const merged = await act(x.id, { action: "merge", into: y.id });
+  assert.equal(merged.status, 200, JSON.stringify(merged.data));
+  assert.equal(merged.data.told, 1);
+  const mine = (await call("GET", "/api/inquiries", undefined, { "x-device": device(1) })).data.inquiries[0];
+  assert.match(mine.messages.at(-1).text, /지금은 넣기 어려워요/);
+  assert.equal(DB.db.prepare("SELECT COUNT(*) AS n FROM studio_need_links WHERE need_id = ? AND told = 0").get(y.id).n, 0);
+  // (4) A title change keeps the '[영역 › 도구]' head of the 요청 판 line.
+  await act(y.id, { action: "reopen" });
+  assert.equal((await act(y.id, { action: "market", title: "주말 칸 그라데이션 배경" })).status, 200);
+  assert.equal((await act(y.id, { action: "title", title: "주말 칸에 그라데이션 배경" })).status, 200);
+  const rid = DB.db.prepare("SELECT request_id FROM studio_needs WHERE id = ?").get(y.id).request_id;
+  assert.equal(DB.db.prepare("SELECT body FROM recipe_requests WHERE id = ?").get(rid).body, "[달력 칸 › 색] 주말 칸에 그라데이션 배경");
+  // (3) 95 askers: two batches, every one answered and marked.
+  const now = Date.now();
+  for (let i = 0; i < 95; i++) {
+    const id = `qB${String(i).padStart(12, "0")}`;
+    DB.db.prepare("INSERT INTO inquiries (id, device, kind, info, status, created_at, updated_at) VALUES (?, ?, 'studio', '{}', 'open', ?, ?)").run(id, `dev${i}`, now, now);
+    DB.db.prepare("INSERT INTO studio_need_links (src, ref, need_id, device, text, at, told) VALUES ('inq', ?, ?, ?, '', ?, 0)").run(id, y.id, `dev${i}`, now);
+  }
+  const shipped = await act(y.id, { action: "official", version: "2.0.0" });
+  assert.equal(shipped.status, 200, JSON.stringify(shipped.data));
+  assert.equal(shipped.data.told, 95);
+  assert.equal(DB.db.prepare("SELECT COUNT(*) AS n FROM inquiry_messages WHERE inquiry_id LIKE 'qB%'").get().n, 95);
+  assert.equal(DB.db.prepare("SELECT COUNT(*) AS n FROM studio_need_links WHERE need_id = ? AND told = 0").get(y.id).n, 0);
+});
