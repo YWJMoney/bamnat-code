@@ -130,7 +130,7 @@ class Inbox private constructor(context: Context) {
     private fun closedOnce(): Set<String> = restPrefs.getStringSet(K_CLOSED_ONCE, emptySet()).orEmpty().toSet()
 
     /** PC-180: read again for a new visit, so a 권유 whose two weeks are over may come (the calendar does it as it opens). */
-    fun refreshResting() { _resting.value = readResting() }
+    fun refreshResting(): Set<String> = readResting().also { _resting.value = it }
 
     /** PC-180: 되돌리기 of a close. */
     fun unrest(key: String) {

@@ -65,4 +65,32 @@ class ReviewP5ShotsTest : ScreenshotBase() {
         tab(2, wide = false)
         nothingUnderTheAddButton()
     }
+
+    /**
+     * 검토 PC-180 (총괄 11-19): the same 권유 closed with its ✕ a second time is off for good, said inside the 알림함 in the app's one line
+     * with 되돌리기 (조건 3·10·16). 접은 폭 밝은·어두운 200%.
+     */
+    @Test fun aSuggestionClosedTwiceIsOffLight() = shoot("rvp5_11_suggest_off_folded_light_200", FOLDED, 2f) { closeTwice() }
+
+    @Test fun aSuggestionClosedTwiceIsOffDark() = shoot("rvp5_12_suggest_off_folded_dark_200", FOLDED.replace("-port-", "-port-night-"), 2f) {
+        closeTwice()
+    }
+
+    private fun Screen.closeTwice() {
+        val inbox = com.bamnat.app.inbox.Inbox.get(app)
+        // Only this 권유 in the 알림함 (one 권유 shows at a time): the calendar's own are off for this shot.
+        listOf("calendar.plazaShare", "calendar.shareHint", "suggest.discover", "calendar.bossLedger", "calendar.alarmSuggest",
+            "calendar.publicCycle", "calendar.proMoment", "invite.friend").forEach { inbox.mute(it) }
+        val row = com.bamnat.app.inbox.InboxRow("suggest.companyRule:1", "suggest.companyRule", com.bamnat.app.inbox.InboxSection.SUGGEST,
+            "회사 규칙으로 올리기", "직접 만든 설정을 같은 회사 동료와 나눠 볼까요?")
+        // Closed once two weeks ago; it came again today.
+        inbox.close(row.key, row.kind, row.title, com.bamnat.core.time.Today.date().minusDays(14))
+        check(inbox.post(row)) { "2주 뒤 다시 와요" }
+        settle()
+        tapText("알림 ", prefix = true, scrolls = 0)
+        tapText("닫기: 회사 규칙으로 올리기", exact = true, scrolls = 0)
+        check(appears(com.bamnat.app.ui.calendar.SUGGEST_OFF, exact = false)) { "두 번째 ✕의 말이 없어요" }
+        check(appears("되돌리기", exact = true)) { "되돌리기가 없어요" }
+        check("suggest.companyRule" in inbox.muted.value)
+    }
 }
