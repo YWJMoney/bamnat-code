@@ -2625,6 +2625,7 @@ internal fun CalendarHeader(
             val label = when (slot.id) {
                 CalendarToolSlots.EDIT -> "‘$calendarName’ 고치기"
                 CalendarToolSlots.SHARE -> com.bamnat.core.work.shareTitle(style) // [J133-77]
+                CalendarToolSlots.RECEIVE -> com.bamnat.core.work.receiveTitle(style) // 2.0.0 [RVG-40] 검토 PC-175
                 else -> slot.label
             }
             CalendarTool(label, slot.icon(), id = slot.id, onClick = when (slot.id) {
@@ -2742,10 +2743,14 @@ internal fun CalendarToolsGrid(tools: List<CalendarTool>, onPicked: () -> Unit) 
     Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp).padding(bottom = 24.dp).navigationBarsPadding()) {
         Text("달력 도구", style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(bottom = 12.dp).semantics { heading() })
         BoxWithConstraints(Modifier.fillMaxWidth()) {
-            val perRow = if (maxWidth >= 480.dp) 4 else 3
+            // 2.0.0 [RVG-40] 검토 PC-175 (조건 12): the room a tile has is counted in the letters' size, so at 150%·200% on the folded
+            // screen two tiles share a row; three to a row left a name three letters a line, cut at two lines ('동료 / 근무표', '다른 /
+            // 사람'). The names are never cut now, and the tiles of a row stand as tall as the tallest.
+            val room = maxWidth / LocalDensity.current.fontScale.coerceAtLeast(1f)
+            val perRow = if (room >= 480.dp) 4 else if (room >= 300.dp) 3 else 2
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 tools.filter { !it.away }.chunked(perRow).forEach { row ->
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Row(Modifier.height(androidx.compose.foundation.layout.IntrinsicSize.Min), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         row.forEach { tool ->
                             val click = tool.onClick
                             Surface(
@@ -2753,7 +2758,7 @@ internal fun CalendarToolsGrid(tools: List<CalendarTool>, onPicked: () -> Unit) 
                                 enabled = click != null,
                                 shape = MaterialTheme.shapes.large,
                                 color = MaterialTheme.colorScheme.surfaceContainerHigh,
-                                modifier = Modifier.weight(1f).heightIn(min = 84.dp)
+                                modifier = Modifier.weight(1f).heightIn(min = 84.dp).fillMaxHeight()
                                     .alpha(if (click != null) 1f else 0.5f),
                             ) {
                                 Column(
@@ -2762,7 +2767,7 @@ internal fun CalendarToolsGrid(tools: List<CalendarTool>, onPicked: () -> Unit) 
                                     verticalArrangement = Arrangement.spacedBy(6.dp),
                                 ) {
                                     Icon(tool.icon, null, tint = MaterialTheme.colorScheme.primary)
-                                    Text(tool.label, style = MaterialTheme.typography.labelLarge, textAlign = TextAlign.Center, maxLines = 2)
+                                    Text(tool.label, style = MaterialTheme.typography.labelLarge, textAlign = TextAlign.Center)
                                     if (click == null && tool.note != null) {
                                         Text(tool.note, style = MaterialTheme.typography.labelSmall, textAlign = TextAlign.Center,
                                             color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 2)
