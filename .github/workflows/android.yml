@@ -507,6 +507,9 @@ jobs:
           path: |
             shift-calendar-app/app/build/market-shots/shots.json
             shift-calendar-app/app/build/market-shots/changed
+            shift-calendar-app/app/build/market-shots/png/_start.png
+            shift-calendar-app/app/build/market-shots/png/_checked.png
+            shift-calendar-app/app/build/market-shots/png/*_back.png
             shift-calendar-app/app/build/market-shots/market-health.json
             shift-calendar-app/app/build/old-core-check.json
           retention-days: 30
