@@ -13,6 +13,7 @@ import kotlinx.coroutines.runBlocking
 import org.junit.After
 import org.junit.Test
 import org.junit.runner.RunWith
+import org.robolectric.RuntimeEnvironment
 import org.robolectric.annotation.Config
 import org.robolectric.annotation.GraphicsMode
 import java.time.LocalTime
@@ -36,8 +37,10 @@ class ReviewOShotsTest : ScreenshotBase() {
 
     @After fun back() {
         app.container.calendars.setActive(PersonalCalendar.MAIN)
-        app.container.settingsRepository.update { it.copy(previewTier = null) }
+        app.container.settingsRepository.update { it.copy(previewTier = null, phoneCalendars = emptyList()) }
+        com.bamnat.app.ui.settings.RecentSettings.clear()
         released(false)
+        app.getSharedPreferences("forget_all", android.content.Context.MODE_PRIVATE).edit().clear().commit()
         com.bamnat.core.time.Today.fix(SHOT_TIME)
     }
 
@@ -101,8 +104,8 @@ class ReviewOShotsTest : ScreenshotBase() {
         app.container.settingsRepository.update { it.copy(previewTier = Tier.FREE) }
         app.container.featureGate.refresh()
         open(FeatureRoute(Place.PRO))
-        // 2.0.0 [RVO-05] 요금제 카드 끝(약관·사업자 정보는 한 단추의 메뉴로).
-        reveal(com.bamnat.app.ui.pro.PAY_PAPERS, exact = true)
+        // 2.0.0 [RVO-05] 요금제 카드 끝. [RVO-27] HQ-109: 약관·처리방침·사업자 정보는 조용한 링크 한 줄로.
+        reveal("사업자 정보", exact = true)
     }
 
     // ---- 2차 PR: 프로 화면 한 장(U11b-01·02·03, PRO-12·30), 페이월 가격 한 줄(U11b-04). 같은 시험을 바탕과 고친 커밋에서 돌려요. ----
@@ -160,6 +163,108 @@ class ReviewOShotsTest : ScreenshotBase() {
         content { com.bamnat.app.ui.pro.ProOfferContent(app.container, com.bamnat.app.tier.Feature.PAYSLIP_MATCH, gate, onPro = {}) }
     }
 
+    // RVO-14 (총괄 11-12): 프로가 아닌 폰에 휴대폰 캘린더를 골라 둔 채(프로가 끝난 뒤) 설정 › 기록과 백업의 그 줄.
+    @Test fun phoneCalendarPaused() = all("11_phone_calendar_paused") {
+        app.container.settingsRepository.update { it.copy(phoneCalendars = listOf(PersonalCalendar.MAIN), previewTier = Tier.FREE) }
+        app.container.featureGate.refresh()
+        open(FeatureRoute(Place.SETTINGS_DATA, "휴대폰 캘린더에 근무 쓰기"))
+    }
+
+    // RVO-16 (검토 SET-09): 설정 › 개인정보 맨 아래 따로 둔 '지우기', 지난번 요청이 인터넷이 없어 못 지운 폰.
+    @Test fun forgetRowApart() = all("12_privacy_forget_row") {
+        com.bamnat.app.ui.company.ForgetLog.record(app, java.time.ZonedDateTime.of(2026, 11, 12, 21, 30, 0, 0,
+            java.time.ZoneId.of("Asia/Seoul")).toInstant(), com.bamnat.app.ui.company.ForgetLog.OFFLINE)
+        open(FeatureRoute(Place.SETTINGS_PRIVACY, com.bamnat.app.ui.settings.FORGET_ALL_ROW))
+    }
+
+    // RVO-17 (검토 SET-11·U11a-07·I11aa-05): 백업 암호 창, 짧은 암호에 '짧아요' 한 줄, 보기 단추, 단추는 세로, '암호 없이 저장'은 작은 줄.
+    @Test fun backupPassword() = all("13_backup_password") {
+        content { com.bamnat.app.ui.settings.ExportPasswordDialog(onDismiss = {}, onExport = {}) }
+        typeInto("암호", "night5")
+    }
+
+    // RVO-17 (검토 SET-11·U11a-09): 파일 불러오기의 최근 백업, 지워진 파일은 흐리게 '지워졌거나 옮겨졌어요'와 '목록에서 빼기'.
+    @Test fun recentBackupsGone() = all("14_recent_backups_gone") {
+        val at = java.time.LocalDateTime.of(2026, 11, 10, 21, 5)
+        content {
+            com.bamnat.app.ui.settings.RecentBackupsDialog(listOf(
+                com.bamnat.app.ui.settings.BackupPlace.Recent(android.net.Uri.parse("content://com.example.gone/1"), "밤낮-백업-2026-11-10.bamnat", at),
+                com.bamnat.app.ui.settings.BackupPlace.Recent(android.net.Uri.parse("content://com.example.gone/2"), "밤낮-백업-2026-11-03.bamnat", at.minusDays(7)),
+            ), onPick = {}, onOther = {}, onDismiss = {})
+        }
+    }
+
+    // ---- 3·4차 PR ----
+
+    // RVO-21 (SET-08·U11a-18·19): 설정 › 화면과 글자, 맨 위 묶음 칩과 네 접힌 묶음(한 줄 요약).
+    @Test fun displayGroups() = all("15_display_groups") {
+        open(FeatureRoute(Place.SETTINGS_CALENDAR))
+    }
+
+    // RVO-21 (I11aa-03): 설정 첫 화면 '방금 바꾼 것' 세 줄과 되돌리기(설정 화면의 저장 한 곳이 적는 것과 같게).
+    @Test fun recentChanges() = all("16_recent_changes") {
+        val store = app.container.settingsRepository
+        com.bamnat.app.ui.settings.RecentSettings.clear()
+        fun change(f: (com.bamnat.app.data.AppSettings) -> com.bamnat.app.data.AppSettings) =
+            store.update { s -> f(s).also { com.bamnat.app.ui.settings.RecentSettings.note(store, s, it) } }
+        change { it.copy(compact = !it.compact) }
+        change { it.copy(themeMode = com.bamnat.app.data.ThemeMode.DARK) }
+        change { it.copy(textStep = it.textStep + 1) }
+        com.bamnat.app.ui.settings.SettingsLinks.home()
+        settle()
+        reveal("방금 바꾼 것", exact = true, across = 0.2f)
+    }
+
+    // RVO-22 (SET-04·U11a-05·06): 설정 › 알림과 잠, 펼친 '알림 한눈에'와 '잠' 묶음, 아래 '자세히'.
+    @Test fun noticesBoard() = all("17_notices_board") {
+        open(FeatureRoute(Place.SETTINGS_NOTICES))
+    }
+
+    // RVO-25 (PC-146): 프로 맨 아래 받은 코드 칸에 8자리를 넣은 모습(고르기·넣기가 칸 바로 아래).
+    @Test fun codeTyped() = all("18_code_typed") {
+        app.container.tierApi = com.bamnat.app.tier.FakeTierApi(configAnswer = null)
+        app.container.inviteApi = com.bamnat.app.tier.FakeInviteApi()
+        launched().invoke(this)
+        open(FeatureRoute(Place.PRO))
+        repeat(16) { scrollUp(500, across = 0.5f) }
+        if (appears("코드를 받으셨나요?", exact = true)) tapText("코드를 받으셨나요?", exact = true)
+        typeInto("받은 코드", "ABCD2345")
+        reveal("넣기", exact = true)
+    }
+
+    // RVO-25 (PC-186): 프로가 아닌 폰의 가계부 › 통계. 잠금 카드의 채운 단추와 바로 아래 친구 초대가 처음 화면에서 아래 막대 위에 있어요
+    // (글자 200%는 그 카드까지 내렸을 때 카드 전체가 한 화면에).
+    @Test fun lockOnTheFirstScreen() {
+        val missed = mutableListOf<String>()
+        all("19_lock_stats") {
+            invites()
+            // Robolectric draws no blur: the cover Android 11 and older get, as 379_folded_money_stats_locked.
+            org.robolectric.util.ReflectionHelpers.setStaticField(android.os.Build.VERSION::class.java, "SDK_INT", 30)
+            launched().invoke(this)
+            open(FeatureRoute(Place.MONEY, "report"))
+            val look = "${RuntimeEnvironment.getQualifiers().substringBefore("-port")} ${app.resources.configuration.fontScale}"
+            val big = app.resources.configuration.fontScale > 1.5f
+            // At 글자 200% the free 'N월 한눈에' card above already fills the first screen (조건 1 keeps it first): there the whole lock
+            // card, lock to 친구 초대, is on one screen once it is reached.
+            if (big) {
+                reveal("가계부 통계", exact = true, across = 0.5f)
+                repeat(12) { if (!appears(com.bamnat.app.ui.pro.INVITE_FREE_TITLE, exact = true, ms = 0)) scrollUp(120, across = 0.5f) }
+            }
+            if (!appears(com.bamnat.app.ui.pro.INVITE_FREE_TITLE, exact = true)) { missed += "$look: 친구 초대가 첫 화면에 없음"; return@all }
+            if (!appears("가계부 통계", exact = true, ms = 0)) missed += "$look: 잠금 카드가 한 화면에 다 들어오지 않음"
+            val all = nodes(merged = true)
+            fun textOf(n: androidx.compose.ui.semantics.SemanticsNode) =
+                n.config.getOrElseNullable(androidx.compose.ui.semantics.SemanticsProperties.Text) { null }?.joinToString { it.text }
+            val invite = all.first { textOf(it) == com.bamnat.app.ui.pro.INVITE_FREE_TITLE }.boundsInWindow
+            val bar = all.filter { it.config.getOrElseNullable(androidx.compose.ui.semantics.SemanticsProperties.Role) { null } ==
+                androidx.compose.ui.semantics.Role.Tab }.map { it.boundsInWindow }
+            // The phone's bar is along the bottom, its tabs in one row (the open fold's is a rail on the side).
+            val tops = bar.map { it.top }.distinct()
+            if (tops.size == 1 && invite.bottom > tops[0]) missed += "$look: 친구 초대 $invite, 막대 ${tops[0]}"
+        }
+        org.junit.Assert.assertEquals(emptyList<String>(), missed)
+    }
+
     // HQ-46: 배포판, 11-13, 서버 답 전, 10-27 전에 깔고 3.1에 동의하지 않은 폰(바탕은 '정식 출시 전이라 모든 기능이 무료예요').
     // HQ-48 (총괄 11-12 23:37 KST): 그 폰도 구독한 프로가 아니라 '지금' 바로 아래가 친구 초대(초대 서버는 가짜로 켬).
     @Test fun heldPhone() = all("10_pro_held") {
@@ -170,5 +275,109 @@ class ReviewOShotsTest : ScreenshotBase() {
         app.container.flags.refresh()
         app.container.featureGate.refresh()
         open(FeatureRoute(Place.PRO))
+    }
+
+    // ---- 5차: HQ-109 결제 아래 줄 ----
+
+    /**
+     * 2.0.0 [RVO-27] HQ-109 (조건 2·9): under the plans of the 프로 화면 and on the 요금제 창, 구매 복원 and 결제·환불 문의 are the only word
+     * buttons; 이용약관·개인정보처리방침·사업자 정보 are one quiet line whose words are each at least 48dp tall to tap.
+     */
+    @Test fun payLinksQuietLine() {
+        val missed = mutableListOf<String>()
+        fun Screen.check(where: String) {
+            val look = "${RuntimeEnvironment.getQualifiers().substringBefore("-port")} ${app.resources.configuration.fontScale} $where"
+            val all = nodes(merged = true)
+            fun textOf(n: androidx.compose.ui.semantics.SemanticsNode) =
+                n.config.getOrElseNullable(androidx.compose.ui.semantics.SemanticsProperties.Text) { null }?.joinToString { it.text }
+            val min = 48 * app.resources.displayMetrics.density - 1
+            for (word in com.bamnat.app.ui.pro.POLICY_LINK_WORDS) {
+                val n = all.firstOrNull { textOf(it) == word }
+                if (n == null) { missed += "$look: '$word' 없음"; continue }
+                if (n.boundsInWindow.height < min) missed += "$look: '$word' 높이 ${n.boundsInWindow.height}"
+            }
+            if (all.any { textOf(it)?.trim() == "·" }) missed += "$look: 사이 점이 따로 읽혀요"
+        }
+        all("20_pay_links_pro") {
+            app.container.settingsRepository.update { it.copy(previewTier = Tier.FREE) }
+            app.container.featureGate.refresh()
+            open(FeatureRoute(Place.PRO))
+            reveal("사업자 정보", exact = true)
+            if (!appears(com.bamnat.app.ui.pro.PAY_ASK, exact = true)) missed += "프로 화면: 결제·환불 문의 단추가 없음"
+            check("프로 화면")
+        }
+        all("21_pay_links_paywall") {
+            invites()
+            launched().invoke(this)
+            content { com.bamnat.app.ui.pro.ProPaywallContent(app.container, onClose = {}) }
+            // The plans are the last page: '다음' until it is gone.
+            repeat(3) { settle(); if (shows("다음", exact = true)) tapText("다음", exact = true) }
+            settle()
+            reveal("사업자 정보", exact = true)
+            check("요금제 창")
+        }
+        org.junit.Assert.assertEquals(emptyList<String>(), missed)
+    }
+
+    /**
+     * 2.0.0 [RVO-28] HQ-150 (PC-201): the 운영팀 asked for the record, so the reply opens with '점검 기록도 보내기' on. A report pasted as
+     * words says it need not be (no red 2,000자 line), and one press takes it out and keeps the switch on; the record then goes as the
+     * reply's info.diag and the bubble says it went with it.
+     */
+    @Test fun replyWithTheRecord() {
+        val missed = mutableListOf<String>()
+        val sent = mutableListOf<String?>()
+        val ask = "원인을 찾으려면 휴대폰에 남은 '앱 멈춤' 기록이 꼭 필요해요. 이 문의에 답장 쓰기에서 아래 '점검 기록도 보내기'를 켜고 보내 주세요.\n\n밤낮 운영팀"
+        val report = "[앱 멈춤]\n가장 최근 기록: 11.19 07:02\n남은 기록: 3개\n\n[알람 상태]\n알람 사용: 켜짐\n" + "놓쳤을 수 있는 알람: 없음\n".repeat(120)
+        fun fake(): com.bamnat.app.company.InquiryApi {
+            val base = FakeInquiryApi()
+            return object : com.bamnat.app.company.InquiryApi by base {
+                var list: List<com.bamnat.app.company.Inquiry>? = null
+                override suspend fun mine(device: String) = list ?: base.mine(device).map { q ->
+                    if (q.id != "q2") q else q.copy(messages = q.messages + com.bamnat.app.company.InquiryMessage(true, ask, q.updatedAt))
+                }.also { list = it }
+                override suspend fun more(device: String, id: String, text: String, requestId: String, diag: String?): com.bamnat.app.company.Inquiry {
+                    sent += diag
+                    val q = mine(device).first { it.id == id }
+                    val next = q.copy(status = "open", messages = q.messages + com.bamnat.app.company.InquiryMessage(false, text,
+                        com.bamnat.core.time.Today.instant(), withCheck = diag != null))
+                    list = list!!.map { if (it.id == id) next else it }
+                    return next
+                }
+            }
+        }
+        fun Screen.checkOn(): Boolean = nodes(merged = true).any { n ->
+            n.config.getOrElseNullable(androidx.compose.ui.semantics.SemanticsProperties.Text) { null }?.any { it.text == "점검 기록도 보내기" } == true &&
+                n.config.getOrElseNullable(androidx.compose.ui.semantics.SemanticsProperties.ToggleableState) { null } == androidx.compose.ui.state.ToggleableState.On
+        }
+        fun Screen.open() {
+            app.container.inquiryApi = fake()
+            app.container.inquiryStore.asked = true
+            // The reply is kept as it is written (조건 10); each look starts from an empty one.
+            app.container.inquiryStore.saveReply("q2", "")
+            inquiryThread()
+            settle()
+        }
+        all("22_reply_pasted_record") {
+            open()
+            val look = "${RuntimeEnvironment.getQualifiers().substringBefore("-port")} ${app.resources.configuration.fontScale}"
+            if (!checkOn()) missed += "$look: 기록을 부탁한 답인데 '점검 기록도 보내기'가 꺼져 있음"
+            typeInto("점검 기록에 덧붙일 말(적지 않아도 돼요)", "말씀하신 기록이에요\n\n$report")
+            if (!appears(com.bamnat.app.ui.settings.PASTED_LINE, exact = true)) missed += "$look: 붙여 넣은 기록에 다음 할 일이 없음"
+            if (shows("${com.bamnat.app.company.InquiryClient.TEXT_MAX}자까지 쓸 수 있어요", exact = true)) missed += "$look: 2,000자 말이 그대로"
+        }
+        all("23_reply_record_sent") {
+            open()
+            typeInto("점검 기록에 덧붙일 말(적지 않아도 돼요)", "말씀하신 기록이에요\n\n$report")
+            tapText(com.bamnat.app.ui.settings.PASTED_TAKE, exact = true, scrolls = 0)
+            if (!checkOn()) missed += "빼고 켜기 뒤 스위치가 꺼짐"
+            if (shows(com.bamnat.app.ui.settings.PASTED_LINE, exact = true)) missed += "빼고 켜기 뒤에도 붙여 넣은 기록 말이 남음"
+            tapText("보내기", exact = true, scrolls = 0)
+            appears("점검 기록 함께 보냄", exact = true)
+            settle()
+            reveal("점검 기록 함께 보냄", exact = true)
+        }
+        if (sent.size != looks.size || sent.any { it.isNullOrBlank() }) missed += "답장과 함께 간 기록: $sent"
+        org.junit.Assert.assertEquals(emptyList<String>(), missed)
     }
 }

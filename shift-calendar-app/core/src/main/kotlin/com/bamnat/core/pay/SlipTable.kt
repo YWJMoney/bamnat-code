@@ -30,8 +30,11 @@ object SlipLexicon {
         "지급계", "공제계", "지급액계", "차인지급액계",
     )
 
-    /** A name matched: the name meant, its kind, and how many letters were off (0: read as printed). */
-    data class Hit(val name: String, val role: SlipRole, val distance: Int)
+    /**
+     * A name matched: the name meant, its kind, and how many letters were off (0: read as printed). 2.0.0 [RVL-46] [read]: the
+     * letters as read; [ask]: a name of another kind the letters are a stroke from, asked before it is taken ([NameCheck]).
+     */
+    data class Hit(val name: String, val role: SlipRole, val distance: Int, val read: String = name, val ask: Hit? = null)
 
     fun of(raw: String): Hit? {
         val c = PayslipReader.ocrFix(raw.filter { it.isLetter() }.lowercase())
@@ -46,7 +49,14 @@ object SlipLexicon {
         // [READ-38] A total read a stroke off (공제게, 공제종의 for 공제총액) holds 공제 and reads as a plain 공제 line: the near name
         // says it is the total.
         val near = if (c.length >= 2) nearest(c)?.takeIf { exact == null || exact == SlipRole.ALLOWANCE || it.role != exact && it.role in TOTAL_ROLES } else null
-        if (near != null) return near
+        // 2.0.0 [RVL-46] (검토 SCAN-29) A short name of the plain kind a stroke from a name of another kind (야근수당 · 야간수당,
+        // 작업수당 · 잔업수당) is as often a company's own word as a misread: in four letters the stroke is in the two that say what
+        // it is. It keeps its letters and plain kind and asks; 1.39 took it as 야간·추가 근무 pay, quietly once the sums met. A
+        // longer name a stroke off (연잔근로수당) is the printed one, as before, and still looked at by name.
+        if (near != null && exact == SlipRole.ALLOWANCE && near.role != SlipRole.ALLOWANCE && near.role !in TOTAL_ROLES && c.length <= 4) {
+            return Hit(c, exact, near.distance, c, ask = near)
+        }
+        if (near != null) return near.copy(read = c)
         return exact?.let { Hit(c, it, 0) }
     }
 
@@ -219,6 +229,8 @@ object SlipTable {
         var used = false
         /** [PHOTO-12] A name no list holds, taken as a line because it stands in the 지급 or 공제 column: always looked at. */
         var guessed = false
+        /** [PHOTO-24] A line the company's template put at its place: its name is the user's own, its amount is looked at. */
+        var templated = false
         val left: Double get() = x - w / 2
         val right: Double get() = x + w / 2
     }
@@ -315,8 +327,16 @@ object SlipTable {
             val hit = f.label.hit ?: continue
             if (f.amount == null && f.minutes == null) continue
             val name = if (hit.distance > 0) hit.name else if (f.label.guessed) SlipLexicon.tidyName(f.label.text) else SlipLexicon.roman(f.label.text)
-            if (f.doubt || hit.distance > 0 || f.label.guessed || f.under && f.label.text.length <= 1) unsure += lines.size
-            lines += SlipLine(name, hit.role, f.amount, f.minutes, rows[f.row].joinToString("  ") { it.text })
+            // 2.0.0 [RVL-46] (검토 SCAN-29·I07ba-05) A name put right or guessed is looked at by name ([SlipLine.check]), apart
+            // from the amount: the payslip's sums vouch for an amount, never for a name (1.39 lost the yellow once they met).
+            val check = when {
+                hit.ask != null -> NameCheck(hit.name, hit.ask.name, hit.ask.role)
+                hit.distance > 0 -> NameCheck(SlipLexicon.roman(f.label.text).trim().ifEmpty { hit.read })
+                f.label.guessed && !f.label.templated -> NameCheck(name)
+                else -> null
+            }
+            if (f.doubt || f.under && f.label.text.length <= 1) unsure += lines.size
+            lines += SlipLine(name, hit.role, f.amount, f.minutes, rows[f.row].joinToString("  ") { it.text }, check)
             spots += Spot(f.label.x, f.label.y, f.at?.x, f.at?.y, f.label.h)
         }
         val (merged, keep, kept) = mergeHours(lines, unsure)
@@ -377,7 +397,7 @@ object SlipTable {
             // Another line's name nearer the amount than the template's place: the amount is that line's.
             if (have.any { o -> abs(o.label.y - amount.y) < abs(ny - amount.y) - 0.5 * h && abs(o.label.x - nx) < 3 * near }) continue
             val label = name ?: Cell(t.name, nx, ny, t.name.length * h, h)
-            label.kind = Kind.LABEL; label.guessed = true
+            label.kind = Kind.LABEL; label.guessed = true; label.templated = true
             label.text = t.name
             label.hit = SlipLexicon.Hit(t.name, t.role, 0)
             val row = rows.indexOfFirst { r -> r.any { it === amount } }.coerceAtLeast(0)
@@ -507,7 +527,7 @@ object SlipTable {
                     c.kind = Kind.LABEL; c.guessed = true
                     c.hit = SlipLexicon.Hit(c.text, if (deduction) SlipRole.DEDUCTION else SlipRole.ALLOWANCE, 0)
                 }
-                deduction -> { c.hit = c.hit!!.copy(role = SlipRole.DEDUCTION); c.guessed = true }
+                deduction -> { c.hit = c.hit!!.copy(role = SlipRole.DEDUCTION, ask = null); c.guessed = true }
             }
         }
         val placed = HashSet<Cell>()
@@ -1043,8 +1063,11 @@ object SlipReading {
         }
         val text = OcrRows.join(words)
         val asText = PayslipReader.read(text)
-        // A name a stroke off (교퉁비) put right, as the table does.
-        val named = asText.lines.map { l -> SlipLexicon.of(l.name)?.takeIf { it.distance > 0 && it.role == l.role }?.let { l.copy(name = it.name) } ?: l }
+        // A name a stroke off (교퉁비) put right, as the table does; 2.0.0 [RVL-46] and looked at by name, as the table does.
+        val named = asText.lines.map { l ->
+            val hit = SlipLexicon.of(l.name)?.takeIf { it.distance > 0 && it.role == l.role } ?: return@map l
+            if (hit.ask != null) l.copy(check = NameCheck(l.name.trim(), hit.ask.name, hit.ask.role)) else l.copy(name = hit.name, check = NameCheck(l.name.trim()))
+        }
         val plain = SlipVote.Result(asText.copy(lines = named), emptySet(), text)
         val pick = if (score(plain.read) > score(table.read)) plain else table
         // The text the user sees and rules are read from is the rows put back together either way.

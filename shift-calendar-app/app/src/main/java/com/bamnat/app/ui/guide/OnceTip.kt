@@ -64,4 +64,7 @@ internal object OnceTipSlot {
         if (holder == null) holder = key
         return holder == key
     }
+
+    /** 2.0.0 [RVR-44] (HQ-123) A test is a new run of the app: the tip an earlier test claimed is not this one's. */
+    internal fun resetForTest() { holder = null }
 }

@@ -108,6 +108,29 @@ class AKCaptureFlowTest {
         assertTrue(repo.now().trades.isEmpty())
     }
 
+    /**
+     * 2.0.0 [RVK-51] (검토 MONEY-73): 되돌리기 puts back only the alert the capture took. One that came in after it stays
+     * waiting, and one written in between (confirmed) does not come back to be written twice.
+     */
+    @Test fun undoPutsBackOnlyWhatTheCaptureTook() = runBlocking {
+        repo.ensureAccount()
+        val at = today.atTime(9, 12).atZone(zone).toInstant().toEpochMilli()
+        val kakao = TradeAlerts.Pending(at - 60_000, "키움", Side.SELL, "035720", "카카오", 5.0, 41_250.0, Market.KR_STOCK)
+        repo.addAlert(TradeAlerts.Pending(at, "한국투자", Side.BUY, "005930", "삼성전자", 10.0, 0.0, Market.KR_STOCK))
+        repo.addAlert(kakao)
+        val r = FillReconcile.reconcile(read(), repo.now().trades, repo.alertsNow(), today, zone)
+        val sam = r.new.single { it.alert?.symbol == "005930" }
+        val done = repo.applyCapture(listOf(FillReconcile.pending(sam, zone, today)), emptyList())
+        assertEquals(listOf("카카오"), repo.alertsNow().map { it.name })
+        // Meanwhile: 카카오 is written from its line, and a new fill comes in.
+        repo.confirmAlert(repo.alertsNow().single())
+        val later = TradeAlerts.Pending(at + 3_600_000, "토스증권", Side.BUY, "AAPL", "애플", 2.0, 228.5, Market.US_STOCK)
+        repo.addAlert(later)
+        repo.undoCapture(done)
+        assertEquals("캡처가 뺀 것만 돌아오고 새 알림은 그대로", listOf("삼성전자", "애플"), repo.alertsNow().map { it.name })
+        assertEquals("카카오는 적힌 그대로 한 번", listOf("035720"), repo.now().trades.map { it.symbol })
+    }
+
     @Test fun askNoMoreSurvivesABackup() = runBlocking {
         com.bamnat.app.data.ScheduleRepository(db).ensureDefaults()
         // [INVA-02] 1.29: on from the start; the user's '넣기 전에 묻기' is what a backup carries.

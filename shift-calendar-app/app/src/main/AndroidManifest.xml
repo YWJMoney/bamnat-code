@@ -303,6 +303,11 @@
             android:name=".tier.EndNoticeReceiver"
             android:exported="false" />
 
+        <!-- 2.0.0 [RVO-14] 프로·끄기 미션 7일이 저절로 끝나기 전날 저녁, 그다음부터 멈추는 것. -->
+        <receiver
+            android:name=".tier.ProEndNoticeReceiver"
+            android:exported="false" />
+
         <!-- [SHR-12] The shared link closing soon, and its 늘리기 button. -->
         <receiver
             android:name=".share.ShareExpiryReceiver"

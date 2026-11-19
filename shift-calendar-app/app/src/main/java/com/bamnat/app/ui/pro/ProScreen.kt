@@ -21,6 +21,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.wrapContentHeight
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -62,6 +63,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.liveRegion
@@ -79,6 +81,8 @@ import com.bamnat.app.review.InAppReview.findActivity
 import com.bamnat.app.tier.Feature
 import com.bamnat.app.tier.Gate
 import com.bamnat.app.tier.ProState
+import com.bamnat.app.tier.knownEnd
+import com.bamnat.app.tier.trialEnd
 import com.bamnat.app.ui.components.SectionCard
 import com.bamnat.core.tier.ProPitch
 import com.bamnat.core.tier.ProReason
@@ -196,7 +200,7 @@ fun ProScreen(onBack: () -> Unit) {
                 val sellFirst = selling && (!gate.access.pro || gate.access.reason == ProReason.DAY_PASS)
                 // 2.0.0 [RVO-01] (PC-54) 개발용 빌드에서는 등급 미리 보기를 맨 위에: 프로가 아닐 때 모습을 여기서 바로 골라 봐요.
                 if (tierPreviewShown()) TierPreviewCard(c, gate, showNow = false)
-                StatusCard(gate, pro, zone, style)
+                StatusCard(gate, pro, zone, style, waiting = c.billing.pending.collectAsStateWithLifecycle().value)
                 ConsentWaiting(c, pro, onMessage = say("top"))
                 Said("top")
                 // 2.0.0 [RVO-13] 검토 HQ-48 (사용자 2026-11-12 20:28 KST "프로를 구독 안한사람은 프로를 눌렀을때 친구 초대를 먼져"): 프로를 사지
@@ -234,9 +238,8 @@ fun ProScreen(onBack: () -> Unit) {
                         Text(closedBillingWords(gate.access, thanks, zone), style = MaterialTheme.typography.bodyMedium)
                         // 1.36 PC 통합 확인 f629c6f1 (프로 화면에 '사업자 정보'가 없어요): before 정식 출시 the 결제 card has no plans, and
                         // the 사업자 정보 lived only under them; it is shown here too.
-                        var seller by remember { mutableStateOf(false) }
-                        TextButton(onClick = { seller = true }) { Text("사업자 정보") }
-                        if (seller) com.bamnat.app.ui.settings.SellerInfoDialog { seller = false }
+                        // 2.0.0 [RVO-27] HQ-109: the same quiet line as under the plans.
+                        PolicyLinks()
                     }
                 }
 
@@ -247,7 +250,7 @@ fun ProScreen(onBack: () -> Unit) {
                 }
 
                 if (c.tierApi.enabled) {
-                    PassesCard(c, pro, onMessage = say("passes"), zone = zone)
+                    PassesCard(c, pro, onMessage = say("passes"), zone = zone, style = settings.workStyle)
                     Said("passes")
                     // 2.0.0 [RVO-06] (검토 SET-10) 연결된 휴대폰에만: 상태와 연결 끊기. 코드는 아래 한 칸에서 받아요.
                     if (pro.passes?.admin != null) AdminCard(c, pro, onMessage = say("admin"))
@@ -314,8 +317,10 @@ fun consentWaitingText(q: com.bamnat.app.tier.PendingConsent): String =
         " 인터넷이 연결되면 저절로 다시 보내요. 답은 이 휴대폰에 그대로 있어요."
 
 @Composable
-private fun StatusCard(gate: Gate, pro: ProState, zone: ZoneId, style: com.bamnat.core.work.WorkStyle?) {
+private fun StatusCard(gate: Gate, pro: ProState, zone: ZoneId, style: com.bamnat.core.work.WorkStyle?, waiting: Boolean = false) {
     SectionCard(title = "지금") {
+        // 2.0.0 [RVO-15] 검토 PRO-09: a payment Play still waits for opens nothing yet; said before anything else, once it is there.
+        if (waiting) Text(PAYMENT_WAITING, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.primary)
         // 1.39 [FAM-03] 1.38 최종 PC 제안 5: a family phone is said as one at the top, before the launch too ('모든 기능이 무료' alone
         // left it to the 관리자 연결 card at the very bottom), and after it not as an admin's phone. An admin's phone the same way.
         val admin = pro.passes?.admin?.takeIf { it.approved }
@@ -330,8 +335,23 @@ private fun StatusCard(gate: Gate, pro: ProState, zone: ZoneId, style: com.bamna
         if (pro.passes?.familyPaused == true) {
             Text(FAMILY_PAUSED, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.primary)
         }
+        // 2.0.0 [RVO-15] 검토 PRO-04·U11b-05: while the server has not read the subscription from Play, its end on the phone is a 3-day
+        // hold, not the 결제일: say so, with Play's own page a tap away. A trial's end counts from when it began, as the trial notice does.
+        val sub = pro.sub?.takeIf { gate.access.reason == ProReason.SUBSCRIPTION || gate.access.reason == ProReason.TRIAL }
+        val context = LocalContext.current
+        val dateless = sub != null && gate.access.reason == ProReason.SUBSCRIPTION && sub.knownEnd() == null
+        if (sub != null && dateless) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(if (sub.autoRenew) SUB_DATE_CHECKING else "해지했어요 · 끝나는 날을 확인 중이에요",
+                    style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
+                TextButton(onClick = { open(context, ProductIds.manageUrl(context.packageName)) }, modifier = Modifier.heightIn(min = 48.dp)) {
+                    Text("Play 스토어에서 보기")
+                }
+            }
+        }
         // 2.0.0 [RVO-12] 3.1 보류의 끝나는 날은 윗줄에 있어요.
-        gate.access.until?.takeIf { gate.access.reason != ProReason.HELD }?.let { until ->
+        gate.access.until?.takeIf { gate.access.reason != ProReason.HELD && !dateless }?.let { held ->
+            val until = if (sub != null && gate.access.reason == ProReason.TRIAL) sub.trialEnd(zone) else held
             val day = lastDay(until, zone)
             val words = when (gate.access.reason) {
                 ProReason.TRIAL -> "체험은 ${dateWords(day)}에 끝나요"
@@ -440,7 +460,10 @@ internal fun PayNotice(plans: List<Plan>, pass: String?) {
     }
 }
 
-/** 구매 복원·약관·처리방침·사업자 정보 (and Play's own page for someone subscribed), as word buttons: none of them is the thing to do now. */
+/**
+ * 구매 복원·결제·환불 문의 (and Play's own page for someone subscribed) as buttons, then 약관·처리방침·사업자 정보 as one quiet line.
+ * 2.0.0 [RVO-27] HQ-109 (조건 2): the papers are read, not done, so they are links under the buttons, not two more word buttons.
+ */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun PayLinks(c: AppContainer, manage: Boolean, onMessage: (String) -> Unit) {
@@ -452,40 +475,67 @@ private fun PayLinks(c: AppContainer, manage: Boolean, onMessage: (String) -> Un
             scope.launch {
                 c.billing.refresh()
                 c.featureGate.refresh()
-                onMessage(if (c.proStore.current.sub != null) "구독을 다시 찾았어요" else "이 Google 계정에서 찾은 구독이 없어요")
+                onMessage(restoreWords(c.billing.state.value, c.proStore.current, Today.instant(), Today.zone()))
             }
         }) { Text("구매 복원") }
-        // 조건 2 (글자 단추는 둘까지): 약관·처리방침·사업자 정보(1.36 [MON-12])는 한 단추의 메뉴로.
-        var menu by remember { mutableStateOf(false) }
-        var seller by remember { mutableStateOf(false) }
-        Box {
-            TextButton(onClick = { menu = true }) { Text(PAY_PAPERS) }
-            // The app's menu (AppDialogsTest): keeps the app's text size and is not built while closed.
-            com.bamnat.app.ui.components.DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
-                // 2.0.0 [RVQ-30] 검토 SVC-21: 결제·환불 문의 straight from where it was paid, as its own kind (나만 보기, 사람이 먼저 봐요).
-                androidx.compose.material3.DropdownMenuItem(text = { Text("결제·환불 문의") }, onClick = {
-                    menu = false
-                    com.bamnat.app.ui.settings.InquiryLinks.ask(com.bamnat.app.ui.settings.InquiryStart(about = "프로·결제", kind = com.bamnat.app.company.InquiryKind.BILLING))
-                })
-                androidx.compose.material3.DropdownMenuItem(text = { Text("이용약관") }, onClick = {
-                    menu = false; com.bamnat.app.ui.components.PolicyPage.open(context, TERMS_URL, "이용약관")
-                })
-                androidx.compose.material3.DropdownMenuItem(text = { Text("개인정보처리방침") }, onClick = {
-                    menu = false; com.bamnat.app.ui.components.PolicyPage.open(context, PRIVACY_URL, "개인정보 처리방침")
-                })
-                androidx.compose.material3.DropdownMenuItem(text = { Text("사업자 정보") }, onClick = { menu = false; seller = true })
-            }
-        }
-        if (seller) com.bamnat.app.ui.settings.SellerInfoDialog { seller = false }
+        // 2.0.0 [RVQ-30] 검토 SVC-21: 결제·환불 문의 straight from where it was paid, as its own kind (나만 보기, 사람이 먼저 봐요).
+        TextButton(onClick = {
+            com.bamnat.app.ui.settings.InquiryLinks.ask(com.bamnat.app.ui.settings.InquiryStart(about = "프로·결제", kind = com.bamnat.app.company.InquiryKind.BILLING))
+        }) { Text(PAY_ASK) }
     }
+    PolicyLinks()
 }
 
-// 2.0.0 [RVQ-30] 검토 SVC-21: 결제·환불 문의 is the menu's first line, so its button says so.
-internal const val PAY_PAPERS = "결제 문의·약관"
+// 2.0.0 [RVO-27] HQ-109: the one word button beside 구매 복원.
+internal const val PAY_ASK = "결제·환불 문의"
+
+/** 2.0.0 [RVO-27] HQ-109: the three papers' names as they read in the quiet line (tests find them by these). */
+internal val POLICY_LINK_WORDS = listOf("이용약관", "개인정보처리방침", "사업자 정보")
+
+/**
+ * 2.0.0 [RVO-27] HQ-109 (조건 2·9·12): 이용약관 · 개인정보처리방침 · 사업자 정보 as one quiet line of links, each 48dp tall to tap, under the
+ * 결제 buttons of the 프로 화면 and the 요금제 창. At 글자 200% or the folded width the line wraps between words, never inside one.
+ */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+internal fun PolicyLinks(modifier: Modifier = Modifier) {
+    val context = LocalContext.current
+    var seller by remember { mutableStateOf(false) }
+    val color = MaterialTheme.colorScheme.onSurfaceVariant
+    FlowRow(modifier, verticalArrangement = Arrangement.Center) {
+        POLICY_LINK_WORDS.forEachIndexed { i, word ->
+            if (i > 0) Text(" · ", style = MaterialTheme.typography.bodySmall, color = color,
+                modifier = Modifier.heightIn(min = 48.dp).wrapContentHeight(Alignment.CenterVertically).clearAndSetSemantics { })
+            Text(word, style = MaterialTheme.typography.bodySmall.copy(textDecoration = androidx.compose.ui.text.style.TextDecoration.Underline),
+                color = color,
+                modifier = Modifier.heightIn(min = 48.dp)
+                    .clickable(role = Role.Button, onClickLabel = "$word 열기") {
+                        when (i) {
+                            0 -> com.bamnat.app.ui.components.PolicyPage.open(context, TERMS_URL, "이용약관")
+                            1 -> com.bamnat.app.ui.components.PolicyPage.open(context, PRIVACY_URL, "개인정보 처리방침")
+                            else -> seller = true
+                        }
+                    }
+                    .padding(horizontal = 4.dp).wrapContentHeight(Alignment.CenterVertically))
+        }
+    }
+    if (seller) com.bamnat.app.ui.settings.SellerInfoDialog { seller = false }
+}
+
+/**
+ * 2.0.0 [RVO-27] PC-166 (조건 13): when 보상 이용권 come, in the ways this kind of work can get them. 회사 근태·급여 방식이 채택되는 길은
+ * 회사에 다니는 교대·일근·알바에게만; 현장·가게·투자는 친구 초대, 제안 반영, 작품 채택과 문제 신고만.
+ */
+internal fun passesWhen(style: com.bamnat.core.work.WorkStyle?): String {
+    val company = style == null || style.usesPayEngine
+    val ways = if (company) "회사 근태·급여 방식이 채택되거나 제안이 반영될 때, 만든 작품이 이달의 주제에 뽑히거나 모두의 도구·기본 도구가 될 때, 초대한 친구가 밤낮을 쓸 때"
+    else "초대한 친구가 밤낮을 쓸 때, 보내 주신 제안이 반영될 때, 만든 작품이 이달의 주제에 뽑히거나 모두의 도구·기본 도구가 될 때"
+    return "받는 때: $ways. 보내 주신 문제 신고가 고쳐지면 3일(한 달 14일까지). 받을수록 기간이 이어져요."
+}
 
 /** [MON-08] Reward passes and the recovery code that moves them to a new phone. */
 @Composable
-private fun PassesCard(c: AppContainer, pro: ProState, zone: ZoneId, onMessage: (String) -> Unit) {
+private fun PassesCard(c: AppContainer, pro: ProState, zone: ZoneId, style: com.bamnat.core.work.WorkStyle?, onMessage: (String) -> Unit) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val passes = pro.passes
@@ -495,7 +545,7 @@ private fun PassesCard(c: AppContainer, pro: ProState, zone: ZoneId, onMessage: 
         // [RVO-13] HQ-58 (총괄 11-12): the 1년 12개월 only while the server counts it (처리방침 3.13 30일 줄, RVD-21), not before 12-12.
         val rules = com.bamnat.app.ui.settings.rememberInviteTerms()
         Text(passesHead(rules, Today.date()), style = MaterialTheme.typography.bodyMedium)
-        Text("받는 때: 회사 근태·급여 방식이 채택되거나 제안이 반영될 때, 만든 작품이 이달의 주제에 뽑히거나 모두의 도구·기본 도구가 될 때, 초대한 친구가 밤낮을 쓸 때. 보내 주신 문제 신고가 고쳐지면 3일(한 달 14일까지). 받을수록 기간이 이어져요.",
+        Text(passesWhen(style),
             style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         passes?.items?.forEach { item ->
             Text("• 프로 ${item.months}개월 (${item.what ?: passWhy(item.why)}, ${dateWords(item.at.atZone(zone).toLocalDate())})",
@@ -631,6 +681,24 @@ fun serverProblem(code: String): String = when (code) {
     else -> "지금은 처리하지 못했어요. 잠시 뒤 다시 해 주세요."
 }
 
+/**
+ * 2.0.0 [RVO-15] 검토 PRO-06·U11b-06: what '구매 복원' found, in one line: a subscription, a 1년 이용권 (and until when), a 팀·직원 요금제,
+ * nothing, or that Play could not be reached (not "찾은 구독이 없어요" for a pass that came back or a Play that did not answer).
+ */
+internal fun restoreWords(billing: BillingState, pro: ProState, now: Instant, zone: ZoneId): String {
+    if (billing == BillingState.UNAVAILABLE) return "Play에 연결하지 못했어요. 인터넷과 Play 스토어 로그인을 확인해 주세요"
+    if (pro.sub?.play()?.entitled(now) == true) return "구독을 다시 찾았어요"
+    pro.yearPassUntil?.takeIf { now < it }?.let { val d = lastDay(it, zone); return "1년 이용권을 다시 찾았어요 · ${d.monthValue}월 ${d.dayOfMonth}일까지 써요" }
+    if (pro.workUntil(now) != null) return "팀·직원 요금제를 다시 찾았어요"
+    return "이 Google 계정에서 찾은 구매가 없어요"
+}
+
+/** 2.0.0 [RVO-15] 검토 PRO-09: a purchase Play holds as waiting for payment. */
+const val PAYMENT_WAITING = "결제를 기다리는 중이에요. 승인되면 바로 열려요"
+
+/** 2.0.0 [RVO-15] 검토 U11b-05: the 지금 card's line while the server has not read the subscription from Play yet. */
+const val SUB_DATE_CHECKING = "결제일을 확인 중이에요"
+
 fun dateWords(d: LocalDate): String = "${d.year}년 ${d.monthValue}월 ${d.dayOfMonth}일"
 
 /** The last day an end time still counts: an end at midnight belongs to the day before. */
@@ -665,7 +733,10 @@ private val RECOVERY_CODE = Regex("""[A-Z0-9]{4}(-?[A-Z0-9]{4}){3}""")
  * 1.32 [PROX-03] (가계부 조사 5장 "결제 투명성"): 설정's first line while money is or will be taken: the next 결제일 and 금액,
  * when a 체험 turns into a payment, or that a payment failed; and the way to 해지 one tap away. Null when nothing is billed.
  */
-fun billingWords(reason: ProReason, lastDay: LocalDate?, autoRenew: Boolean, price: String?): String? {
+fun billingWords(reason: ProReason, lastDay: LocalDate?, autoRenew: Boolean, price: String?, known: Boolean = true): String? {
+    // 2.0.0 [RVO-15] 검토 PRO-04: a subscription the server has not read from Play has no 결제일 yet (the phone's 3-day hold is not one).
+    if (!known && reason == ProReason.SUBSCRIPTION) return if (autoRenew) "프로 구독 중 · 결제일 확인 중" + (price?.let { " · $it" } ?: "")
+        else "구독을 해지했어요 · 끝나는 날 확인 중"
     val day = lastDay?.let { "${it.monthValue}월 ${it.dayOfMonth}일" } ?: return null
     return when (reason) {
         ProReason.SUBSCRIPTION -> if (autoRenew) "프로 구독 중 · 다음 결제 $day" + (price?.let { " · $it" } ?: "") else "구독을 해지했어요 · ${day}까지 써요"
@@ -686,7 +757,9 @@ fun BillingTopLine(modifier: Modifier = Modifier) {
     if (!gate.live || gate.preview) return
     val sub = pro.sub ?: return
     val price = plans.firstOrNull { it.basePlan == sub.basePlan }?.priceWords
-    val words = billingWords(gate.access.reason, gate.access.until?.let { lastDay(it, Today.zone()) }, sub.autoRenew, price) ?: return
+    // 2.0.0 [RVO-15] 검토 PRO-04: the trial's end from when it began, a subscription's only as the server read it.
+    val end = if (gate.access.reason == ProReason.TRIAL) sub.trialEnd(Today.zone()) else gate.access.until
+    val words = billingWords(gate.access.reason, end?.let { lastDay(it, Today.zone()) }, sub.autoRenew, price, known = sub.knownEnd() != null) ?: return
     Surface(
         color = if (gate.access.reason == ProReason.GRACE) MaterialTheme.colorScheme.errorContainer else MaterialTheme.colorScheme.secondaryContainer,
         shape = MaterialTheme.shapes.medium, modifier = modifier.fillMaxWidth(),

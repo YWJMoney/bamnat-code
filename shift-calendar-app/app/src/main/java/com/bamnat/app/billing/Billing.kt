@@ -71,6 +71,7 @@ enum class BillingState { UNKNOWN, READY, UNAVAILABLE }
 data class PassOffer(val price: String, val priceMicros: Long, val currency: String)
 
 private val NO_PASS: StateFlow<PassOffer?> = MutableStateFlow(null)
+private val NO_PENDING: StateFlow<Boolean> = MutableStateFlow(false)
 
 /** [MON-03] Play billing as the screens see it; screenshots and tests put a fake in its place. */
 interface Billing {
@@ -82,6 +83,8 @@ interface Billing {
     fun buy(activity: Activity, plan: Plan): Boolean
     /** 841: the 1년 이용권 when Play offers it. */
     val pass: StateFlow<PassOffer?> get() = NO_PASS
+    /** 2.0.0 [RVO-15] 검토 PRO-09: a purchase Play holds as waiting for payment (a slow payment method); nothing is opened by it yet. */
+    val pending: StateFlow<Boolean> get() = NO_PENDING
     /** 841: Play's purchase sheet for the 1년 이용권; false when it could not. */
     fun buyPass(activity: Activity): Boolean = false
     /** 1.38 Phase 3 요금: the 팀·직원 요금제 offers Play has now (empty before the products are on Play). */
@@ -136,6 +139,8 @@ class DeferredBilling(private val scope: CoroutineScope, private val make: () ->
     override val plans: StateFlow<List<Plan>> = _plans.asStateFlow()
     private val _state = MutableStateFlow(BillingState.UNKNOWN)
     override val state: StateFlow<BillingState> = _state.asStateFlow()
+    private val _pending = MutableStateFlow(false)
+    override val pending: StateFlow<Boolean> = _pending.asStateFlow()
     private val made = kotlinx.coroutines.CompletableDeferred<Billing>()
     private val started = java.util.concurrent.atomic.AtomicBoolean(false)
 
@@ -150,6 +155,7 @@ class DeferredBilling(private val scope: CoroutineScope, private val make: () ->
             launch { real.state.collect { _state.value = it } }
             launch { real.pass.collect { _pass.value = it } }
             launch { real.work.collect { _work.value = it } }
+            launch { real.pending.collect { _pending.value = it } }
             made.complete(real)
         }
     }
@@ -206,6 +212,8 @@ class PlayBilling(
     override val plans: StateFlow<List<Plan>> = _plans.asStateFlow()
     private val _state = MutableStateFlow(BillingState.UNKNOWN)
     override val state: StateFlow<BillingState> = _state.asStateFlow()
+    private val _pending = MutableStateFlow(false)
+    override val pending: StateFlow<Boolean> = _pending.asStateFlow()
     private var details: ProductDetails? = null
     private var passDetails: ProductDetails? = null
     private val _pass = MutableStateFlow<PassOffer?>(null)
@@ -240,6 +248,8 @@ class PlayBilling(
             takePasses(passPurchases, bought = false)
             takeWorkPasses(passPurchases)
         }
+        // 2.0.0 [RVO-15] 검토 PRO-09: still waiting for payment, or not any more (approved, or given up).
+        if (ok && passOk) _pending.value = (purchases + passPurchases).any { it.purchaseState == Purchase.PurchaseState.PENDING }
     }
 
     override fun buyPass(activity: Activity): Boolean {
@@ -273,7 +283,10 @@ class PlayBilling(
      * with the same account finds it until then and it can be bought again after.
      */
     private suspend fun takePasses(purchases: List<Purchase>, bought: Boolean) {
+        // 2.0.0 [RVO-15] 검토 PRO-09: the welcome and the 구독 count only for a pass Play says is paid (not one waiting for payment).
+        var taken = 0
         for (p in purchases.filter { ProductIds.PASS_1Y in it.products && it.purchaseState == Purchase.PurchaseState.PURCHASED }) {
+            taken++
             if (!p.isAcknowledged) acknowledge(p)
             val order = p.orderId ?: p.purchaseToken.takeLast(24)
             store.addYearPass(order, Instant.ofEpochMilli(p.purchaseTime))
@@ -288,7 +301,7 @@ class PlayBilling(
             }
             if (com.bamnat.core.tier.YearPass.rebuy(store.current.yearPassUntil, clock())) consume(p)
         }
-        if (bought) runCatching { onBought(false) }
+        if (bought && taken > 0) runCatching { onBought(false) }
     }
 
     private suspend fun consume(p: Purchase) {
@@ -321,6 +334,8 @@ class PlayBilling(
             BillingClient.BillingResponseCode.OK -> scope.launch {
                 lock.withLock {
                     val all = purchases.orEmpty()
+                    // 2.0.0 [RVO-15] 검토 PRO-09: a payment still pending opens nothing and welcomes no one yet; the 프로 화면 says it waits.
+                    _pending.value = all.any { it.purchaseState == Purchase.PurchaseState.PENDING }
                     val work = all.filter { p -> p.products.any { com.bamnat.core.tier.WorkPlanKind.ofProduct(it) != null } }
                     val rest = all - work.toSet()
                     if (work.isNotEmpty()) { takeWork(work, fromQuery = false); takeWorkPasses(work, bought = true) }
@@ -401,6 +416,9 @@ class PlayBilling(
         } catch (e: Exception) {
             null
         }
+        // 2.0.0 [RVO-15] 검토 PRO-04: a check that failed (server busy, offline) keeps the server's last end when the phone's 3-day hold
+        // did not move it, so the date the screens show stays Play's own and not "3일 뒤".
+        if (checked?.verified != true && before?.verified == true && record.expiry == before.expiry) record = record.copy(verified = true)
         if (checked?.verified == true) {
             record = record.copy(
                 state = checked.state ?: record.state, expiry = checked.expiry ?: record.expiry, trial = checked.trial,
@@ -499,8 +517,11 @@ class PlayBilling(
 
     /** 1.38 Phase 3 요금: a band's 1년 이용권, kept by order like 841 and used up from 30 days before its end so it can be bought again. */
     private suspend fun takeWorkPasses(purchases: List<Purchase>, bought: Boolean = false) {
+        // 2.0.0 [RVO-15] 검토 PRO-09: once per pass taken; a 팀·직원 subscription is welcomed by takeWork alone (it was counted twice).
+        var taken = 0
         for (p in purchases.filter { it.purchaseState == Purchase.PurchaseState.PURCHASED }) {
             val product = p.products.firstOrNull { id -> com.bamnat.core.tier.WorkPlanKind.ofProduct(id) != null && id != com.bamnat.core.tier.WorkPlanKind.ofProduct(id)?.product } ?: continue
+            taken++
             if (!p.isAcknowledged) acknowledge(p)
             val order = p.orderId ?: p.purchaseToken.takeLast(24)
             store.addWorkPass(order, product, Instant.ofEpochMilli(p.purchaseTime))
@@ -515,7 +536,7 @@ class PlayBilling(
             val mine = store.current.workPasses.values.filter { it.first == product }.map { it.second }
             if (com.bamnat.core.tier.YearPass.rebuy(com.bamnat.core.tier.WorkPlanRules.passUntil(mine), clock())) consume(p)
         }
-        if (bought) runCatching { onBought(false) }
+        if (bought && taken > 0) runCatching { onBought(false) }
     }
 
     private suspend fun acknowledge(p: Purchase) {

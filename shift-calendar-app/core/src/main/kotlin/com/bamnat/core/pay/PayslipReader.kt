@@ -33,6 +33,11 @@ data class SlipLine(
     val amount: Long?,
     val minutes: Int? = null,
     val source: String = "",
+    /**
+     * 2.0.0 [RVL-46] (검토 SCAN-29·I07ba-05) The name is the reader's guess, looked at on its own ('이름 확인'), whatever the
+     * payslip's sums say of the amount; null once the name is as printed or the user has looked at it.
+     */
+    val check: NameCheck? = null,
 ) {
     /** Money paid to the worker, part of 지급 총액. */
     val isEarning: Boolean get() = role in EARNINGS && amount != null
@@ -46,6 +51,24 @@ data class SlipLine(
 }
 
 /**
+ * 2.0.0 [RVL-46] (검토 SCAN-29·I07ba-05) Why a line's name is looked at. [printed]: the letters as the photo read them. The
+ * reader put a printed name of the same kind in their place (교퉁비 → 교통비), or took letters no list holds as a line because
+ * of the column they stand in (볼링회 under 공제). [maybe]·[maybeKind]: a printed name of another kind the letters are a stroke
+ * from (야근수당 a stroke from 야간수당, 작업수당 from 잔업수당). The line keeps the letters and the plain kind until the user
+ * says it is that one: a company's own allowance taken as 야간·추가 근무 pay changed the pay worked out from it, quietly.
+ */
+data class NameCheck(val printed: String, val maybe: String? = null, val maybeKind: SlipRole? = null) {
+    /** The name put in the printed letters' place (교통비 for 교퉁비): another name than the one shown under it. */
+    fun renamed(line: SlipLine): Boolean = maybe == null && line.name != printed
+
+    /** "사진대로": the letters as printed, the kind as shown. */
+    fun asPrinted(line: SlipLine): SlipLine = line.copy(name = printed, check = null)
+
+    /** "네, 야간이에요": the kind [maybe] has, the letters still as printed (the payslip's own name for it). */
+    fun asMaybe(line: SlipLine): SlipLine = line.copy(name = printed, role = maybeKind ?: line.role, check = null)
+}
+
+/**
  * [PAYS-05] A payslip as read from a photo's text or pasted text. Nothing here leaves the phone; [payslip] turns
  * it into what [PayslipMatcher] takes, and the user sees and can correct every line before that.
  */
@@ -55,6 +78,12 @@ data class PayslipRead(
     val month: YearMonth? = null,
 ) {
     val earnings: List<SlipLine> get() = lines.filter { it.isEarning }
+
+    /** 2.0.0 [RVL-46] (검토 I07ba-05) The lines whose name is looked at on its own ([SlipLine.check]), by index. */
+    val names: Set<Int> get() = lines.indices.filter { lines[it].check != null }.toSet()
+
+    /** 2.0.0 [RVL-46] Every name taken as shown ('네, 같아요', '다 고쳤어요'). */
+    fun namesLooked(): PayslipRead = if (lines.none { it.check != null }) this else copy(lines = lines.map { it.copy(check = null) })
     val earningsSum: Long get() = earnings.sumOf { it.amount ?: 0 }
 
     /** 지급 총액: as stated, else a 합계 that holds the earnings, else the earnings added up. */

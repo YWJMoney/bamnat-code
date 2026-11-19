@@ -52,6 +52,13 @@ fun Explain(
      * read like a page at 글자 200% and that is not needed to use it (받은 달력 넣기 카드's 'what happens after 넣기').
      */
     firstInFull: Boolean = true,
+    /** 2.0.0 [RVO-25] (PC-186) For a centred card (the 프로 lock): the line and ⓘ in the middle, the full words centred. */
+    centered: Boolean = false,
+    /**
+     * 2.0.0 (HQ-156) 조건 12: how many lines the short form may take. One by default (a line and ⓘ); a short form that is itself a
+     * promise (the invite card's '친구 5명이 7일 쓰면 프로 1개월') wraps at 글자 200% instead of ending in '…'.
+     */
+    summaryLines: Int = 1,
 ) {
     val context = LocalContext.current
     val preview = LocalInspectionMode.current
@@ -63,16 +70,17 @@ fun Explain(
     val ink = MaterialTheme.colorScheme.onSurfaceVariant
     val style = MaterialTheme.typography.bodySmall
     when {
-        seen == 0 && firstInFull || open || short == text -> Text(text, style = style, color = ink, modifier = modifier.animateContentSize())
+        seen == 0 && firstInFull || open || short == text -> Text(text, style = style, color = ink, modifier = modifier.animateContentSize(),
+            textAlign = if (centered) androidx.compose.ui.text.style.TextAlign.Center else null)
         else -> Row(
             modifier.fillMaxWidth().semantics(mergeDescendants = true) {
                 stateDescription = "접힘"
                 onClick("설명 펼치기") { open = true; true }
             },
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(4.dp),
+            horizontalArrangement = Arrangement.spacedBy(4.dp, if (centered) Alignment.CenterHorizontally else Alignment.Start),
         ) {
-            if (seen <= 1 || !iconOnly) Text(short, style = style, color = ink, maxLines = 1, overflow = TextOverflow.Ellipsis,
+            if (seen <= 1 || !iconOnly) Text(short, style = style, color = ink, maxLines = summaryLines, overflow = TextOverflow.Ellipsis,
                 modifier = Modifier.weight(1f, fill = false))
             IconButton(onClick = { open = true }) {
                 Icon(Icons.Outlined.Info, contentDescription = "설명 보기", tint = ink, modifier = Modifier.size(20.dp))

@@ -85,7 +85,7 @@ internal fun TextSizeRow(step: Int, onPick: (Int) -> Unit) {
     var before by androidx.compose.runtime.saveable.rememberSaveable { androidx.compose.runtime.mutableStateOf<Int?>(null) }
     fun label(i: Int) = TextSize.LABELS[i.coerceIn(0, TextSize.LABELS.lastIndex)]
     Column(Modifier.fillMaxWidth().padding(vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        Text("글자 크기", style = MaterialTheme.typography.titleSmall)
+        Text("글자 크기", style = MaterialTheme.typography.bodyLarge) // 2.0.0 [RVO-21] 검토 SET-17: a row name like every other row
         Text("${label(step)} · 휴대폰 글꼴 크기와 함께 적용돼요. 화면 배치는 글자에 맞춰 바뀌어요",
             style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         TextSizePicker(step, { pending = it }, selected = pending)

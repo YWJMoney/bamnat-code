@@ -2272,7 +2272,7 @@ function adminApp(L, BUILD, M) {
    */
   function crashPill(c) {
     if (!c) return "";
-    return `<span class="pill${c.record === "has" ? " info" : ""}" title="함께 온 점검 기록의 '앱 멈춤' 칸">${esc(c.recordName)}</span>`;
+    return `<span class="pill${c.record === "has" ? " info" : ""}" title="함께 온 정보 › 알람 점검의 [앱 멈춤] 줄">${esc(c.recordName)}</span>`;
   }
 
   /** [RVA-63] 문의 상세: 멈춤 기록과 같은 보낸 분의 되풀이(몇 번째·첫 날~마지막 날), 기록이 없으면 '기록 부탁 답 넣기'. */
@@ -2283,10 +2283,13 @@ function adminApp(L, BUILD, M) {
     const day = (t) => new Date(Date.parse(t) + 9 * 3600e3).toISOString().slice(5, 10).replace("-", ".");
     // 조건 4: 한 줄. 기록 상태는 앞 표식이 말하니 글은 되풀이(몇 번째·날)나 할 일만.
     const lead = r ? `같은 보낸 분의 닫힘 문의 ${r.n}건 중 ${r.nth}번째예요 (${day(r.first)}~${day(r.last)}).` : "";
-    const ask = c.record === "has" ? "함께 온 정보의 '앱 멈춤' 칸을 봐요." : "알람 점검 › 보고서 복사로 받아 봐요.";
+    // 2.0.0 [RVA-66] PC-195: 화면에 보이는 칸 이름으로('함께 온 정보 › 알람 점검'의 [앱 멈춤] 줄), 누르면 그 줄로 가요.
+    const has = c.record === "has" && q.context?.["알람 점검"];
+    const ask = c.record === "has" ? "함께 온 정보 › 알람 점검의 [앱 멈춤] 줄을 봐요." : "점검 기록을 켠 새 문의('앱이 이상해요')로 받아 봐요.";
     const can_ = editable && q.status !== "closed" && c.record !== "has";
-    return `<div class="note${r ? " warn" : ""} crash-note">${crashPill(c)} <span>${esc(lead ? `${lead} ${ask}` : ask)}</span>${can_
-      ? ' <button type="button" class="btn small" data-act="crash-draft" data-target="reply" title="알람 점검 › 보고서 복사를 부탁하는 답을 답 칸에 넣어요">기록 부탁 답 넣기</button>' : ""}</div>`;
+    return `<div class="note${r ? " warn" : ""} crash-note">${crashPill(c)} <span>${esc(lead ? `${lead} ${ask}` : ask)}</span>${has
+      ? ' <button type="button" class="btn small" data-act="crash-diag">멈춤 줄 보기</button>' : ""}${can_
+      ? ' <button type="button" class="btn small" data-act="crash-draft" data-target="reply" title="점검 기록을 켠 새 문의를 부탁하는 답을 답 칸에 넣어요. 보고서는 답장 칸(2,000자)보다 길어요">기록 부탁 답 넣기</button>' : ""}</div>`;
   }
 
   function inquiryDetail(q) {
@@ -2342,7 +2345,7 @@ function adminApp(L, BUILD, M) {
         ${copiedCard(q) /* AT 1.29 */}
         ${billingCard(q, editable) /* 1.36 [INQ-07] */}
         <section class="card"><h2>함께 온 정보</h2><p class="hint">보낸 분이 보내기 전에 보고 동의한 정보예요.</p>
-          ${ctx.length ? `<dl class="kv">${ctx.map(([k, v]) => `<dt>${esc(k)}</dt><dd>${esc(typeof v === "object" ? JSON.stringify(v) : v)}</dd>`).join("")}</dl>` : '<p class="meta">없어요</p>'}</section>
+          ${ctx.length ? `<dl class="kv">${ctx.map(([k, v]) => `<dt${k === "알람 점검" ? ' id="ctx-diag"' : ""}>${esc(k)}</dt><dd>${esc(typeof v === "object" ? JSON.stringify(v) : v)}</dd>`).join("")}</dl>` : '<p class="meta">없어요</p>'}</section>
         ${q.public ? `<section class="card"><h2>모두의 문의</h2>
           <p class="hint">${q.hidden ? `숨겼어요: ${esc(q.hidden.text)}. 보낸 분 앱에는 이유가 보여요.` : "앱을 쓰는 모두가 이 문의와 답을 봐요. 함께 온 정보는 개발자만 봐요."}</p>
           <div class="chips">${publicPills(q)}${(q.reasons ?? []).map((r) => `<span class="chip">${esc(r.text)} ${r.n}</span>`).join("")}</div>
@@ -5031,12 +5034,25 @@ function adminApp(L, BUILD, M) {
       render({ keepScroll: true });
     },
     "save-friend": async () => {
-      const r = await act(() => api("/settings/invite", "POST", S.inviteDraft), "친구 초대 규칙을 저장했어요. 서버가 바로 따라요");
-      if (r) {
-        S.data.inviteSettings = r;
-        S.inviteDraft = null;
+      const save = async () => {
+        const r = await act(() => api("/settings/invite", "POST", S.inviteDraft), "친구 초대 규칙을 저장했어요. 서버가 바로 따라요");
+        if (r) {
+          S.data.inviteSettings = r;
+          S.inviteDraft = null;
+        }
+        render({ keepScroll: true });
+      };
+      // 2.0.0 [RVQ-49] 검토 U22b-11·SVC-73: 저장하는 순간 조건을 채운 분께 드릴 보상이 생겨요. 생기는 것이 있으면 몇 분께 몇 달인지 먼저 한 번 물어요.
+      let pv = null;
+      try {
+        pv = (await api("/settings/invite", "POST", { ...S.inviteDraft, dry: true }))?.preview ?? null;
+      } catch {
+        pv = null;
       }
-      render({ keepScroll: true });
+      if (!pv?.rewards) return save();
+      danger({ title: "이 규칙으로 저장할까요?", text: "저장하면 바로 아래 보상이 '드릴 보상'에 올라가요. 지급은 보상 목록에서 확인한 뒤예요.",
+        rows: [["드릴 보상", `${pv.rewards}건 · ${pv.inviters}${pv.more ? "분 넘게" : "분"}`], ["모두", `${pv.months}개월`],
+          ["상한에 걸려 달 없이 세는 것", pv.capped ? `${pv.capped}건` : ""]], label: "저장", tone: "primary", run: save });
     },
     "sla-undo": () => {
       S.slaDraft = null;
@@ -5879,6 +5895,15 @@ function adminApp(L, BUILD, M) {
       render({ keepScroll: true });
     },
     // PC ce2b7091 사용성 제안: 고친 판에서 원본으로. 지금 목록에 있으면 그 줄로, 없으면 코드를 복사해요.
+    // 2.0.0 [RVA-66] PC-195: 문의 상세 '멈춤 줄 보기' → 함께 온 정보의 알람 점검 칸으로.
+    "crash-diag": () => {
+      const dt = document.getElementById("ctx-diag");
+      if (!dt) return;
+      const dd = dt.nextElementSibling ?? dt;
+      dd.scrollIntoView({ block: "center" });
+      dd.classList.add("flash");
+      setTimeout(() => dd.classList.remove("flash"), 1500);
+    },
     "recipe-find": ({ id }) => {
       const row = [...document.querySelectorAll("[data-act='recipe-do']")].find((b) => b.dataset.id === id)?.closest("li");
       if (row) { row.scrollIntoView({ block: "center" }); row.classList.add("flash"); setTimeout(() => row.classList.remove("flash"), 1500); return; }
@@ -5934,7 +5959,22 @@ function adminApp(L, BUILD, M) {
         async () => { await act(() => api("/recipes/makers/month", "POST", { style: key, makers: [] }), "되돌렸어요"); load(); });
       load();
     },
-    "recipe-request": async ({ id, key }) => { await act(() => api(`/recipes/requests/${id}/${key}`, "POST", {}), key === "hide" ? "가렸어요" : "다시 보이게 했어요"); load(); },
+    "recipe-request": async ({ id, key }) => {
+      // 2.0.0 [RVQ-44] I22bb-01: 스튜디오 요구로 올라온 요청의 '완성'은 운영자가 맞는지 봐요.
+      const said = { hide: "가렸어요", show: "다시 보이게 했어요", "check-ok": "완성으로 닫았어요. 부탁한 분들께 알려요", "check-no": "다시 기다리는 요청으로 열었어요" }[key];
+      await act(() => api(`/recipes/requests/${id}/${key}`, "POST", {}), said);
+      load();
+    },
+    // 2.0.0 [RVQ-39] 검토 SVC-53·U22b-02: 보류된 표를 세기·버리기(네트워크 묶음 하나 또는 작품 전체).
+    "recipe-held": ({ id, key, group }) => {
+      const go = async () => {
+        await act(() => api(`/recipes/votes/${key === "drop" ? "drop" : "release"}`, "POST", { code: id, ...(group ? { group } : {}) }),
+          (r) => (key === "drop" ? `${r?.dropped ?? 0}표를 버렸어요` : `${r?.released ?? 0}표를 셌어요`));
+        load();
+      };
+      if (key !== "drop") return go();
+      danger({ title: group ? "이 묶음의 표를 버릴까요?" : "이 작품의 보류된 표를 모두 버릴까요?", text: "버린 표는 어디에도 세지 않고 되돌릴 수 없어요. 그 폰들은 다시 누를 수 있어요.", label: "버리기", run: go });
+    },
     "recipe-helper": ({ id }) => confirmBox("이 만든 분께 도우미 배지를 줄까요?", "다른 분의 질문에 성실히 답해 온 분께 드려요. 만든 분 페이지에 배지가 보여요.", "배지 주기", async () => {
       await act(() => api(`/recipes/makers/${id}/helper`, "POST", { on: true }), "도우미 배지를 드렸어요");
       load();
@@ -6293,7 +6333,18 @@ function adminApp(L, BUILD, M) {
         // 클라우드 관리자 앱 확인: how many go up, on the box and after.
         const n = Number(form.dataset.n) || 0;
         confirmBox(n ? `${batch || "이 묶음"} ${n}개를 지금 장터에 공개할까요?` : "이 묶음을 지금 장터에 공개할까요?", "공개하면 바로 장터 ‘새로’ 맨 위에 보여요. ‘이 판부터’를 적은 작품은 그 판 이상 앱에만 보여요.", "지금 공개", async () => {
-          await act(() => api("/recipes/release", "POST", body), (r) => `${r?.released ?? 0}개를 공개했어요`);
+          // 2.0.0 [RVQ-39] 검토 SVC-57: 서버가 한 번에 400개씩 공개하고 남은 수(left)를 알려 줘요. 다 나갈 때까지 이어서 눌러요.
+          await act(async () => {
+            let released = 0;
+            let left = 0;
+            for (let i = 0; i < 20; i++) {
+              const r = await api("/recipes/release", "POST", body);
+              released += r?.released ?? 0;
+              left = r?.left ?? 0;
+              if (!left || !r?.released) break;
+            }
+            return { released, left };
+          }, (r) => (r?.left ? `${r.released}개를 공개했어요. 아직 ${r.left}개가 남아 다시 눌러 주세요` : `${r?.released ?? 0}개를 공개했어요`));
           S.data.recipes = null; load();
         });
         return;

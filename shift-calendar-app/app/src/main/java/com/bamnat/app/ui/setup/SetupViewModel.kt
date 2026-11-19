@@ -344,6 +344,45 @@ class SetupViewModel(
         }
     }
 
+    // ---- 2.0.0 [RVH-68] 검토 I50c-01·I50c-03 (RVR-31): what the user picked on bamnat.app ----
+
+    /** One card on the question after the kind of work: what it says, the step it is on, and its button's words. */
+    data class WebAsk(val handoff: com.bamnat.core.setup.WebHandoff, val text: String, val on: SetupStep, val action: String)
+
+    /** Only for this phone's own first setup (not a calendar added, not 처음 설정 다시 받기). */
+    val webStart: com.bamnat.app.data.WebStart? = if (calendarId == null && !again) c.webStart else null
+
+    /** Reads the link once ([com.bamnat.app.data.WebStart.look]); nothing for a calendar added or a setup again. */
+    suspend fun lookWeb() { webStart?.look() }
+
+    /** The card for [d], or null: on 회사 찾기 for 교대 (its order and first day), on the hours for 알바 (its 시급). */
+    fun webAsk(d: SetupDraft): WebAsk? {
+        val h = webStart?.fits(d.style) ?: return null
+        val text = h.question() ?: return null
+        return when (d.style) {
+            WorkStyle.SHIFT -> WebAsk(h, text, SetupStep.COMPANY, "채우기")
+            WorkStyle.HOURLY -> WebAsk(h, text, SetupStep.TIMES, "이 시급 쓰기")
+            else -> null
+        }
+    }
+
+    /**
+     * '채우기': the kinds of work, the order and today from the site, on the times' screen to check the hours ([com.bamnat.core.setup
+     * .WebStartDraft]); a 시급 is kept for the pay setup after this one ([com.bamnat.app.data.WebStart.wage]).
+     */
+    fun useWeb(ask: WebAsk) {
+        val web = webStart ?: return
+        if (current.style == WorkStyle.SHIFT) {
+            val d = com.bamnat.core.setup.WebStartDraft.draft(ask.handoff, current) ?: return
+            _fixing.value = false
+            store.save(d)
+        }
+        web.used()
+    }
+
+    /** X on the card: the site's choice is not asked again, and its 명세서 page is not opened after the setup. */
+    fun declineWeb() { webStart?.declined() }
+
     private fun fresh(style: WorkStyle, roster: Boolean): SetupDraft = when (style) {
         WorkStyle.DAY -> SetupDraft(style = style).withShifts(null, ShiftBundles.weekday)
         WorkStyle.HOURLY -> SetupDraft(style = style).withShifts(null, ShiftBundles.hourly)

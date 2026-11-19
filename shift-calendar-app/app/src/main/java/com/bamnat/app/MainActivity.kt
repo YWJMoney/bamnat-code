@@ -5,6 +5,8 @@ import androidx.compose.ui.graphics.luminance
 import android.content.Intent
 import android.graphics.Color
 import android.os.Bundle
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
 import androidx.activity.ComponentActivity
 import androidx.activity.SystemBarStyle
 import androidx.activity.compose.setContent
@@ -166,6 +168,11 @@ class MainActivity : ComponentActivity() {
         val motion = androidx.compose.runtime.remember(settings.motion) {
             com.bamnat.core.recipe.Motion.decode(settings.motion).effective(com.bamnat.app.ui.theme.systemAnimationsOff(this))
         }
+        // 2.0.0 [RVK-46] (검토 U06a-15·I06aa-09) The icon and color the user gave each category, wherever a category is drawn.
+        val categoryLooks by androidx.compose.runtime.remember(container) {
+            container.calendars.money(com.bamnat.app.data.PersonalCalendar.MAIN).categories
+                .map(com.bamnat.core.money.CategoryLook::byName).distinctUntilChanged()
+        }.collectAsStateWithLifecycle(emptyMap())
         // 2.0.0 [RVM-21] MKT-32 (사용자 2026-11-12 'Google 요청은 글꼴을 고를 때만'): a theme tried on the real app draws its open fonts as card
         // fonts from our public files (or the phone's closest), never the whole font from Google Fonts; that comes with 입기.
         val trial by com.bamnat.app.ui.recipe.LiveTryOn.trial.collectAsStateWithLifecycle()
@@ -210,7 +217,8 @@ class MainActivity : ComponentActivity() {
                 // [MAT-07] 1.36 움직임, stopped by 움직임 끄기 or the phone's own 'remove animations'.
                 com.bamnat.app.ui.theme.LocalMotion provides motion, com.bamnat.app.ui.theme.LocalMotionOff provides motion.off,
                 // [FLOW-26] 1.38 설정 › 화면 › 칸이 보이기.
-                com.bamnat.app.ui.components.LocalShowKani provides settings.showKani) {
+                com.bamnat.app.ui.components.LocalShowKani provides settings.showKani,
+                com.bamnat.app.ui.money.LocalCategoryLooks provides categoryLooks) {
                 val ground = androidx.compose.runtime.remember(screensNow) { com.bamnat.core.recipe.ScreenLooks.decode(screensNow).of(com.bamnat.core.recipe.ScreenLooks.ALL).ground }
                     ?.let { androidx.compose.ui.graphics.Color(it.toInt()) } ?: androidx.compose.material3.MaterialTheme.colorScheme.background
                 com.bamnat.app.ui.theme.WearTransition(screensNow, ground, motion) {

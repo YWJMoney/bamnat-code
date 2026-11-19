@@ -18,6 +18,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -33,6 +34,10 @@ import com.bamnat.core.tier.PlanBand
 import com.bamnat.core.tier.WorkPlanKind
 import com.bamnat.core.tier.WorkPlanRules
 
+/** 2.0.0 [RVO-15] 검토 PRO-16: how long the sheet waits for Play's offers before it says they did not come. */
+const val OFFERS_WAIT_MS = 6_000L
+const val OFFERS_MISSING = "Play 결제를 불러오지 못했어요. 인터넷과 Play 스토어 로그인을 확인하고 다시 불러와 주세요"
+
 /**
  * 1.38 Phase 3 요금 (사용자 2026-11-05 20:22, 계획 8장): the ask for a 팀·직원 요금제, shown only at the moment the free taste ends (first
  * month's 확정 is behind, or the fourth staff member). Every band with its 월·연·1년 이용권, the one that fits marked; a band that is too
@@ -45,9 +50,19 @@ fun WorkPlanSheet(kind: WorkPlanKind, need: WorkPlanRules.Need, onDismiss: () ->
     val gate by c.featureGate.state.collectAsStateWithLifecycle()
     val offers by c.billing.work.collectAsStateWithLifecycle()
     var message by remember { mutableStateOf<String?>(null) }
+    // 2.0.0 [RVO-15] 검토 PRO-16: Play's offers that do not come (no network, Play signed out, a product not there) no longer leave
+    // '불러오는 중' up for good: after a few seconds it says so, with '다시 불러오기'.
+    val billingState by c.billing.state.collectAsStateWithLifecycle()
+    var tries by remember { mutableIntStateOf(0) }
+    var gaveUp by remember { mutableStateOf(false) }
     LaunchedEffect(Unit) {
         c.telemetry.event(if (kind == WorkPlanKind.TEAM) com.bamnat.core.stats.UsageEvent.PLAN_VIEW_TEAM.key else com.bamnat.core.stats.UsageEvent.PLAN_VIEW_STAFF.key)
+    }
+    LaunchedEffect(tries) {
+        gaveUp = false
         runCatching { c.billing.refresh() }
+        kotlinx.coroutines.delay(OFFERS_WAIT_MS)
+        gaveUp = true
     }
     // Bought (or changed): the need is met, the sheet closes by itself.
     LaunchedEffect(gate.hold(kind)?.cap) { if ((gate.hold(kind)?.cap ?: 0) >= need.count && need.count > 0) onDismiss() }
@@ -78,8 +93,15 @@ fun WorkPlanSheet(kind: WorkPlanKind, need: WorkPlanRules.Need, onDismiss: () ->
                         style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
                 }
                 if (offers.none { it.kind == kind }) {
-                    Text("Play 결제를 불러오는 중이에요. 아래 금액은 안내용이고, 실제 금액은 Play 결제 화면에 나와요.",
-                        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    if (!gaveUp && billingState != com.bamnat.app.billing.BillingState.UNAVAILABLE) {
+                        Text("Play 결제를 불러오는 중이에요. 아래 금액은 안내용이고, 실제 금액은 Play 결제 화면에 나와요.",
+                            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    } else {
+                        Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+                            Text(OFFERS_MISSING, style = MaterialTheme.typography.bodySmall, modifier = Modifier.weight(1f))
+                            TextButton(onClick = { tries++ }, modifier = Modifier.heightIn(min = 48.dp)) { Text("다시 불러오기") }
+                        }
+                    }
                 }
                 table.bands(kind).forEach { band ->
                     BandCard(kind, band, fits = band.cap >= need.count, picked = band == need.band, held = held?.cap == band.cap,

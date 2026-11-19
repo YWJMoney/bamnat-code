@@ -133,6 +133,23 @@ const val STOP_SECTION = "앱 멈춤"
 const val STOP_TRAIL_SECTION = "앱 멈춤 관찰"
 
 /**
+ * 2.0.0 [RVO-16] 검토 SET-02·U11a-02 ('알람 준비'를 네 곳이 서로 다른 기준으로 말해요): one verdict from [alarmChecks] for every place that
+ * says whether the alarm is ready (설정 첫 화면, 설정 › 알람, 알람 점검; 알람 지킴이 tells of [must] only). [must] keeps the alarm from
+ * ringing, from showing or on time; [better] makes it surer (배터리 최적화 제외, 예비 소리, 절전, 대기 상태). Advice the app cannot read is in neither.
+ */
+internal data class AlarmVerdict(val must: List<AlarmCheck>, val better: List<AlarmCheck>, val checked: Int) {
+    /** "꼭 고칠 것 0 · 하면 더 좋은 것 1", the same words in each place. */
+    val counts: String get() = "꼭 고칠 것 ${must.size} · 하면 더 좋은 것 ${better.size}"
+}
+
+internal val MUST_FIX: Set<String> = com.bamnat.app.alarm.AlarmGuard.CRITICAL + setOf("알림 허용", "백그라운드 제한 없음")
+
+internal fun alarmVerdict(checks: List<AlarmCheck>): AlarmVerdict {
+    val bad = checks.filter { it.ok == false }
+    return AlarmVerdict(bad.filter { it.title in MUST_FIX }, bad.filter { it.title !in MUST_FIX }, checks.count { it.ok != null })
+}
+
+/**
  * [REL-13] The things an alarm needs, each with whether it is fine now and how to fix it. [EASE-21] 1.38: also read by the
  * card on top of 설정 › 알람, so the same checks are said in both places.
  */
@@ -154,7 +171,7 @@ internal fun alarmChecks(container: AppContainer, context: Context): List<AlarmC
         // [ALRM-01] R10: the alarm's channels can be turned off one by one in the system settings.
         if (Notifications.canPost(context)) {
             add(AlarmCheck("알람 알림 켜짐", Notifications.channelOn(context, Notifications.ALARM_CHANNEL_ID),
-                "휴대폰 설정에서 ‘근무 알람’ 알림이 꺼져 있어 알람 화면을 띄우지 못할 수 있어요.", "알람 알림 켜기",
+                "휴대폰 설정에서 밤낮의 ‘알람’ 알림이 꺼져 있어 알람 화면을 띄우지 못할 수 있어요.", "알람 알림 켜기",
                 Fix.Open(channel(Notifications.ALARM_CHANNEL_ID))))
             add(AlarmCheck("예비 소리 켜짐", Notifications.channelOn(context, Notifications.FALLBACK_CHANNEL_ID),
                 "알람 화면을 못 띄울 때 대신 울리는 ‘예비 소리’가 꺼져 있어요.", "예비 소리 켜기",
@@ -170,7 +187,7 @@ internal fun alarmChecks(container: AppContainer, context: Context): List<AlarmC
         if (Notifications.canPost(context) && Notifications.channelOn(context, Notifications.ALARM_CHANNEL_ID)) {
             val trouble = Notifications.alarmChannelTrouble(context)
             add(AlarmCheck("잠금 화면에 알람 보이기", trouble == null,
-                (trouble ?: "‘근무 알람’ 알림이 조용히·숨김으로 바뀌면 알람 화면이 안 떠요") + ". ‘긴급’(소리와 팝업)·잠금 화면 ‘표시’로 바꿔 주세요.",
+                (trouble ?: "‘알람’ 알림이 조용히·숨김으로 바뀌면 알람 화면이 안 떠요") + ". ‘긴급’(소리와 팝업)·잠금 화면 ‘표시’로 바꿔 주세요.",
                 "알람 알림 설정 열기", Fix.Open(channel(Notifications.ALARM_CHANNEL_ID))))
         }
         if (Notifications.dndBlocksAlarms(context)) add(AlarmCheck("방해 금지", false,
@@ -464,11 +481,16 @@ fun DiagnosticsScreen(vm: DiagnosticsViewModel, onBack: () -> Unit, testing: Boo
             }
             item {
                 SectionCard(title = "점검") {
-                    val bad = checks.count { it.ok == false }
+                    // 2.0.0 [RVO-16] 검토 SET-02: the same verdict as 설정 첫 화면 and 설정 › 알람.
+                    val verdict = alarmVerdict(checks)
                     Text(
-                        if (bad == 0) "알람이 울리는 데 필요한 것이 모두 준비됐어요." else "고칠 것이 ${bad}개 있어요. 단추를 누르면 바로 그 화면이 열려요.",
+                        when {
+                            verdict.must.isEmpty() && verdict.better.isEmpty() -> "알람이 울리는 데 필요한 것이 모두 준비됐어요."
+                            verdict.must.isEmpty() -> "알람은 울릴 준비가 됐어요 · ${verdict.counts}. 단추를 누르면 바로 그 화면이 열려요."
+                            else -> "${verdict.counts}. 단추를 누르면 바로 그 화면이 열려요."
+                        },
                         style = MaterialTheme.typography.bodyMedium,
-                        color = if (bad == 0) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error,
+                        color = if (verdict.must.isEmpty()) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error,
                     )
                     for (check in checks) {
                         CheckRow(check) {

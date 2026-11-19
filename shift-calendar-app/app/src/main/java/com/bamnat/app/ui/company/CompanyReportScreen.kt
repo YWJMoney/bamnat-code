@@ -498,7 +498,8 @@ fun CompanySentScreen(vm: CompanyReportViewModel, onBack: () -> Unit, onShare: (
             onDismiss = { forgetting = false },
             onConfirm = {
                 forgetting = false
-                vm.forgetAllSaying { ok, said -> message = if (ok) said ?: "모두 지웠어요" else "인터넷에 연결한 뒤 다시 해 주세요" }
+                // 2.0.0 [RVO-16] 검토 U40-04: what stays, said with what went (as 설정 › 개인정보).
+                vm.forgetAllSaying { ok, said -> message = if (ok) (said ?: "모두 지웠어요") + ". " + FORGET_STAYS else "인터넷에 연결한 뒤 다시 해 주세요" }
             },
         )
     }

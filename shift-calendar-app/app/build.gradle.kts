@@ -181,7 +181,7 @@ android {
         val forks = (findProperty("bamnat.testForks") as String?)?.toIntOrNull()
             ?: (Runtime.getRuntime().availableProcessors() / 2).coerceIn(1, 3)
         // [QA-05] CI runs the tests in shards side by side (-Pbamnat.testSet): unit = all but the screenshots,
-        // shots-a … shots-d = the screenshot classes split by time (below), api = the classes that run on several Android versions.
+        // shots-a … shots-e = the screenshot classes split by time (below), api = the classes that run on several Android versions.
         val testSet = findProperty("bamnat.testSet") as String?
         val shots = "com.bamnat.app.screenshots"
         // 2.0.0 [RVR-43] (총괄 HQ-121): shots-b took every new screenshot class and went over the job's 45 minutes each time, and a
@@ -189,7 +189,9 @@ android {
         // (tools/data/shot-seconds.tsv, `python3 tools/shot_shards.py update` from the tests-app-shots-* results): longest first, each
         // to the shard with the least so far. A class the file does not know counts as 30 seconds, and the last shard also takes any
         // screenshot class no shard named. tools/shot_shards.py show prints the same split.
-        val shotShards = listOf("shots-a", "shots-b", "shots-c", "shots-d")
+        // [RVR-45] Five since run 44433028533: the four came to about 26 minutes of tests each (shots-c ran 33 minutes, over
+        // the 30-minute warning) and the shots grow with every branch; five are about 21 each.
+        val shotShards = listOf("shots-a", "shots-b", "shots-c", "shots-d", "shots-e")
         val shotSeconds = file("../tools/data/shot-seconds.tsv").takeIf { it.exists() }?.readLines(Charsets.UTF_8).orEmpty()
             .filter { it.isNotBlank() && !it.startsWith("#") }
             .associate { line -> line.split("\t").let { it[0] to it[1].toDouble() } }
