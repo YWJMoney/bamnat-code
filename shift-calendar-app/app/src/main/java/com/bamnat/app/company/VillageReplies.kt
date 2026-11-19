@@ -24,6 +24,9 @@ object VillageReplies {
     val count: kotlinx.coroutines.flow.StateFlow<Int> = _count
     @Volatile private var store: android.content.SharedPreferences? = null
     @Volatile private var worked = false
+
+    /** 2.0.0 [RVR-44] (HQ-123) A test is a new run of the app: no count, and no settings of an earlier test's app to write to. */
+    internal fun resetForTest() { store = null; worked = false; _count.value = 0 }
     fun publish(n: Int) {
         worked = true
         _count.value = n.coerceAtLeast(0)
