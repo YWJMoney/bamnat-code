@@ -784,3 +784,4 @@
 {"track": "RVA-63", "title": "관리자 앱 되풀이되는 닫힘 문의 묶어 보기·멈춤 기록 표식", "status": "check", "size": "polish", "route": "server", "test": "[RVA-63] 되풀이되는 닫힘 문의: 운영 장부 맨 위 묶음(몇 번째·첫 날·마지막 날), 줄과 문의에 멈춤 기록 표식과 부탁 답, 숫자 › 개선 신호", "check": "운영 장부 맨 위 닫힘 되풀이 카드와 문의 상세 기록 부탁 답 넣기를 380·840·1440에서"}
 {"track": "RVA-64", "title": "운영 열쇠로 읽는 문의에 점검 기록 가림 표식", "status": "check", "size": "fix", "route": "server", "test": "[RVA-64] 열쇠로 읽는 점검 기록 표식", "check": "열쇠로 문의·장부·넘길 글을 읽어 점검 기록 내용 없이 표식만 오는지"}
 {"track": "RVA-65", "title": "관리자 앱 장터 작품 '입은 뒤' 비율 보기(처리방침 3.14 뒤)", "status": "check", "size": "polish", "route": "server", "test": "[RVA-65] 장터 작품 '입은 뒤' 숫자", "check": "3.14 깃발이 켜진 뒤 넣은 분 20명 이상 작품의 줄 비율과 개선 신호 주소를 380·840·1440에서"}
+{"track": "RVQ-58", "title": "내린 작품의 '넣었어요'를 옛 앱이 끝없이 다시 보내지 않게", "status": "check", "size": "fix", "route": "server", "test": "[RVQ-58]", "check": "배포 다음 날 D1 counters의 rapplied 망마다 수가 줄고, 옛 앱에서 내린 작품을 넣어도 다시 보내지 않아요"}

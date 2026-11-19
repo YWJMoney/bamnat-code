@@ -2239,7 +2239,9 @@ async function applied(d, env, request, code) {
   const net = await d.network(request, env, now);
   if (!(await d.allow(env, `rapplied|${net.day}`, RECIPE_LIMITS.appliedPerNetworkDay, DAY, now))) return d.tooMany("network", DAY - (now % DAY));
   const r = await d.one(env, `SELECT code, scope FROM recipes WHERE code = ? AND (state = 'visible' OR (state = 'hidden' AND hidden_reason = '${RETIRED}'))`, code);
-  if (!r) return d.json({ error: "not_found" }, 404);
+  // 2.0.0 [RVQ-58] 실서버 11-19 (counters rapplied 망마다 하루 14~25, recipe_counts 0): 1.38·1.39 앱은 이 답이 실패면 앱을 열 때마다
+  // 다시 보내요(sendKept·countUse). 내린·지운·없는 작품은 404 대신 '받았지만 세지 않음'으로 답해 옛 앱도 멈추게 해요. 세는 것은 그대로예요.
+  if (!r) return d.json({ ok: true, counted: false });
   // 2.0.0 [RVQ-26] SVC-51: a 나만 보기 work is its maker's alone; its 쓰는 분 are not counted (they would come with it if it went public).
   if (r.scope === "private") return d.json({ ok: true, counted: false });
   const col = body.kind === "applied" ? "applied" : "kept7";
