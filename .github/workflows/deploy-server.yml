@@ -57,7 +57,7 @@ jobs:
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
       - run: python3 shift-calendar-app/tools/test_deploy_worker.py
@@ -80,7 +80,7 @@ jobs:
       IN_TARGET: ${{ inputs.target }}
       IN_MODE: ${{ inputs.mode }}
     steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
       # [RVD-33] DO 첫 배포는 되돌릴 수 없어서 한 서버씩: both로는 시작하지 않아요(build·ship 전에 멈춰요).
@@ -122,15 +122,15 @@ jobs:
       IN_SKIP: ${{ inputs.skip_tests }}
     steps:
       # 도구는 main의 것, 서버 코드는 고른 커밋의 것, 앞 판 코드는 지금 도는 판의 커밋(스키마 호환).
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ needs.gate.outputs.sha }}
           path: target
           persist-credentials: false
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         if: needs.gate.outputs.company_prev != ''
         with:
           ref: ${{ needs.gate.outputs.company_prev }}
@@ -171,7 +171,7 @@ jobs:
       contents: read
       actions: read
     steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
       - uses: actions/download-artifact@95815c38cf2ff2164869cbab79da8d1f422bc89e # v4.2.1
@@ -205,7 +205,7 @@ jobs:
       contents: read
     steps:
       # 고른 브랜치는 받지 않아요: main의 도구 + build가 만든 파일만.
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ github.sha }}
           persist-credentials: false
