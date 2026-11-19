@@ -249,7 +249,9 @@ test("[PLZC-20] 근무 카드: numbers only, on a top post where days at work co
   for (const bad of [{ ...card, note: 1 }, { ...card, n: 9 }, { ...card, w: 7 }, { ...card, d: 0, w: 0, n: 0, s: 0, o: 0 }, { ...card, s: 40 }, "5"]) {
     assert.equal((await write(call, 2, "style-shift", "카드 시험 글이에요", null, { card: bad })).status, 400, JSON.stringify(bad));
   }
-  assert.equal((await write(call, 2, "style-shop", "가게는 근무 카드가 없어요", null, { card })).status, 400);
+  // 2.0.0 [RVN-24] T22c-03: 가게 takes one (the app calls it 영업 카드), 투자 has no days at work.
+  assert.equal((await write(call, 2, "style-invest", "투자는 근무 카드가 없어요", null, { card })).status, 400);
+  assert.equal((await write(call, 2, "style-shop", "이번 달 쉬는 날이 셋뿐이네요", null, { card })).status, 201);
   const posts = (await read(call, 3, "style-shift")).data.posts;
   assert.deepEqual(posts.find((p) => p.id === id).card, card);
   assert.equal(posts.find((p) => p.id === early).card, undefined, "before 3.12 nothing was kept");

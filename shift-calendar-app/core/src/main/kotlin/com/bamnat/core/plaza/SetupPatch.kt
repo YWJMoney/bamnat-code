@@ -232,10 +232,14 @@ object RoomCards {
         // 'taken away' in it.
         val mineFacts = SetupFacts.read(mine)
         val mineNoPay by lazy { (runCatching { Json.parse(mine) }.getOrNull() as? Map<*, *>)?.let { SetupFacts.read(it - "pay") }.orEmpty() }
-        for (v in others) {
+        // 2.0.0 [RVN-24] 검토 PC-21 ('데이를 뺀 사람 2명' for one sender): the people are the phones that sent it (the app's
+        // RoomPage.cardVersions); a version given twice still counts once, and one version's rows once per item and value.
+        val versions = others.groupBy { it.id }.map { (_, same) -> same.maxBy { it.persons } }
+        for (v in versions) {
             val n = v.persons.coerceAtLeast(1)
             val theirs = runCatching { Json.parse(v.text) }.getOrNull() as? Map<*, *> ?: continue
             val rows = SetupCompare.rows(if (theirs.containsKey("pay")) mineFacts else mineNoPay, SetupFacts.read(theirs)).filter { !it.same }
+                .distinctBy { it.key to it.after }
             for (row in rows) {
                 val k = row.key to row.after
                 val a = acc[k]

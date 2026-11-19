@@ -2,7 +2,7 @@
 // 사고 타임라인, 제작자 후보, 출시 노트 이름, 스튜디오 요구 상태. 발견마다 그 문제를 재현한 시험 하나(LOOP-21). `npm test`.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { server, device, from, signIn } from "./helpers.mjs";
+import { server, device, from, signIn, report } from "./helpers.mjs";
 import { releaseTick } from "../src/release-desk.js";
 
 const NOW = Date.parse("2026-11-18T03:00:00Z");
@@ -856,4 +856,59 @@ test("[RVN-24] K-결정-10 마을 돌봄 숫자: the hourly job counts last mont
   assert.equal(pub.headers.get("access-control-allow-origin"), "*", "the rules page on another address reads it");
   assert.match(pub.headers.get("cache-control"), /public, max-age=3600/);
   assert.ok(!/d1|device|c1|q/.test(JSON.stringify(pub.data.months)), "nothing that points to a person");
+});
+
+test("[RVN-24] T22c-04 현장·알바·가게 업종 무리: each takes only its own list, 투자 none, and the same-업종 lens reads them back", async (t) => {
+  t.mock.timers.enable({ apis: ["Date"], now: NOW });
+  const { peopleTag, PEOPLE_TRADES } = await import("../src/plaza-people.js");
+  const refuse = (f) => { throw new Error(f); };
+  assert.deepEqual(peopleTag({ s: "FIELD", i: "build", n: "day" }, "style-field", refuse), { s: "FIELD", i: "build", n: "day" });
+  assert.deepEqual(peopleTag({ s: "HOURLY", i: "conv" }, "style-hourly", refuse), { s: "HOURLY", i: "conv" });
+  assert.deepEqual(peopleTag({ s: "BUSINESS", i: "beauty" }, "style-shop", refuse), { s: "BUSINESS", i: "beauty" });
+  for (const [bad, room] of [[{ s: "FIELD", i: "conv" }, "style-field"], [{ s: "HOURLY", i: "semi" }, "style-hourly"], [{ s: "SHIFT", i: "build" }, "style-shift"],
+    [{ s: "INVEST", i: "retail" }, "style-invest"], [{ s: "BUSINESS", i: "우리 가게" }, "style-shop"]]) {
+    assert.throws(() => peopleTag(bad, room, refuse), /tag/, JSON.stringify(bad));
+  }
+  assert.ok(!("INVEST" in PEOPLE_TRADES));
+  const { call } = server();
+  await policyOn(call);
+  const w = await call("POST", "/api/posts", { device: device(1), company: "style-hourly", setup: "room", body: "편의점 야간 혼자 괜찮을까요?", tag: { s: "HOURLY", i: "conv" } }, from(1));
+  assert.equal(w.status, 201, JSON.stringify(w.data));
+  const p = (await call("GET", "/api/companies/style-hourly/setups/room/posts", undefined, { ...from(2), "x-device": device(2) })).data.posts;
+  assert.deepEqual(p[0].tag, { s: "HOURLY", i: "conv" });
+});
+
+test("[RVN-24] PC-21 고친 점: one phone that sent the same version twice stands behind it as one person", async () => {
+  const { call, DB } = server({ plaza: true });
+  const first = await call("POST", "/api/reports", report(1), from(1));
+  assert.equal(first.status < 300, true);
+  const again = await call("POST", "/api/reports", report(1), from(1));
+  assert.equal(again.status < 300, true);
+  const c = first.data.company.id;
+  const g = first.data.setup;
+  const count = () => DB.db.prepare("SELECT COUNT(*) AS n, COUNT(DISTINCT device) AS d FROM reports WHERE company_id = ? AND grp = ?").get(c, g);
+  const rows = count();
+  const senders = async () => (await call("GET", `/api/companies/${c}`)).data.setups.find((x) => x.id === g).senders;
+  // Whatever the rows, the page counts the phone once (state() and readStates alike).
+  assert.equal(await senders(), rows.d);
+  assert.equal(await senders(), 1);
+  // Two more phones bring it in: three people, as the version's history says too.
+  await call("POST", "/api/reports", report(2), from(2));
+  assert.equal(await senders(), 2);
+  await call("POST", "/api/reports", report(3), from(3));
+  assert.equal(await senders(), 3);
+  const hist = (await call("GET", `/api/companies/${c}/history?setup=${g}`, undefined, { "x-device": device(1) })).data;
+  assert.equal(hist.versions.length, 1);
+  assert.equal(hist.versions[0].senders, 3);
+  // The first phone sends it once more: the server keeps one row a phone. A row kept from before that rule (two from one phone)
+  // still reads as one person.
+  assert.equal((await call("POST", "/api/reports", report(1), from(1))).status < 300, true);
+  assert.deepEqual([count().n, count().d], [3, 3]);
+  const cols = DB.db.prepare("PRAGMA table_info(reports)").all().map((x) => x.name).filter((x) => x !== "id");
+  DB.db.prepare(`INSERT INTO reports (id, ${cols.join(", ")}) SELECT 'legacyCopy000001', ${cols.join(", ")} FROM reports
+    WHERE company_id = ? AND grp = ? ORDER BY created_at LIMIT 1`).run(c, g);
+  assert.deepEqual([count().n, count().d], [4, 3], "two rows from one phone");
+  assert.equal(await senders(), 3);
+  const later = (await call("GET", `/api/companies/${c}/history?setup=${g}`, undefined, { "x-device": device(1) })).data;
+  assert.equal(later.versions[0].senders, 3);
 });

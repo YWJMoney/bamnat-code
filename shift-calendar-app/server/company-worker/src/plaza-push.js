@@ -118,11 +118,16 @@ export async function plazaPushAfter(env, { room, writer, parent, kind, form, on
       return { kind: "plaza_answer", devices: await tellAndMark(env, [q.device], "plaza_answer", now) };
     }
     if (kind !== "question" || !form || !PLAZA_PUSH_ROOMS[room]) return null;
-    const watchers = (await all(env, `SELECT w.device FROM plaza_watch w
+    // 2.0.0 [RVN-24] 검토 I22cc-02 답할 사람 찾기: of the watchers, those whose answers in this 광장 helped someone (도움 됐어요) come first,
+    // then the longest waiting. The phone still holds the notice through sleep and work, and words it as an ask on a day off.
+    const watchers = (await all(env, `SELECT w.device,
+        (SELECT COUNT(*) FROM posts a CROSS JOIN posts q ON q.answer = a.id WHERE a.device = w.device AND a.company_id = ?1 AND a.status = 'shown'
+          AND q.status = 'shown' AND q.device <> a.device) AS helped
+      FROM plaza_watch w
       LEFT JOIN plaza_pushed p ON p.device = w.device AND p.kind = 'plaza_question'
-      WHERE w.room = ? AND w.form = ? AND w.device <> ? AND (p.at IS NULL OR p.at <= ?)
-        AND NOT EXISTS (SELECT 1 FROM recipe_blocks b WHERE b.device = w.device AND b.maker = ?)
-      ORDER BY COALESCE(p.at, 0) ASC, w.at ASC LIMIT ${PLAZA_PUSH.watchers}`,
+      WHERE w.room = ?1 AND w.form = ?2 AND w.device <> ?3 AND (p.at IS NULL OR p.at <= ?4)
+        AND NOT EXISTS (SELECT 1 FROM recipe_blocks b WHERE b.device = w.device AND b.maker = ?5)
+      ORDER BY helped > 0 DESC, COALESCE(p.at, 0) ASC, w.at ASC LIMIT ${PLAZA_PUSH.watchers}`,
     room, form, writer, now - PLAZA_PUSH.questionGap, maker)).map((r) => r.device);
     return { kind: "plaza_question", devices: await tellAndMark(env, watchers, "plaza_question", now) };
   } catch (e) {

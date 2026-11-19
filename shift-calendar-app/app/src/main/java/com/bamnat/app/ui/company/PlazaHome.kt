@@ -343,9 +343,7 @@ class PlazaHomeViewModel(
         if (r == null) return next
         return withContext(Dispatchers.Default) {
             val mine = runCatching { scope.share.exportForServer().toString() }.getOrNull()
-            val versions = (r.others + listOfNotNull(r.base?.takeIf { !r.mine }))
-                .map { com.bamnat.core.plaza.RoomCards.Version(it.setup, it.text, maxOf(it.senders, it.persons)) }
-            val cards = mine?.let { runCatching { com.bamnat.core.plaza.RoomCards.cards(it, versions, max = 3) }.getOrNull() }.orEmpty()
+            val cards = mine?.let { runCatching { com.bamnat.core.plaza.RoomCards.cards(it, r.cardVersions, max = 3) }.getOrNull() }.orEmpty()
             val base = r.base?.text ?: mine
             val facts = base?.let { t -> runCatching { SetupFacts.read(t) }.getOrNull() }.orEmpty()
                 .filter { it.key.startsWith("cycle:") || it.key.startsWith("shift:") || it.key.startsWith("rate:") }

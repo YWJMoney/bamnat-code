@@ -194,7 +194,16 @@ data class RoomPage(
     val stablePhones: Int = 3,
     val stableDays: Int = 30,
     val stableUses: Int = 0,
-)
+) {
+    /**
+     * [PLAZA-09] What the 고친 점 cards read: the department's other versions (and the base when it is not this phone's own).
+     * 2.0.0 [RVN-24] 검토 PC-21: a card says '데이를 뺀 사람 2명', so its people are the phones that sent a version with that
+     * change, each once; a 맞아요 is not a change (it read '2명' for one sender and one 맞아요 beside '쓰는 사람 1명').
+     */
+    val cardVersions: List<com.bamnat.core.plaza.RoomCards.Version>
+        get() = (others + listOfNotNull(base?.takeIf { !mine }))
+            .map { com.bamnat.core.plaza.RoomCards.Version(it.setup, it.text, it.senders.coerceAtLeast(1)) }
+}
 
 data class CompanyPage(
     val id: String,
@@ -1682,7 +1691,9 @@ internal fun talkOf(o: JSONObject): Talk = Talk(
             tag = p.optJSONObject("tag")?.let { t -> com.bamnat.core.plaza.PlazaTag.of { k -> t.opt(k)?.takeIf { it != JSONObject.NULL } } },
             first = p.optBoolean("first", false),
             helped = p.optInt("helped", 0).coerceIn(0, 100_000),
-            card = p.optJSONObject("card")?.let { c -> com.bamnat.core.plaza.WorkCard.of { k -> c.opt(k) } },
+            // 2.0.0 [RVN-24] T22c-03: a 가게 광장's card says 영업.
+            card = p.optJSONObject("card")?.let { c -> com.bamnat.core.plaza.WorkCard.of { k -> c.opt(k) } }
+                ?.let { c -> if (p.optJSONObject("tag")?.optString("s") == "BUSINESS") c.copy(shop = true) else c },
             mark = com.bamnat.core.plaza.MakerMark.of(p.optString("mark", "").ifEmpty { null }),
         )
     },

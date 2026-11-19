@@ -40,7 +40,6 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.bamnat.app.AppContainer
 import com.bamnat.app.company.TalkPost
-import com.bamnat.core.plaza.IndustryGroups
 import com.bamnat.core.plaza.PlazaTag
 import com.bamnat.core.plaza.PlazaTags
 import com.bamnat.core.work.WorkStyle
@@ -123,7 +122,8 @@ internal fun reactionWords(agree: Int, disagree: Int): String? =
 @Composable
 internal fun PlazaTagScopeDialog(c: AppContainer, room: String?, onDismiss: () -> Unit) {
     var s by remember { mutableStateOf(c.plazaTags.scope()) }
-    val style = room?.let(StylePlaza::styleOf)
+    // 2.0.0 [RVN-24] T22c-04: without a room (opened from the plaza home) the rows are the main kind of work's.
+    val style = room?.let(StylePlaza::styleOf) ?: c.settingsRepository.current.workStyle
     val preview by produceState<PlazaTag?>(null, s) {
         val t = room?.let { c.plazaTags.tagFor(it) }
         value = t?.copy(months = if (s.months) 0 else null)
@@ -147,23 +147,31 @@ internal fun PlazaTagScopeDialog(c: AppContainer, room: String?, onDismiss: () -
                     Text("이렇게 보여요", style = MaterialTheme.typography.labelMedium)
                     PlazaTagLine(it)
                 } } }
-                ScopeRow("근무형태 (예: 4조 2교대)", s.form) { s = s.copy(form = it) }
+                // 2.0.0 [RVN-24] T22c-04: 근무형태 only where the kind of work has one (교대·일근); 현장·알바·가게 pick an 업종 instead.
+                if (PlazaTags.formsFor(style).isNotEmpty()) ScopeRow("근무형태 (예: 4조 2교대)", s.form) { s = s.copy(form = it) }
                 ScopeRow("밤낮 쓴 개월 수", s.months) { s = s.copy(months = it) }
-                if (style == null || style in PlazaTags.NOW_STYLES) ScopeRow("쓸 때 근무 중이면 표시", s.now) { s = s.copy(now = it) }
-                if (style == null || style in PlazaTags.INDUSTRY_STYLES) {
+                if (style in PlazaTags.NOW_STYLES) ScopeRow("쓸 때 근무 중이면 표시", s.now) { s = s.copy(now = it) }
+                val choices = PlazaTags.industryChoices(style)
+                if (choices.isNotEmpty()) {
+                    val company = style in PlazaTags.INDUSTRY_STYLES
+                    val picked = if (company) s.industry else s.trades[style]
+                    fun pick(key: String?) {
+                        s = if (company) s.copy(industry = key) else s.copy(trades = if (key == null) s.trades - style else s.trades + (style to key))
+                    }
                     Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
                         Column(Modifier.weight(1f)) {
                             Text("업종", style = MaterialTheme.typography.bodyMedium)
-                            Text(s.industry?.let { IndustryGroups.byKey(it)?.name } ?: "보이지 않음 (회사를 좁힐 수 있어 처음엔 꺼져 있어요)",
+                            Text(PlazaTags.industryName(style, picked)
+                                ?: if (company) "보이지 않음 (회사를 좁힐 수 있어 처음엔 꺼져 있어요)" else "보이지 않음 (고르면 같은 업종 분들 글을 모아 볼 수 있어요)",
                                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
                         TextButton(onClick = { industryOpen = !industryOpen }) { Text(if (industryOpen) "접기" else "고르기") }
                     }
                     // 2.0.0 [RVN-18] 검토 U10a-04: chip rows fold to one line with 펼치기 (사용자 11-04 규칙).
                     if (industryOpen) com.bamnat.app.ui.components.FoldRow("plaza.industry", what = "업종") {
-                        com.bamnat.app.ui.components.FilterChip(selected = s.industry == null, onClick = { s = s.copy(industry = null) }, label = { Text("보이지 않음") })
-                        PlazaTags.industries().forEach { g ->
-                            com.bamnat.app.ui.components.FilterChip(selected = s.industry == g.key, onClick = { s = s.copy(industry = g.key) }, label = { Text(g.name) })
+                        com.bamnat.app.ui.components.FilterChip(selected = picked == null, onClick = { pick(null) }, label = { Text("보이지 않음") })
+                        choices.forEach { (key, name) ->
+                            com.bamnat.app.ui.components.FilterChip(selected = picked == key, onClick = { pick(key) }, label = { Text(name) })
                         }
                     }
                 }
@@ -218,6 +226,15 @@ internal object Lens {
     const val SHOW = "show"
     /** 1.39 [PLZC-32] 야간 라운지: while my calendar says I am on a night shift, the posts of others awake at work tonight. */
     const val LOUNGE = "lounge"
+}
+
+/**
+ * 2.0.0 [RVN-24] 검토 I22cc-02: the lens a 소식 asks 광장 to open on ('답 기다리는 질문' from a new question's notice), taken once by the
+ * next feed that shows it.
+ */
+internal object PlazaLensLink {
+    @Volatile var next: String? = null
+    fun take(): String? = next.also { next = null }
 }
 
 /** [PLZC-32] How far back 야간 라운지 looks. */
@@ -343,6 +360,8 @@ internal fun PlazaFeed(
 ) {
     val styleRoom = plan.room?.startsWith("style-") == true
     var lens by rememberSaveable(plan.room) { mutableStateOf(Lens.ALL) }
+    // I22cc-02: a new question's notice opens on the questions still waiting.
+    androidx.compose.runtime.LaunchedEffect(plan.room) { if (styleRoom) PlazaLensLink.take()?.let { lens = it } }
     val mine = vm.mine.collectAsStateWithLifecycle().value
     // My tag (and so the lenses that need one), and the 시간 맞춤 line, worked out from my calendar.
     // 1.39 [PLZC-60] (사용자 2026-11-08 "위에 공간을 불필요하게 차지"): the 시간 맞춤 줄·이번 주 주제·글 쓰기 are one 글 쓰기 box; 오늘 글 n is
@@ -389,7 +408,7 @@ internal fun PlazaFeed(
             if (night) add(Lens.LOUNGE to "🌙 야간 라운지")
             add(Lens.ALL to "전체")
             if (styleRoom && mine?.form != null) add(Lens.SAME to "나와 같은 근무 · ${mine.form!!.label}")
-            if (styleRoom && mine?.industry != null) add(Lens.INDUSTRY to "같은 업종 · ${IndustryGroups.byKey(mine.industry)?.name}")
+            if (styleRoom && mine?.industry != null) add(Lens.INDUSTRY to "같은 업종 · ${PlazaTags.industryName(mine.style, mine.industry)}")
             val pulse = talk?.pulse
             if (styleRoom && plan.room?.let(StylePlaza::styleOf) in PlazaTags.NOW_STYLES)
                 add(Lens.WORKING to "지금 근무 중" + (pulse?.working?.takeIf { it > 0 }?.let { " ${it}명" } ?: ""))

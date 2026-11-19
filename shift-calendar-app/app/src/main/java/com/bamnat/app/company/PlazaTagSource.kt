@@ -28,11 +28,16 @@ class PlazaTagSource(private val c: AppContainer) {
             industry = prefs.getString("industry", null)?.takeIf { it.isNotBlank() },
             months = prefs.getBoolean("months", true),
             now = prefs.getBoolean("now", true),
+            // 2.0.0 [RVN-24] T22c-04: 현장·알바·가게 업종, one a kind of work, none at first.
+            trades = com.bamnat.core.plaza.StyleTrades.STYLES.mapNotNull { st ->
+                prefs.getString("trade_${st.name}", null)?.takeIf { it.isNotBlank() }?.let { st to it }
+            }.toMap(),
         )
     }.getOrDefault(PlazaTags.Scope())
 
     fun setScope(s: PlazaTags.Scope) {
         prefs.edit().putBoolean("form", s.form).putString("industry", s.industry).putBoolean("months", s.months).putBoolean("now", s.now)
+            .apply { com.bamnat.core.plaza.StyleTrades.STYLES.forEach { st -> putString("trade_${st.name}", s.trades[st]) } }
             .putBoolean("chosen", true).apply()
     }
 
@@ -88,6 +93,7 @@ class PlazaTagSource(private val c: AppContainer) {
         val snap = c.calendars.repository(calendar).windowSnapshot(java.time.YearMonth.from(today))
         // 2.0.0 [RVN-22] T10b-03: days not written yet are not 쉬는 날 ([com.bamnat.core.plaza.WorkCard.ofDays]).
         return com.bamnat.core.plaza.WorkCard.ofDays(snap.resolver.resolveRange(today.withDayOfMonth(1), today))
+            ?.let { if (style == WorkStyle.BUSINESS) it.copy(shop = true) else it }
     }
 
     /** [PLZC-20] The room whose next top post takes my 근무 카드 (set by the writing box just before 보내기, taken once). */
@@ -108,5 +114,8 @@ class PlazaTagSource(private val c: AppContainer) {
     }
 }
 
-/** 1.39 [PLZC-20] The kinds of work whose plaza takes a 근무 카드 (as the server's CARD_STYLES). */
-val CARD_STYLES = setOf(WorkStyle.SHIFT, WorkStyle.DAY, WorkStyle.FIELD, WorkStyle.HOURLY)
+/**
+ * 1.39 [PLZC-20] The kinds of work whose plaza takes a 근무 카드 (as the server's CARD_STYLES). 2.0.0 [RVN-24] T22c-03: 가게 too, as 영업 카드
+ * (영업일); 투자 has no days at work.
+ */
+val CARD_STYLES = setOf(WorkStyle.SHIFT, WorkStyle.DAY, WorkStyle.FIELD, WorkStyle.HOURLY, WorkStyle.BUSINESS)

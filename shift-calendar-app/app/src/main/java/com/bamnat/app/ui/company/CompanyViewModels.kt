@@ -418,9 +418,7 @@ class CompanyDetailViewModel(
 
     private suspend fun roomCards(r: com.bamnat.app.company.RoomPage): List<com.bamnat.core.plaza.RoomCard> {
         val mine = runCatching { scope.share.exportForServer().toString() }.getOrNull() ?: return emptyList()
-        val versions = (r.others + listOfNotNull(r.base?.takeIf { !r.mine }))
-            .map { com.bamnat.core.plaza.RoomCards.Version(it.setup, it.text, maxOf(it.senders, it.persons)) }
-        return com.bamnat.core.plaza.RoomCards.cards(mine, versions)
+        return com.bamnat.core.plaza.RoomCards.cards(mine, r.cardVersions)
     }
 
     /** 이 값 쓰기: one value of the version behind [card], the rest of the user's setup as it was. */

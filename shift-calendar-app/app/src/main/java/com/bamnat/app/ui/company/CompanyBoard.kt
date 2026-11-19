@@ -698,7 +698,7 @@ fun TalkSheet(holder: TalkHolder) {
                 }
                 if (replyTo == null && kind != "proposal") myCard?.let { card ->
                     com.bamnat.app.ui.components.FilterChip(selected = withCard, onClick = { withCard = !withCard },
-                        label = { Text(if (withCard) "📅 근무 카드 붙임 · ${card.line()}" else "📅 이번 달 근무 카드 붙이기", maxLines = 1,
+                        label = { Text(if (withCard) "📅 ${card.name} 붙임 · ${card.line()}" else "📅 이번 달 ${card.name} 붙이기", maxLines = 1,
                             overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis) },
                         modifier = Modifier.padding(top = 2.dp))
                 }

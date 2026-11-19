@@ -105,6 +105,16 @@ object PlazaPush {
     internal fun answerLine(fresh: Int): String? = if (fresh <= 0) null else "$ANSWER_LINE ${fresh}개가 왔어요"
     internal const val QUESTION_LINE = "나와 같은 근무의 새 질문이 올라왔어요"
 
+    /** 2.0.0 [RVN-24] 검토 I22cc-02: on a day off (or the morning after a night), the same news as a gentle ask. */
+    internal const val ASK_LINE = "같은 근무 분이 질문을 올렸어요. 시간 되실 때 답해 주실래요?"
+
+    /** The payload of a question's notice: 광장 opens on '답 기다리는 질문'. */
+    const val WAITING = "waiting"
+
+    /** I22cc-02: which line a new question becomes, from my day by my own calendar (null when the calendar says nothing). */
+    internal fun questionLine(day: PlazaTagSource.MyDay?): String =
+        if (day != null && (day.dayOff || day.offAfterNight)) ASK_LINE else QUESTION_LINE
+
     /** A push came: the server is asked what is new and the 소식 notice tells it. Never throws. */
     suspend fun handle(c: AppContainer, kind: String) {
         runCatching {
@@ -122,8 +132,12 @@ object PlazaPush {
                     PlazaNewsJob.tell(c, "광장 소식", listOf(line), NoticeLinks.Target.VILLAGE_POSTS, replacing = ANSWER_LINE)
                 }
                 QUESTION -> {
-                    if (!same(c.appContext) || watchRoom(c) == null) return
-                    PlazaNewsJob.tell(c, "광장 소식", listOf(QUESTION_LINE), NoticeLinks.Target.PLAZA)
+                    val room = watchRoom(c)
+                    if (!same(c.appContext) || room == null) return
+                    // 2.0.0 [RVN-24] I22cc-02: the server asks those whose answers helped first; this phone words it as an ask when I'm off
+                    // today (held through sleep and work as before), and the tap opens 광장 on the questions still waiting.
+                    val day = runCatching { c.plazaTags.dayFor(room) }.getOrNull()
+                    PlazaNewsJob.tell(c, "광장 소식", listOf(questionLine(day)), NoticeLinks.Target.PLAZA, payload = WAITING)
                 }
             }
         }

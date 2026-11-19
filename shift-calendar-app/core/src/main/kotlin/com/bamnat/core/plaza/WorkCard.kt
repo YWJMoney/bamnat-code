@@ -5,20 +5,34 @@ package com.bamnat.core.plaza
  * 자랑 has its ground. [days] days of the month gone (today included), [work] days at work, [nights] of them night shifts,
  * [streak] the longest run of days at work, [off] days off. 처리방침 3.12 ④.
  */
-data class WorkCard(val days: Int, val work: Int, val nights: Int, val streak: Int, val off: Int) {
+data class WorkCard(
+    val days: Int,
+    val work: Int,
+    val nights: Int,
+    val streak: Int,
+    val off: Int,
+    /**
+     * 2.0.0 [RVN-24] 검토 T22c-03: a 가게's card (its days are 영업일, and a shop open in the evening is not a night shift). Only how
+     * it is said; the same five numbers go to the server.
+     */
+    val shop: Boolean = false,
+) {
     /** The keys the server takes (d, w, n, s, o). */
     fun fields(): Map<String, Int> = mapOf("d" to days, "w" to work, "n" to nights, "s" to streak, "o" to off)
 
-    /** The card as one line: '이번 달 근무 12일 · 야간 6 · 최장 연속 5일 · 쉬는 날 4'. */
+    /** The card as one line: '이번 달 근무 12일 · 야간 6 · 최장 연속 5일 · 쉬는 날 4', a 가게's '이번 달 영업 24일 · 최장 연속 12일 · 쉬는 날 4'. */
     fun line(): String = buildList {
-        add("이번 달 근무 ${work}일")
-        if (nights > 0) add("야간 $nights")
+        add(if (shop) "이번 달 영업 ${work}일" else "이번 달 근무 ${work}일")
+        if (nights > 0 && !shop) add("야간 $nights")
         if (streak >= 2) add("최장 연속 ${streak}일")
         add("쉬는 날 $off")
     }.joinToString(" · ")
 
+    /** What the card is called: 근무 카드, or a 가게's 영업 카드. */
+    val name: String get() = if (shop) "영업 카드" else "근무 카드"
+
     /** Said to a screen reader, with how far into the month. */
-    fun spoken(): String = "근무 카드, 이번 달 ${days}일 동안 " + line().removePrefix("이번 달 ")
+    fun spoken(): String = "$name, 이번 달 ${days}일 동안 " + line().removePrefix("이번 달 ")
 
     companion object {
         /**

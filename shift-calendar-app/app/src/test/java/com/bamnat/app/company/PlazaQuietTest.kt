@@ -75,4 +75,13 @@ class PlazaQuietTest {
         PlazaPush.syncQuiet(c, tokenGiven = false)
         assertEquals(emptyList<Boolean>(), server.calls.toList())
     }
+
+    /** 2.0.0 [RVN-24] 검토 I22cc-02: a new question is a gentle ask on my day off (or the morning after a night), the plain news otherwise. */
+    @Test fun aNewQuestionIsAnAskOnADayOff() {
+        val tag = com.bamnat.core.plaza.PlazaTag(com.bamnat.core.work.WorkStyle.SHIFT)
+        assertEquals(PlazaPush.ASK_LINE, PlazaPush.questionLine(PlazaTagSource.MyDay(tag, dayOff = true)))
+        assertEquals(PlazaPush.ASK_LINE, PlazaPush.questionLine(PlazaTagSource.MyDay(tag, offAfterNight = true)))
+        assertEquals(PlazaPush.QUESTION_LINE, PlazaPush.questionLine(PlazaTagSource.MyDay(tag)))
+        assertEquals(PlazaPush.QUESTION_LINE, PlazaPush.questionLine(null))
+    }
 }

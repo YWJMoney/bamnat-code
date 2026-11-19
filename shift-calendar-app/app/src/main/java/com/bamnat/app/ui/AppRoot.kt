@@ -671,6 +671,10 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
             }
             // [TOWN-01] 1.37: a 소식 opens 마을 on the part it speaks of, not on the part last seen (장터·테마·공방 hid the answer).
             NoticeLinks.Target.PLAZA -> {
+                // 2.0.0 [RVN-24] I22cc-02: a new question's notice opens 광장 on '답 기다리는 질문'.
+                if (NoticeLinks.payload.value == com.bamnat.app.company.PlazaPush.WAITING) {
+                    com.bamnat.app.ui.company.PlazaLensLink.next = com.bamnat.app.ui.company.Lens.WAITING
+                }
                 com.bamnat.app.ui.company.TalkSheets.closeAll()
                 com.bamnat.app.ui.hub.HubLinks.open(com.bamnat.app.ui.hub.HubSection.TALK)
                 nav.navigateTopLevel(TopLevel.PLAZA.route); NoticeLinks.consume(target)

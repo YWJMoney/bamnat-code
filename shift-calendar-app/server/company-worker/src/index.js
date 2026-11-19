@@ -3304,9 +3304,10 @@ async function state(env, companyId, grp, threshold, adopted) {
     one(env, "SELECT COUNT(*) AS n FROM posts WHERE company_id = ? AND grp = ? AND status = 'shown'", companyId, grp),
     // [PLZ-08] Who stands behind it: how many sent it, how many checked it on a pay slip, how many use it,
     // and the names they chose to be shown by (no one else's).
+    // 2.0.0 [RVN-24] PC-21: senders counts each phone once ('고친 점: … 2명' read so from one person who sent it twice).
     one(env, `SELECT
         (SELECT COUNT(*) FROM uses WHERE company_id = ?1 AND grp = ?2) AS uses,
-        (SELECT COUNT(*) FROM reports WHERE company_id = ?1 AND grp = ?2 AND status IN ('pending', 'adopted')) AS senders,
+        (SELECT COUNT(DISTINCT device) FROM reports WHERE company_id = ?1 AND grp = ?2 AND status IN ('pending', 'adopted')) AS senders,
         (SELECT COUNT(*) FROM reports WHERE company_id = ?1 AND grp = ?2 AND status IN ('pending', 'adopted') AND verified = 1)
           + (SELECT COUNT(*) FROM votes WHERE company_id = ?1 AND grp = ?2 AND ok = 1 AND verified = 1) AS checked,
         (SELECT COUNT(*) FROM reports WHERE company_id = ?1 AND grp = ?2 AND status IN ('pending', 'adopted') AND verified = 1) AS sentChecked`, companyId, grp),
@@ -3395,7 +3396,9 @@ async function readStates(env, pairs) {
       const nets = new Set(proofs.map(([cluster]) => cluster)).size;
       const months = new Set(proofs.map(([, at]) => new Date(Math.floor(at / 1000) * 1000).toISOString().slice(0, 7))).size;
       return { id: grp, status: adopted ? "adopted" : "pending", points: s.points, persons: s.persons, bad: s.bad, threshold,
-        ...trust(s, threshold), posts: posts.get(k) ?? 0, uses: n, senders: reports.length,
+        ...trust(s, threshold), posts: posts.get(k) ?? 0, uses: n,
+        // 2.0.0 [RVN-24] PC-21: each phone once, as state().
+        senders: new Set(reports.map((r) => r.device)).size,
         checked: sentChecked + backing.filter((v) => v.verified === 1).length,
         // 1.36 [V3] No 마을 이름 next to a company.
         by: [],
@@ -4821,7 +4824,7 @@ async function plazas(env) {
  */
 export async function history(env, companyId, url, request) {
   // SP1 1.30 [SPD-09] Where and who together, then the department and its versions (with each one's senders and proposed post)
-  // together: two rounds, not two per version.
+  // together: two rounds, not two per version. 2.0.0 [RVN-24] PC-21: a version's senders count each phone once.
   const grp = url.searchParams.get("setup") ?? "";
   const [c, asked] = await Promise.all([follow(env, companyId), viewer(request, env, companyId)]);
   if (!c || c.hidden) return json({ error: "not_found" }, 404);
@@ -4835,7 +4838,7 @@ export async function history(env, companyId, url, request) {
     UNION ALL SELECT dept_norm FROM reports WHERE company_id = ?1 AND grp = ?2 LIMIT 1`;
   const [dept, rules] = await Promise.all([one(env, deptOf, c.id, grp), all(env, `SELECT r.*,
       (SELECT p.post_id FROM reports p WHERE p.rule_id = r.id AND p.post_id IS NOT NULL LIMIT 1) AS sp_post,
-      (SELECT COUNT(*) FROM reports s WHERE s.rule_id = r.id) AS sp_senders
+      (SELECT COUNT(DISTINCT s.device) FROM reports s WHERE s.rule_id = r.id) AS sp_senders
     FROM rules r WHERE r.company_id = ?1 AND r.dept_norm = (${deptOf}) ORDER BY r.version`, c.id, grp)]);
   if (!dept) return json({ error: "not_found" }, 404);
   const versions = [];

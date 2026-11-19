@@ -114,6 +114,30 @@ test("SVC-91: 지켜보는 분이 많으면 가장 오래 못 들은 분부터, 
   assert.ok(next.devices.every((d) => Number(d.slice(-4)) >= 20), "those told an hour before the first 20 come first");
 });
 
+test("[RVN-24] I22cc-02 답할 사람 찾기: of many watchers, those whose answers here helped someone are asked first", async (t) => {
+  const { DB, env } = await plaza(t);
+  const room = "style-shift";
+  const writer = await deviceHash(device(901));
+  const many = PLAZA_PUSH.watchers + 20;
+  for (let i = 0; i < many; i++) {
+    const dev = `watcher-${String(i).padStart(4, "0")}`;
+    await DB.prepare("INSERT INTO plaza_watch (device, room, form, at) VALUES (?, ?, 'FOUR_TEAM', ?)").bind(dev, room, NOW - (many - i) * 60e3).run();
+    await DB.prepare("INSERT INTO push_phones (device, token, at) VALUES (?, ?, ?)").bind(dev, `${dev}-token-0123456789abcdef:APA91b`, NOW).run();
+  }
+  // The five newest watchers (cut by the 200 before) wrote answers someone picked as 도움 됐어요 in this 광장; one more did elsewhere only.
+  const helper = (i, where) => DB.prepare(`INSERT INTO posts (id, company_id, grp, device, body, status, created_at, parent)
+    VALUES (?, ?, 'room', ?, '답', 'shown', ?, 'q-${i}')`).bind(`a-${i}`, where, `watcher-${String(i).padStart(4, "0")}`, NOW - HOUR).run()
+    .then(() => DB.prepare(`INSERT INTO posts (id, company_id, grp, device, body, kind, status, created_at, answer)
+      VALUES (?, ?, 'room', 'asker', '질문', 'question', 'shown', ?, ?)`).bind(`q-${i}`, where, NOW - 2 * HOUR, `a-${i}`).run());
+  for (const i of [215, 216, 217, 218, 219]) await helper(i, room);
+  await helper(214, "style-day");
+  const told = await plazaPushAfter(env, { room, writer, parent: null, kind: "question", form: "FOUR_TEAM", on: true }, NOW);
+  assert.equal(told.devices.length, PLAZA_PUSH.watchers);
+  for (const i of [215, 216, 217, 218, 219]) assert.ok(told.devices.includes(`watcher-0${i}`), `helper ${i} is asked`);
+  assert.ok(!told.devices.includes("watcher-0214"), "a helper of another 광장 waits its turn");
+  assert.deepEqual(told.devices.slice(0, 5), ["watcher-0215", "watcher-0216", "watcher-0217", "watcher-0218", "watcher-0219"]);
+});
+
 // ---- [RVN-05] SVC-97 할 일함: 다른 칸의 줄 상태·기록은 그 칸 권한이 있어야 바꾸고 봐요 ----
 
 const APP = { "x-admin": "1", origin: ORIGIN };

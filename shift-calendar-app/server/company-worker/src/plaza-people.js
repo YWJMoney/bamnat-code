@@ -28,6 +28,15 @@ export const PEOPLE_FORMS = {
 /** The 업종 무리 a writer may show (core IndustryGroups keys, 그 밖의 업종 left out); only for 교대·일근. */
 export const PEOPLE_INDUSTRIES = ["fire", "coast", "police", "correction", "hospital", "rail", "airport", "transit", "watch", "power", "semi",
   "chem", "steel", "auto", "food", "logistics", "maker", "hotel", "weather"];
+/**
+ * 2.0.0 [RVN-24] 검토 T22c-04: 현장·알바·가게의 업종 무리(core StyleTrades, 처리방침 3.12 1-4항 '이용자가 고른 경우 업종 무리'). 키는 유형마다
+ * 따로 읽어요(알바 dining과 가게 dining은 다른 목록의 같은 낱말).
+ */
+export const PEOPLE_TRADES = {
+  FIELD: ["build", "civil", "plant", "electric", "interior", "landscape"],
+  HOURLY: ["conv", "cafe", "dining", "parcel", "tutor", "retail", "event"],
+  BUSINESS: ["dining", "cafe", "retail", "beauty", "repair", "online"],
+};
 const PEOPLE_NOW_STYLES = ["SHIFT", "DAY", "FIELD", "HOURLY"];
 /** Which kind of work each kind of work's room is for. */
 const PEOPLE_ROOM_STYLE = { "style-shift": "SHIFT", "style-day": "DAY", "style-field": "FIELD", "style-shop": "BUSINESS",
@@ -53,7 +62,8 @@ export function peopleTag(raw, room, refuse) {
     out.f = raw.f;
   }
   if (raw.i !== undefined) {
-    if (!["SHIFT", "DAY"].includes(style) || !PEOPLE_INDUSTRIES.includes(raw.i)) refuse("tag", "tag");
+    const ok = ["SHIFT", "DAY"].includes(style) ? PEOPLE_INDUSTRIES.includes(raw.i) : (PEOPLE_TRADES[style] ?? []).includes(raw.i);
+    if (!ok) refuse("tag", "tag");
     out.i = raw.i;
   }
   if (raw.n !== undefined) {
@@ -154,8 +164,11 @@ export async function pollByForm(all, env, ids, options) {
   return out;
 }
 
-/** 1.39 [PLZC-20] The kinds of work whose plaza takes a 근무 카드 (the ones that count days at work). */
-export const CARD_STYLES = ["SHIFT", "DAY", "FIELD", "HOURLY"];
+/**
+ * 1.39 [PLZC-20] The kinds of work whose plaza takes a 근무 카드 (the ones that count days at work). 2.0.0 [RVN-24] T22c-03: 가게 too (the
+ * app says 영업 카드, the same five numbers); 투자 has no days at work.
+ */
+export const CARD_STYLES = ["SHIFT", "DAY", "FIELD", "HOURLY", "BUSINESS"];
 
 /**
  * 1.39 [PLZC-20] 근무 카드: this month so far by the writer's calendar, numbers only. d days of the month gone, w days at work, n of them
