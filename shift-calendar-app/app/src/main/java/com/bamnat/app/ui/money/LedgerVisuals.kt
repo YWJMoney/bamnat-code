@@ -162,7 +162,19 @@ fun lookIcon(key: String): ImageVector? = when (key) {
 /** [LEDG-15] A picture for each built-in category, so a list reads at a glance; the user's own get a label. 2.0.0 [RVK-46] Or the one the user picked. */
 @Composable
 @ReadOnlyComposable
-fun categoryIcon(name: String): ImageVector = LocalCategoryLooks.current[name]?.let { lookIcon(it.icon) } ?: usualCategoryIcon(name)
+fun categoryIcon(name: String): ImageVector = LocalCategoryLooks.current[name].let { edit ->
+    edit?.let { lookIcon(it.icon) } ?: usualCategoryIcon(edit?.let(com.bamnat.core.money.CategoryLook::renamedBuiltin) ?: name)
+}
+
+/**
+ * 2.0.0 [RVK-60] (검토 I06ab-01) What the category the user calls [name] counts as (급여, 카드값 …), by its fixed id: 급여 renamed 월급 is
+ * still 급여. Null for any other.
+ */
+@Composable
+@ReadOnlyComposable
+fun categoryRole(kind: com.bamnat.core.money.MoneyKind, name: String): com.bamnat.core.money.CategoryRole? =
+    com.bamnat.core.money.CategoryIds.role(LocalCategoryLooks.current[name]?.takeIf { it.kind == kind && it.id.isNotEmpty() }?.id
+        ?: com.bamnat.core.money.CategoryIds.of(kind, name))
 
 fun usualCategoryIcon(name: String): ImageVector = when (name) {
     "식비" -> Icons.Outlined.Restaurant
@@ -218,8 +230,10 @@ private val CATEGORY_ORDER = (MoneyCategories.expense - MoneyCategories.INTEREST
 
 @Composable
 @ReadOnlyComposable
-fun categoryColor(name: String): Color = LocalCategoryLooks.current[name]?.color?.let(com.bamnat.core.money.CategoryLook::color)?.takeIf { it > 0 }?.let { lookColor(it) }
-    ?: usualCategoryColor(name)
+fun categoryColor(name: String): Color = LocalCategoryLooks.current[name].let { edit ->
+    edit?.color?.let(com.bamnat.core.money.CategoryLook::color)?.takeIf { it > 0 }?.let { lookColor(it) }
+        ?: usualCategoryColor(edit?.let(com.bamnat.core.money.CategoryLook::renamedBuiltin) ?: name)
+}
 
 /** 2.0.0 [RVK-46] A picked palette place (1 on) in the current theme. */
 @Composable

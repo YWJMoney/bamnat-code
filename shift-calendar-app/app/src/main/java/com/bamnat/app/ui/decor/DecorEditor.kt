@@ -272,7 +272,7 @@ fun DecorTool(decor: Decor, places: List<String>, onChange: (String?, Decor) -> 
         // stays under the finger whichever way it goes; nothing above it changes height.
         val shown = items.count { it.at == place }
         com.bamnat.app.ui.components.OutlinedButton(onClick = { stageOpen = !stageOpen }, modifier = Modifier.fillMaxWidth().heightIn(min = 44.dp)) {
-            Text(if (stageOpen) "꾸밈 판 접기 ▲" else "꾸밈 판 펼치기 ▼" + if (shown > 0) " (${shown}개)" else "")
+            Text(if (stageOpen) "꾸밈 판 접기\u00A0▲" else "꾸밈 판 펼치기\u00A0▼" + if (shown > 0) " (${shown}개)" else "")
         }
         if (stageOpen) Stage(items, place, picked, advanced, magnet, loupe,
             onPick = { i -> picked = when { i == null -> if (many) picked else emptySet(); many -> if (i in picked) picked - i else picked + i; else -> setOf(i) }
@@ -541,7 +541,7 @@ private fun DrawScope.backdrop(place: String, box: Rect, measurer: androidx.comp
             val cy = (8f + 24f) * d
             fun mid(r: Pair<Float, Float>) = (r.first + r.second) / 2 * d
             text("‹", Offset(mid(HeadLayout.navLeft(w)), cy), 20f, soft)
-            text("2026년 11월 ▾", Offset(mid(HeadLayout.title(w)), cy), 14f, bold = true)
+            text("2026년 11월\u00A0▾", Offset(mid(HeadLayout.title(w)), cy), 14f, bold = true)
             text("›", Offset(mid(HeadLayout.navRight(w)), cy), 20f, soft)
             text("오늘", Offset(mid(HeadLayout.today(w)), cy), 12f, soft)
             val t = HeadLayout.tools(w)

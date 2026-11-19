@@ -54,7 +54,7 @@ object PayGaps {
     }
 
     /** What of a line is 급여: all of a 급여 line, or the 급여 share of a split one (its main part included). */
-    private fun payAmount(e: MoneyEntry): Long = e.shareOf(MoneyCategories.SALARY)
+    private fun payAmount(e: MoneyEntry): Long = e.shareOf(com.bamnat.core.money.CategoryRole.SALARY)
 
     /**
      * D 1.32 [PAYA-04] 578 '덜 받은 돈': what came in short of the estimate, said plainly (무료). Null when it did not

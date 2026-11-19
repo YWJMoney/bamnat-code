@@ -61,7 +61,7 @@ object LedgerChecks {
             ?: cards.filter { due(it) != null }.let { near ->
                 near.firstOrNull { c -> c.last4.isNotEmpty() && c.last4 == e.cardLast4 }
                     ?: near.firstOrNull { c -> c.name.replace(" ", "").take(2).let { it.length == 2 && text.contains(it) } }
-                    ?: near.singleOrNull()?.takeIf { e.category == "카드값" }
+                    ?: near.singleOrNull()?.takeIf { e.isRole(CategoryRole.CARD) }
             }
             ?: return null
         val month = due(card) ?: return null

@@ -130,7 +130,7 @@ internal fun ProPaywallContent(c: AppContainer, onClose: () -> Unit) {
             InviteFreeRow(c) { onClose(); goPro() }
         }
         // 2.0.0 [RVO-07] (검토 U11b-04 '가격은 세 번째 장에 가야 보여요') 앞 장에서도 가격 한 줄이 늘 보여요.
-        if (page != 2) priceLine(plans)?.let { Text(it, style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary) }
+        if (page != 2) priceLine(plans)?.let { com.bamnat.app.ui.components.DotText(it, style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary) }
         FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             if (at < pages.lastIndex) Button(onClick = { at += 1 }) { Text("다음") }
             if (at > 0) OutlinedButton(onClick = { at -= 1 }) { Text("이전") }
@@ -193,11 +193,11 @@ internal fun PlanRows(c: AppContainer, plans: List<Plan>, onMessage: (String) ->
                     pct?.let { "월 요금으로 1년 내면 ${won(monthly!!.priceMicros * 12 / 1_000_000)} → ${it}% 할인" },
                     RewardLedger.perMonth(plan.priceMicros)?.takeIf { plan.currency == "KRW" }?.let { "월 ${won(it)} 꼴" },
                 )
-                if (lines.isNotEmpty()) Text(lines.joinToString(" · "), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary)
+                if (lines.isNotEmpty()) com.bamnat.app.ui.components.DotText(lines.joinToString(" · "), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary)
             }
             val trial = plan.trial && plan.yearly
             // 1.39 [FLOW-25] the free month said as money and a date, before the one big button.
-            if (trial) Text(trialHead(Today.date(), plan.priceWords), style = MaterialTheme.typography.labelLarge,
+            if (trial) com.bamnat.app.ui.components.DotText(trialHead(Today.date(), plan.priceWords), style = MaterialTheme.typography.labelLarge,
                 color = MaterialTheme.colorScheme.primary)
             val buy = { if (overlap != null && !previewNoPay(gate)) asking = plan else go(plan) }
             // 2.0.0 [RVO-07] (검토 PRO-13 "월 4,990원로 구독") 조사를 낱말에 맞게.
