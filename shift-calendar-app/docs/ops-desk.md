@@ -35,11 +35,13 @@
 |---|---|
 | `/api/admin/desk` 장부 한 번에(규칙, shipped, 흐름, 정리함, 진행 중 개발사항, 넘김 글) | `/inquiries/<id>/reply·status·assign·notes` |
 | `/flow`, `/me`, `/badges` | `/inquiries/sort/apply`, `/inquiries/handoff/mark·result` |
-| `/inquiries`, `/inquiries/<id>`(알람 점검 기록은 빠짐), `/inquiries/sort`, `/inquiries/handoff` | `/dev`, `/dev/<id>`, `/dev/<id>/links·links/remove·notes·reply` |
+| `/inquiries`, `/inquiries/<id>`(알람 점검 기록은 가린 표식으로, 아래), `/inquiries/sort`, `/inquiries/handoff` | `/dev`, `/dev/<id>`, `/dev/<id>/links·links/remove·notes·reply` |
 | `/dev`, `/dev/<id>`, `/templates` | `/desk/ship`(2.0.0부터 Play·서버가 아는 판만, 10분 보류 뒤, 아래) |
 | `/ledger?view=claude&q=…`(장부 줄, 300줄씩 `more`), `/ledger.csv`, `/ledger/log?key=q12` | `/ledger/state {keys,state,reason}`, `/ledger/undo {key}`, `/ledger/summary {key,text}` |
 | 1.39 `/loop`(자동 순환 상태), `/loop/queue`(영향도 순 개발 대기열), `/loop/decide`(결정함), `/loop/tiers`, `/loop/tier/<d…>`(요금 관측치, 읽기만), `/loop/autonomy` | 1.39 `/loop/drafts`(결정함 문의에 보낼 답 초안만) |
 | 1.39 `/queue`(검토함: 제보 묶음·명세서 확인 수·달라요·토론 수), `/companies?q=`, `/companies/<id>`, `/companies/similar`, `/versions`(여러 판), `/rewards`(드릴 보상), `/drafts`(열린 추천과 일치율) | 1.39 `/drafts` 추천만(아래) |
+
+**점검 기록(2.0.0 RVA-64, HQ-132)**: 열쇠로는 점검 기록 내용을 볼 수 없어요. 문의의 `context['알람 점검']`, 장부 줄의 `diag`, 넘길 글의 '점검 기록' 줄은 `(가려짐: 운영자만 봐요 · n줄 · 멈춤 기록 있음·없음·못 읽음·멈춤 칸 없음)` 표식이에요. **표식이 있으면 기록은 온 것이니 없다고 적지 말고 표식을 봐요.** 표식이 없으면 기록이 안 온 것이고, 닫힘 문의면 장부의 `crashDraft`로 부탁해요. 멈춘 곳 줄(예외 종류@코드 자리)은 열쇠에 싣지 않아요.
 
 그 밖(지우기, 여러 개 한 번에 닫기, 공개 바꾸기, 사진, 결제 기록, 자동 대응 설정, 기능 스위치, 공지 직접 올리기, 관리자, 열쇠 목록)은 403. 하루 3000번·바꾸기 400번을 넘으면 429.
 

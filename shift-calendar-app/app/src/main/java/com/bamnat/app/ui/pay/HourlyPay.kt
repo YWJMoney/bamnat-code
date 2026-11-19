@@ -201,7 +201,8 @@ internal fun HourlyPayCard(
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
                 Text("법정 휴게 자동 빼기", style = MaterialTheme.typography.bodyLarge)
-                Text("휴게를 안 적은 날, 4시간 넘게 일하면 30분·8시간이면 1시간을 빼요. 4시간 근무에 휴게를 안 쓰기로 했다면 그날 휴게를 0분으로 적어요", style = MaterialTheme.typography.bodySmall,
+                // 2.0.0 [RVJ-71] (PC-179) The same words as the team's 근무 시간과 휴게: 시작~끝 4시간부터 30분, 8시간 30분부터 1시간.
+                Text("휴게를 안 적은 날, 시작~끝이 4시간부터 30분, 8시간 30분부터 1시간을 빼요(일한 시간 8시간에 1시간). 4시간 근무에 휴게를 안 쓰기로 했다면 그날 휴게를 0분으로 적어요", style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
             Spacer(Modifier.width(12.dp))

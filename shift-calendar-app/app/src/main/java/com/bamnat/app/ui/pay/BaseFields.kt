@@ -30,6 +30,7 @@ import com.bamnat.core.pay.BaseAsk
 import com.bamnat.core.pay.PayProfile
 import com.bamnat.core.pay.WageType
 import java.time.YearMonth
+import com.bamnat.app.ui.theme.bamnat
 
 /**
  * [PAYF-06] 1.29 묶음 AP (사용자 2026-10-27 "사용자가 기본급 입력하고 통상시수가 있다면 입력한 후"): the one field every way into
@@ -94,7 +95,7 @@ internal fun BaseFields(
             Text(if (under) "${com.bamnat.core.time.Today.date().year}년 최저시급 ${won(minimum)}보다 적어요. 계약서를 한 번 더 봐 주세요."
                 else "${com.bamnat.core.time.Today.date().year}년 최저시급은 ${won(minimum)}이에요.",
                 style = MaterialTheme.typography.bodySmall,
-                color = if (under) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant)
+                color = if (under) MaterialTheme.bamnat.caution else MaterialTheme.colorScheme.onSurfaceVariant) // 2.0.0 [RVJ-66] (HQ-103, 조건 6) 계약서를 보라는 주의
         }
         if (wage != WageType.MONTHLY || hideHours) return@Column
         val company = companyHours?.takeIf { it in BaseAsk.HOURS_RANGE }
@@ -135,7 +136,7 @@ internal fun BaseFields(
         val h = hourly
         if (h != null && (base == null || profile == null || BaseAsk.hoursFromHourly(profile.copy(wageType = WageType.MONTHLY), month, base, h) == null)) {
             Text(if (base == null) "기본급을 먼저 넣으면 시간을 맞춰 드려요." else "이 통상시급으로는 맞는 시간이 없어요. 시간을 직접 골라 주세요.",
-                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(top = 2.dp))
+                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.bamnat.caution, modifier = Modifier.padding(top = 2.dp)) // [RVJ-66]
         }
     }
 }

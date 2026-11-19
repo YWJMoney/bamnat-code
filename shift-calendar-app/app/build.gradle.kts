@@ -181,13 +181,28 @@ android {
         val forks = (findProperty("bamnat.testForks") as String?)?.toIntOrNull()
             ?: (Runtime.getRuntime().availableProcessors() / 2).coerceIn(1, 3)
         // [QA-05] CI runs the tests in shards side by side (-Pbamnat.testSet): unit = all but the screenshots,
-        // shots-a = the screenshot classes named below, shots-b = every other screenshot class (new ones too),
-        // api = the classes that run on several Android versions.
+        // shots-a … shots-d = the screenshot classes split by time (below), api = the classes that run on several Android versions.
         val testSet = findProperty("bamnat.testSet") as String?
         val shots = "com.bamnat.app.screenshots"
-        // 2.0.0 [RVO-09] SearchShortcutScreenTest types every way in for six kinds of work (about 6 minutes in one JVM): it goes with
-        // the shorter shard, so shots-b does not run near the job's 45 minutes.
-        val shotsA = listOf("Calendar", "Pay", "MemoStats", "I", "K").map { "$shots.${it}ScreenshotTest" } + "$shots.SearchShortcutScreenTest"
+        // 2.0.0 [RVR-43] (총괄 HQ-121): shots-b took every new screenshot class and went over the job's 45 minutes each time, and a
+        // cancelled shard hid its failures. Now four shards share the classes by the seconds each took in CI
+        // (tools/data/shot-seconds.tsv, `python3 tools/shot_shards.py update` from the tests-app-shots-* results): longest first, each
+        // to the shard with the least so far. A class the file does not know counts as 30 seconds, and the last shard also takes any
+        // screenshot class no shard named. tools/shot_shards.py show prints the same split.
+        val shotShards = listOf("shots-a", "shots-b", "shots-c", "shots-d")
+        val shotSeconds = file("../tools/data/shot-seconds.tsv").takeIf { it.exists() }?.readLines(Charsets.UTF_8).orEmpty()
+            .filter { it.isNotBlank() && !it.startsWith("#") }
+            .associate { line -> line.split("\t").let { it[0] to it[1].toDouble() } }
+        val shotClasses = file("src/test/java/com/bamnat/app/screenshots").listFiles().orEmpty()
+            .map { it.name }.filter { it.endsWith("Test.kt") }.map { it.removeSuffix(".kt") }.sorted()
+        val shotPlan = List(shotShards.size) { mutableListOf<String>() }.also { bins ->
+            val sums = DoubleArray(shotShards.size)
+            shotClasses.sortedWith(compareBy({ -(shotSeconds[it] ?: 30.0) }, { it })).forEach { c ->
+                val b = sums.indices.minWith(compareBy({ sums[it] }, { it }))
+                sums[b] += shotSeconds[c] ?: 30.0
+                bins[b] += "$shots.$c"
+            }
+        }
         // [REL-14] The classes that run on Android 8, 11, 13 and 15 (@Config(sdk = [26, 30, 33, 35])) go in a JVM of
         // their own (api): sandboxes of several Android versions crash the native SQLite of the other tests in the
         // same JVM. Without -Pbamnat.testSet they are left out; run them with -Pbamnat.testSet=api.
@@ -227,10 +242,13 @@ android {
                     it.filter.excludeTestsMatching("$shots.*")
                     apiLevels.forEach { c -> it.filter.excludeTestsMatching(c) }
                 }
-                "shots-a" -> shotsA.forEach { c -> it.filter.includeTestsMatching(c) }
-                "shots-b" -> {
-                    it.filter.includeTestsMatching("$shots.*")
-                    shotsA.forEach { c -> it.filter.excludeTestsMatching(c) }
+                in shotShards -> {
+                    val at = shotShards.indexOf(testSet)
+                    if (at < shotShards.lastIndex) shotPlan[at].forEach { c -> it.filter.includeTestsMatching(c) }
+                    else {
+                        it.filter.includeTestsMatching("$shots.*")
+                        shotPlan.take(at).flatten().forEach { c -> it.filter.excludeTestsMatching(c) }
+                    }
                 }
                 else -> apiLevels.forEach { c -> it.filter.excludeTestsMatching(c) }
             }
@@ -287,9 +305,9 @@ dependencies {
     implementation("com.google.android.gms:play-services-location:21.3.0")
     // [SHFT-08] The Wear OS watch gets the days through the Wearable Data Layer, phone to watch.
     implementation("com.google.android.gms:play-services-wearable:19.0.0")
-    // [SPD-26] 1.31 I2: Cronet from Play services (HTTP/3·HTTP/2 to the servers); its network code comes with Play services,
-    // so the app grows by its small API only. Without Play services the requests go through HttpURLConnection as before.
-    implementation("com.google.android.gms:play-services-cronet:18.1.1")
+    // [SPD-26] 1.31 I2 had Cronet from Play services here (play-services-cronet). 2.0.0 [RVN-23] (PC-187): gone, since a Play
+    // services update of its module killed the app on screen; the phone's own android.net.http.HttpEngine (Android 14+) or
+    // HttpURLConnection carries the requests now (company/NetEngine.kt).
     // [MON-03] Play billing 9.1.0 (the Java API, so the Kotlin library stays as it is).
     implementation("com.android.billingclient:billing:9.1.0")
     // 1.36 [PUSH-01] 문의 답 바로 알림: data messages only ({kind: inquiry}, no words), started by hand only when the ids are set.

@@ -12,8 +12,12 @@ import java.time.YearMonth
  * own 근무표 점검 기준, as the sharer's shifts say, e.g. "이번 주 나이트 3일 연속". Only on this phone, nothing is sent.
  */
 object ReceivedDutyCheck {
+    /**
+     * 2.0.0 [RVG-39] 검토 PC-174: only a link named 근무표 is a roster to check. A shop's 영업일 (open every day is no 32일 연속
+     * 근무), a 현장's 일정 and an investor's 달력 are not shifts, so the card that reads them as one does not show.
+     */
     fun warnings(s: SharedSchedule, month: YearMonth, rules: RestRules): List<DutyCheck.Warning> {
-        if (!rules.on || !s.covers(month)) return emptyList()
+        if (!rules.on || s.word != "근무표" || !s.covers(month)) return emptyList()
         // The days around the month count too; days the link does not cover are left out, not taken as rest.
         val days = (-3L..month.lengthOfMonth() + 2L).map { month.atDay(1).plusDays(it - 1) }
             .filter { s.covers(it) }

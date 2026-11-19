@@ -39,7 +39,12 @@ public final class NetGuard extends ProxySelector {
     /** The words in every refusal, so a test can tell the guard's refusal from a real one. */
     public static final String REFUSED = "bamnat net guard: no outside network in tests";
 
-    private static final List<String> MAVEN = Arrays.asList("repo1.maven.org", "repo.maven.apache.org", "maven.google.com", "dl.google.com");
+    /**
+     * Where Robolectric fetches its Android jars (android-all-instrumented) on a machine that has not cached them: Maven
+     * Central and the mirrors it redirects to (repo1.maven.org → gcp.mirrors.maven.org on GitHub's runners, so every
+     * *.maven.org), and Google's Maven. A host here also matches its subdomains.
+     */
+    private static final List<String> MAVEN = Arrays.asList("maven.org", "repo.maven.apache.org", "maven.google.com", "dl.google.com");
 
     private final ProxySelector before;
     private final List<String> allowed = new ArrayList<>(MAVEN);

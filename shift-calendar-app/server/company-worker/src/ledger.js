@@ -8,6 +8,7 @@ import { DONE_REASONS, WAIT_REASONS, WORK, WORK_GROUPS, WORK_GROUP_NAMES, WORK_S
 import { errorLine, recordRowErrors } from "./ops-watch.js";
 import { REVIEWS } from "./store-reviews.js";
 import { marketHealthRows } from "./market-health.js";
+import { CRASH_ASK_DRAFT, crashOf, crashRepeats, diagMark, repeatPlaces } from "./crash-repeat.js";
 
 // ---- 1.38 [DESK-02][DESK-03] 운영 장부: 들어온 모든 일을 한 줄씩, 한 화면에서 (설계 docs/plans/1.37-문의-개발-운영장부-설계.md 2장) ----
 //
@@ -175,7 +176,7 @@ export async function ledgerList(env, actor, now, { days = LEDGER.days } = {}) {
   // 1.39 [ADM3-52] 할 일함 목록(다시 열림 맞추기)과 장부 읽기를 한꺼번에(실서버 결정함·장부가 DB를 차례로 오가 3초 넘었어요).
   // 할 일함 상태(work_states)는 둘 다 끝난 뒤에 읽어요.
   const [work, [qs, ds, sla, k, rv]] = await Promise.all([workList(env, actor, now), Promise.all([
-    asks ? all(env, `SELECT i.id, i.kind, i.info, i.status, i.created_at, i.updated_at, i.same, i.assignee_name, i.handed_in, i.sorted_at,
+    asks ? all(env, `SELECT i.id, i.kind, i.info, i.device, i.status, i.created_at, i.updated_at, i.same, i.assignee_name, i.handed_in, i.sorted_at,
         (SELECT m.text FROM inquiry_messages m WHERE m.inquiry_id = i.id AND m.sender = 'user' ORDER BY m.id LIMIT 1) AS first,
         (SELECT GROUP_CONCAT(m.text, ' ') FROM inquiry_messages m WHERE m.inquiry_id = i.id AND m.sender = 'user') AS words,
         (SELECT m.sender FROM inquiry_messages m WHERE m.inquiry_id = i.id ORDER BY m.id DESC LIMIT 1) AS last,
@@ -236,6 +237,18 @@ export async function ledgerList(env, actor, now, { days = LEDGER.days } = {}) {
     }
   }
 
+  // 2.0.0 [RVA-63] HQ-124: 닫힘 문의의 멈춤 기록과 7일 안 되풀이 묶음. 보낸 분 번호는 묶는 데만 쓰고 줄에는 싣지 않아요.
+  const crashes = new Map();
+  for (const q of qs) {
+    try {
+      const info = JSON.parse(q.info || "{}");
+      const c = crashOf(q.kind, q.first, info);
+      if (c) crashes.set(q.id, { ...c, device: q.device, model: info.model ?? null, android: info.android ?? null, app: info.app ?? null, at: q.created_at });
+    } catch { /* 읽지 못한 줄은 아래에서 */ }
+  }
+  const repeats = crashRepeats([...crashes].map(([id, c]) => ({ id, ...c })), now);
+  const places = repeatPlaces(repeats);
+
   const rows = [];
   // 2.0.0 [RVA-37] 검토 I24b-02: 한 줄을 읽다 오류가 나면 그 줄만 '읽지 못한 줄'로 두고 장부는 계속(ADMX-01처럼 문의 하나가 장부·오늘을 멈추지 않게).
   const bad = [];
@@ -279,6 +292,10 @@ export async function ledgerList(env, actor, now, { days = LEDGER.days } = {}) {
         assignee: q.assignee_name ?? null, stage,
         dueAt: waitingAdmin && (!d || stage === "notify") ? Math.min(q.updated_at + (sla[slaKey(q.kind)] ?? 24) * HOUR, owner?.key === "law" ? q.updated_at + LEDGER.safetyHours * HOUR : Infinity) : null,
         overlapsOf: waitingAdmin && !d ? { text, kind: q.kind, info, id: q.id } : null,
+        crash: crashes.has(q.id) ? { record: crashes.get(q.id).record, recordName: crashes.get(q.id).recordName } : null,
+        repeat: places.get(q.id) ?? null,
+        // 2.0.0 [RVA-64] HQ-132: 점검 기록은 내용 없이 표식만(열쇠·Claude 장부도 '왔는지·멈춤 기록 있는지'를 알게).
+        diag: diagMark(info.diag),
       });
     } catch (e) {
       unreadable(`inquiry:${q.id}`, "inquiry", q.id, e, { at: q.created_at, last: q.updated_at, status: q.status });
@@ -354,7 +371,10 @@ export async function ledgerList(env, actor, now, { days = LEDGER.days } = {}) {
     }
   });
   if (bad.length) await recordRowErrors(env, "ledger", bad, now);
-  return { rows: out, shipped, auto: sort?.auto ?? null, unreadable: bad.length };
+  // 묶음마다 줄 번호(K-…)를 붙여 화면이 그 줄로 바로 갈 수 있게.
+  const noOf = new Map(out.map((r) => [r.key, r.no]));
+  const groups = repeats.map((g) => ({ ...g, first: iso(g.first), last: iso(g.last), lines: g.ids.map((id) => ({ key: `inquiry:${id}`, no: noOf.get(`inquiry:${id}`) ?? null })) }));
+  return { rows: out, shipped, auto: sort?.auto ?? null, unreadable: bad.length, crashRepeats: groups };
 
   function lineOut(r) {
     const s = states.get(r.key);
@@ -424,6 +444,7 @@ export async function ledgerList(env, actor, now, { days = LEDGER.days } = {}) {
       note: s?.note ?? "", reopened: s?.reopened ?? 0, closed: closed || state === "done",
       lastMove: lastMove ? { at: iso(lastMove.at), by: lastMove.by, byKind: whoKind(lastMove.by), what: lastMove.what } : null,
       ...(r.unreadable ? { unreadable: r.unreadable } : {}),
+      ...(r.crash ? { crash: r.crash } : {}), ...(r.repeat ? { repeat: r.repeat } : {}), ...(r.diag ? { diag: r.diag } : {}),
     };
   }
 }
@@ -470,7 +491,7 @@ export async function ledgerQuery(env, actor, now, params) {
   const v = /^\d{1,2}(\.\d{1,2}){0,2}$/.test(params.get("v") ?? "") ? params.get("v") : null;
   const q = String(params.get("q") ?? "").trim().slice(0, 60);
   const days = Number(params.get("days")) || LEDGER.days;
-  const { rows, shipped, auto } = await ledgerList(env, actor, now, { days });
+  const { rows, shipped, auto, crashRepeats: repeats } = await ledgerList(env, actor, now, { days });
   const open = rows.filter((r) => !r.closed);
   const counts = Object.fromEntries(Object.keys(VIEWS).map((k) => [k, rows.filter((r) => inView(r, k, now)).length]));
   const items = rows.filter((r) => inView(r, view, now) && (!type || r.type === type) && (!group || r.group === group) && inVersion(r, v) && matches(r, q)).sort(ledgerOrder);
@@ -484,6 +505,8 @@ export async function ledgerQuery(env, actor, now, params) {
     counts: { ...counts, groups, open: open.length, inToday: rows.filter((r) => Date.parse(r.at) >= start).length,
       doneToday: doneToday.reduce((n, r) => n + r.n, 0), byWho: doneToday.map((r) => ({ name: r.by_name || "앱", n: r.n })) },
     total: items.length, items, versions,
+    // 2.0.0 [RVA-63] HQ-124: 운영 장부 맨 위 '같은 판에서 닫힘 되풀이'.
+    crashRepeats: repeats ?? [], crashDraft: CRASH_ASK_DRAFT,
     names: { views: VIEWS, stages: STAGES, turns: TURNS, states: WORK_STATE_NAMES, wait: WAIT_REASONS, done: DONE_REASONS, types: LEDGER_TYPES, groups: WORK_GROUP_NAMES,
       piles: PILE_NAMES },
     rules: { backDays: WORK.backDays, safetyHours: LEDGER.safetyHours, skipBackDays: 7 },
