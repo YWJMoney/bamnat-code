@@ -89,7 +89,7 @@ jobs:
           case "$IN_MODE:$IN_TARGET" in
             migrate*:both) echo "DO 첫 배포(migrate)는 한 서버씩: target을 company나 share로 골라요" >> "$GITHUB_STEP_SUMMARY"; exit 1;;
           esac
-      - uses: actions/setup-node@39370e3970a6d050c480ffad4ff0ed4d3fdee5af # v4.1.0
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 22
       - name: 배포 도구 시험
@@ -136,7 +136,7 @@ jobs:
           ref: ${{ needs.gate.outputs.company_prev }}
           path: prev
           persist-credentials: false
-      - uses: actions/setup-node@39370e3970a6d050c480ffad4ff0ed4d3fdee5af # v4.1.0
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 22
       - name: 시험·번들·스키마 호환 (토큰 없음)
@@ -209,7 +209,7 @@ jobs:
         with:
           ref: ${{ github.sha }}
           persist-credentials: false
-      - uses: actions/setup-node@39370e3970a6d050c480ffad4ff0ed4d3fdee5af # v4.1.0
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 22
       - name: wrangler(묶은 판)

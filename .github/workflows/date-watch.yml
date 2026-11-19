@@ -56,7 +56,7 @@ jobs:
       DAYS: ${{ matrix.days }}
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: 22
       - run: mkdir -p "$RUNNER_TEMP/dw/json"
@@ -169,7 +169,7 @@ jobs:
           path: ~/.m2/repository/org/robolectric
           key: robolectric-${{ hashFiles('shift-calendar-app/app/build.gradle.kts') }}
           restore-keys: robolectric-
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: 22
       # 시계는 단계마다 바로 전에 정해요. 빌드가 걸리는 만큼 시험은 몇 분 늦게 시작해, 도는 중간에 자정을 넘어요.
@@ -222,7 +222,7 @@ jobs:
           path: ~/.m2/repository/org/robolectric
           key: robolectric-${{ hashFiles('shift-calendar-app/app/build.gradle.kts') }}
           restore-keys: robolectric-
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: 22
       - name: 앱 시험 (unit, +30일)
