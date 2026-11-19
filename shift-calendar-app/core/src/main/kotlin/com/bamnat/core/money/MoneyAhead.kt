@@ -22,6 +22,8 @@ enum class FlowKind(val label: String, val incoming: Boolean) {
     CARD_BILL("카드값", false),
     /** 1.38 [LEDH-25] A loan's monthly payment, from the account it is paid from. */
     LOAN("대출 갚기", false),
+    /** 2.0.0 [RVK-46] (검토 I06ab-03) 줄 돈 the user promised to pay on a day. */
+    PAYABLE("줄 돈", false),
 }
 
 /** One known movement of money on [date]; [amount] is positive coming in and negative going out. */
@@ -115,6 +117,8 @@ object MoneyAhead {
     const val FULL_DAYS = 90
     const val LOOKBACK_DAYS = 90
     private const val MIN_LEARN_DAYS = 14
+    /** 2.0.0 [RVK-38] How many days before its day pay may come (a week less a day, so last week's 주급 is never taken for it). */
+    const val EARLY_PAY_DAYS = 6L
 
     /** Account types whose money can be spent this month: not 적금·상품권 (기타) and not cards. */
     fun spendable(a: MoneyAccount): Boolean = !a.hidden && a.keepsBalance && a.type != AccountType.OTHER && !a.isLoan
@@ -143,25 +147,33 @@ object MoneyAhead {
      */
     fun everydayPerDay(entries: List<MoneyEntry>, today: LocalDate): Pair<Long, Boolean> {
         val from = today.minusDays(LOOKBACK_DAYS.toLong())
-        val lines = entries.filter {
+        val spent = entries.filter {
             it.kind == MoneyKind.EXPENSE && it.source != MoneySource.FIXED && it.fixedId == null && it.amount > 0 &&
                 !it.date.isBefore(from) && it.date.isBefore(today)
         }
-        if (lines.isEmpty()) return 0L to true
-        val first = lines.minOf { it.date }
+        if (spent.isEmpty()) return 0L to true
+        val first = spent.minOf { it.date }
+        // 2.0.0 [RVK-38] (검토 MONEY-47) The same everyday pace as the budgets' ([Budgets.LUMP]): one big line (가전 300만 once) is not
+        // spent again every day for three months, and a 할부 comes through the card's bills, not as the whole price on the day.
+        val lines = spent.filter { it.amount < Budgets.LUMP && it.installments <= 1 }
         val span = ChronoUnit.DAYS.between(first, today).toInt().coerceAtLeast(1)
         return lines.sumOf { it.amount } / span to (span < MIN_LEARN_DAYS)
     }
 
-    private fun isPayLine(c: FixedCost) = c.kind == MoneyKind.INCOME && (c.category == MoneyCategories.SALARY || c.name.contains("월급") || c.name.contains("급여"))
+    private fun isPayLine(c: FixedCost) = c.kind == MoneyKind.INCOME && (CategoryIds.matches(c.categoryId, c.category, CategoryRole.SALARY) || c.name.contains("월급") || c.name.contains("급여"))
 
     /**
-     * [LEDH-01] Every known movement from [today] to [until]. A pay day already written down (an income line on
-     * that day of at least half the pay) is not counted again; pay days before today are gone.
+     * [LEDH-01] Every known movement from [today] to [until]. A pay day already written down (an income line of at least
+     * half the pay) is not counted again; pay days before today are gone. 2.0.0 [RVK-38] (검토 MONEY-79·T06b-07) The line may
+     * come up to [EARLY_PAY_DAYS] days before the day (a 25일 on a Saturday is paid on Friday, 설·추석 move it most), not only on it,
+     * so pay that came early is not counted twice until its day.
      */
     fun flows(book: MoneyBook, today: LocalDate, until: LocalDate, pay: List<PayDay>, extra: List<MoneyFlow> = emptyList()): Pair<List<MoneyFlow>, Boolean> {
         val payFlows = pay.filter { p -> !p.date.isBefore(today) && !p.date.isAfter(until) && p.net > 0 }
-            .filterNot { p -> p.date == today && book.entries.any { it.kind == MoneyKind.INCOME && it.date == today && it.amount * 2 >= p.net } }
+            .filterNot { p ->
+                val from = p.date.minusDays(EARLY_PAY_DAYS)
+                book.entries.any { it.kind == MoneyKind.INCOME && !it.date.isBefore(from) && !it.date.isAfter(today) && it.amount * 2 >= p.net }
+            }
             .map { MoneyFlow(it.date, it.net, FlowKind.PAY, it.label) }
         val replacePay = pay.isNotEmpty()
         val days = ChronoUnit.DAYS.between(today, until).toInt()
@@ -169,12 +181,12 @@ object MoneyAhead {
             .mapNotNull { u ->
                 val c = u.cost
                 when {
-                    u.cardId != null || (c.kind == MoneyKind.TRANSFER && c.category == UpcomingPayments.CARD_BILL) ->
+                    u.cardId != null || (c.kind == MoneyKind.TRANSFER && CategoryIds.matches(c.categoryId, c.category, CategoryRole.CARD)) ->
                         MoneyFlow(u.date, -c.amount, FlowKind.CARD_BILL, "${c.name} ${UpcomingPayments.CARD_BILL}".trim())
                     c.kind == MoneyKind.INCOME -> MoneyFlow(u.date, c.amount, FlowKind.FIXED_IN, c.name)
                     c.kind == MoneyKind.EXPENSE -> MoneyFlow(u.date, -c.amount, FlowKind.FIXED_OUT, c.name)
                     // Between the user's own accounts nothing leaves; to savings, a loan or the owner it does.
-                    c.category == "내 계좌" -> null
+                    CategoryIds.matches(c.categoryId, c.category, CategoryRole.OWN) -> null
                     else -> MoneyFlow(u.date, -c.amount, FlowKind.FIXED_OUT, c.name)
                 }
             }
@@ -186,6 +198,11 @@ object MoneyAhead {
         val owed = book.receivables.filter { it.left > 0 && it.due != null }.mapNotNull { r ->
             val due = r.due!!
             if (due.isBefore(today) || due.isAfter(until)) null else MoneyFlow(due, r.left, FlowKind.OWED, r.name)
+        }
+        // 2.0.0 [RVK-46] (검토 I06ab-03) 줄 돈 with a promised day leaves on that day, as 받을 돈 comes in on its own.
+        val toPay = book.payables.filter { it.left > 0 && it.due != null }.mapNotNull { r ->
+            val due = r.due!!
+            if (due.isBefore(today) || due.isAfter(until)) null else MoneyFlow(due, -r.left, FlowKind.PAYABLE, r.name)
         }
         // 1.38 [LEDH-25] Each loan's monthly payment on its day, while something is owed, unless a repeating line already pays it.
         val balances = MoneyAccounts.balances(book.accounts, book.entries)
@@ -204,14 +221,14 @@ object MoneyAhead {
             }
             out
         }
-        val all = (payFlows + fixed + jobs + owed + loans + extra.filter { !it.date.isBefore(today) && !it.date.isAfter(until) })
+        val all = (payFlows + fixed + jobs + owed + toPay + loans + extra.filter { !it.date.isBefore(today) && !it.date.isAfter(until) })
             .sortedWith(compareBy<MoneyFlow>({ it.date }, { it.amount < 0 }))
         return all to (replacePay && book.fixed.any(::isPayLine))
     }
 
     /** [LEDH-01] Late money: jobs and money owed past their promised day. */
     fun late(book: MoneyBook, today: LocalDate): Long =
-        book.jobs.filter { it.unpaid > 0 && it.status != JobStatus.TENTATIVE && (it.due ?: it.lastDate).isBefore(today) }.sumOf { it.unpaid } +
+        book.jobs.filter { it.overdue(today) }.sumOf { it.unpaid } +
             book.receivables.filter { it.left > 0 && it.due?.isBefore(today) == true }.sumOf { it.left }
 
     /**
@@ -260,6 +277,25 @@ object PayCycle {
         val last = sorted.lastOrNull { !it.isAfter(today) } ?: return null
         val next = sorted.firstOrNull { it.isAfter(today) } ?: return null
         return Range(last, next.minusDays(1))
+    }
+
+    /**
+     * 2.0.0 [RVK-20] (검토 U06a-07·MONEY-18) The cycle [k] cycles after (or before, when negative) the one holding [today], so
+     * the month [k] months from today's shows as its cycle: one after another, never the same cycle twice and none skipped,
+     * also when a pay day moved to the Friday before. [payDays] must reach two months past the cycle wanted.
+     */
+    fun nth(today: LocalDate, payDays: List<LocalDate>, k: Int): Range? {
+        var r = around(today, payDays) ?: return null
+        repeat(kotlin.math.abs(k)) { r = (if (k > 0) around(r.to.plusDays(1), payDays) else around(r.from.minusDays(1), payDays)) ?: return null }
+        return r
+    }
+
+    /** 2.0.0 [RVK-20] The cycle shown as [month]: today's for today's month, then one cycle for each month away from it. */
+    fun forMonth(today: LocalDate, month: java.time.YearMonth, payDate: (java.time.YearMonth) -> LocalDate?): Range? {
+        val now = java.time.YearMonth.from(today)
+        val k = ChronoUnit.MONTHS.between(now, month).toInt()
+        val days = (minOf(0, k) - 2L..maxOf(0, k) + 2L).mapNotNull { payDate(now.plusMonths(it)) }
+        return nth(today, days, k)
     }
 
     /** The pay days of the months around [today] from a monthly pay day (1..31, past the month's end its last day). */

@@ -56,7 +56,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.TopAppBar
+import com.bamnat.app.ui.components.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.Stable
 import androidx.compose.runtime.getValue
@@ -75,6 +75,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.bamnat.app.ui.components.Dialog
 import androidx.compose.ui.window.DialogProperties
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.bamnat.app.data.ScheduleSnapshot
 import com.bamnat.app.ui.Fmt
 import com.bamnat.app.appContainer
@@ -97,6 +98,7 @@ import java.time.LocalTime
 import java.time.YearMonth
 import kotlin.math.abs
 import kotlin.math.roundToLong
+import com.bamnat.app.ui.theme.bamnat
 
 /**
  * [PAYS-07] What a line on a company's payslip can be, in the words a payslip uses. 매달·일한 날마다 make an
@@ -183,6 +185,9 @@ data class ItemEffect(val amount: Long, val times: Int,
 @Stable
 internal class ItemDraft(kind: ItemKind?, private val id: String) {
     var kind by mutableStateOf(kind)
+
+    /** 2.0.0 [RVJ-63] 검토 PAYU-05·U05-13: what the user puts in, to ask before closing throws it away (a kind picked alone is not). */
+    fun typed(): List<Any?> = listOf(name.trim(), amount, percent, shifts, days, window, from, to, overHours, minYears, maxYears)
     var name by mutableStateOf("")
     /**
      * [PAYX-53] 1.38 PC 12.4.1: the names already in the pay setup, so an item put in with no name gets a number of its own
@@ -233,9 +238,11 @@ internal class ItemDraft(kind: ItemKind?, private val id: String) {
 
     /**
      * [PAYX-50] 1.38: 고정 연장수당 (연장수당을 미리 주는 매달 수당), the hours it stands for; 0 is not one. Never 통상임금. It came
-     * from the old '수당 추가' window, now one with this builder.
+     * from the old '수당 추가' window, now one with this builder. 2.0.0 [RVJ-76] (검토 PAYU-49) In minutes, so a contract's 22.5시간 fits.
      */
-    var fixedOtHours by mutableStateOf(0)
+    var fixedOtMinutes by mutableStateOf(0)
+    /** [RVJ-76] '직접' is picked with no hours in use yet: 만들기 waits (the picker says what to put). */
+    var fixedOtPending by mutableStateOf(false)
     /** [PAYX-50] 비과세 as the item had it when changed; null guesses from the name (식대·차량유지비). */
     var taxable by mutableStateOf<Boolean?>(null)
     /** [PAYX-52] A 매달 rule's own amounts by month, kept when it is changed. */
@@ -258,7 +265,7 @@ internal class ItemDraft(kind: ItemKind?, private val id: String) {
     val asksFixedOt: Boolean get() = kind == ItemKind.MONTHLY && !asRule && !hasLimits
 
     private fun item(title: String, value: ValueTimeline, cadence: Cadence): PayItem {
-        val fixed = if (cadence == Cadence.MONTHLY && asksFixedOt) fixedOtHours * 60 else 0
+        val fixed = if (cadence == Cadence.MONTHLY && asksFixedOt) fixedOtMinutes else 0
         return PayItem(
             id, title.take(20), value, cadence, ordinary = ordinary && fixed == 0, share = itemWho, mine = mine,
             fixedOvertimeMinutes = fixed,
@@ -401,7 +408,7 @@ internal class ItemDraft(kind: ItemKind?, private val id: String) {
                 who = item.share
                 whoPicked = true
                 mine = item.mine
-                fixedOtHours = item.fixedOvertimeMinutes / 60
+                fixedOtMinutes = item.fixedOvertimeMinutes
                 taxable = item.taxable
                 if (item.isPercent) {
                     percent = ExtraRuleText.number((item.percent ?: 0.0) * 100)
@@ -479,8 +486,12 @@ internal fun CustomItemDialog(
     gap: Long? = null,
     startKind: ItemKind? = null,
     oneWindow: Boolean = false,
-) = CustomItemDialog(profile, snapshot, month, onDismiss, onSave, editing, gap, startKind, effectOf = vm::effectOf,
-    oneWindow = oneWindow, allowUnknownAmount = oneWindow)
+) {
+    // 2.0.0 [RVJ-32] PC-80: with a closed month on screen the bar says the month the item lands in (a payslip's gap stays its month).
+    val closed by vm.closed.collectAsStateWithLifecycle()
+    CustomItemDialog(profile, snapshot, month, onDismiss, onSave, editing, gap, startKind, effectOf = vm::effectOf,
+        oneWindow = oneWindow, allowUnknownAmount = oneWindow, landsIn = if (gap == null) landsIn(month, closed.keys) else month)
+}
 
 /**
  * [ITEM-06][FIN130-08] Whether calendar [calendar]'s pay comes from a company's way (광장): its pay way in use, or a coworkers'
@@ -525,6 +536,8 @@ internal fun CustomItemDialog(
     oneWindow: Boolean = false,
     /** [PAYX-50] A 사람마다 매달·일한 날마다 수당 can go in with no amount, as 금액 모름 (the old '수당 추가' window let it). */
     allowUnknownAmount: Boolean = false,
+    /** 2.0.0 [RVJ-32] PC-80: the month the bar works out and names: [month], or the first open month after it when [month] is closed. */
+    landsIn: YearMonth = month,
 ) {
     val id = remember { editing?.id ?: editingItem?.id ?: ("rule-" + System.currentTimeMillis().toString(36)) }  // real clock: an id, not a time
     val context = androidx.compose.ui.platform.LocalContext.current
@@ -551,14 +564,18 @@ internal fun CustomItemDialog(
     val made = if (allowUnknownAmount) draft.madeOrAsked(start) else draft.made(start)
     val probe = draft.made(start, probe = true)
     val full = !isEdit && probe is MadeItem.Rule && base.customRules.size >= CustomRule.MAX
-    val effect by produceState<ItemEffect?>(null, probe, base) { value = probe?.let { effectOf(base, snapshot, month, it) } }
+    val effect by produceState<ItemEffect?>(null, probe, base) { value = probe?.let { effectOf(base, snapshot, landsIn, it) } }
     val real = if (made != null && draft.made(start) != null && effect != null) effect else null
     val huge = rememberHugeCheck()
     // [PAYX-50] One window has no list of kinds to go back to.
     val pickBack = draft.kind != null && !isEdit && !oneWindow
-    fun back() { if (pickBack) draft.kind = null else onDismiss() }
+    // 2.0.0 [RVJ-63] 검토 PAYU-05·U05-13: ✕ and 뒤로 threw what was typed away in one tap; with something typed they ask once
+    // ('적은 내용을 버릴까요?', the app's one way, [com.bamnat.app.ui.components.rememberCloseGuard]).
+    val opened = remember { draft.typed() }
+    val guard = com.bamnat.app.ui.components.rememberCloseGuard(unsaved = draft.typed() != opened, onLeave = onDismiss)
+    fun back() { if (pickBack) draft.kind = null else guard.close() }
 
-    Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false)) {
+    Dialog(onDismissRequest = guard::close, properties = DialogProperties(usePlatformDefaultWidth = false)) {
         BackHandler(enabled = pickBack) { back() }
         Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.surface) {
             Scaffold(
@@ -567,13 +584,15 @@ internal fun CustomItemDialog(
                         title = { Text(if (isEdit) "항목 고치기" else if (oneWindow) "수당 추가" else "우리 $place 항목 만들기", maxLines = 1, overflow = TextOverflow.Ellipsis) },
                         navigationIcon = {
                             if (pickBack) IconButton(onClick = ::back) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "종류 다시 고르기") }
-                            else IconButton(onClick = onDismiss) { Icon(Icons.Filled.Close, "닫기") }
+                            else IconButton(onClick = guard::close) { Icon(Icons.Filled.Close, "닫기") }
                         },
                     )
                 },
                 bottomBar = {
                     if (draft.kind != null) {
-                        EffectBar(month, draft, effect = real, timesOnly = effect?.times, gap = gap, enabled = made != null && !full,
+                        EffectBar(landsIn, draft, effect = real, timesOnly = effect?.times, gap = gap,
+                            enabled = made != null && !full && !(draft.asksFixedOt && draft.fixedOtPending),
+                            shut = month.takeIf { it != landsIn },
                             label = if (isEdit) "저장" else if (oneWindow) "추가" else "만들기",
                             unknown = made != null && draft.made(start) == null,
                             // [PAYX-53] 1.38 PC 12.4.1: a name is asked once, on the first 추가 with none.
@@ -655,7 +674,8 @@ private fun KindCard(kind: ItemKind, onClick: () -> Unit) {
         modifier = Modifier.fillMaxWidth().heightIn(min = 64.dp),
     ) {
         Row(Modifier.padding(horizontal = 16.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
-            Icon(kind.icon, null, tint = if (kind == ItemKind.DEDUCT) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary,
+            // 2.0.0 [RVJ-66] (HQ-103, 조건 6) 빠지는 돈은 위험이 아니에요: 모양으로 가르고 보조 색.
+            Icon(kind.icon, null, tint = if (kind == ItemKind.DEDUCT) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.primary,
                 modifier = Modifier.size(28.dp))
             Spacer(Modifier.width(14.dp))
             Column(Modifier.weight(1f)) {
@@ -790,7 +810,7 @@ internal fun ColumnScope.FormStep(
                 if (kind == ItemKind.MONTHLY) "매달 모두에게 똑같이 주는 수당이면 켜요. 연장·야간 수당도 함께 올라가요. 모르면 꺼 두세요."
                 else "일한 날마다 받는 수당은 보통 넣지 않아요. 모르면 꺼 두세요.",
                 draft.ordinary,
-            ) { if (draft.fixedOtHours == 0) draft.ordinary = it }
+            ) { if (draft.fixedOtMinutes == 0) draft.ordinary = it }
             TermLink("통상임금")
             if (fixedOt && draft.asksFixedOt) FixedOtChips(draft)
         }
@@ -798,7 +818,7 @@ internal fun ColumnScope.FormStep(
     }
     // [PAYX-52] 1.38 PC 12.1: 비과세 for any 매달 수당, not only the names the app knows (식대 등). 1.39 [PAYX-57]: a 매달 수당 kept as a
     // rule (이번 달만·기간) too, which had lost it.
-    if (kind == ItemKind.MONTHLY && draft.fixedOtHours == 0) {
+    if (kind == ItemKind.MONTHLY && draft.fixedOtMinutes == 0) {
         val guess = !com.bamnat.core.pay.TakeHome.looksNonTaxable(draft.name.trim().ifEmpty { kind.defaultName })
         Toggle("세금 없는 돈 (비과세)", "식대·자가운전보조금·보육수당·연구보조비처럼 명세서에 비과세로 적힌 수당이면 켜요. 종류마다 월 20만 원까지 세금에서 빼고 어림해요(식대가 둘이면 합쳐서 20만 원)." +
             if (draft.taxable == null && !guess) " 이름을 보고 켜 두었어요." else "",
@@ -817,19 +837,15 @@ internal fun ColumnScope.FormStep(
 
 /**
  * [PAY-05][PAYX-50] 고정 연장수당: a 매달 수당 that pays some overtime ahead (prepaid), never 통상임금. The app then tells when the real
- * overtime comes to more. Moved here from the old '수당 추가' window.
+ * overtime comes to more. Moved here from the old '수당 추가' window. 2.0.0 [RVJ-76] (검토 PAYU-49·T05b-02) The hours with '직접'
+ * (12·22.5·45시간), the same picker as 급여 마법사·빠른 설정.
  */
-@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun FixedOtChips(draft: ItemDraft) {
     Label("연장수당을 미리 주는 고정 수당인가요?")
-    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-        listOf(0, 10, 20, 30, 40, 52).forEach { h ->
-            FilterChip(selected = draft.fixedOtHours == h, onClick = { draft.fixedOtHours = h; if (h > 0) draft.ordinary = false },
-                label = { Text(if (h == 0) "아니요" else "${h}시간분") }, modifier = Modifier.heightIn(min = 48.dp))
-        }
-    }
-    if (draft.fixedOtHours > 0) Hint("통상임금에는 넣지 않아요. 실제 연장수당이 이 금액보다 많으면 차액을 알려 드려요.")
+    FixedOtHours(draft.fixedOtMinutes, { m -> draft.fixedOtMinutes = m; if (m > 0) draft.ordinary = false }, none = "아니요",
+        onPending = { draft.fixedOtPending = it })
+    if (draft.fixedOtMinutes > 0) Hint("통상임금에는 넣지 않아요. 실제 연장수당이 이 금액보다 많으면 차액을 알려 드려요.")
 }
 
 /**
@@ -1025,6 +1041,8 @@ private fun EffectBar(
     unknown: Boolean = false,
     /** [PAYX-53] The name it gets when none is typed, said over the button once a name was asked. */
     askName: String? = null,
+    /** 2.0.0 [RVJ-32] PC-80: the closed month on screen; [month] is then the first open month after it. */
+    shut: YearMonth? = null,
     onSave: () -> Unit,
 ) {
     // [PAYX-53] 1.38 PC 12.4.1: an amount past 1억 (or a month that comes to it) is said here too, not only in the question.
@@ -1036,29 +1054,44 @@ private fun EffectBar(
             Column(Modifier.semantics(mergeDescendants = true) {}) {
                 // 1.39 [PAYX-56] PC a483ca15 사용성: a 세후 공제 is '실수령 −50,000원', not '급여에 +0원'.
                 val takeHomeOnly = effect != null && effect.amount == 0L && effect.afterTax != 0L
-                Text("${month.monthValue}월 ${if (takeHomeOnly) "실수령에서" else "급여에"}", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                // 2.0.0 [RVJ-32] PC-80: "10월은 마감돼 그대로예요 · 11월 급여부터", not '10월 급여에' for a month that stays as closed.
+                Text((shut?.let { "${it.monthValue}월은 마감돼 그대로예요 · " } ?: "") +
+                    "${month.monthValue}월 ${if (takeHomeOnly) "실수령에서" else if (shut != null) "급여부터" else "급여에"}",
+                    style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 when {
                     takeHomeOnly -> Text("−" + won(abs(effect!!.afterTax)) + " (세금 뗀 뒤 빼요)",
-                        style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold), color = MaterialTheme.colorScheme.error)
+                        style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold), color = MaterialTheme.colorScheme.onSurface) // [RVJ-66]
                     effect != null -> Text(
                         (if (effect.amount >= 0) "+" else "−") + won(abs(effect.amount)) + if (per) " · ${effect.times}번" else "",
                         style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold),
-                        color = if (effect.amount < 0 || huge) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary,
+                        // 2.0.0 [RVJ-66] (HQ-103, 조건 6) 1억 원 넘는 금액은 확인할 일(주의), 빠지는 돈은 보통 글씨.
+                        color = if (huge) MaterialTheme.bamnat.caution else if (effect.amount < 0) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.primary,
                     )
                     timesOnly != null && per -> Text(
-                        if (timesOnly == 0) "이번 달엔 맞는 근무가 없어요" else "이번 달 ${timesOnly}번 해당돼요. 금액을 넣어 주세요",
+                        (if (shut != null) "${month.monthValue}월" else "이번 달").let { m ->
+                            if (timesOnly == 0) "${m}엔 맞는 근무가 없어요" else "$m ${timesOnly}번 해당돼요. 금액을 넣어 주세요"
+                        },
                         style = MaterialTheme.typography.titleSmall,
                     )
                     unknown -> Text("금액 모름으로 넣어요. 합계에서 빼고 금액을 넣어 달라고 알려 드려요", style = MaterialTheme.typography.titleSmall)
                     else -> Text("금액을 넣으면 바로 계산해요", style = MaterialTheme.typography.titleSmall)
                 }
                 if (huge) Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(Icons.Filled.Warning, null, tint = MaterialTheme.colorScheme.error, modifier = Modifier.size(18.dp).padding(end = 4.dp))
+                    Icon(Icons.Filled.Warning, null, tint = MaterialTheme.bamnat.caution, modifier = Modifier.size(18.dp).padding(end = 4.dp))
                     Text(
                         "금액을 확인해 주세요. 1억 원이 넘어요" + if (per && (draft.amount ?: 0) < HUGE_WON) " (한 번 ${won(draft.amount ?: 0)} × ${effect?.times ?: 0}번)" else "",
-                        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error,
+                        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.bamnat.caution,
                     )
                 }
+                // 2.0.0 [RVJ-76] (사진 rvj_250: 고정연장수당 400,000원에 '+0원'만 보여 틀린 줄 알았어요) A 고정 연장수당 pays the month's
+                // 연장수당 ahead (PayCalculator.coverPremiums), so the part this month's 연장수당 already pays is not added again: said here.
+                val fixedAmount = draft.amount
+                if (effect != null && draft.kind == ItemKind.MONTHLY && draft.fixedOtMinutes > 0 && fixedAmount != null && effect.amount < fixedAmount)
+                    Text(
+                        if (effect.amount <= 0) "이달 연장수당이 이 금액 이상이라 합계는 그대로예요. 고정 연장수당은 연장수당을 미리 주는 거라 겹쳐 더하지 않아요"
+                        else "이달 연장수당과 겹치는 ${won(fixedAmount - effect.amount)}은 더하지 않아요. 고정 연장수당은 연장수당을 미리 주는 거예요",
+                        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
                 if (gap != null && effect != null) {
                     val left = gap - effect.amount
                     val closed = abs(left) <= 1_000
@@ -1080,8 +1113,9 @@ private fun EffectBar(
                 }
             }
             if (askName != null) Text(
-                "이름을 넣으면 명세서와 맞춰 보기 쉬워요. 비운 채 ‘$label’을 누르면 ‘$askName’(으)로 넣어요",
-                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.tertiary,
+                // 2.0.0 [RVJ-33] PC-84: "‘추가’을 … ‘매달 수당 1’(으)로" with the particles worked out.
+                "이름을 넣으면 명세서와 맞춰 보기 쉬워요. 이름을 비우면 ‘$askName’${com.bamnat.app.ui.Fmt.ro(askName)} 넣어요",
+                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, // [RVP-13] UIX-15: 권하는 말은 조용한 색
             )
             Button(onClick = onSave, enabled = enabled, modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp)) { Text(label) }
         }
@@ -1114,16 +1148,32 @@ internal fun MakeItemCard(enabled: Boolean, onClick: () -> Unit) {
     }
 }
 
-/** [PAYS-07] An item just made, said back in a sentence with the way to take it back. */
+/**
+ * [PAYS-07] An item just made, said back in a sentence with the way to take it back. 2.0.0 [RVJ-56] 검토 PC-137: [lands] is the month
+ * it first counts in when the month on screen is closed ("12월 급여부터 들어가요."); it had said '합계에 바로 들어갔어요' above the band
+ * '11월은 마감돼 그대로예요 · 12월 급여부터 +200,000원'.
+ */
 @Composable
-internal fun MadeNotice(made: MadeItem, onUndo: (() -> Unit)?) {
-    Surface(shape = MaterialTheme.shapes.medium, color = MaterialTheme.colorScheme.primaryContainer, modifier = Modifier.fillMaxWidth()) {
-        Row(Modifier.padding(start = 14.dp, end = 4.dp, top = 6.dp, bottom = 6.dp), verticalAlignment = Alignment.CenterVertically) {
-            Icon(Icons.Filled.CheckCircle, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(20.dp))
-            Spacer(Modifier.width(8.dp))
-            Text("‘${made.name}’ 항목을 만들었어요. 합계에 바로 들어갔어요.", style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onPrimaryContainer, modifier = Modifier.weight(1f))
-            if (onUndo != null) TextButton(onClick = onUndo, modifier = Modifier.heightIn(min = 48.dp)) { Text("되돌리기") }
+internal fun MadeNotice(made: MadeItem, onUndo: (() -> Unit)?, lands: YearMonth? = null) {
+    // [RVJ-56] With big letters the sentence had a third of the width beside '되돌리기' (a word a line); the button goes under it.
+    val big = com.bamnat.app.ui.components.bigLetters()
+    Surface(shape = MaterialTheme.shapes.medium, color = MaterialTheme.colorScheme.surfaceContainerLow, modifier = Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(start = 14.dp, end = 4.dp, top = 6.dp, bottom = 6.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(Icons.Filled.CheckCircle, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(20.dp))
+                Spacer(Modifier.width(8.dp))
+                // 2.0.0 [RVJ-51] 검토 PC-119: an item put in with no amount yet adds nothing; it said '합계에 바로 들어갔어요'.
+                val noAmount = made is MadeItem.Item && made.item.percentOfBase == null && made.item.amount.entries.all { it.value == 0L }
+                val where = lands?.let { "${it.monthValue}월 급여부터 들어가요." }
+                Text("‘${made.name}’ 항목을 만들었어요. " + when {
+                    noAmount -> "금액을 넣으면 " + (where ?: "합계에 들어가요.")
+                    else -> where ?: "합계에 바로 들어갔어요."
+                },
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurface, modifier = Modifier.weight(1f).padding(end = if (big) 10.dp else 0.dp))
+                if (onUndo != null && !big) TextButton(onClick = onUndo, modifier = Modifier.heightIn(min = 48.dp)) { Text("되돌리기") }
+            }
+            if (onUndo != null && big) TextButton(onClick = onUndo, modifier = Modifier.align(Alignment.End).heightIn(min = 48.dp)) { Text("되돌리기") }
         }
     }
 }

@@ -72,7 +72,8 @@ class DutyCodeBook(context: Context) {
             is DutyCell.Shift -> "S${c.shiftTypeId}"
             DutyCell.Off -> "O"
             is DutyCell.Leave -> "L${c.kind.code}.${c.quarters}.${if (c.fromStart) 1 else 0}"
-            is DutyCell.Unknown -> null
+            // 2.0.0 [RVL-72] A time or 공수 is read as it is written, never learned as a code.
+            is DutyCell.Unknown, is DutyCell.Hours, is DutyCell.Units -> null
         }
 
         fun decodeCell(s: String): DutyCell? = when {

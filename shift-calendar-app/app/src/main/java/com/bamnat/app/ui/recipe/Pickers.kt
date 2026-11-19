@@ -28,6 +28,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import com.bamnat.app.ui.components.AlertDialog
 import com.bamnat.app.ui.components.FilterChip
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.minimumInteractiveComponentSize
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -103,7 +104,7 @@ fun EmojiPickerDialog(onPick: (String) -> Unit, onDismiss: () -> Unit, onClear: 
 @Composable
 private fun EmojiCell(e: String, onClick: () -> Unit) {
     Box(
-        Modifier.size(44.dp).clip(RoundedCornerShape(10.dp)).clickable(onClickLabel = "이 이모지 고르기", onClick = onClick)
+        Modifier.size(44.dp).clip(MaterialTheme.shapes.small).clickable(onClickLabel = "이 이모지 고르기", onClick = onClick)
             .semantics { contentDescription = e },
         contentAlignment = Alignment.Center,
     ) { Text(e, fontSize = 24.sp) }
@@ -136,14 +137,14 @@ fun ColorPickerDialog(initial: Long, onPick: (Long) -> Unit, onDismiss: () -> Un
                     // PC 확인 W33 1.36 (동그라미가 '#2F80ED'처럼 읽힘): said as colour names.
                     val names = remember { com.bamnat.app.ui.settings.colorNames(ShiftPalette) }
                     ShiftPalette.forEachIndexed { i, c ->
-                        Box(Modifier.size(36.dp).clip(CircleShape).background(c.asColor()).clickable(onClickLabel = "이 색 고르기") { set(c) }
+                        Box(Modifier.minimumInteractiveComponentSize().size(36.dp).clip(CircleShape).background(c.asColor()).clickable(onClickLabel = "이 색 고르기") { set(c) }
                             .semantics { contentDescription = names[i] })
                     }
                 }
                 // 채도 (left → right) and 밝기 (top → bottom) of the hue below.
                 val base = Color.hsv(hue, 1f, 1f)
                 Box(
-                    Modifier.fillMaxWidth().height(140.dp).clip(RoundedCornerShape(12.dp))
+                    Modifier.fillMaxWidth().height(140.dp).clip(MaterialTheme.shapes.medium)
                         .background(Brush.horizontalGradient(listOf(Color.White, base)))
                         .pointerInput(Unit) {
                             fun at(o: Offset) {
@@ -170,7 +171,7 @@ fun ColorPickerDialog(initial: Long, onPick: (Long) -> Unit, onDismiss: () -> Un
                 }
                 // 색상환 as a strip: the whole circle of hues, left to right.
                 Box(
-                    Modifier.fillMaxWidth().height(28.dp).clip(RoundedCornerShape(14.dp))
+                    Modifier.fillMaxWidth().height(28.dp).clip(MaterialTheme.shapes.medium)
                         .background(Brush.horizontalGradient((0..6).map { Color.hsv(it * 60f % 360f, 1f, 1f) }))
                         .pointerInput(Unit) { detectTapGestures { hue = (it.x / size.width * 360f).coerceIn(0f, 359.9f); hex = hexOf(current()) } }
                         .pointerInput(Unit) {
@@ -210,8 +211,8 @@ fun ColorPickerDialog(initial: Long, onPick: (Long) -> Unit, onDismiss: () -> Un
 @Composable
 private fun Preview(c: Long, bg: Color, label: String, today: Boolean = false) {
     Column(horizontalAlignment = Alignment.CenterHorizontally) {
-        Box(Modifier.size(width = 96.dp, height = 40.dp).clip(RoundedCornerShape(8.dp)).background(bg)
-            .border(1.dp, MaterialTheme.colorScheme.outlineVariant, RoundedCornerShape(8.dp)), contentAlignment = Alignment.Center) {
+        Box(Modifier.size(width = 96.dp, height = 40.dp).clip(MaterialTheme.shapes.small).background(bg)
+            .border(1.dp, MaterialTheme.colorScheme.outlineVariant, MaterialTheme.shapes.small), contentAlignment = Alignment.Center) {
             if (today) Box(Modifier.size(30.dp).clip(CircleShape).background(c.asColor()), contentAlignment = Alignment.Center) {
                 Text(com.bamnat.core.time.Today.date().dayOfMonth.toString(), color = contentColorOn(c.asColor()), style = MaterialTheme.typography.labelLarge)
             } else Row(verticalAlignment = Alignment.CenterVertically) {
@@ -238,7 +239,7 @@ fun parseHex(s: String): Long? {
 @Composable
 fun ColorSwatch(color: Long, label: String, onPick: (Long) -> Unit, modifier: Modifier = Modifier) {
     var open by remember { mutableStateOf(false) }
-    Row(modifier.clip(RoundedCornerShape(10.dp)).clickable(onClickLabel = "$label 색 바꾸기") { open = true }.padding(6.dp),
+    Row(modifier.clip(MaterialTheme.shapes.small).clickable(onClickLabel = "$label 색 바꾸기") { open = true }.padding(6.dp),
         verticalAlignment = Alignment.CenterVertically) {
         Box(Modifier.size(28.dp).clip(CircleShape).background(color.asColor()).border(1.dp, MaterialTheme.colorScheme.outline, CircleShape),
             contentAlignment = Alignment.Center) {

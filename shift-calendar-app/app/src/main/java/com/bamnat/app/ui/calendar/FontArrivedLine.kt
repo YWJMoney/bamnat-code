@@ -43,7 +43,7 @@ internal fun FontArrivedLine(modifier: Modifier = Modifier) {
     if (got.isEmpty()) return
     val ctx = LocalContext.current
     Surface(color = MaterialTheme.colorScheme.secondaryContainer, contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
-        shape = RoundedCornerShape(14.dp), modifier = modifier.fillMaxWidth()) {
+        shape = MaterialTheme.shapes.medium, modifier = modifier.fillMaxWidth()) {
         Row(Modifier.heightIn(min = 44.dp).padding(start = 12.dp), verticalAlignment = Alignment.CenterVertically) {
             Text("기다리던 글꼴이 들어왔어요: ‘${got.joinToString("’, ‘") { it.second }}’", style = MaterialTheme.typography.bodyMedium, maxLines = 2,
                 overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))

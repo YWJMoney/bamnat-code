@@ -26,7 +26,8 @@ enum class CalendarFocus {
      * 1.37 PC 실사용(자영업 S5-13): an empty shop day that is not an opening day (정기휴무, 임시휴무) is 쉬는 날, not '매출 안 적음'
      * — the day sheet's 근무 line already says 쉬는 날, and a closed day has nothing to write.
      */
-    fun emptyDay(open: Boolean): String = if (this == SALES && !open) "쉬는 날" else emptyDay
+    // 2.0.0 [RVH-41] 검토 T30-100: a shop's closed day is its 휴무 (쉬는 날 is an employee's).
+    fun emptyDay(open: Boolean): String = if (this == SALES && !open) "휴무" else emptyDay
 
     /** The one-tap way to add the day's main record; null where days are stamped with shifts. */
     val addLabel: String? get() = when (this) {
@@ -37,7 +38,7 @@ enum class CalendarFocus {
     }
 
     /** 1.37 PC 4차 (S5-13): a run of days the shop does not open: "쉬는 날", "2일 쉬어요". */
-    fun gap(days: Int, closed: Boolean): String = if (this == SALES && closed) (if (days == 1) "쉬는 날" else "${days}일 쉬어요") else gap(days)
+    fun gap(days: Int, closed: Boolean): String = if (this == SALES && closed) (if (days == 1) "휴무" else "${days}일 휴무") else gap(days)
 
     /** A run of empty days in the month list, e.g. "3일 비어 있어요". */
     fun gap(days: Int): String = when (this) {

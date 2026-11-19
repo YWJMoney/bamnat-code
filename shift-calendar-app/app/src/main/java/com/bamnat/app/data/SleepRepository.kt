@@ -34,8 +34,9 @@ class SleepRepository(
      * changes nothing) [SLP-14]; one open for more than 16 hours, a missed "깼어요", is closed where
      * it stands: too long to count, but kept rather than deleted.
      */
-    suspend fun fellAsleep(): Asleep {
-        val now = clock()
+    suspend fun fellAsleep(atMillis: Long? = null): Asleep {
+        // 2.0.0 [RVI-94] [atMillis]: pressed on the wrist a little before the message came (never ahead, at most an hour back).
+        val now = (atMillis ?: clock()).coerceIn(clock() - PRESS_BACK_MILLIS, clock())
         dao.open()?.let { open ->
             if (now - open.startMillis <= STALE_MILLIS) return Asleep(open.toModel(), started = false)
             dao.finish(open.id, now)
@@ -59,6 +60,24 @@ class SleepRepository(
         return SleepEntry(open.id, local(open.startMillis), local(end))
     }
 
+    /**
+     * 2.0.0 [RVIB-14] (PC-124) 깼어요 pressed by hand (the sleep page, the calendar, the night screen; a 낮잠 too): a sleep that
+     * ends within [com.bamnat.core.sleep.TodayFlow.MIN_LOGGED_MINUTES] was a tap, not a sleep, and is not kept (it read
+     * '계획보다 7시간 적게'). [undoWoke] puts back what the tap changed: the sleep open again either way.
+     */
+    suspend fun wokeUpByHand(atMillis: Long? = null): Woke? {
+        val sleep = wokeUp(atMillis) ?: return null
+        val short = (sleep.minutes ?: 0) < com.bamnat.core.sleep.TodayFlow.MIN_LOGGED_MINUTES
+        if (short) dao.delete(sleep.id)
+        return Woke(sleep, dropped = short)
+    }
+
+    /** The sleep [wokeUpByHand] ended; [dropped] when it was too short to keep. */
+    data class Woke(val sleep: SleepEntry, val dropped: Boolean)
+
+    /** Takes back a [wokeUpByHand]: the sleep is open again (a dropped one is put back open). */
+    suspend fun undoWoke(w: Woke) { if (w.dropped) restore(w.sleep.copy(end = null)) else reopen(w.sleep.id) }
+
     /** The sleep still going on, if any (1.39 [SLEEP-06]: 자는 동안 소리 stops when it closes). */
     suspend fun openNow(): SleepEntry? = dao.open()?.toModel()
 
@@ -66,6 +85,20 @@ class SleepRepository(
     suspend fun reopen(id: Long) = dao.reopen(id)
 
     suspend fun delete(id: Long) = dao.delete(id)
+
+    /**
+     * 1.39.1 [R391-04] (검토 ALM-03) The user deletes a sleep: the sounds heard during it and their clips go with it (kept
+     * clips too, the night is gone). An undo brings the sleep back, not the sounds. [deleteFile] removes a clip by name.
+     */
+    suspend fun deleteWithSounds(id: Long, deleteFile: (String) -> Unit) {
+        val log = dao.log(id)
+        if (log != null) {
+            val to = (log.endMillis ?: clock()) + 1
+            dao.eventsBetween(log.startMillis, to).forEach { e -> e.file?.let { runCatching { deleteFile(it) } } }
+            dao.deleteEvents(log.startMillis, to)
+        }
+        dao.delete(id)
+    }
 
     /** [SLP-16] A sleep the user forgot to tap, written in afterwards; returns its id. */
     suspend fun add(start: LocalDateTime, end: LocalDateTime): Long =
@@ -104,7 +137,8 @@ class SleepRepository(
     fun events(from: LocalDateTime, to: LocalDateTime): Flow<List<com.bamnat.app.data.db.SleepEventEntity>> =
         dao.observeEvents(millis(from), millis(to))
 
-    suspend fun addEvents(events: List<com.bamnat.app.data.db.SleepEventEntity>) = events.forEach { dao.insertEvent(it) }
+    /** 2.0.0 [RVI-15] (검토 ALM-24) In one write: a restless night was thousands of single inserts. */
+    suspend fun addEvents(events: List<com.bamnat.app.data.db.SleepEventEntity>) { if (events.isNotEmpty()) dao.insertEvents(events) }
 
     /** 보관: a clip the user kept stays past the 7 days. */
     suspend fun keepClip(id: Long, keep: Boolean) = dao.keepEvent(id, keep)
@@ -116,14 +150,74 @@ class SleepRepository(
         return old.size
     }
 
+    /**
+     * 1.39.1 [R391-04] (검토 ALM-03) '짧은 소리는 7일 뒤 지워요' whether or not another night is measured: run when the app starts
+     * as well as after a night. Clips past [days] go as [dropOldClips] does, and a file in [dir] no sound points to (a night
+     * cut before it was saved, a deleted sleep) goes once it is a day old, past the longest night (14시간) still being heard.
+     */
+    suspend fun sweepClips(dir: java.io.File, days: Long): Int {
+        var gone = dropOldClips(days) { name -> java.io.File(dir, name).delete() }
+        // 2.0.0 [RVI-15] (검토 ALM-24) The sounds themselves (times and kinds) go after [EVENT_KEEP_DAYS], as far back as the sleep
+        // screen reads them (the 120 days of 전후 비교), so the database and its backup stop growing night after night.
+        runCatching { dao.pruneEvents(clock() - EVENT_KEEP_DAYS * DAY_MILLIS) }
+        val files = dir.listFiles()?.filter { it.isFile } ?: return gone
+        if (files.isEmpty()) return gone
+        val known = dao.allEvents().mapNotNull { it.file }.toSet()
+        val before = clock() - DAY_MILLIS
+        files.filter { it.name !in known && it.lastModified() < before }.forEach { if (it.delete()) gone++ }
+        return gone
+    }
+
+    /** [R200-02] How many sound clips the phone keeps (kept ones too). */
+    val clipCount: kotlinx.coroutines.flow.Flow<Int> get() = dao.observeClipCount()
+
+    /**
+     * [R200-02] (검토 ALM-03 넘긴 일) 소리 클립 지금 모두 지우기: every clip goes now, kept ones too, and any file in [dir] no
+     * sound points to. The times and kinds stay, as when a clip goes after 7 days. Returns how many files went.
+     */
+    suspend fun clearClips(dir: java.io.File): Int {
+        var gone = 0
+        dao.allEvents().filter { it.file != null }.forEach { e ->
+            if (java.io.File(dir, e.file!!).delete()) gone++
+            dao.dropClip(e.id)
+        }
+        dir.listFiles()?.filter { it.isFile }?.forEach { if (it.delete()) gone++ }
+        return gone
+    }
+
+    /** 2.0.0 [RVI-57] (검토 U03-04) How many sound clips the sleep [id] still has on the phone. */
+    suspend fun clipsOf(id: Long): Int {
+        val log = dao.log(id) ?: return 0
+        return dao.eventsBetween(log.startMillis, (log.endMillis ?: clock()) + 1).count { it.file != null }
+    }
+
+    /**
+     * 2.0.0 [RVI-57] (검토 U03-04) 이 밤 소리 지우기: the clips heard during the sleep [id] go now (kept ones too); the times and kinds
+     * stay, as when a clip goes after 7 days. Returns how many went.
+     */
+    suspend fun clearClipsOf(id: Long, dir: java.io.File): Int {
+        val log = dao.log(id) ?: return 0
+        var gone = 0
+        dao.eventsBetween(log.startMillis, (log.endMillis ?: clock()) + 1).filter { it.file != null }.forEach { e ->
+            java.io.File(dir, e.file!!).delete()
+            dao.dropClip(e.id)
+            gone++
+        }
+        return gone
+    }
+
     private fun SleepCheckEntity.toModel() = SleepCheck(id, local(startMillis), local(endMillis), SleepMood.of(mood), SleepTag.decode(tags), note)
 
     private fun SleepLogEntity.toModel() = SleepEntry(id, local(startMillis), endMillis?.let(::local), auto = source == SleepLogEntity.SOURCE_AUTO)
     private fun millis(t: LocalDateTime): Long = t.atZone(zone()).toInstant().toEpochMilli()
     private fun local(millis: Long): LocalDateTime = LocalDateTime.ofInstant(Instant.ofEpochMilli(millis), zone())
 
-    private companion object {
-        const val DAY_MILLIS = 24 * 60 * 60 * 1000L
-        const val STALE_MILLIS = SleepDebt.MAX_SLEEP_MINUTES * 60 * 1000L
+    companion object {
+        private const val DAY_MILLIS = 24 * 60 * 60 * 1000L
+        private const val STALE_MILLIS = SleepDebt.MAX_SLEEP_MINUTES * 60 * 1000L
+        /** 2.0.0 [RVI-94] A press from the wrist is believed this far back. */
+        private const val PRESS_BACK_MILLIS = 60 * 60 * 1000L
+        /** 2.0.0 [RVI-15] How long a night's sounds stay (the sleep screen's longest look back). */
+        const val EVENT_KEEP_DAYS = 120L
     }
 }

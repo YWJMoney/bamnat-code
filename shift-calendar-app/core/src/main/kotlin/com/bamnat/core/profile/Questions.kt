@@ -27,7 +27,8 @@ data class Question(val key: FactKey, val text: String, val answer: Answer)
 object Questions {
     private const val PAY_SETUP = "pay.calc"
 
-    fun of(key: FactKey, hasPay: Boolean): Question {
+    /** [daily]: a 일당 setup's, whose tax question has 일용근로 too (2.0.0 [RVJ-80] 검토 T04-05). */
+    fun of(key: FactKey, hasPay: Boolean, daily: Boolean = false): Question {
         if (key.money && key.group in PAY_GROUPS && key != FactKey.TAX_MODE && !hasPay) {
             return Question(key, "급여를 알려 주시면 이번 달 예상 급여가 나와요", Answer.Open(PAY_SETUP, "급여 설정하기"))
         }
@@ -55,18 +56,24 @@ object Questions {
             FactKey.PUBLIC_HOLIDAYS -> Question(key, "공휴일은 쉬는 날이고 일하면 수당을 받나요?", Answer.Open(PAY_SETUP, "공휴일 정하기"))
             FactKey.FIVE_OR_MORE -> Question(key, "회사 직원이 5명 이상인가요?", Answer.Chips(listOf("네, 5명 이상" to "true", "아니요, 4명 이하" to "false")))
             FactKey.HIRE_DATE -> Question(key, "입사일이 언제예요? 연차가 저절로 셈해져요", Answer.Date)
-            FactKey.TAX_MODE -> Question(key, "급여에서 세금은 어떻게 떼요?", Answer.Chips(listOf(
+            FactKey.TAX_MODE -> Question(key, "급여에서 세금은 어떻게 떼요?", Answer.Chips(
+                (if (daily) listOf("일용근로" to TaxMode.DAILY_WORKER.name) else emptyList()) + listOf(
                 "4대보험" to TaxMode.INSURANCE_4.name, "3.3%" to TaxMode.WITHHOLDING_3_3.name, "안 떼요" to TaxMode.NONE.name)))
             FactKey.TAX_FAMILY -> Question(key, "본인을 포함해 공제받는 가족이 몇 명이에요?", Answer.Number("명", 1, 11, 1, 1))
             FactKey.PREVIOUS_YEAR_PAY -> Question(key, "작년에 받은 총급여가 얼마인가요?", Answer.Open(PAY_SETUP, "작년 급여 넣기"))
             FactKey.SLEEP_TARGET -> Question(key, "하루 몇 시간 자고 싶으세요?", Answer.Chips(listOf(6, 7, 8, 9).map { "${it}시간" to "${it * 60}" }))
             FactKey.COMMUTE -> Question(key, "퇴근해서 집까지 몇 분 걸려요?", Answer.Number("분", 0, 180, 5, 30))
-            FactKey.COMPANY -> Question(key, "같은 회사 분들이 나눈 설정을 찾아볼까요?", Answer.Open("plaza.news", "회사 찾기"))
+            // 2.0.0 [RVG-11] 검토 WORK-21: '회사 찾기' opened 밤낮 소식 (알림 스위치). It is the 회사 이름으로 같은 회사 설정 찾기; the
+            // app opens the 회사 찾기 screen for it ([COMPANY_FIND]).
+            FactKey.COMPANY -> Question(key, "같은 회사 분들이 나눈 설정을 찾아볼까요?", Answer.Open(COMPANY_FIND, "회사 찾기"))
             FactKey.SHOP_RULES -> Question(key, "영업시간과 쉬는 날을 알려 주세요", Answer.Open("shop.days", "영업일 정하기"))
             FactKey.SHOP_MONEY -> Question(key, "카드 수수료와 정산일을 알려 주세요", Answer.Open("shop.cardDue", "정산 정하기"))
             FactKey.FIELD_RULES -> Question(key, "일당으로 세세요, 건별로 세세요?", Answer.Open("field.mode", "고르기"))
         }
     }
+
+    /** [RVG-11] The feature behind '회사 찾기' (회사 이름으로 같은 회사 분들의 설정 찾기); the app opens its 회사 찾기 screen for it. */
+    const val COMPANY_FIND = "plaza.payFind"
 
     /** A chip that leaves the fact as it is but stops asking: the app keeps its 법대로 가정. */
     const val UNKNOWN = "?"

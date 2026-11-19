@@ -112,6 +112,32 @@ class CalendarScreenshotTest : ScreenshotBase() {
         assertTrue(bmp.height > bmp.width)
     }
 
+    // 1.40 [SPREAD-37] 연말 근무 결산 picture: a 교대 year and a shop's, money off (left off the picture) and on.
+    @Test fun yearRecapImage() {
+        val shift = com.bamnat.core.work.YearRecap(
+            year = 2026, from = java.time.LocalDate.of(2026, 1, 1), to = java.time.LocalDate.of(2026, 12, 31),
+            focus = com.bamnat.core.work.CalendarFocus.SHIFTS, workDays = 182, workMinutes = 182 * 600, nights = 91, nightMinutes = 91 * 480,
+            holidayWorkDays = 9, extras = listOf("특근" to 12, "대근" to 3), leaveDays = 11.5,
+            longestRest = com.bamnat.core.work.YearRecap.Rest(java.time.LocalDate.of(2026, 9, 23), java.time.LocalDate.of(2026, 9, 29)),
+            busiestMonth = java.time.YearMonth.of(2026, 3) to 19, sleepDays = 210, sleepAverageMinutes = 6 * 60 + 40,
+            money = 52_340_000, moneyLabel = "급여 (세전 예상)")
+        val hidden = com.bamnat.app.share.YearRecapImage.tilesOn(shift, com.bamnat.app.share.YearRecapImage.Look(money = false))
+        assertTrue(hidden.none { it.money })
+        val shown = com.bamnat.app.share.YearRecapImage.tilesOn(shift, com.bamnat.app.share.YearRecapImage.Look(money = true))
+        assertTrue(shown.any { it.money } && shown.any { it.label == "평균 잠" } && shown.size <= 6)
+        val shop = com.bamnat.core.work.YearRecap(
+            year = 2026, from = java.time.LocalDate.of(2026, 3, 4), to = java.time.LocalDate.of(2026, 12, 22),
+            focus = com.bamnat.core.work.CalendarFocus.SALES, openDays = 251, holidayOpenDays = 7, bestDay = java.time.LocalDate.of(2026, 5, 5),
+            busiestMonth = java.time.YearMonth.of(2026, 12) to 0, money = 31_200_000, moneyLabel = "가게 순수익")
+        listOf("41_year_recap_shift" to com.bamnat.app.share.YearRecapImage.render(shift),
+            "41b_year_recap_shift_money" to com.bamnat.app.share.YearRecapImage.render(shift, com.bamnat.app.share.YearRecapImage.Look(money = true)),
+            "41c_year_recap_shop" to com.bamnat.app.share.YearRecapImage.render(shop)).forEach { (name, bmp) ->
+            val out = File("build/screenshots/$name.png").apply { parentFile!!.mkdirs() }
+            out.outputStream().use { bmp.compress(Bitmap.CompressFormat.PNG, 100, it) }
+            assertTrue(bmp.height > bmp.width)
+        }
+    }
+
     @Test fun foldedDayRestWarning() = shoot("78_folded_day_rest_warning", FOLDED) {
         nightIntoDay().invoke(this); openDay(today.minusDays(3)); reveal("몸", exact = true)
     }
@@ -253,7 +279,10 @@ class CalendarScreenshotTest : ScreenshotBase() {
     @Test fun smallPhoneCalendar() = shoot("161_small_phone_calendar", SMALL_PHONE)
     @Test fun smallPhoneDaySheet() = shoot("162_small_phone_day_sheet", SMALL_PHONE) { openDayBelow(dayCell) }
     @Test fun phoneCalendarSmallText() = shoot("163_phone_calendar_small_text", PHONE, fontScale = 0.85f)
-    @Test fun phoneCalendarHugeText() = shoot("164_phone_calendar_huge_text", PHONE, fontScale = 2f)
+    // 2.0.0 [RVP-01] 검토 HQ-76 (조건 9): the floating button does not stand on the '월 ▾' row under the month.
+    @Test fun phoneCalendarHugeText() = shoot("164_phone_calendar_huge_text", PHONE, fontScale = 2f) {
+        LayoutCheck.underFab(nodes(merged = false)).let { check(it.isEmpty()) { "the floating button covers $it" } }
+    }
     @Test fun phoneDaySheetHugeText() = shoot("165_phone_day_sheet_huge_text", PHONE, fontScale = 2f) { openDayBelow(dayCell) }
     @Test fun unfoldedCalendarHugeText() = shoot("172_unfolded_calendar_huge_text", UNFOLDED, fontScale = 2f)
     @Test fun phoneLandscapeCalendar() = shoot("173_phone_landscape_calendar", PHONE_LANDSCAPE)
@@ -293,7 +322,7 @@ class CalendarScreenshotTest : ScreenshotBase() {
             val m = Today.month().plusMonths(n.toLong())
             (1..m.lengthOfMonth()).map { m.atDay(it) }.any { it.dayOfWeek.value <= 5 && com.bamnat.core.holiday.KoreanHolidays.isHoliday(it) }
         }
-        repeat(ahead) { tapText("다음 달", exact = true, scrolls = 0) }
+        repeat(ahead) { stepMonth("다음 달") }
     }
 
     /** [CAL-05] An hourly job's own calendar before any day is written: one step to start. */
@@ -381,7 +410,8 @@ class CalendarScreenshotTest : ScreenshotBase() {
     @Test fun calShiftHugeText() = shoot("313_phone_shift_huge_text", PHONE, 2f, withPay())
     /** [CAL-06] Any date, picked on a full calendar from the month list. */
     @Test fun calDateJump() = shoot("315_folded_date_jump", FOLDED) {
-        tapText(Fmt.month(Today.month()), exact = true, scrolls = 0)
+        // 2.0.0 [RVP-45] The month on the one-row head (its year may fold away): what a tap on it does.
+        tapAction("달 고르기")
         tapText("날짜 고르기", exact = true, scrolls = 0)
     }
     /** [CAL-18] The day's chips past the screen's edge: the end fades and "+N ›" says how many more. */

@@ -136,6 +136,8 @@ class SleepRecordService : Service(), SensorEventListener {
         val events = ArrayList<SoundEvent>()
         val clips = HashMap<SoundEvent, File>()
         var written = 0L
+        // 2.0.0 [RVI-15] (검토 ALM-24) Counted as they come, not counted again over the whole night at each sound.
+        var heard = 0
         thread = Thread({
             val buf = ShortArray(frame)
             val low = FloatArray(1)
@@ -144,15 +146,37 @@ class SleepRecordService : Service(), SensorEventListener {
                 if (audio?.isMusicActive == true && NoiseService.playing.value == null) return@SoundDetector
                 events += e
                 if (e.kind == SoundKind.MOVE || e.kind == SoundKind.TALK) { movedThisMinute = true; lastMovedAt = Today.millis(); SmartWake.check(this, lastMovedAt) }
-                _recording.value = Recording(startedAt, events.count { it.kind != SoundKind.MOVE && it.kind != SoundKind.OTHER }, endsAt)
-                keepClip(e, events, clips, ring, written, rate)
+                if (e.kind != SoundKind.MOVE && e.kind != SoundKind.OTHER) heard++
+                _recording.value = Recording(startedAt, heard, endsAt)
+                keepClip(e, clips, ring, written, rate)
             }
+            // 2.0.0 [RVI-16] (검토 ALM-14) A microphone that cannot be opened (another app holds it) or keeps failing (the audio
+            // server restarted) no longer spins all night under the wake lock or shows '재는 중' over an empty night: errors
+            // rest a moment, the recording is started again a few times, and then the night's measuring stops with a notice.
+            var micLost = record.state != AudioRecord.STATE_INITIALIZED
             runCatching {
-                record.startRecording()
+                if (!micLost) {
+                    record.startRecording()
+                    if (record.recordingState != AudioRecord.RECORDSTATE_RECORDING) micLost = true
+                }
                 var minuteAt = 0L
-                while (running) {
+                var errors = 0
+                var restarts = 0
+                while (running && !micLost) {
                     val n = record.read(buf, 0, frame)
-                    if (n <= 0) continue
+                    if (n <= 0) {
+                        errors++
+                        Thread.sleep(if (n < 0) MIC_ERROR_REST_MS else 20L)
+                        if (n < 0 && errors >= MIC_ERRORS_BEFORE_RESTART) {
+                            errors = 0
+                            if (++restarts > MIC_RESTARTS) { micLost = true; break }
+                            runCatching { record.stop() }
+                            Thread.sleep(MIC_ERROR_REST_MS)
+                            runCatching { record.startRecording() }
+                        }
+                        continue
+                    }
+                    errors = 0
                     for (i in 0 until n) ring[((written + i) % ring.size).toInt()] = buf[i]
                     written += n
                     detector.push(SoundFrames.of(buf, n, low, rate))
@@ -171,12 +195,20 @@ class SleepRecordService : Service(), SensorEventListener {
             val night = events.toList()
             val kept = clips.toMap()
             appContainer.appScope.launch { save(night, kept) }
+            if (micLost && running) {
+                // The sleep itself stays open (잠들었어요 was pressed); only the listening stops, and the user is told why.
+                micLostNotice()
+                ContextCompat.getMainExecutor(this).execute { closeSleep = false; finishNight() }
+            }
         }, "bamnat-sleep-record").apply { start() }
     }
 
-    /** Keeps this sound's clip if it is among the hour's best; drops the one it pushes out. */
-    private fun keepClip(e: SoundEvent, all: List<SoundEvent>, clips: HashMap<SoundEvent, File>, ring: ShortArray, written: Long, rate: Int) {
-        val keep = ClipPicker.pick(all).toSet()
+    /**
+     * Keeps this sound's clip if it is among the hour's best; drops the one it pushes out. 2.0.0 [RVI-15] Picked among the clips
+     * kept so far and this one (the same as among all the night's sounds, since a sound left out once never comes back in).
+     */
+    private fun keepClip(e: SoundEvent, clips: HashMap<SoundEvent, File>, ring: ShortArray, written: Long, rate: Int) {
+        val keep = ClipPicker.pick(clips.keys.toList() + e).toSet()
         clips.keys.filter { it !in keep }.forEach { old -> clips.remove(old)?.delete() }
         if (e !in keep) return
         val endSample = written
@@ -198,7 +230,9 @@ class SleepRecordService : Service(), SensorEventListener {
             val s = c.settingsRepository.settings.value
             val resolver = c.scheduleRepository.snapshot.first().resolver
             val now = start
-            val alarm = if (s.alarmsEnabled) com.bamnat.core.alarm.AlarmPlanner.nextAlarm(resolver, now)?.triggerAt else null
+            // 2.0.0 [RVIB-17] (PC-129) Ends by the alarm the phone has set (not one turned off with 이번만 끄기).
+            val alarm = if (!s.alarmsEnabled) null else c.alarmScheduler.upcoming.value?.let { com.bamnat.app.alarm.AlarmScheduler.millisToLocal(it.triggerAtMillis) }
+                ?.takeIf { it.isAfter(now) } ?: com.bamnat.core.alarm.AlarmPlanner.nextAlarm(resolver, now)?.triggerAt
             nextAlarm = alarm
             val plan = com.bamnat.core.sleep.SleepSchedule.of(resolver, now.toLocalDate().minusDays(1), now.toLocalDate().plusDays(1),
                 s.alarmsEnabled, s.sleepTargetMinutes)
@@ -225,6 +259,19 @@ class SleepRecordService : Service(), SensorEventListener {
                 return
             }
         }
+    }
+
+    /** 2.0.0 [RVI-16] "마이크를 쓸 수 없어 소리 측정을 멈췄어요", once, quietly. */
+    private fun micLostNotice() {
+        val n = androidx.core.app.NotificationCompat.Builder(this, Notifications.STATUS_CHANNEL_ID)
+            .setSmallIcon(com.bamnat.app.R.drawable.ic_notification)
+            .setSilent(true)
+            .setContentTitle("마이크를 쓸 수 없어 소리 측정을 멈췄어요")
+            .setContentText("다른 앱이 마이크를 쓰고 있었을 수 있어요. 잠 기록은 그대로예요")
+            .setContentIntent(Notifications.open(this, com.bamnat.app.NoticeLinks.Target.SLEEP, 2113))
+            .setAutoCancel(true)
+            .build()
+        Notifications.post(this, Notifications.SLEEP_MIC_ID, n)
     }
 
     private fun finishNight() {
@@ -271,7 +318,7 @@ class SleepRecordService : Service(), SensorEventListener {
         p.edit().putLong(K_LAST_START, startedAt).putLong(K_LAST_END, Today.millis())
             .putInt(K_LAST_BATTERY, used).putString(K_LAST_LINE, summary.line()).putBoolean(K_LAST_CUT, cut)
             .remove(K_RUNNING).remove(K_CUT).apply()
-        c.sleepRepository.dropOldClips(KEEP_DAYS) { name -> File(File(filesDir, CLIP_DIR), name).delete() }
+        c.sleepRepository.sweepClips(File(filesDir, CLIP_DIR), KEEP_DAYS)
     }
 
     override fun onSensorChanged(event: SensorEvent) {
@@ -338,6 +385,12 @@ class SleepRecordService : Service(), SensorEventListener {
         const val KEEP_DAYS = 7L
         private const val RING_SECONDS = 12
         private const val MOVE_THRESHOLD = 0.6f
+        /** 2.0.0 [RVI-16] (검토 ALM-14) A failed read rests this long before the next, so a broken mic does not spin the CPU. */
+        private const val MIC_ERROR_REST_MS = 200L
+        /** Reads that fail in a row before the mic is opened again. */
+        private const val MIC_ERRORS_BEFORE_RESTART = 25
+        /** Times the mic is opened again in one night before the night is saved as it stands and the user is told. */
+        private const val MIC_RESTARTS = 3
         private const val PREFS = "sleep_record"
         private const val K_LAST_START = "last_start"
         private const val K_LAST_END = "last_end"
@@ -353,6 +406,10 @@ class SleepRecordService : Service(), SensorEventListener {
 
         private val _recording = MutableStateFlow<Recording?>(null)
         val recording: StateFlow<Recording?> = _recording.asStateFlow()
+
+        /** 2.0.0 [RVI-59] For the screen shots of a measuring night: the screens' state without the microphone. */
+        @androidx.annotation.VisibleForTesting
+        internal fun showRecording(r: Recording?) { _recording.value = r }
 
         /** Between the microphone stopping and the night written down; a night cut off is not said meanwhile. */
         @Volatile private var saving = false

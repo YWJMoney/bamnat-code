@@ -59,11 +59,13 @@ class RecordsTrash(
         STYLE_CLEARED("근무 형태를 바꾸며 기록을 지웠어요"),
         CLEARED("기록을 지웠어요"),
         DELETED("달력을 지웠어요"),
+        /** 2.0.0 [RVK-10] (검토 MONEY-04·U06a-11·I06aa-03): 가계부 lines removed, kept for [LINES_KEEP_DAYS] days. */
+        LINES("가계부 기록을 지웠어요"),
     }
 
     data class Entry(val id: String, val kind: Kind, val calendarId: String, val name: String, val at: Long, val detail: String) {
         /** Whole days left before it goes, at least 1 while it is still listed. */
-        fun daysLeft(now: Long): Int = (((at + KEEP_MILLIS - now) + DAY_MILLIS - 1) / DAY_MILLIS).toInt().coerceAtLeast(1)
+        fun daysLeft(now: Long): Int = (((at + keepMillis(kind) - now) + DAY_MILLIS - 1) / DAY_MILLIS).toInt().coerceAtLeast(1)
     }
 
     /** Said right after a change, with 되돌리기. */
@@ -169,6 +171,37 @@ class RecordsTrash(
         }
     }
 
+    /**
+     * 2.0.0 [RVK-10] (검토 MONEY-04) Keeps 가계부 lines [ids] of calendar [calendarId] right before they are removed, for
+     * [LINES_KEEP_DAYS] days; [detail] says what they were ("3건 · 45,000원"). Null when nothing could be kept.
+     */
+    suspend fun keepLines(calendarId: String, ids: Collection<Long>, detail: String): Entry? = lock.withLock {
+        withContext(Dispatchers.IO) {
+            val keep = ids.filter { it > 0 }
+            if (keep.isEmpty()) null else save(Kind.LINES, calendarId, withData = false, detail = detail, lineIds = keep)
+        }
+    }
+
+    /**
+     * 2.0.0 [RVK-11] (검토 MONEY-05) The receipt photos lines kept here still name, so a photo is not cleared away while its
+     * line can still be put back.
+     */
+    suspend fun keptReceipts(): Set<String> = lock.withLock {
+        withContext(Dispatchers.IO) {
+            dir.listFiles().orEmpty().filter { it.isDirectory }.flatMap { f ->
+                val data = File(f, DATA).takeIf { it.exists() } ?: return@flatMap emptyList()
+                runCatching {
+                    fileDb(data).use { snap ->
+                        if ("money_entries" !in tablesOf(snap) || "receipt" !in columnsOf(snap, "money_entries")) emptyList()
+                        else snap.query("SELECT receipt FROM money_entries WHERE receipt != ''").use { c ->
+                            buildList { while (c.moveToNext()) add(c.getString(0)) }
+                        }
+                    }
+                }.getOrDefault(emptyList())
+            }.toSet()
+        }
+    }
+
     /** [UNDO-03] Said once the calendar is gone. */
     fun deleted(entry: Entry) {
         _offers.tryEmit(Offer(entry, "‘${entry.name}’ 달력을 지웠어요"))
@@ -210,7 +243,7 @@ class RecordsTrash(
             val folder = File(dir, id)
             val meta = runCatching { JSONObject(File(folder, META).readText()) }.getOrNull() ?: return@withContext false
             val kind = runCatching { Kind.valueOf(meta.getString("kind")) }.getOrNull() ?: return@withContext false
-            if (clock() - meta.optLong("at") > KEEP_MILLIS) {
+            if (clock() - meta.optLong("at") > keepMillis(kind)) {
                 folder.deleteRecursively()
                 _entries.value = load()
                 return@withContext false
@@ -227,6 +260,11 @@ class RecordsTrash(
                         putSettings(meta, cal)
                         putPay(meta, cal.id)
                         putMemos(folder)
+                    }
+                    // [RVK-10] The lines go back beside what is there now; nothing written since is replaced.
+                    Kind.LINES -> {
+                        if (calendars.get(cal.id) == null) return@runCatching false
+                        putLines(folder, cal.id)
                     }
                     Kind.DELETED -> {
                         if (calendars.get(cal.id) != null) return@runCatching false
@@ -254,8 +292,10 @@ class RecordsTrash(
         lock.withLock {
             val now = clock()
             dir.listFiles()?.forEach { f ->
-                val at = runCatching { JSONObject(File(f, META).readText()).getLong("at") }.getOrNull()
-                if (at == null || now - at > KEEP_MILLIS) f.deleteRecursively()
+                val meta = runCatching { JSONObject(File(f, META).readText()) }.getOrNull()
+                val at = meta?.optLong("at")?.takeIf { it > 0 }
+                val kind = meta?.let { m -> runCatching { Kind.valueOf(m.getString("kind")) }.getOrNull() }
+                if (at == null || kind == null || now - at > keepMillis(kind)) f.deleteRecursively()
             }
             _entries.value = load()
         }
@@ -264,7 +304,7 @@ class RecordsTrash(
     // ---- inside ----
 
     /** Null for a calendar no longer there: it has nothing to keep, and never stands in for 내 달력. */
-    private fun save(kind: Kind, calendarId: String, withData: Boolean, detail: String): Entry? {
+    private fun save(kind: Kind, calendarId: String, withData: Boolean, detail: String, lineIds: List<Long> = emptyList()): Entry? {
         val cal = calendars.get(calendarId) ?: return null
         val id = "${clock()}-${UUID.randomUUID().toString().take(8)}"
         val folder = File(dir, "$id.part").apply { deleteRecursively(); mkdirs() }
@@ -283,6 +323,11 @@ class RecordsTrash(
             .put("rosterMonthly", s.rosterMonthly)
             .putOpt("pay", pay.profile.value?.let(PayCodec::encode))
             .put("closed", JSONArray(pay.closed.value.values.map(SnapshotCodec::encode)))
+        if (kind == Kind.LINES) {
+            val live = liveOf(cal.id) ?: run { folder.deleteRecursively(); return null }
+            fileDb(File(folder, DATA)).use { snap -> dump(SupportDb(live), snap, "money_entries", "id IN (${lineIds.joinToString(",")})") }
+            meta.put("lines", JSONArray(lineIds))
+        }
         if (withData) {
             val live = liveOf(cal.id)
             if (live != null) {
@@ -380,6 +425,18 @@ class RecordsTrash(
         }
     }
 
+    /** [RVK-10] Kept 가계부 lines back with their own ids (never reused), so a line put back twice stays one line. */
+    private fun putLines(folder: File, calendarId: String) {
+        val file = File(folder, DATA)
+        if (!file.exists()) return
+        val live = liveOf(calendarId) ?: return
+        val roomDb = roomOf(calendarId) ?: return
+        fileDb(file).use { snap ->
+            if ("money_entries" !in tablesOf(snap)) return
+            roomDb.runInTransaction(Runnable { copyRows(snap, SupportDb(live), "money_entries") })
+        }
+    }
+
     private suspend fun putPay(meta: JSONObject, calendarId: String) {
         val store = calendars.pay(calendarId)
         store.save(meta.optJSONObject("pay")?.let(PayCodec::decode), keepUndo = false)
@@ -445,7 +502,7 @@ class RecordsTrash(
         val now = clock()
         return dir.listFiles().orEmpty().filter { it.isDirectory && !it.name.endsWith(".part") }.mapNotNull { f ->
             runCatching { entryOf(JSONObject(File(f, META).readText()), f.name) }.getOrNull()
-        }.filter { now - it.at <= KEEP_MILLIS }.sortedByDescending { it.at }
+        }.filter { now - it.at <= keepMillis(it.kind) }.sortedByDescending { it.at }
     }
 
     private fun entryOf(o: JSONObject, id: String): Entry? {
@@ -453,87 +510,22 @@ class RecordsTrash(
         return Entry(id, kind, o.optString("calendarId"), o.optString("name"), o.optLong("at"), o.optString("detail"))
     }
 
-    // ---- copying tables ----
-
-    private interface Db : AutoCloseable {
-        fun query(sql: String, args: Array<Any?> = emptyArray()): Cursor
-        fun exec(sql: String)
-        fun insert(table: String, values: ContentValues)
-        override fun close() {}
-    }
-
-    private class SupportDb(val db: SupportSQLiteDatabase) : Db {
-        override fun query(sql: String, args: Array<Any?>): Cursor = db.query(sql, args)
-        override fun exec(sql: String) = db.execSQL(sql)
-        override fun insert(table: String, values: ContentValues) {
-            db.insert(table, SQLiteDatabase.CONFLICT_REPLACE, values)
-        }
-    }
-
-    private class FileDb(val db: SQLiteDatabase) : Db {
-        override fun query(sql: String, args: Array<Any?>): Cursor = db.rawQuery(sql, args.map { it?.toString() }.toTypedArray())
-        override fun exec(sql: String) = db.execSQL(sql)
-        override fun insert(table: String, values: ContentValues) {
-            db.insertWithOnConflict(table, null, values, SQLiteDatabase.CONFLICT_REPLACE)
-        }
-        override fun close() = db.close()
-    }
-
-    private fun fileDb(file: File): FileDb = FileDb(SQLiteDatabase.openOrCreateDatabase(file, null))
-
-    private fun tablesOf(db: SupportSQLiteDatabase): Set<String> = tablesOf(SupportDb(db)).toSet()
-
-    private fun tablesOf(db: Db): List<String> = db.query("SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name").use { c ->
-        buildList { while (c.moveToNext()) c.getString(0).takeIf { it !in INTERNAL && !it.startsWith("sqlite_") }?.let(::add) }
-    }
-
-    private fun columnsOf(db: Db, table: String): Set<String> = db.query("PRAGMA table_info(`$table`)").use { c ->
-        val name = c.getColumnIndex("name")
-        buildSet { while (c.moveToNext()) add(c.getString(name)) }
-    }
-
-    /** Table [table] of [from] made in [to] with its rows ([where] picks some). */
-    private fun dump(from: Db, to: Db, table: String, where: String? = null) {
-        val create = from.query("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = ?", arrayOf(table)).use { c ->
-            if (c.moveToFirst()) c.getString(0) else null
-        } ?: return
-        to.exec(create.replaceFirst("CREATE TABLE ", "CREATE TABLE IF NOT EXISTS ").replace("IF NOT EXISTS IF NOT EXISTS", "IF NOT EXISTS"))
-        copyRows(from, to, table, where)
-    }
-
-    /** Rows of [table] from [from] into [to], by the columns both have; a column [to] has alone keeps its default. */
-    private fun copyRows(from: Db, to: Db, table: String, where: String? = null) {
-        val target = columnsOf(to, table)
-        from.query("SELECT * FROM `$table`" + (where?.let { " WHERE $it" } ?: "")).use { c ->
-            val cols = (0 until c.columnCount).filter { c.getColumnName(it) in target }
-            while (c.moveToNext()) {
-                val v = ContentValues()
-                for (i in cols) {
-                    val name = c.getColumnName(i)
-                    when (c.getType(i)) {
-                        Cursor.FIELD_TYPE_NULL -> v.putNull(name)
-                        Cursor.FIELD_TYPE_INTEGER -> v.put(name, c.getLong(i))
-                        Cursor.FIELD_TYPE_FLOAT -> v.put(name, c.getDouble(i))
-                        Cursor.FIELD_TYPE_BLOB -> v.put(name, c.getBlob(i))
-                        else -> v.put(name, c.getString(i))
-                    }
-                }
-                to.insert(table, v)
-            }
-        }
-    }
+    // ---- copying tables: [TableCopy] ----
 
     companion object {
         const val KEEP_DAYS = 7L
         private const val DAY_MILLIS = 24 * 60 * 60 * 1000L
         const val KEEP_MILLIS = KEEP_DAYS * DAY_MILLIS
+        /** 2.0.0 [RVK-10] 가계부 lines are kept longer: a mistake in a long list is often found at the month's end. */
+        const val LINES_KEEP_DAYS = 30L
+
+        fun keepMillis(kind: Kind): Long = if (kind == Kind.LINES) LINES_KEEP_DAYS * DAY_MILLIS else KEEP_MILLIS
         private const val META = "meta.json"
         private const val DATA = "data.db"
         private const val MEMOS = "memos.db"
         private const val FILES = "files"
         /** Its pay setup's folder, kept in meta.json instead. */
         private const val PAY_DIR = "pay"
-        private val INTERNAL = setOf("android_metadata", "room_master_table")
         private val CLEARED_TABLES get() = RECORD_TABLES + INVEST_TABLES
 
         /**

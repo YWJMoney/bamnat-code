@@ -3,7 +3,6 @@ package com.bamnat.app.ui.calendar
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Login
@@ -45,6 +44,8 @@ import java.time.LocalDate
 import java.time.LocalDateTime
 import java.time.LocalTime
 import com.bamnat.core.time.Today
+import com.bamnat.app.ui.theme.Tone
+import com.bamnat.app.ui.theme.color
 
 /**
  * [HRLY-02][HRLY-03] What an 알바 calendar's cells need: the pay setup for each day's pay and the weekday
@@ -72,9 +73,12 @@ internal fun HourlyTimeMark(day: ResolvedDay, range: String) {
 /** [HRLY-01] 지각·조퇴 (주황) and 결근 (빨강) in a cell's corner. */
 @Composable
 internal fun AttendanceMark(a: Attendance) {
-    val bg = if (a == Attendance.ABSENT) MaterialTheme.colorScheme.error else LocalCalendarColors.current.warning
-    Box(Modifier.size(13.dp).clip(CircleShape).background(bg), contentAlignment = Alignment.Center) {
-        Text(a.label.take(1), fontSize = 8.sp, lineHeight = 8.sp, color = com.bamnat.app.ui.components.contentColorOn(bg), fontWeight = FontWeight.Bold)
+    val bg = if (a == Attendance.ABSENT) MaterialTheme.colorScheme.error else Tone.Caution.color() // 2.0.0 [RVP-13] (HQ-54) 지각·조퇴는 주황(주의)
+    // 2.0.0 [RVP-11] (검토 UIX-11·T13-06 '근무 첫 글자가 8sp') At least 10sp; where big letters would not fit the mark, the colour
+    // alone says it (the day's own sheet says it in words).
+    val fits = androidx.compose.ui.platform.LocalDensity.current.fontScale <= 1.15f
+    Box(Modifier.size(16.dp).clip(CircleShape).background(bg), contentAlignment = Alignment.Center) {
+        if (fits) Text(a.label.take(1), fontSize = 10.sp, lineHeight = 10.sp, color = com.bamnat.app.ui.components.contentColorOn(bg), fontWeight = FontWeight.Bold)
     }
 }
 
@@ -92,7 +96,7 @@ internal fun HolidayWeekCheck(modifier: Modifier = Modifier) {
  * [HRLY-01][HRLY-08] An 알바 day's chips: 출근·퇴근 today (the time now, to 5 minutes, kept in the day's
  * change history), 지각·조퇴·결근 (a second tap takes it off), and 대타, which adds the 대근 of a shift.
  */
-internal fun LazyListScope.hourlyChips(
+internal fun ChipScope.hourlyChips(
     day: ResolvedDay,
     today: LocalDate,
     snapshot: ScheduleSnapshot,
@@ -100,7 +104,10 @@ internal fun LazyListScope.hourlyChips(
     now: LocalDateTime = Today.dateTime(),
 ) {
     val works = day.shiftType?.isOff == false
-    val clockIn = day.date == today && works && day.entry?.attendance != Attendance.ABSENT
+    // 2.0.0 [RVIB-21] (결정 19, 설계 2-8절) After the first of two parts, 출근 would move the day's start to the 브레이크 타임's end
+    // and lose the first part: coming back is not a second 출근.
+    val clockIn = day.date == today && works && day.entry?.attendance != Attendance.ABSENT &&
+        !com.bamnat.core.work.Commute.inSecondHalf(day, now)
     // [HRLY-08] A shift past midnight is clocked out on the day it started, from either day's sheet.
     val out = clockOutDay(day, today, now) { snapshot.resolver.resolve(today.minusDays(1)) }
     if (clockIn) {

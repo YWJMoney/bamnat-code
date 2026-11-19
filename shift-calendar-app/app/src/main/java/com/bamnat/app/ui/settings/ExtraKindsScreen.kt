@@ -45,13 +45,13 @@ import androidx.compose.material.icons.outlined.Email
 import com.bamnat.app.ui.components.AlertDialog
 import com.bamnat.app.ui.components.Button
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.minimumInteractiveComponentSize
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.ExtendedFloatingActionButton
 import com.bamnat.app.ui.components.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
+import com.bamnat.app.ui.components.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Scaffold
@@ -62,7 +62,7 @@ import androidx.compose.material3.SnackbarResult
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.TopAppBar
+import com.bamnat.app.ui.components.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -73,6 +73,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
@@ -85,6 +86,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewModelScope
 import com.bamnat.app.AppContainer
+import com.bamnat.app.appContainer
 import com.bamnat.app.BuildConfig
 import com.bamnat.app.data.AppSettings
 import com.bamnat.app.data.ScheduleSnapshot
@@ -172,6 +174,59 @@ data class KindEdit(val original: KindDraft, val draft: KindDraft, val isNew: Bo
     val canSave: Boolean get() = draft.valid && (isNew || changed)
 }
 
+/**
+ * 2.0.0 [RVO-20] 검토 SET-15: the kind open in the editor, kept on the phone as it is typed, so a long pay rule half put in comes back
+ * when the app was closed under it (a call, the system) and the screen is opened again. Gone once saved or let go.
+ */
+internal object KindDraftCodec {
+    fun encode(e: KindEdit): String =
+        org.json.JSONObject().put("new", e.isNew).put("original", draft(e.original)).put("draft", draft(e.draft)).toString()
+
+    fun decode(text: String?): KindEdit? = runCatching {
+        val o = org.json.JSONObject(text!!)
+        KindEdit(draft(o.getJSONObject("original")), draft(o.getJSONObject("draft")), o.getBoolean("new"))
+    }.getOrNull()
+
+    // The kind goes through its own line format, which drops a nameless kind and a 0-minute one: the name, mark and minutes being
+    // typed ride beside it, so a half-written kind comes back as it was left.
+    private fun draft(d: KindDraft): org.json.JSONObject = org.json.JSONObject()
+        .put("kind", ExtraKinds(listOf(d.kind.copy(name = "x", short = "x", timing = whole(d.kind.timing)))).encode())
+        .put("name", d.kind.name).put("short", d.kind.short).put("minutes", minutes(d.kind.timing) ?: -1)
+        .put("rule", com.bamnat.app.pay.PayCodec.extraRuleJson(d.rule))
+        .put("byShift", org.json.JSONObject().apply { d.byShift.forEach { (k, v) -> put(k.toString(), com.bamnat.app.pay.PayCodec.extraRuleJson(v)) } })
+
+    private fun minutes(t: ExtraTiming): Int? = when (t) {
+        is ExtraTiming.AfterShift -> t.minutes
+        is ExtraTiming.BeforeShift -> t.minutes
+        else -> null
+    }
+
+    private fun whole(t: ExtraTiming): ExtraTiming = when (t) {
+        is ExtraTiming.AfterShift -> t.copy(minutes = t.minutes.coerceAtLeast(1))
+        is ExtraTiming.BeforeShift -> t.copy(minutes = t.minutes.coerceAtLeast(1))
+        else -> t
+    }
+
+    private fun draft(o: org.json.JSONObject): KindDraft {
+        val read = ExtraKinds.decode(o.getString("kind")).kinds.single()
+        val typed = o.optInt("minutes", -1)
+        val timing = when (val t = read.timing) {
+            is ExtraTiming.AfterShift -> if (typed >= 0) t.copy(minutes = typed) else t
+            is ExtraTiming.BeforeShift -> if (typed >= 0) t.copy(minutes = typed) else t
+            else -> t
+        }
+        val kind = read.copy(name = o.getString("name"), short = o.getString("short"), timing = timing)
+        val byShift = o.getJSONObject("byShift").let { b -> b.keys().asSequence().associate { it.toLong() to com.bamnat.app.pay.PayCodec.extraRuleFrom(b.getJSONObject(it)) } }
+        return KindDraft(kind, com.bamnat.app.pay.PayCodec.extraRuleFrom(o.getJSONObject("rule")), byShift)
+    }
+}
+
+/** 2.0.0 [RVO-20] 검토 SET-15: why a changed kind cannot be saved yet, in a line. */
+internal fun unsavedWhy(draft: KindDraft): String = when {
+    draft.kind.name.isBlank() -> "이름을 넣어야 저장돼요."
+    else -> "시간을 1분 넘게 넣어야 저장돼요."
+}
+
 /** [EXTRA-04] One piece of a kind on a real coming day, priced by the rules being edited. */
 data class KindPreview(
     val date: LocalDate,
@@ -204,9 +259,24 @@ class ExtraKindsViewModel(
     private val _messages = MutableSharedFlow<UndoMessage>(extraBufferCapacity = 4)
     val messages: SharedFlow<UndoMessage> = _messages.asSharedFlow()
 
-    private val _editing = MutableStateFlow<KindEdit?>(null)
+    // 2.0.0 [RVO-20] 검토 SET-15: the open kind is kept on the phone as it changes (KindDraftCodec) and comes back on the next open.
+    private val drafts = container.appContext.getSharedPreferences(DRAFTS, android.content.Context.MODE_PRIVATE)
+    private val draftKey = "kind_$calendarId"
+    private val _editing = MutableStateFlow(KindDraftCodec.decode(drafts.getString(draftKey, null)))
     val editing: StateFlow<KindEdit?> = _editing.asStateFlow()
 
+    init {
+        viewModelScope.launch {
+            _editing.collect { e ->
+                if (e == null) drafts.edit().remove(draftKey).apply() else drafts.edit().putString(draftKey, KindDraftCodec.encode(e)).apply()
+            }
+        }
+    }
+
+    private companion object {
+        /** Kept apart from the app's settings and out of the backup: an unsaved kind is this phone's, not the calendar's. */
+        const val DRAFTS = "extra_kind_draft"
+    }
 
     fun open(kind: ExtraKind) {
         val rules = profile.value?.rules ?: CompanyRules()
@@ -434,7 +504,7 @@ private fun templates(kinds: ExtraKinds, types: List<ShiftType>): List<KindTempl
 }
 
 /**
- * [EXTRA-04, EXTRA-07] 연장 휴무일 근무 지정: 잔업·특근·대근 as this person's company has them, on one screen: each kind's name, mark,
+ * [EXTRA-04, EXTRA-07] 연장·휴무일 근무 지정: 잔업·특근·대근 as this person's company has them, on one screen: each kind's name, mark,
  * hours (근무 뒤 2시간, 야간 대근 19~07시 …), what a day off makes of it, and how it is paid, with
  * what one of them comes to on a real coming day.
  */
@@ -454,9 +524,11 @@ fun ExtraKindsScreen(
     // [STAB-01] Read at once, on the same frame as the key: a text box one frame behind the keyboard
     // doubles or drops half-built Korean letters and moves the cursor.
     val edit by vm.editing.collectAsStateWithLifecycle(context = Dispatchers.Main.immediate)
-    val kinds = settings.extraKinds
+    // [RVH-50] HQ-18: the kinds as the calendar names them (an 알바's 추가 근무 · 쉬는 날 출근 · 대타); a kind edited here keeps that name.
+    val calendars = androidx.compose.ui.platform.LocalContext.current.appContainer.calendars
+    val kinds = settings.extraKinds.forStyle(calendars.styleOf(vm.calendarId, settings.workStyle))
     var adding by rememberSaveable { mutableStateOf(false) }
-    val snackbar = remember { SnackbarHostState() }
+    val snackbar = com.bamnat.app.ui.components.AppSnack.rememberLane()
     var started by rememberSaveable { mutableStateOf(start == null) }
     var focusPay by remember { mutableStateOf(false) }
     val startSnap = snapshot
@@ -466,7 +538,7 @@ fun ExtraKindsScreen(
         val norm = start!!.replace(" ", "")
         val have = kinds.kinds.firstOrNull { it.name.replace(" ", "") == norm }
         if (have != null) vm.open(have)
-        else templates(kinds, startSnap.shiftTypes).firstOrNull { it.title.replace(" ", "") == norm }?.let(vm::openNew) ?: return@LaunchedEffect
+        else templates(kinds, if (vm.calendarId == com.bamnat.app.data.PersonalCalendar.MAIN) startSnap.shiftTypes else emptyList()).firstOrNull { it.title.replace(" ", "") == norm }?.let(vm::openNew) ?: return@LaunchedEffect
         focusPay = true
     }
 
@@ -477,17 +549,25 @@ fun ExtraKindsScreen(
         }
     }
 
+    // 2.0.0 [RVP-06] The add button shrinks to its icon while the page scrolls down (검토 UIX-19 떠 있는 단추 규칙).
+    val fab = com.bamnat.app.ui.components.rememberFabOpen()
+    val dockAdd = com.bamnat.app.ui.components.addDocks()
     Scaffold(
+        modifier = Modifier.nestedScroll(fab.connection),
         topBar = {
             TopAppBar(
-                title = { Text("연장 휴무일 근무 지정") },
+                title = { Text("연장·휴무일 근무 지정") },
                 navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "뒤로") } },
             )
         },
-        snackbarHost = { SnackbarHost(snackbar) },
+        snackbarHost = { com.bamnat.app.ui.components.AppSnackHost() },
         floatingActionButton = {
-            // The extended FAB drops its text from semantics, so the icon carries the label for TalkBack.
-            ExtendedFloatingActionButton(onClick = { adding = true }, icon = { Icon(Icons.Filled.Add, "종류 추가") }, text = { Text("종류 추가") })
+            // [RVP-06] One rule for floating buttons; the words stay with TalkBack even when it is the icon alone.
+            if (!dockAdd) com.bamnat.app.ui.components.AddFab("종류 추가", onClick = { adding = true }, open = fab.open)
+        },
+        bottomBar = {
+            // 2.0.0 갈래 P 5 (HQ-75·HQ-111·조건 9): the add button is the bar under the page, never over a line ([com.bamnat.app.ui.components.addDocks]).
+            if (dockAdd) com.bamnat.app.ui.components.AddDock("종류 추가", onClick = { adding = true })
         },
     ) { padding ->
         val snap = snapshot
@@ -532,7 +612,7 @@ fun ExtraKindsScreen(
         }
         if (adding) {
             TemplateDialog(
-                templates = remember(kinds, snap.shiftTypes) { templates(kinds, snap.shiftTypes) },
+                templates = remember(kinds, snap.shiftTypes) { templates(kinds, if (vm.calendarId == com.bamnat.app.data.PersonalCalendar.MAIN) snap.shiftTypes else emptyList()) },
                 onPick = { t -> adding = false; vm.openNew(t) },
                 onDismiss = { adding = false },
             )
@@ -598,7 +678,7 @@ private fun TemplateDialog(templates: List<KindTemplate>, onPick: (KindTemplate)
                     color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(bottom = 4.dp))
                 for (t in templates) {
                     Row(
-                        Modifier.fillMaxWidth().clip(MaterialTheme.shapes.medium).clickable { onPick(t) }.padding(vertical = 10.dp, horizontal = 4.dp),
+                        Modifier.fillMaxWidth().clip(MaterialTheme.shapes.medium).clickable(role = Role.Button) { onPick(t) }.padding(vertical = 10.dp, horizontal = 4.dp),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
                         if (t.kind.name.isBlank()) {
@@ -655,7 +735,24 @@ private fun KindEditor(
     val kind = draft.kind
     fun setKind(k: ExtraKind) = vm.edit { it.copy(kind = k) }
     fun setTiming(t: ExtraTiming) = setKind(kind.copy(timing = t))
-    val close: () -> Unit = { if (edit.changed && draft.valid) vm.saveEditing() else vm.close() }
+    // 2.0.0 [RVO-20] 검토 SET-15: 닫기·뒤로 saves what changed, as before; what cannot be saved (no name, no hours) is asked about
+    // once instead of quietly thrown away, so a kind typed in full and closed before its name keeps its work.
+    var unsaved by rememberSaveable { mutableStateOf(false) }
+    val close: () -> Unit = {
+        when {
+            edit.changed && draft.valid -> vm.saveEditing()
+            edit.changed -> unsaved = true
+            else -> vm.close()
+        }
+    }
+    if (unsaved) ConfirmDialog(
+        title = "저장하지 않고 닫을까요?",
+        message = unsavedWhy(draft) + " 닫으면 넣은 것이 사라져요.",
+        confirmLabel = "버리고 닫기",
+        onDismiss = { unsaved = false },
+        onConfirm = { unsaved = false; vm.close() },
+        destructive = true,
+    )
     var picking by remember { mutableStateOf<String?>(null) }
     var reporting by rememberSaveable { mutableStateOf(false) }
     var deleting by remember { mutableStateOf(false) }
@@ -714,11 +811,12 @@ private fun KindEditor(
                     }
 
                     SectionCard(title = "색") {
-                        FlowRow(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                        // 2.0.0 [RVP-83] Each colour is a 48dp touch with its own space around the dot, so the row adds none (조건 9, 공통-부품 4절).
+                        FlowRow {
                             for (c in ExtraPalette) {
                                 val selected = c == kind.colorArgb
                                 Box(
-                                    Modifier.size(36.dp).clip(CircleShape).background(c.asColor())
+                                    Modifier.minimumInteractiveComponentSize().size(36.dp).clip(CircleShape).background(c.asColor())
                                         .selectable(selected = selected, role = Role.RadioButton) { setKind(kind.copy(colorArgb = c)) },
                                     contentAlignment = Alignment.Center,
                                 ) {
@@ -729,7 +827,7 @@ private fun KindEditor(
                     }
 
                     SectionCard(title = "시간") {
-                        TimingContent(kind, timed, snapshot, onTiming = ::setTiming, onPick = { picking = it })
+                        TimingContent(kind, timed, snapshot, onTiming = ::setTiming, onPick = { picking = it }, ownShifts = vm.calendarId == com.bamnat.app.data.PersonalCalendar.MAIN)
                     }
 
                     SectionCard(title = "급여와 가산", modifier = Modifier.bringIntoViewRequester(payView)) {
@@ -878,7 +976,11 @@ private fun KindEditor(
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun TimingContent(kind: ExtraKind, timed: List<ShiftType>, snapshot: ScheduleSnapshot, onTiming: (ExtraTiming) -> Unit, onPick: (String) -> Unit) {
+private fun TimingContent(
+    kind: ExtraKind, timed: List<ShiftType>, snapshot: ScheduleSnapshot, onTiming: (ExtraTiming) -> Unit, onPick: (String) -> Unit,
+    /** [R200-01] False in an added calendar: the kinds are the app's and a chosen shift would name the main calendar's. */
+    ownShifts: Boolean = true,
+) {
     val t = kind.timing
     FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
         FilterChip(selected = t is ExtraTiming.Band, onClick = {
@@ -901,8 +1003,7 @@ private fun TimingContent(kind: ExtraKind, timed: List<ShiftType>, snapshot: Sch
                 TimeBox(label = "끝", time = t.end, onClick = { onPick("end") }, modifier = Modifier.weight(1f))
             }
             val span = WorkTime.spanMinutes(t.start, t.end)
-            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 4.dp)) {
-                Text("휴게 시간", style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
+            com.bamnat.app.ui.components.LabelControlRow("휴게 시간", Modifier.padding(top = 4.dp)) { // [RVH-81] HQ-98
                 MinutesStepper(
                     minutes = t.breakMinutes,
                     onChange = { b -> onTiming(t.copy(breakMinutes = b, breakStart = if (b == 0) null else t.breakStart)) },
@@ -929,8 +1030,7 @@ private fun TimingContent(kind: ExtraKind, timed: List<ShiftType>, snapshot: Sch
         }
         is ExtraTiming.AfterShift, is ExtraTiming.BeforeShift -> {
             val minutes = (t as? ExtraTiming.AfterShift)?.minutes ?: (t as ExtraTiming.BeforeShift).minutes
-            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 8.dp)) {
-                Text(if (t is ExtraTiming.AfterShift) "근무 끝나고" else "근무 시작 전", style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
+            com.bamnat.app.ui.components.LabelControlRow(if (t is ExtraTiming.AfterShift) "근무 끝나고" else "근무 시작 전", Modifier.padding(top = 8.dp)) { // [RVH-81]
                 MinutesStepper(
                     minutes = minutes,
                     onChange = { m -> onTiming(if (t is ExtraTiming.AfterShift) ExtraTiming.AfterShift(m.coerceAtLeast(10)) else ExtraTiming.BeforeShift(m.coerceAtLeast(10))) },
@@ -945,6 +1045,8 @@ private fun TimingContent(kind: ExtraKind, timed: List<ShiftType>, snapshot: Sch
         is ExtraTiming.AsShift -> {
             if (timed.isEmpty()) {
                 Hint("시간이 있는 근무 종류가 없어요. 근무 종류를 만들면 그 시간이 그대로 들어가요. 지금은 09:00–18:00으로 넣어요.")
+            } else if (!ownShifts) {
+                Hint("이 달력에서는 그날 대신한 근무를 달력에서 골라 넣어요. 어느 근무만 대신하는지는 내 달력에서 정해요.")
             } else {
                 // [EXTRA-07] Several shifts at once: one 대근 for 모닝 and 나이트 alike. A shift deleted since is left out.
                 val picked = t.shiftTypeIds.filter { id -> timed.any { it.id == id } }.toSet()
@@ -1116,7 +1218,8 @@ private fun ReportDialog(draft: KindDraft, snapshot: ScheduleSnapshot, profile: 
     var how by rememberSaveable { mutableStateOf("") }
     var example by rememberSaveable { mutableStateOf("") }
     // [INPUT-03] Put together by taps, starting from this kind; the words below are only for what they cannot say.
-    var built by remember { mutableStateOf(emptyList<String>()) }
+    // 2.0.0 [RVO-20] 검토 SET-15: the rules picked so far stay through a turn of the phone or the dark mode.
+    var built by rememberSaveable { mutableStateOf(emptyList<String>()) }
     val start = when (draft.kind.id) {
         ExtraKind.SPECIAL_ID -> RuleDraft.Target.SPECIAL
         ExtraKind.OVERTIME_ID -> RuleDraft.Target.OVERTIME_WORK

@@ -2,24 +2,23 @@ package com.bamnat.app.ui.work
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Card
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.bamnat.app.appContainer
+import com.bamnat.app.ui.components.CountStepper
+import com.bamnat.app.ui.components.StepperRow
 import com.bamnat.app.ui.money.AmountField
 import com.bamnat.app.ui.money.amountDigits
 import com.bamnat.app.ui.money.toAmount
@@ -52,17 +51,14 @@ fun ShopMoneySettings(calendarId: String) {
             // 1.32 [TAXP-15]
             Text("카드사 가맹점 안내의 율을 넣어요(연 매출 3억 원 이하 영세 가맹점은 신용 0.4%). 입금 대조가 이 율보다 더 빠진 날을 알려 줘요.",
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text("입금까지 영업일", style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
-                TextButton(enabled = rules.settleDays > 0, onClick = { update { it.copy(settleDays = it.settleDays - 1) } }) {
-                    Text("−", style = MaterialTheme.typography.titleLarge)
-                }
-                Text("${rules.settleDays}일", style = MaterialTheme.typography.titleMedium)
-                TextButton(enabled = rules.settleDays < 10, onClick = { update { it.copy(settleDays = it.settleDays + 1) } }) {
-                    Text("+", style = MaterialTheme.typography.titleLarge)
-                }
+            // 2.0.0 [RVJ-105] 검토 U05c-07·PAYU-25: the − and + are the shared stepper (48dp, "입금까지 영업일 줄이기/늘리기" for TalkBack,
+            // held to repeat), and the weekend rule sits right under it as the hint, not as a loose line below.
+            StepperRow("입금까지 영업일", hint = "주말과 공휴일은 빼고 세요.") {
+                CountStepper(
+                    value = rules.settleDays, onChange = { d -> update { it.copy(settleDays = d) } },
+                    name = "입금까지 영업일", range = 0..10, format = { "${it}일" },
+                )
             }
-            Text("주말과 공휴일은 빼고 세요.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             AmountField("시작 시재 (문 열 때 돈통 현금)", opening, { v -> opening = v; update { it.copy(openingCash = v.toAmount()) } })
         }
     }

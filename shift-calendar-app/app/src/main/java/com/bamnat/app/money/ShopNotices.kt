@@ -51,11 +51,15 @@ object ShopNotices {
         val date = arrived.toLocalDate()
         val key = "$id|$postedAt|${text.hashCode()}"
         ShopCapture.read(text, pkg, app)?.let { sale ->
+            // 2.0.0 [RVK-40] (검토 MONEY-52·T06b-03) 접수·수락·완료 of one order, each with the amount, is one sale.
+            if (ShopCapture.isRepeat(text, sale, postedAt, countedList(c))) return MoneyRepository.Outcome.DUPLICATE
             // [DAILY-13] 결정 D7-3: with 확인하고 적기 on, the sale waits for the user like a payment line does.
             if (c.autoRecordPrefs.current.confirmFirst) return once(c, key) {
                 ShopPendingStore.get(c.appContext).add(id, ShopCapture.Pending(key, date, sale))
+                count(c, ShopCapture.counted(text, sale, postedAt))
             }
             return once(c, key) {
+                count(c, ShopCapture.counted(text, sale, postedAt))
                 val day = money.book.first().sales.firstOrNull { it.date == date }
                 val next = ShopCapture.add(day, date, sale)
                 money.save(next)
@@ -67,10 +71,46 @@ object ShopNotices {
         val book = money.book.first()
         val rules = c.calendars.get(id)?.shopMoney ?: ShopMoney()
         val matched = CardSettlement.match(amount, parsed?.date ?: date, CardSettlement.expected(book.sales, rules, KoreanHolidays::isHoliday))
-        if (matched.isEmpty()) return null
+        // 1.39.1 [R391-09] (검토 MONEY-41) A card company's deposit that fits no day (카드사마다 따로, 날짜도 조금씩 달라요) is not
+        // 수입: those sales are already in the day's 카드 매출, so as 부수입 they counted twice in 들어온 돈·세금 봉투. It goes in as
+        // 이체 into the account (when one is known by its last digits), for the user to check and tick the day's 입금 확인.
+        if (matched.isEmpty()) return once(c, key) {
+            val day = parsed?.date ?: date
+            // [R200-04] (검토 MONEY-41 넘긴 일) 카드사마다 따로 들어온 입금: with the parts already waiting, the day may fit now.
+            val waiting = book.entries.filter { it.isWaitingCardPart() }
+            val parts = CardSettlement.matchParts(amount, day, waiting.map { CardSettlement.Part(it.id, it.date, it.amount) },
+                CardSettlement.expected(book.sales, rules, KoreanHolidays::isHoliday))
+            val line = com.bamnat.core.money.MoneyEntry(
+                date = day, kind = com.bamnat.core.money.MoneyKind.TRANSFER, amount = amount, category = ShopCapture.CARD_DEPOSIT,
+                note = WAITING_NOTE,
+                source = com.bamnat.core.money.MoneySource.NOTIFICATION, merchant = parsed?.merchant.orEmpty(),
+                time = parsed?.time ?: arrived.toLocalTime().withSecond(0).withNano(0), reviewed = false,
+                toAccountId = parsed?.last4?.let { com.bamnat.core.money.MoneyAccounts.match(it, money.allAccounts()) },
+            )
+            if (parts == null) { money.save(line); return@once }
+            val (days, used) = parts
+            val note = settledNote(days.map { it.saleDate })
+            money.save(line.copy(note = note, reviewed = true))
+            for (p in used) waiting.firstOrNull { it.id == p.id }?.let { money.save(it.copy(note = note, reviewed = true)) }
+            for (e in days) book.sales.firstOrNull { it.date == e.saleDate }?.let { money.save(it.copy(cardSettled = true)) }
+        }
         return once(c, key) {
             for (e in matched) book.sales.firstOrNull { it.date == e.saleDate }?.let { money.save(it.copy(cardSettled = true)) }
         }
+    }
+
+    /** [R200-04] What a card company's deposit waiting for its other parts says until they come. */
+    const val WAITING_NOTE = "맞는 매출 날을 못 찾았어요 · 다른 카드사 입금과 합쳐 맞으면 저절로 확인돼요. 아니면 카드 매출 입금 확인에서 맞는 날을 눌러 주세요"
+
+    private fun com.bamnat.core.money.MoneyEntry.isWaitingCardPart() = kind == com.bamnat.core.money.MoneyKind.TRANSFER &&
+        category == ShopCapture.CARD_DEPOSIT && !reviewed && source == com.bamnat.core.money.MoneySource.NOTIFICATION
+
+    /** "11월 2일 카드 매출 입금 확인" (several days: "11월 2일·3일 …"). */
+    internal fun settledNote(days: List<java.time.LocalDate>): String {
+        val sorted = days.distinct().sorted()
+        val first = sorted.first()
+        val rest = sorted.drop(1).joinToString("") { d -> if (d.monthValue == first.monthValue) "·${d.dayOfMonth}일" else "·${d.monthValue}월 ${d.dayOfMonth}일" }
+        return "${first.monthValue}월 ${first.dayOfMonth}일$rest 카드 매출 입금 확인"
     }
 
     /** [DAILY-13] A waiting sale goes into its day's sales, as it would have without 확인하고 적기. */
@@ -99,6 +139,22 @@ object ShopNotices {
     }
 
     private fun file(c: AppContainer) = java.io.File(c.appContext.noBackupFilesDir, "shop_notices_seen.txt")
+
+    /** 2.0.0 [RVK-40] The delivery orders counted lately, kept in a file so a 배달 완료 after a restart still finds its 접수. */
+    private var counted: List<ShopCapture.Counted>? = null
+
+    private fun countedFile(c: AppContainer) = java.io.File(c.appContext.noBackupFilesDir, "shop_orders_counted.txt")
+
+    @Synchronized
+    private fun countedList(c: AppContainer): List<ShopCapture.Counted> =
+        counted ?: runCatching { countedFile(c).readLines() }.getOrDefault(emptyList()).mapNotNull(ShopCapture.Counted::decode).also { counted = it }
+
+    @Synchronized
+    private fun count(c: AppContainer, one: ShopCapture.Counted) {
+        val next = ShopCapture.remember(countedList(c), one)
+        counted = next
+        runCatching { countedFile(c).writeText(next.joinToString("\n") { it.encode() }) }
+    }
 
     @Synchronized
     private fun seenList(c: AppContainer): ArrayDeque<String> =

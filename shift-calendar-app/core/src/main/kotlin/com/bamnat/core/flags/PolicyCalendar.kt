@@ -41,6 +41,16 @@ data class PolicyCalendar(val versions: List<PolicyVersion>) {
         return date >= v.posted && date < v.holdEnds && (installed == null || installed < v.posted)
     }
 
+    /**
+     * 2.0.0 [RVO-12] (HQ-46) Whether [version]'s hold surely no longer applies to this phone on any day from [from] on, when the exact
+     * day is not known (no server clock): it said yes, it was installed on or after the version was posted, or [from] is past the
+     * held-until day. False when it might still apply (stays off, as 9항 promised); null when the version is not in the calendar.
+     */
+    fun over(version: String, installed: LocalDate?, agreed: Set<String>, from: LocalDate): Boolean? {
+        val v = of(version) ?: return null
+        return agreedAtLeast(agreed, version) || (installed != null && installed >= v.posted) || from >= v.holdEnds
+    }
+
     companion object {
         /**
          * 3.1 from `ops/PolicyConsent` (결정 D84). 3.2 (사용 통계에 켜진 기능 목록·앱 시작 시간, 순번 459, 결정 D100) as the

@@ -142,8 +142,7 @@ class BAScreenshotTest : ScreenshotBase() {
         val page = runBlocking { c.companyApi.company("c1") }
         var done = false
         vm.apply(page, page.setups.first { it.id == "s1" }, null, withPay = true, done = { done = true }, failed = { error(it) })
-        waitFor(200)
-        assertTrue(done)
+        assertTrue(waitUntil { done }) // [QA-11] the apply ends off the main thread
         assertNull("the pay waits for its 기본급", c.payWays.way.value)
         c.payStore.profile.value.let { p -> box { PayWayCard(p, update = {}) } }
         assertTrue(appears("‘(주)예시정밀 · 생산팀’ 근무주기를 넣었어요", exact = true))

@@ -6,7 +6,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import worker from "../src/index.js";
-import { server, report, setup, device, from } from "./helpers.mjs";
+import { server, report, setup, device, from, signIn } from "./helpers.mjs";
 
 const MS = 25;
 
@@ -14,24 +14,30 @@ const MS = 25;
 function timed(DB) {
   // A round starts when a statement goes out while none is waiting; statements sent while one waits share its round. Counted so,
   // not from the clock: a busy CI machine added a round's time to a 6-round join once (CI 8e9bc911, "7 rounds (19 statements)").
-  const counter = { n: 0, rounds: 0, waiting: 0 };
+  const counter = { n: 0, rounds: 0, waiting: 0, sqls: [] };
   const wait = async () => {
     if (counter.waiting++ === 0) counter.rounds++;
     try { await new Promise((r) => setTimeout(r, MS)); } finally { counter.waiting--; }
   };
-  const wrap = (s) => ({
+  const wrap = (s, sql) => ({
     ...s,
     plain: s,
+    text: sql,
     bind: (...v) => {
-      assert.ok(v.length <= 100, `D1 binds at most 100 values: ${v.length} in ${s.sql?.slice(0, 80)}`);
-      return wrap(s.bind(...v));
+      assert.ok(v.length <= 100, `D1 binds at most 100 values: ${v.length} in ${sql.slice(0, 80)}`);
+      return wrap(s.bind(...v), sql);
     },
-    first: async (c) => { counter.n++; await wait(); return s.first(c); },
-    all: async () => { counter.n++; await wait(); return s.all(); },
-    run: async () => { counter.n++; await wait(); return s.run(); },
+    first: async (c) => { counter.n++; counter.sqls.push(sql); await wait(); return s.first(c); },
+    all: async () => { counter.n++; counter.sqls.push(sql); await wait(); return s.all(); },
+    run: async () => { counter.n++; counter.sqls.push(sql); await wait(); return s.run(); },
   });
   // A batch is one statement to D1: its parts run as they are, not counted again.
-  const db = { ...DB, prepare: (sql) => wrap(DB.prepare(sql)), batch: async (l) => { counter.n++; await wait(); return DB.batch(l.map((x) => x.plain ?? x)); } };
+  const db = { ...DB, prepare: (sql) => wrap(DB.prepare(sql), sql), batch: async (l) => {
+    counter.n++;
+    counter.sqls.push(...l.map((x) => x.text ?? ""));
+    await wait();
+    return DB.batch(l.map((x) => x.plain ?? x));
+  } };
   return { counter, DB: db };
 }
 
@@ -67,6 +73,21 @@ async function seed() {
   for (let k = 0; k < 8; k++) await call("POST", "/api/posts", { device: dev, company: ids[0], setup: setups[0], body: `토론 글 ${k}` }, from(n));
   for (let k = 0; k < 8; k++) await call("POST", "/api/posts", { device: dev, company: ids[0], setup: "room", body: `방 글 ${k}` }, from(n));
   await call("POST", "/api/rates", { device: dev, job: "factory", region: "31", trade: "용접", unit: "day", amount: 250000 }, from(n));
+  // 2.0.0 [RVN-24] 검토 SVC-90: a kind of work's plaza once plaza.people is on (처리방침 3.12), its writers with 근무 태그 and 마을 이름,
+  // a question with an answer and a poll, so its reads are held to a budget too.
+  const owner = await signIn(call);
+  await call("POST", "/api/admin/policy", { confirm: true, version: "3.12", posted: "2026-10-31", effective: "2026-11-07", heldUntil: "2026-11-07", why: "시험" }, owner);
+  let question = null;
+  for (let k = 0; k < 12; k++) {
+    const w = n++;
+    const post = { device: device(w), company: "style-shift", setup: "room", body: `교대 이야기 ${k}`, tag: { s: "SHIFT", f: "FOUR_TEAM", n: "night", m: true } };
+    if (k === 3) Object.assign(post, { kind: "question", body: "야간 뒤에 잠은 몇 시간 주무세요?" });
+    if (k === 4 && question) Object.assign(post, { parent: question });
+    if (k === 5) Object.assign(post, { poll: ["4시간", "6시간"] });
+    const r = await call("POST", "/api/posts", post, from(w));
+    if (k === 3) question = r.data?.post?.id ?? r.data?.id ?? null;
+    await call("POST", "/api/nick", { device: device(w), nick: `밤샘${k}` }, from(w));
+  }
   return { call, env, ids, setups, dev, n };
 }
 
@@ -82,10 +103,11 @@ async function cost(path, { headers = {}, method = "GET", body } = {}) {
   for (let i = 0; i < 2; i++) {
     t.counter.n = 0;
     t.counter.rounds = 0;
+    t.counter.sqls = [];
     const res = await worker.fetch(new Request("https://company.example" + path, { method, body: body && JSON.stringify(body),
       headers: { "cf-connecting-ip": "203.0.113.77", "cache-control": "no-cache", ...(body ? { "content-type": "application/json" } : {}), ...headers } }), e);
     assert.ok(res.status < 300, `${path} ${res.status} ${await res.text()}`);
-    const r = { stmts: t.counter.n, rounds: t.counter.rounds };
+    const r = { stmts: t.counter.n, rounds: t.counter.rounds, sqls: t.counter.sqls };
     if (!best || r.rounds < best.rounds) best = r;
   }
   return best;
@@ -113,6 +135,10 @@ const BUDGET = [
   ["activity", "/api/activity", 3, 12, member],
   ["rates", "/api/rates?job=factory", 2, 5, member],
   ["plazas", "/api/plazas", 2, 4],
+  // 2.0.0 [RVN-24] 검토 SVC-90 (1.39.0: 15 rounds, 27 statements; older posts 13 and 25).
+  ["kind of work's plaza", "/api/companies/style-shift/setups/room/posts", 5, 18, { "x-device": device(9001) }],
+  ["kind of work's plaza, older posts", `/api/companies/style-shift/setups/room/posts?before=${encodeURIComponent(new Date(Date.now() + 60_000).toISOString())}`,
+    5, 16, { "x-device": device(9001) }],
   ["terms", "/api/terms", 1, 2],
 ];
 
@@ -123,6 +149,15 @@ for (const [label, path, rounds, stmts, headers] of BUDGET) {
     assert.ok(c.stmts <= stmts, `${label}: ${c.stmts} statements, budget ${stmts}`);
   });
 }
+
+test("[RVN-24] SVC-90 a kind of work's plaza reads what it says about writers from its page, not from every post the room had", async () => {
+  const { sqls } = await cost("/api/companies/style-shift/setups/room/posts", { headers: { "x-device": device(9001) } });
+  const about = sqls.filter((q) => /\b(nicks|post_flags|post_votes|recipe_makers)\b/.test(q) && !/^\s*INSERT/i.test(q));
+  assert.ok(about.length >= 4, about.join("\n"));
+  for (const q of about) assert.match(q, /LIMIT|json_each|IN \(\?/, `reads the whole room: ${q.replace(/\s+/g, " ").slice(0, 160)}`);
+  // The flags (plaza.people, 마을 돌봄) are read once for the answer.
+  assert.equal(sqls.filter((q) => /FROM flag_overrides/.test(q)).length, 1);
+});
 
 test("[SPD-07][SPD-08] joining with ?with=page answers with the page in at most 6 rounds", async () => {
   const c = await cost("/api/members?with=page", { method: "POST", body: { device: device(9000), company: ids[3], cal: "main" } });

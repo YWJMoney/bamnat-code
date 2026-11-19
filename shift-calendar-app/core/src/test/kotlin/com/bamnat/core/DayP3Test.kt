@@ -181,6 +181,47 @@ class DayP3Test {
         assertEquals(t(20), twice.extras[0].end)
     }
 
+    /**
+     * 2.0.0 [RVH-34] 검토 WORK-15 18:00 끝 근무: 18:11에 회사 반경을 벗어나면 예전엔 잔업 11분이 급여에 들어갔어요. 여유를 20분으로 고르면
+     * 18:14는 나가는 길이고, 18:25부터 잔업이에요. 여유는 10분 아래로 내려가지 않아요.
+     */
+    @Test
+    fun `the time after the end that is still leaving is the users`() {
+        val day = resolver.resolve(thu)
+        assertTrue(Commute.leave(day, null, thu.atTime(18, 11), rounding = false) is Commute.Write.Overtime)
+        assertEquals(Commute.Write.None, Commute.leave(day, null, thu.atTime(18, 14), rounding = false, overtimeSlack = 20))
+        assertEquals(Commute.Write.None, Commute.leave(day, null, thu.atTime(18, 20), rounding = false, overtimeSlack = 20))
+        val late = Commute.leave(day, null, thu.atTime(18, 25), rounding = false, overtimeSlack = 20) as Commute.Write.Overtime
+        assertEquals(25, late.minutes)
+        assertEquals(Commute.Write.None, Commute.leave(day, null, thu.atTime(18, 9), rounding = false, overtimeSlack = 0))
+        assertEquals(Commute.OvertimeWay.ASK, Commute.OvertimeWay.of(null))
+        assertEquals(Commute.OvertimeWay.NONE, Commute.OvertimeWay.of("none"))
+    }
+
+    /**
+     * 2.0.0 [RVH-35] 검토 WORK-16·U02-09 다음 출근 때 정하기: turned on at home on Friday night, the place is taken Monday 09:30 (the weekend
+     * has no shift); turned on Thursday 09:10 it is that morning's 09:30, at 09:40 the next day's. A full day of leave is skipped.
+     */
+    @Test
+    fun `the workplace is taken half an hour into the next shift`() {
+        val fri = thu.plusDays(1)
+        val mon = thu.plusDays(4)
+        assertEquals(mon.atTime(9, 30), Commute.placeAt(fri.atTime(21, 0)) { resolver.resolve(it) })
+        assertEquals(thu.atTime(9, 30), Commute.placeAt(thu.atTime(9, 10)) { resolver.resolve(it) })
+        assertEquals(fri.atTime(9, 30), Commute.placeAt(thu.atTime(9, 40)) { resolver.resolve(it) })
+        val leave = ScheduleResolver(Fixtures.all, weekly, listOf(DayEntry(mon, leave = Leave(LeaveKind.ANNUAL))))
+        assertEquals(mon.plusDays(1).atTime(9, 30), Commute.placeAt(fri.atTime(21, 0)) { leave.resolve(it) })
+        assertNull(Commute.placeAt(fri.atTime(21, 0)) { ScheduleResolver(Fixtures.all, null, emptyList()).resolve(it) })
+    }
+
+    /** [RVH-35] 검토 WORK-16 The workplace said as a distance, not 위도·경도. */
+    @Test
+    fun `the workplace is said as a distance from where the phone is`() {
+        assertEquals("지금 회사 범위 안에 있어요", Commute.distanceWords(80.0, 150))
+        assertEquals("지금 있는 곳에서 120m 떨어져 있어요", Commute.distanceWords(118.4, 100))
+        assertEquals("지금 있는 곳에서 1.2km 떨어져 있어요", Commute.distanceWords(1234.0, 150))
+    }
+
     @Test
     fun `a long lunch out of the fence is put back and the evening leave counts from the planned end`() {
         val day = resolver.resolve(thu)

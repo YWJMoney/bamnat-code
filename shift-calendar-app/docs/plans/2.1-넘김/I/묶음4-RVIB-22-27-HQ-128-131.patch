@@ -1,0 +1,1222 @@
+diff --git a/shift-calendar-app/app/src/main/java/com/bamnat/app/AppContainer.kt b/shift-calendar-app/app/src/main/java/com/bamnat/app/AppContainer.kt
+index c13e5496a..98b4b937f 100644
+--- a/shift-calendar-app/app/src/main/java/com/bamnat/app/AppContainer.kt
++++ b/shift-calendar-app/app/src/main/java/com/bamnat/app/AppContainer.kt
+@@ -1287,6 +1287,8 @@ class AppContainer(context: Context) {
+                         com.bamnat.app.alarm.LeaveTimeNotice.reschedule(appContext)
+                         // 2.0.0 [RVIB-21] 둘째 구간 알림, in the same job (시작 예산).
+                         com.bamnat.app.alarm.GapNotice.reschedule(appContext)
++                        // 2.0.0 [RVIB-24] (HQ-106) 배터리 절약 안내, once in the 알림함 when an alarm is coming (same job, 시작 예산).
++                        runCatching { com.bamnat.app.alarm.BatteryNote.maybePost(appContext) }
+                         com.bamnat.app.money.DayCloseNotice.reschedule(appContext)
+                         // 1.38 [LEDH-24] 근무 전 한 줄 예고, in the same job (시작 예산).
+                         com.bamnat.app.money.ShiftPreviewNotice.reschedule(appContext)
+diff --git a/shift-calendar-app/app/src/main/java/com/bamnat/app/ads/RewardedAds.kt b/shift-calendar-app/app/src/main/java/com/bamnat/app/ads/RewardedAds.kt
+index 06d5803a2..667d267fd 100644
+--- a/shift-calendar-app/app/src/main/java/com/bamnat/app/ads/RewardedAds.kt
++++ b/shift-calendar-app/app/src/main/java/com/bamnat/app/ads/RewardedAds.kt
+@@ -76,8 +76,7 @@ fun LeaseAdOption(feature: com.bamnat.app.tier.Feature?, gate: Gate, modifier: M
+                 if (com.bamnat.app.ui.pro.tryFeature(feature)) {
+                     val end = Today.instant().plus(java.time.Duration.ofDays(FeatureLease.FIRST_DAYS))
+                     // Short: it sat over the card it had just opened (PC).
+-                    android.widget.Toast.makeText(context, "${bundle.label} 처음 7일 무료로 열었어요 · ${com.bamnat.app.ui.pro.untilWords(end)}까지",
+-                        android.widget.Toast.LENGTH_SHORT).show()
++                    com.bamnat.app.ui.components.AppSnack.show("${bundle.label} 처음 7일 무료로 열었어요 · ${com.bamnat.app.ui.pro.untilWords(end)}까지")
+                     onOpened()
+                 }
+             }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { com.bamnat.app.ui.pro.WholeWords("처음 7일 무료로 열기") }
+@@ -104,8 +103,7 @@ fun LeaseAdOption(feature: com.bamnat.app.tier.Feature?, gate: Gate, modifier: M
+                 c.featureGate.grant(bundle, why, reason)
+                 val end = from.plus(java.time.Duration.ofDays(FeatureLease.AD_DAYS))
+                 val until = com.bamnat.app.ui.pro.untilWords(end)
+-                android.widget.Toast.makeText(context, if (lead.isEmpty()) "${bundle.label} 7일 열렸어요 · ${until}까지" else "$lead · ${bundle.label} ${until}까지",
+-                    android.widget.Toast.LENGTH_LONG).show()
++                com.bamnat.app.ui.components.AppSnack.show(if (lead.isEmpty()) "${bundle.label} 7일 열렸어요 · ${until}까지" else "$lead · ${bundle.label} ${until}까지", millis = com.bamnat.app.ui.components.AppSnack.LONG_MILLIS)
+                 onOpened()
+             }
+             ThemeAdButton(label, note,
+diff --git a/shift-calendar-app/app/src/main/java/com/bamnat/app/alarm/BatteryNote.kt b/shift-calendar-app/app/src/main/java/com/bamnat/app/alarm/BatteryNote.kt
+new file mode 100644
+index 000000000..c6d8e7443
+--- /dev/null
++++ b/shift-calendar-app/app/src/main/java/com/bamnat/app/alarm/BatteryNote.kt
+@@ -0,0 +1,49 @@
++package com.bamnat.app.alarm
++
++import android.content.Context
++import android.os.PowerManager
++import com.bamnat.app.NoticeLinks
++import com.bamnat.app.appContainer
++import com.bamnat.app.inbox.Inbox
++import com.bamnat.app.inbox.InboxRow
++import com.bamnat.app.inbox.InboxSection
++import com.bamnat.core.alarm.AlarmPlanner
++import com.bamnat.core.time.Today
++import kotlinx.coroutines.flow.first
++
++/**
++ * 2.0.0 [RVIB-24] (HQ-106) 배터리 절약: a phone that keeps 밤낮 under battery saving may ring the alarm some minutes late. It never stops
++ * the alarm, so it is not for the band over the calendar (only what keeps an alarm from ringing goes there, [AlarmGuard]); before, it
++ * was only in 설정 › 알람 and 알람 점검, where nobody looks until an alarm was late. Now one row in the 알림함's 안내, once on this
++ * phone, while alarms are on and one is coming: a tap opens 알람 점검 (where 배터리 최적화 제외 is set), the row's X takes it away and
++ * '다시 보지 않기' turns the kind off. Told once even when the kind was turned off, so it never comes back by itself.
++ */
++object BatteryNote {
++    const val KIND = "alarm.battery"
++    internal const val PREFS = "battery_note"
++    private const val K_TOLD = "told"
++
++    const val TITLE = "배터리 절약 때문에 알람이 늦게 울릴 수 있어요"
++    const val LINE = "눌러서 알람 점검을 열고 배터리 사용을 ‘제한 없음’으로 두면 제때 울려요"
++
++    /** Whether the row is due: alarms on, one coming, the phone saving battery on 밤낮, and not told before. */
++    fun due(alarmsOn: Boolean, alarmComing: Boolean, unrestricted: Boolean, told: Boolean): Boolean =
++        alarmsOn && alarmComing && !unrestricted && !told
++
++    fun row(): InboxRow = InboxRow(key = KIND, kind = KIND, section = InboxSection.NOTICE, title = TITLE, line = LINE,
++        target = NoticeLinks.Target.ALARM_CHECK)
++
++    /** Puts the row in once when [due]; [unrestricted] is read from the phone unless given (tests). */
++    suspend fun maybePost(context: Context, unrestricted: Boolean? = null) {
++        val prefs = context.applicationContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
++        if (prefs.getBoolean(K_TOLD, false)) return
++        val c = context.appContainer
++        val alarmsOn = c.settingsRepository.current.alarmsEnabled
++        val free = unrestricted ?: (context.getSystemService(PowerManager::class.java)?.isIgnoringBatteryOptimizations(context.packageName) ?: true)
++        if (!alarmsOn || free) return
++        val coming = AlarmPlanner.nextAlarm(c.scheduleRepository.snapshot.first().resolver, Today.dateTime()) != null
++        if (!due(alarmsOn, coming, free, told = false)) return
++        Inbox.post(context, row())
++        prefs.edit().putBoolean(K_TOLD, true).apply()
++    }
++}
+diff --git a/shift-calendar-app/app/src/main/java/com/bamnat/app/data/SettingsFilesBackup.kt b/shift-calendar-app/app/src/main/java/com/bamnat/app/data/SettingsFilesBackup.kt
+index 7c7e313ed..76251791a 100644
+--- a/shift-calendar-app/app/src/main/java/com/bamnat/app/data/SettingsFilesBackup.kt
++++ b/shift-calendar-app/app/src/main/java/com/bamnat/app/data/SettingsFilesBackup.kt
+@@ -222,6 +222,8 @@ class SettingsFilesBackup(
+         val DEVICE_ONLY = mapOf(
+             // 2.0.0 [RVI-17] 낮잠 깨우기: 이 휴대폰에 맞춘 알람 하나의 날·시각이라, 새 휴대폰에서 다시 울리지 않게 옮기지 않아요.
+             "nap_wake" to "낮잠 깨우기 알람의 날과 시각, 이 휴대폰에 맞춘 알람의 것",
++            // 2.0.0 [RVIB-24] (HQ-106) 배터리 절약 안내를 알림함에 넣었는지: 배터리 설정은 휴대폰마다라 새 휴대폰에서는 다시 봐요.
++            "battery_note" to "배터리 절약 알람 안내를 이 휴대폰 알림함에 이미 넣었는지",
+             // 2.0.0 [RVI-22] 꺼져 있던 사이 지나간 메모 알림을 어디까지 알렸는지: 이 휴대폰이 꺼져 있던 때의 일이라 옮기지 않아요.
+             "memo_schedule" to "꺼져 있던 사이 지나간 메모 알림을 어디까지 모아 알렸는지, 이 휴대폰의 것",
+             // 2.0.0 [RVK-16] 결제 알림 읽기가 마지막으로 읽은 때·이번 달 건수: 이 휴대폰의 알림 읽기가 잘 도는지라 옮기지 않아요.
+diff --git a/shift-calendar-app/app/src/main/java/com/bamnat/app/inbox/Inbox.kt b/shift-calendar-app/app/src/main/java/com/bamnat/app/inbox/Inbox.kt
+index db9533ecf..5343ebae2 100644
+--- a/shift-calendar-app/app/src/main/java/com/bamnat/app/inbox/Inbox.kt
++++ b/shift-calendar-app/app/src/main/java/com/bamnat/app/inbox/Inbox.kt
+@@ -283,6 +283,7 @@ class Inbox private constructor(context: Context) {
+         val KIND_NAMES = mapOf(
+             "market.reaction" to "내 작품에 온 반응",
+             "market.decided" to "내 작품 심사 결과",
++            "alarm.battery" to "배터리 절약 알람 안내", // 2.0.0 [RVIB-24] (HQ-106)
+         )
+         const val MAX_ROWS = 60
+         const val KEEP_DAYS = 30L
+diff --git a/shift-calendar-app/app/src/main/java/com/bamnat/app/sleep/NapStart.kt b/shift-calendar-app/app/src/main/java/com/bamnat/app/sleep/NapStart.kt
+new file mode 100644
+index 000000000..bb93fc199
+--- /dev/null
++++ b/shift-calendar-app/app/src/main/java/com/bamnat/app/sleep/NapStart.kt
+@@ -0,0 +1,57 @@
++package com.bamnat.app.sleep
++
++import com.bamnat.app.AppContainer
++import com.bamnat.app.ui.Fmt
++import com.bamnat.core.alarm.AlarmPlanner
++import com.bamnat.core.sleep.NapAlarm
++import com.bamnat.core.time.Today
++import kotlinx.coroutines.flow.first
++import java.time.LocalDateTime
++
++/**
++ * 1.38 [SLEEP-23] 낮잠 자기: 잠들었어요 now, and the wake at a time with the day's alarms ([NapAlarm]), so it rings like a work alarm.
++ * One undo takes back both. 2.0.0 [RVIB-27] (PC-171) The same from two places: 오늘의 흐름's '낮잠 자기' (its own time) and the sleep
++ * page's '낮잠' (20·30·60·90분), so both ring, say and undo alike.
++ */
++object NapStart {
++    class Started(val message: String, val undo: suspend () -> Unit)
++
++    suspend fun start(container: AppContainer, until: LocalDateTime): Started {
++        val schedule = container.calendars.activeRepository()
++        val calendar = container.calendars.active.value
++        val asleep = container.sleepRepository.fellAsleep()
++        val date = until.toLocalDate()
++        val ringing = container.settingsRepository.current.alarmsEnabled
++        val resolver = schedule.snapshot.first().resolver
++        val dayAlarms = AlarmPlanner.alarmsOn(resolver, date).map { it.triggerAt }
++        val merged = if (!ringing) null else NapAlarm.merge(date, dayAlarms, until)
++        val before = merged?.let { schedule.setDayAlarms(date, it) }
++        // 2.0.0 [RVI-17] (검토 ALM-08) Kept so it rings as 낮잠 알람 and an early 깼어요 takes it back out.
++        if (merged != null) NapWake.save(container.appContext, date,
++            until.atZone(Today.zone()).toInstant().toEpochMilli(), hadOwn = resolver.resolve(date).entry?.customAlarms != null, calendar, merged)
++        val at = Fmt.time(until.toLocalTime())
++        // 2.0.0 [RVI-40] (검토 ALM-25) An alarm already near the wake is the one that wakes: said so, not "○시에 깨워요".
++        val near = if (ringing && merged == null) NapAlarm.near(dayAlarms, until) else null
++        val message = when {
++            !ringing -> "낮잠 자는 중이에요 · 근무 알람이 꺼져 있어서 ${at}에 깨우지 않아요"
++            near != null -> "낮잠 자는 중이에요 · ${Fmt.time(near.toLocalTime())}쯤 울리는 알람이 있어 그걸로 깨워요"
++            else -> "낮잠 자는 중이에요 · ${at}에 깨워요"
++        }
++        return Started(message) {
++            if (merged != null) NapWake.clear(container.appContext) // first, so the undo puts the day back itself
++            if (asleep.started) container.sleepRepository.delete(asleep.entry.id)
++            // 2.0.0 [RVI-17] A day with nothing saved before (null) is put back too: the wake stayed after 되돌리기.
++            if (merged != null) schedule.restoreDay(date, before)
++        }
++    }
++
++    /**
++     * 2.0.0 [RVIB-27] (PC-171) The sleep page's '낮잠' choices: [minutes] from [now], or the next alarm when it comes first (a nap
++     * never runs past the alarm that wakes for work).
++     */
++    suspend fun wakeFor(container: AppContainer, now: LocalDateTime, minutes: Int): LocalDateTime {
++        val next = if (!container.settingsRepository.current.alarmsEnabled) null
++            else AlarmPlanner.nextAlarm(container.calendars.activeRepository().snapshot.first().resolver, now)?.triggerAt
++        return NapAlarm.wakeFor(now, minutes, next)
++    }
++}
+diff --git a/shift-calendar-app/app/src/main/java/com/bamnat/app/ui/calendar/CalendarViewModel.kt b/shift-calendar-app/app/src/main/java/com/bamnat/app/ui/calendar/CalendarViewModel.kt
+index ee9f50b3d..78c2136f4 100644
+--- a/shift-calendar-app/app/src/main/java/com/bamnat/app/ui/calendar/CalendarViewModel.kt
++++ b/shift-calendar-app/app/src/main/java/com/bamnat/app/ui/calendar/CalendarViewModel.kt
+@@ -565,33 +565,9 @@ class CalendarViewModel(private val container: AppContainer) : ViewModel(), Mone
+      */
+     fun napNow(until: java.time.LocalDateTime) = gate(WriteKind.SLEEP) {
+         container.appScope.launch {
+-            val schedule = this@CalendarViewModel.schedule
+-            val calendar = container.calendars.active.value
+-            val asleep = container.sleepRepository.fellAsleep()
+-            val date = until.toLocalDate()
+-            val ringing = container.settingsRepository.current.alarmsEnabled
+-            val resolver = schedule.snapshot.first().resolver
+-            val dayAlarms = com.bamnat.core.alarm.AlarmPlanner.alarmsOn(resolver, date).map { it.triggerAt }
+-            val merged = if (!ringing) null else com.bamnat.core.sleep.NapAlarm.merge(date, dayAlarms, until)
+-            val before = merged?.let { schedule.setDayAlarms(date, it) }
+-            // 2.0.0 [RVI-17] (검토 ALM-08) Kept so it rings as 낮잠 알람 and an early 깼어요 takes it back out.
+-            if (merged != null) com.bamnat.app.sleep.NapWake.save(container.appContext, date,
+-                until.atZone(Today.zone()).toInstant().toEpochMilli(), hadOwn = resolver.resolve(date).entry?.customAlarms != null, calendar, merged)
+-            val at = Fmt.time(until.toLocalTime())
+-            // 2.0.0 [RVI-40] (검토 ALM-25) An alarm already near the wake is the one that wakes: said so, not "○시에 깨워요".
+-            val near = if (ringing && merged == null) com.bamnat.core.sleep.NapAlarm.near(dayAlarms, until) else null
+-            _messages.emit(UndoMessage(
+-                when {
+-                    !ringing -> "낮잠 자는 중이에요 · 근무 알람이 꺼져 있어서 ${at}에 깨우지 않아요"
+-                    near != null -> "낮잠 자는 중이에요 · ${Fmt.time(near.toLocalTime())}쯤 울리는 알람이 있어 그걸로 깨워요"
+-                    else -> "낮잠 자는 중이에요 · ${at}에 깨워요"
+-                },
+-            ) {
+-                if (merged != null) com.bamnat.app.sleep.NapWake.clear(container.appContext) // first, so the undo puts the day back itself
+-                if (asleep.started) container.sleepRepository.delete(asleep.entry.id)
+-                // 2.0.0 [RVI-17] A day with nothing saved before (null) is put back too: the wake stayed after 되돌리기.
+-                if (merged != null) schedule.restoreDay(date, before)
+-            })
++            // 2.0.0 [RVIB-27] (PC-171) One way with the sleep page's '낮잠' ([com.bamnat.app.sleep.NapStart]).
++            val nap = com.bamnat.app.sleep.NapStart.start(container, until)
++            _messages.emit(UndoMessage(nap.message) { nap.undo() })
+         }
+     }
+ 
+diff --git a/shift-calendar-app/app/src/main/java/com/bamnat/app/ui/calendar/ImageShareSheet.kt b/shift-calendar-app/app/src/main/java/com/bamnat/app/ui/calendar/ImageShareSheet.kt
+index f9c35944f..2206a5a89 100644
+--- a/shift-calendar-app/app/src/main/java/com/bamnat/app/ui/calendar/ImageShareSheet.kt
++++ b/shift-calendar-app/app/src/main/java/com/bamnat/app/ui/calendar/ImageShareSheet.kt
+@@ -145,7 +145,7 @@ fun ImageShareSheet(
+                     val sent = runCatching { MonthImage.share(context, snapshot, month, weekStart, look, notes) }
+                     sending = false
+                     if (sent.isSuccess) { onSent(); onDismiss() }
+-                    else android.widget.Toast.makeText(context, "사진을 만들지 못했어요. 다시 눌러 주세요", android.widget.Toast.LENGTH_SHORT).show()
++                    else com.bamnat.app.ui.components.AppSnack.show("사진을 만들지 못했어요. 다시 눌러 주세요", kind = com.bamnat.app.ui.components.AppSnack.Kind.FAIL)
+                 }
+             }, enabled = !sending, modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp)) {
+                 Icon(Icons.Outlined.Image, null, Modifier.size(20.dp))
+diff --git a/shift-calendar-app/app/src/main/java/com/bamnat/app/ui/calendar/ShareDialog.kt b/shift-calendar-app/app/src/main/java/com/bamnat/app/ui/calendar/ShareDialog.kt
+index 09aa26097..836c3fbf8 100644
+--- a/shift-calendar-app/app/src/main/java/com/bamnat/app/ui/calendar/ShareDialog.kt
++++ b/shift-calendar-app/app/src/main/java/com/bamnat/app/ui/calendar/ShareDialog.kt
+@@ -743,7 +743,7 @@ private fun copy(context: Context, text: String) {
+     }
+     // Android 13 and later say it themselves.
+     if (android.os.Build.VERSION.SDK_INT < android.os.Build.VERSION_CODES.TIRAMISU) {
+-        android.widget.Toast.makeText(context, "구독 주소를 복사했어요", android.widget.Toast.LENGTH_SHORT).show()
++        com.bamnat.app.ui.components.AppSnack.show("구독 주소를 복사했어요")
+     }
+ }
+ 
+diff --git a/shift-calendar-app/app/src/main/java/com/bamnat/app/ui/calendar/SharedLookCards.kt b/shift-calendar-app/app/src/main/java/com/bamnat/app/ui/calendar/SharedLookCards.kt
+index 277baf437..c26a5a856 100644
+--- a/shift-calendar-app/app/src/main/java/com/bamnat/app/ui/calendar/SharedLookCards.kt
++++ b/shift-calendar-app/app/src/main/java/com/bamnat/app/ui/calendar/SharedLookCards.kt
+@@ -1,6 +1,5 @@
+ package com.bamnat.app.ui.calendar
+ 
+-import android.widget.Toast
+ import androidx.compose.foundation.layout.Arrangement
+ import androidx.compose.foundation.layout.Column
+ import androidx.compose.foundation.layout.Row
+@@ -94,7 +93,7 @@ internal fun SharedLookCards(schedule: com.bamnat.app.share.SharedSchedule, link
+                     scope.launch {
+                         runCatching { c.settingsRepository.update { it.copy(workStyle = back) } }
+                         switchedFrom = null
+-                        Toast.makeText(c.appContext, "일하는 방식을 ‘${back.label}’${ro(back.label)} 되돌렸어요", Toast.LENGTH_SHORT).show()
++                        com.bamnat.app.ui.components.AppSnack.show("일하는 방식을 ‘${back.label}’${ro(back.label)} 되돌렸어요")
+                     }
+                 }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text("일하는 방식도 ‘${back.label}’${ro(back.label)} 되돌리기") }
+             }
+@@ -157,11 +156,10 @@ private fun KitDialog(
+             kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
+                 busy = false
+                 if (ok) {
+-                    if (switching) Toast.makeText(context.applicationContext,
+-                        "일하는 방식을 ‘${theirs!!.label}’${ro(theirs!!.label)} 바꿨어요. 설정 › 일하는 방식에서 다시 바꿔요", Toast.LENGTH_LONG).show()
++                    if (switching) com.bamnat.app.ui.components.AppSnack.show("일하는 방식을 ‘${theirs!!.label}’${ro(theirs!!.label)} 바꿨어요. 설정 › 일하는 방식에서 다시 바꿔요", millis = com.bamnat.app.ui.components.AppSnack.LONG_MILLIS)
+                     onPut(id!!, put.size, if (switching) mine else null)
+                     onDismiss()
+-                } else Toast.makeText(context.applicationContext, "넣지 못했어요. 다시 해 주세요", Toast.LENGTH_LONG).show()
++                } else com.bamnat.app.ui.components.AppSnack.show("넣지 못했어요. 다시 해 주세요", kind = com.bamnat.app.ui.components.AppSnack.Kind.FAIL, millis = com.bamnat.app.ui.components.AppSnack.LONG_MILLIS)
+             }
+         }
+     }
+diff --git a/shift-calendar-app/app/src/main/java/com/bamnat/app/ui/calendar/TeamsScreen.kt b/shift-calendar-app/app/src/main/java/com/bamnat/app/ui/calendar/TeamsScreen.kt
+index 0abbccb2d..4788f84db 100644
+--- a/shift-calendar-app/app/src/main/java/com/bamnat/app/ui/calendar/TeamsScreen.kt
++++ b/shift-calendar-app/app/src/main/java/com/bamnat/app/ui/calendar/TeamsScreen.kt
+@@ -714,7 +714,7 @@ private fun RestRule(minutes: Int, onRest: (Int) -> Unit) {
+ 
+ private fun copy(context: Context, text: String) {
+     (context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager).setPrimaryClip(ClipData.newPlainText("대근", text))
+-    android.widget.Toast.makeText(context, "복사했어요. 단톡방에 붙여 넣으세요", android.widget.Toast.LENGTH_SHORT).show()
++    com.bamnat.app.ui.components.AppSnack.show("복사했어요. 단톡방에 붙여 넣으세요")
+ }
+ 
+ private fun send(context: Context, text: String) {
+diff --git a/shift-calendar-app/app/src/main/java/com/bamnat/app/ui/calendar/TodayFlowCard.kt b/shift-calendar-app/app/src/main/java/com/bamnat/app/ui/calendar/TodayFlowCard.kt
+index e90d4eda2..fa9a42e0e 100644
+--- a/shift-calendar-app/app/src/main/java/com/bamnat/app/ui/calendar/TodayFlowCard.kt
++++ b/shift-calendar-app/app/src/main/java/com/bamnat/app/ui/calendar/TodayFlowCard.kt
+@@ -315,7 +315,8 @@ internal fun TodayFlowCard(
+             }
+             card.rest?.let { rest ->
+                 // 2.0.0 [RVP-13] (HQ-54) Short rest is a thing to mind (주의), said in the one alert line.
+-                com.bamnat.app.ui.components.ToneLine(rest, Modifier.padding(start = 32.dp, top = 4.dp, end = 12.dp))
++                // [HQ-128] (조건 4) The line says what is so; where the limit comes from ('7일째부터 알려요 · 기본') is in ⓘ.
++                com.bamnat.app.ui.components.ToneLine(restSaid(rest).first, Modifier.padding(start = 32.dp, top = 4.dp, end = 12.dp))
+             }
+             FlowStrip(card, Modifier.padding(top = 12.dp, end = 12.dp))
+             if (card.action != null || onSleepLog != null) {
+@@ -333,7 +334,8 @@ internal fun TodayFlowCard(
+         }
+     }
+ 
+-    if (info) FlowInfoSheet(targetMinutes, commuteMinutes, onNumbers, onHide = { info = false; onHide() }, onDismiss = { info = false }, nights = nights)
++    if (info) FlowInfoSheet(targetMinutes, commuteMinutes, onNumbers, onHide = { info = false; onHide() }, onDismiss = { info = false }, nights = nights,
++        restNote = card.rest?.let { restSaid(it).second })
+     if (askWake && asleepSince != null) {
+         WakeTimeDialog(asleepSince, card.from, targetMinutes, onDismiss = { askWake = false }) {
+             askWake = false
+@@ -477,7 +479,8 @@ private fun stripText(card: TodayFlow.Card): String {
+  */
+ @OptIn(ExperimentalMaterial3Api::class)
+ @Composable
+-private fun FlowInfoSheet(target: Int, commute: Int, onNumbers: (Int, Int) -> Unit, onHide: () -> Unit, onDismiss: () -> Unit, nights: Boolean = true) {
++private fun FlowInfoSheet(target: Int, commute: Int, onNumbers: (Int, Int) -> Unit, onHide: () -> Unit, onDismiss: () -> Unit, nights: Boolean = true,
++                          restNote: String? = null) {
+     com.bamnat.app.ui.components.AppSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
+         Column(Modifier.padding(start = 24.dp, end = 24.dp, bottom = 24.dp)) {
+             Text("오늘의 흐름은 이렇게 정해요", style = MaterialTheme.typography.titleLarge)
+@@ -499,6 +502,8 @@ private fun FlowInfoSheet(target: Int, commute: Int, onNumbers: (Int, Int) -> Un
+             if (nights) Rule("첫 야간 전", "근무 2시간 30분 전에 끝나는 90분 안쪽 낮잠이에요.", "일반 권고")
+             Rule("커피", "잠들기 6시간 전까지만 마셔요.", "근거 수준 낮음")
+             Rule("휴식", "휴식 점검을 켜 두면 근무 사이가 11시간보다 짧을 때 작은 줄로 알려 줘요.", null)
++            // [HQ-128] What the card's warning line left out: the limit it was told by, and where it is changed.
++            restNote?.let { Rule("지금 알리는 줄", "$it. 기준은 설정 › 근무표 점검 기준에서 바꿔요.", null) }
+             Spacer(Modifier.height(8.dp))
+             Row(verticalAlignment = Alignment.CenterVertically) {
+                 Text("설정 > 알림과 잠에서 다시 켤 수 있어요", style = MaterialTheme.typography.bodySmall,
+@@ -509,6 +514,15 @@ private fun FlowInfoSheet(target: Int, commute: Int, onNumbers: (Int, Int) -> Un
+     }
+ }
+ 
++/**
++ * 2.0.0 [HQ-128] The rest warning the card says, and the limit it keeps for ⓘ: "내일 · 10/9부터 7일째 쉬는 날 없이 근무 (7일째부터 알려요 · 기본)"
++ * is the line "내일 · 10/9부터 7일째 쉬는 날 없이 근무" and the note "7일째부터 알려요 · 기본" (a line with no such parenthesis is all line).
++ */
++internal fun restSaid(rest: String): Pair<String, String?> {
++    val m = Regex("""^(.*\S)\s*\(([^()]*알려요[^()]*)\)$""").find(rest.trim()) ?: return rest to null
++    return m.groupValues[1] to m.groupValues[2]
++}
++
+ @Composable
+ private fun Rule(title: String, text: String, basis: String?) {
+     Column(Modifier.padding(vertical = 4.dp)) {
+diff --git a/shift-calendar-app/app/src/main/java/com/bamnat/app/ui/components/CopyTextSheet.kt b/shift-calendar-app/app/src/main/java/com/bamnat/app/ui/components/CopyTextSheet.kt
+index 635949a75..5e55c5d2f 100644
+--- a/shift-calendar-app/app/src/main/java/com/bamnat/app/ui/components/CopyTextSheet.kt
++++ b/shift-calendar-app/app/src/main/java/com/bamnat/app/ui/components/CopyTextSheet.kt
+@@ -3,7 +3,6 @@ package com.bamnat.app.ui.components
+ import android.content.ClipData
+ import android.content.ClipboardManager
+ import android.content.Context
+-import android.widget.Toast
+ import androidx.compose.foundation.layout.Arrangement
+ import androidx.compose.foundation.layout.Column
+ import androidx.compose.foundation.layout.Row
+@@ -37,7 +36,7 @@ fun copyText(context: Context, label: String, text: String) {
+         (context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager).setPrimaryClip(ClipData.newPlainText(label, text))
+     }
+     // Android 13+ shows its own note for a copy; older phones get one line.
+-    if (android.os.Build.VERSION.SDK_INT < 33) Toast.makeText(context, "복사했어요", Toast.LENGTH_SHORT).show()
++    if (android.os.Build.VERSION.SDK_INT < 33) com.bamnat.app.ui.components.AppSnack.show("복사했어요")
+ }
+ 
+ /**
+diff --git a/shift-calendar-app/app/src/main/java/com/bamnat/app/ui/diag/DiagnosticsScreen.kt b/shift-calendar-app/app/src/main/java/com/bamnat/app/ui/diag/DiagnosticsScreen.kt
+index 0d8a39a44..ce11fb996 100644
+--- a/shift-calendar-app/app/src/main/java/com/bamnat/app/ui/diag/DiagnosticsScreen.kt
++++ b/shift-calendar-app/app/src/main/java/com/bamnat/app/ui/diag/DiagnosticsScreen.kt
+@@ -17,7 +17,6 @@ import android.net.Uri
+ import android.provider.Settings
+ import android.os.Build
+ import android.os.PowerManager
+-import android.widget.Toast
+ import androidx.compose.foundation.layout.Arrangement
+ import com.bamnat.app.ui.settings.InquiryStart
+ import com.bamnat.app.ui.settings.InquiryLinks
+@@ -455,7 +454,7 @@ fun DiagnosticsScreen(vm: DiagnosticsViewModel, onBack: () -> Unit, testing: Boo
+                                     val clipboard = context.getSystemService(ClipboardManager::class.java)
+                                     clipboard?.setPrimaryClip(ClipData.newPlainText("밤낮 알람 점검", report.asText()))
+                                     // Android 13+ shows its own confirmation.
+-                                    if (Build.VERSION.SDK_INT < 33) Toast.makeText(context, "복사했어요", Toast.LENGTH_SHORT).show()
++                                    if (Build.VERSION.SDK_INT < 33) com.bamnat.app.ui.components.AppSnack.show("복사했어요")
+                                 },
+                             )
+                             androidx.compose.material3.DropdownMenuItem(
+@@ -475,9 +474,10 @@ fun DiagnosticsScreen(vm: DiagnosticsViewModel, onBack: () -> Unit, testing: Boo
+             verticalArrangement = Arrangement.spacedBy(12.dp),
+         ) {
+             item {
+-                // 2.0.0 [RVI-86] (디자인 품질 4) One line; the copy button says the rest.
++                // 2.0.0 [RVI-86] (디자인 품질 4) One line. [HQ-131] It names the way as the screen has it: 문의하기의 '점검 기록도 보내기'
++                // (the word 운영팀's answers use, Q2 CRASH_ASK_DRAFT); 위 ⋮ › 보고서 복사 copies the same for another app.
+                 Text(
+-                    "알람이 안 울리거나 늦을 때 원인을 찾아요 · 위 복사 단추로 문의에 붙여요(메모·금액은 담지 않아요)",
++                    "알람이 안 울리거나 늦을 때 원인을 찾아요 · 문의할 때 ‘점검 기록도 보내기’를 켜면 함께 가요(메모·금액은 담지 않아요)",
+                     style = MaterialTheme.typography.bodySmall,
+                     color = MaterialTheme.colorScheme.onSurfaceVariant,
+                 )
+diff --git a/shift-calendar-app/app/src/main/java/com/bamnat/app/ui/guide/ProfileScreen.kt b/shift-calendar-app/app/src/main/java/com/bamnat/app/ui/guide/ProfileScreen.kt
+index a0cb33748..3822e2649 100644
+--- a/shift-calendar-app/app/src/main/java/com/bamnat/app/ui/guide/ProfileScreen.kt
++++ b/shift-calendar-app/app/src/main/java/com/bamnat/app/ui/guide/ProfileScreen.kt
+@@ -100,7 +100,9 @@ internal fun rememberProfile(c: AppContainer, calendar: String, tick: Int = 0):
+             val style = c.calendars.styleOf(calendar, settings.workStyle)
+             val on = FeatureRegistry.of(style).filter { !guide.isOff(it, calendar) }.map { it.id }
+             val today = Today.date()
++            // 2.0.0 [RVIB-26] (PC-165 '근무 몇 분 전 알람부터 알려 주기' on a 현장) Only what this kind of work has.
+             val missing = Needs.of(facts, on) { key -> daysUntil(key, pay?.period?.payDay, today) }
++                .filter { m -> m.key.styles.isEmpty() || (style ?: com.bamnat.core.work.WorkStyle.SHIFT) in m.key.styles }
+             ProfileView(facts, missing, StatusBoard.of(facts, missing), pay != null)
+         }.getOrNull()
+     }
+diff --git a/shift-calendar-app/app/src/main/java/com/bamnat/app/ui/memo/MemoEditorScreen.kt b/shift-calendar-app/app/src/main/java/com/bamnat/app/ui/memo/MemoEditorScreen.kt
+index dc9cd4f1b..23dc98f0d 100644
+--- a/shift-calendar-app/app/src/main/java/com/bamnat/app/ui/memo/MemoEditorScreen.kt
++++ b/shift-calendar-app/app/src/main/java/com/bamnat/app/ui/memo/MemoEditorScreen.kt
+@@ -77,7 +77,6 @@ import androidx.compose.material3.AssistChip
+ import androidx.compose.material3.PlainTooltip
+ import androidx.compose.material3.Checkbox
+ import androidx.compose.material3.CircularProgressIndicator
+-import android.widget.Toast
+ import androidx.compose.material.icons.outlined.ContentCopy
+ import androidx.compose.material.icons.outlined.AddToPhotos
+ import androidx.compose.material.icons.outlined.Description
+@@ -185,7 +184,7 @@ fun MemoEditorScreen(vm: MemoEditorViewModel, onBack: () -> Unit) {
+     if (toLedger) MemoToLedgerDialog(memo) { toLedger = false }
+     if (savingTemplate) SaveTemplateDialog(memo, onSave = { name, asked, picks ->
+         val why = vm.saveAsTemplate(name, asked, picks)
+-        Toast.makeText(context, why ?: "‘${name.ifBlank { "새 틀" }}’ 틀로 저장했어요. 새 메모를 열면 ‘틀에서 시작’에 있어요", Toast.LENGTH_LONG).show()
++        com.bamnat.app.ui.components.AppSnack.show(why ?: "‘${name.ifBlank { "새 틀" }}’ 틀로 저장했어요. 새 메모를 열면 ‘틀에서 시작’에 있어요", millis = com.bamnat.app.ui.components.AppSnack.LONG_MILLIS)
+         if (why == null) savingTemplate = false
+     }, onDismiss = { savingTemplate = false })
+     var copying by remember { mutableStateOf(false) }
+@@ -220,7 +219,7 @@ fun MemoEditorScreen(vm: MemoEditorViewModel, onBack: () -> Unit) {
+         }
+         val into = bodyTools.insertPhoto
+         if (into != null && !memo.isChecklist) into(names)
+-        else if (!vm.addPhotos(names)) Toast.makeText(context, "메모 하나에 사진은 ${com.bamnat.core.memo.MemoPhotos.MAX_PER_MEMO}장까지 넣을 수 있어요", Toast.LENGTH_LONG).show()
++        else if (!vm.addPhotos(names)) com.bamnat.app.ui.components.AppSnack.show("메모 하나에 사진은 ${com.bamnat.core.memo.MemoPhotos.MAX_PER_MEMO}장까지 넣을 수 있어요", millis = com.bamnat.app.ui.components.AppSnack.LONG_MILLIS)
+     }
+     bodyTools.onPhoto = photoPicker.open
+     // [MPH-06] 1.38 스튜디오 부품 '메모 쓰기 종이'(memo.page): a theme's paper colour for a memo left in the app's colour.
+@@ -364,7 +363,7 @@ fun MemoEditorScreen(vm: MemoEditorViewModel, onBack: () -> Unit) {
+                                 onClick = {
+                                     menu = false
+                                     vm.duplicate()
+-                                    Toast.makeText(context, "같은 메모를 하나 더 만들었어요", Toast.LENGTH_SHORT).show()
++                                    com.bamnat.app.ui.components.AppSnack.show("같은 메모를 하나 더 만들었어요")
+                                 },
+                                 enabled = !memo.isBlank,
+                             )
+@@ -685,7 +684,7 @@ fun MemoEditorScreen(vm: MemoEditorViewModel, onBack: () -> Unit) {
+                 val again = com.bamnat.core.memo.MemoRepeat.label(vm.memo.value.repeat).let { if (it.isEmpty()) "" else "$it " }
+                 val at = r.work?.let { workLine(vm.memo.value, it, style = vm.workStyle) }
+                     ?: if (again.isEmpty()) scheduleText(r.at) else again + scheduleText(r.at).substringAfter(") ")
+-                Toast.makeText(context, "${at}에 ${scheduleWays(r)}${com.bamnat.app.ui.Fmt.ro(scheduleWays(r))} 알려 드릴게요", Toast.LENGTH_SHORT).show()
++                com.bamnat.app.ui.components.AppSnack.show("${at}에 ${scheduleWays(r)}${com.bamnat.app.ui.Fmt.ro(scheduleWays(r))} 알려 드릴게요")
+             },
+         )
+     }
+diff --git a/shift-calendar-app/app/src/main/java/com/bamnat/app/ui/memo/MemoPhotoBlocks.kt b/shift-calendar-app/app/src/main/java/com/bamnat/app/ui/memo/MemoPhotoBlocks.kt
+index ecde4f945..f4244c507 100644
+--- a/shift-calendar-app/app/src/main/java/com/bamnat/app/ui/memo/MemoPhotoBlocks.kt
++++ b/shift-calendar-app/app/src/main/java/com/bamnat/app/ui/memo/MemoPhotoBlocks.kt
+@@ -2,7 +2,6 @@ package com.bamnat.app.ui.memo
+ 
+ import android.content.ActivityNotFoundException
+ import android.net.Uri
+-import android.widget.Toast
+ import androidx.activity.compose.rememberLauncherForActivityResult
+ import androidx.activity.result.PickVisualMediaRequest
+ import androidx.activity.result.contract.ActivityResultContracts
+@@ -369,7 +368,7 @@ internal fun rememberMemoPhotoPicker(
+     fun take(uris: List<Uri>) {
+         if (uris.isEmpty()) return
+         val room = left()
+-        if (room <= 0) { Toast.makeText(context, "메모 하나에 사진은 ${MemoPhotos.MAX_PER_MEMO}장까지 넣을 수 있어요", Toast.LENGTH_LONG).show(); return }
++        if (room <= 0) { com.bamnat.app.ui.components.AppSnack.show("메모 하나에 사진은 ${MemoPhotos.MAX_PER_MEMO}장까지 넣을 수 있어요", millis = com.bamnat.app.ui.components.AppSnack.LONG_MILLIS); return }
+         busy = true
+         scope.launch {
+             var failed = 0
+@@ -381,8 +380,8 @@ internal fun rememberMemoPhotoPicker(
+             busy = false
+             // (PC 확인 3dd61e00) One at a time, the second went into a field the first had just split: only one stayed.
+             if (names.isNotEmpty()) onPhoto(names)
+-            if (uris.size > room) Toast.makeText(context, "메모 하나에 사진은 ${MemoPhotos.MAX_PER_MEMO}장까지라 ${room}장만 넣었어요", Toast.LENGTH_LONG).show()
+-            else if (failed > 0) Toast.makeText(context, "사진 ${failed}장을 열지 못했어요", Toast.LENGTH_SHORT).show()
++            if (uris.size > room) com.bamnat.app.ui.components.AppSnack.show("메모 하나에 사진은 ${MemoPhotos.MAX_PER_MEMO}장까지라 ${room}장만 넣었어요", millis = com.bamnat.app.ui.components.AppSnack.LONG_MILLIS)
++            else if (failed > 0) com.bamnat.app.ui.components.AppSnack.show("사진 ${failed}장을 열지 못했어요", kind = com.bamnat.app.ui.components.AppSnack.Kind.FAIL)
+         }
+     }
+     val pick = rememberLauncherForActivityResult(ActivityResultContracts.PickMultipleVisualMedia(10)) { take(it) }
+@@ -412,7 +411,7 @@ internal fun rememberMemoPhotoPicker(
+                     val uri = FileProvider.getUriForFile(context, "${context.packageName}.share", MemoPhotoFiles.cameraFile(context))
+                     shot = uri
+                     try { camera.launch(uri) } catch (e: ActivityNotFoundException) {
+-                        Toast.makeText(context, "카메라 앱을 찾지 못했어요. ‘사진 고르기’로 골라 주세요", Toast.LENGTH_LONG).show()
++                        com.bamnat.app.ui.components.AppSnack.show("카메라 앱을 찾지 못했어요. ‘사진 고르기’로 골라 주세요", kind = com.bamnat.app.ui.components.AppSnack.Kind.FAIL, millis = com.bamnat.app.ui.components.AppSnack.LONG_MILLIS)
+                     }
+                 },
+             )
+diff --git a/shift-calendar-app/app/src/main/java/com/bamnat/app/ui/memo/MemoToLedger.kt b/shift-calendar-app/app/src/main/java/com/bamnat/app/ui/memo/MemoToLedger.kt
+index 0a4d438d8..845990a99 100644
+--- a/shift-calendar-app/app/src/main/java/com/bamnat/app/ui/memo/MemoToLedger.kt
++++ b/shift-calendar-app/app/src/main/java/com/bamnat/app/ui/memo/MemoToLedger.kt
+@@ -117,8 +117,7 @@ internal fun MemoToLedgerDialog(memo: Memo, onDismiss: () -> Unit) {
+                 container.appScope.launch {
+                     val saved = runCatching { money.save(entry) }.isSuccess
+                     kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
+-                        android.widget.Toast.makeText(app, if (saved) "가계부에 ${Fmt.won(n)} 넣었어요" else "가계부에 넣지 못했어요 · 다시 눌러 주세요",
+-                            android.widget.Toast.LENGTH_SHORT).show()
++                        com.bamnat.app.ui.components.AppSnack.show(if (saved) "가계부에 ${Fmt.won(n)} 넣었어요" else "가계부에 넣지 못했어요 · 다시 눌러 주세요", kind = if (saved) com.bamnat.app.ui.components.AppSnack.Kind.INFO else com.bamnat.app.ui.components.AppSnack.Kind.FAIL)
+                     }
+                 }
+                 onDismiss()
+diff --git a/shift-calendar-app/app/src/main/java/com/bamnat/app/ui/settings/InquiryScreen.kt b/shift-calendar-app/app/src/main/java/com/bamnat/app/ui/settings/InquiryScreen.kt
+index 534fbb8ae..330b7f23e 100644
+--- a/shift-calendar-app/app/src/main/java/com/bamnat/app/ui/settings/InquiryScreen.kt
++++ b/shift-calendar-app/app/src/main/java/com/bamnat/app/ui/settings/InquiryScreen.kt
+@@ -720,7 +720,7 @@ private fun InquiryForm(
+                     vm.send(k, text, diag, pay.takeIf { withPay }, photos.takeIf { photosOpen }.orEmpty(), public = share && kind?.public != false) { sent, why ->
+                         if (sent != null) {
+                             com.bamnat.app.company.InquiryPhotos.skipped(sent.photosSkipped)?.let {
+-                                android.widget.Toast.makeText(context, it, android.widget.Toast.LENGTH_LONG).show()
++                                com.bamnat.app.ui.components.AppSnack.show(it, millis = com.bamnat.app.ui.components.AppSnack.LONG_MILLIS)
+                             }
+                             onSent(sent)
+                         } else if (why == InquiryViewModel.QUEUED) onQueued() else { error = why }
+diff --git a/shift-calendar-app/app/src/main/java/com/bamnat/app/ui/settings/NoticeBoard.kt b/shift-calendar-app/app/src/main/java/com/bamnat/app/ui/settings/NoticeBoard.kt
+index e06a62344..51db61085 100644
+--- a/shift-calendar-app/app/src/main/java/com/bamnat/app/ui/settings/NoticeBoard.kt
++++ b/shift-calendar-app/app/src/main/java/com/bamnat/app/ui/settings/NoticeBoard.kt
+@@ -237,7 +237,9 @@ fun NoticeBoardCard(startOpen: Boolean = false, modifier: Modifier = Modifier,
+         if (!open) return@Column
+         @Composable fun OwnRow(o: NoticeBoard.Own, on: Boolean, extra: String = "") {
+             val why = noticeBlocked(o, settings, canPost, quiet)
+-            SwitchRow(o.label(style), o.does(style) + extra, if (o.onlyChannel) why == null else on,
++            // 2.0.0 [RVIB-26] (PC-165) In the kind's words ('일 끝난 뒤 가계부 정리 알림'); 설정 찾기 finds it by the plain name ([mark]).
++            SwitchRow(com.bamnat.core.work.TypeWords.say(style, o.label(style)), com.bamnat.core.work.TypeWords.say(style, o.does(style) + extra),
++                if (o.onlyChannel) why == null else on, mark = o.label(style),
+                 warning = why, fixLabel = if (!canPost && !o.onlyChannel) "허용" else "켜기",
+                 onFix = { if (!canPost && !o.onlyChannel) askNotifications() else o.channel?.let { com.bamnat.app.ui.components.SystemSettings.channel(context, it) }; tick++ }) { turn(o, it) }
+         }
+diff --git a/shift-calendar-app/app/src/main/java/com/bamnat/app/ui/settings/SellerInfo.kt b/shift-calendar-app/app/src/main/java/com/bamnat/app/ui/settings/SellerInfo.kt
+index ffa205481..02054a01a 100644
+--- a/shift-calendar-app/app/src/main/java/com/bamnat/app/ui/settings/SellerInfo.kt
++++ b/shift-calendar-app/app/src/main/java/com/bamnat/app/ui/settings/SellerInfo.kt
+@@ -2,7 +2,6 @@ package com.bamnat.app.ui.settings
+ 
+ import android.content.Intent
+ import android.net.Uri
+-import android.widget.Toast
+ import androidx.compose.foundation.layout.Column
+ import androidx.compose.foundation.layout.Row
+ import androidx.compose.foundation.layout.padding
+@@ -80,14 +79,14 @@ fun SellerInfoDialog(onDismiss: () -> Unit) {
+                             "전자우편" -> TextButton(onClick = {
+                                 if (open("mailto:${SellerInfo.MAIL}").isFailure) {
+                                     clipboard.setText(AnnotatedString(SellerInfo.MAIL))
+-                                    Toast.makeText(context, "메일 앱이 없어 주소를 복사했어요", Toast.LENGTH_SHORT).show()
++                                    com.bamnat.app.ui.components.AppSnack.show("메일 앱이 없어 주소를 복사했어요")
+                                 }
+                             }) { Text("메일") }
+                             else -> {}
+                         }
+                         TextButton(onClick = {
+                             clipboard.setText(AnnotatedString(value))
+-                            Toast.makeText(context, "$label 복사했어요", Toast.LENGTH_SHORT).show()
++                            com.bamnat.app.ui.components.AppSnack.show("$label 복사했어요")
+                         }) { Text("복사") }
+                     }
+                 }
+diff --git a/shift-calendar-app/app/src/main/java/com/bamnat/app/ui/settings/SettingsPages.kt b/shift-calendar-app/app/src/main/java/com/bamnat/app/ui/settings/SettingsPages.kt
+index e73761264..9641ad1a1 100644
+--- a/shift-calendar-app/app/src/main/java/com/bamnat/app/ui/settings/SettingsPages.kt
++++ b/shift-calendar-app/app/src/main/java/com/bamnat/app/ui/settings/SettingsPages.kt
+@@ -352,7 +352,12 @@ private fun AlarmPage(vm: SettingsViewModel, settings: AppSettings, onOpenShiftT
+     SectionCard(title = if (quiet) "시작 전 알람" else "근무별 알람") {
+         val ringing = snapshot?.shiftTypes.orEmpty().filter { it.alarmEnabled && !it.isOff && it.start != null && it.id !in foldedKinds }
+         if (ringing.isEmpty()) {
+-            Note(if (quiet) "시작 전 알람이 켜진 ${com.bamnat.app.ui.shifts.dayKindSubject(calStyle)} 없어요." else "근무 전 알람이 켜진 근무가 없어요.")
++            // 2.0.0 [RVIB-26] (PC-165) A trader's alarms are 투자 알람, not a 근무's.
++            Note(when {
++                calStyle == WorkStyle.INVEST -> "켜진 투자 알람이 없어요."
++                quiet -> "시작 전 알람이 켜진 ${com.bamnat.app.ui.shifts.dayKindSubject(calStyle)} 없어요."
++                else -> "근무 전 알람이 켜진 근무가 없어요."
++            })
+             if (quiet) NavRow(if (calStyle == WorkStyle.INVEST) "알람 켜기" else "${calStyle.words().types}에서 알람 켜기", "몇 분 전에 울릴지 정해요", onOpenShiftTypes)
+             // 2.0.0 [RVO-19] 검토 SET-06: the row it opens by the name 내 근무 gives it (일근 '출근 시간', 알바 '알바 시간').
+             else NavRow(if (calStyle == null || calStyle == WorkStyle.SHIFT) "근무 종류에서 알람 켜기" else "${calStyle.words().types}에서 알람 켜기",
+@@ -658,7 +663,8 @@ private fun NoticesPage(
+         // 2.0.0 [RVN-14] 검토 HQ-51: what others did to what I put out comes to the 알림함, each kind with its own switch.
+         if (reactions) ReactionSwitches(settings) { o -> vm.update { it.copy(reactionsOff = o) } }
+         // 1.38 PC 11차: 일감 is a 현장's work or an employee's 부업, not a shop's or a trader's.
+-        if (style != com.bamnat.core.work.WorkStyle.BUSINESS && style != com.bamnat.core.work.WorkStyle.INVEST)
++        // 2.0.0 [RVIB-26] (PC-165) Nor an office worker's or a part-timer's: 현장, and 교대 with its 부업, only.
++        if (style == null || style == com.bamnat.core.work.WorkStyle.SHIFT || style == com.bamnat.core.work.WorkStyle.FIELD)
+             Note("일감 시작 전 알림은 일감마다 정해요.")
+     }
+ }
+@@ -1475,7 +1481,7 @@ internal fun writeToUs(context: android.content.Context, subject: String = "[밤
+         runCatching {
+             context.startActivity(Intent.createChooser(send, "문의 보내기").addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+         }.onFailure {
+-            android.widget.Toast.makeText(context, "메일 앱이 없어요. $REPORT_EMAIL 로 보내 주세요", android.widget.Toast.LENGTH_LONG).show()
++            com.bamnat.app.ui.components.AppSnack.show("메일 앱이 없어요. $REPORT_EMAIL 로 보내 주세요", kind = com.bamnat.app.ui.components.AppSnack.Kind.FAIL, millis = com.bamnat.app.ui.components.AppSnack.LONG_MILLIS)
+         }
+     }
+ }
+diff --git a/shift-calendar-app/app/src/main/java/com/bamnat/app/ui/settings/SettingsParts.kt b/shift-calendar-app/app/src/main/java/com/bamnat/app/ui/settings/SettingsParts.kt
+index a1980e265..87410d625 100644
+--- a/shift-calendar-app/app/src/main/java/com/bamnat/app/ui/settings/SettingsParts.kt
++++ b/shift-calendar-app/app/src/main/java/com/bamnat/app/ui/settings/SettingsParts.kt
+@@ -133,9 +133,11 @@ internal fun SwitchRow(
+     /** [TIER-06] A pro feature: the 프로 badge beside the title, with a lock while it cannot be used. */
+     pro: Boolean = false,
+     proLocked: Boolean = false,
++    /** 2.0.0 [RVIB-26] Where 설정 찾기 lands, when [title] is said in the kind of work's words (the row's name stays the mark). */
++    mark: String = title,
+     onChange: (Boolean) -> Unit,
+ ) {
+-    Column(Modifier.focusMark(title).fillMaxWidth()) {
++    Column(Modifier.focusMark(mark).fillMaxWidth()) {
+         Row(
+             Modifier
+                 .fillMaxWidth()
+diff --git a/shift-calendar-app/app/src/main/java/com/bamnat/app/ui/settings/SettingsScreen.kt b/shift-calendar-app/app/src/main/java/com/bamnat/app/ui/settings/SettingsScreen.kt
+index 98137c78c..5d6164958 100644
+--- a/shift-calendar-app/app/src/main/java/com/bamnat/app/ui/settings/SettingsScreen.kt
++++ b/shift-calendar-app/app/src/main/java/com/bamnat/app/ui/settings/SettingsScreen.kt
+@@ -781,7 +781,7 @@ fun SettingsScreen(
+         val m = message ?: return@LaunchedEffect
+         if (snackbar == null) {
+             vm.consumeMessage()
+-            android.widget.Toast.makeText(context, m.text, android.widget.Toast.LENGTH_SHORT).show()
++            com.bamnat.app.ui.components.AppSnack.show(m.text)
+             return@LaunchedEffect
+         }
+         // [J133-95] 1.33 빌드 7 확인 (복원 뒤 완료 알림이 이번에도 안 보여요): a restore draws the screen again, and a message taken
+@@ -1372,15 +1372,18 @@ private fun AlarmReadyCard(
+     val fixes = remember(verdict, missed) { alarmFixes(context, settings, verdict, missed, askNotifications, onOpenDiagnostics) }
+     val cal = LocalCalendarColors.current
+     val next = upcoming
++    // 2.0.0 [RVIB-25] (PC-164, 디자인 품질 6·13) With no alarm to ring (a 가게·현장 that rings none, a 근무 종류 with none on), what
++    // would keep one from ringing is not urgent: the card stays quiet ('울릴 알람이 없어요') and says them in one plain line.
++    val urgent = fixes.isNotEmpty() && next != null
+     val (icon, headline, tint) = when {
+         !settings.alarmsEnabled -> Triple(Icons.Filled.AlarmOff, "알람이 모두 꺼져 있어요", MaterialTheme.colorScheme.error)
+-        fixes.isNotEmpty() -> Triple(Icons.Filled.WarningAmber, "알람 확인이 필요해요", Tone.Danger.color()) // 2.0.0 [RVP-13] (HQ-54) 울리지 않을 수 있는 알람: 위험
++        urgent -> Triple(Icons.Filled.WarningAmber, "알람 확인이 필요해요", Tone.Danger.color()) // 2.0.0 [RVP-13] (HQ-54) 울리지 않을 수 있는 알람: 위험
+         next == null -> Triple(Icons.Outlined.Alarm, "울릴 알람이 없어요", MaterialTheme.colorScheme.onSurfaceVariant)
+         else -> Triple(Icons.Filled.CheckCircle, "알람 준비 완료", MaterialTheme.colorScheme.secondary)
+     }
+     Surface(
+         shape = MaterialTheme.shapes.large,
+-        color = if (fixes.isNotEmpty() || !settings.alarmsEnabled) Tone.Danger.container() else MaterialTheme.colorScheme.surfaceContainerLow,
++        color = if (urgent || !settings.alarmsEnabled) Tone.Danger.container() else MaterialTheme.colorScheme.surfaceContainerLow,
+         modifier = Modifier.fillMaxWidth(),
+     ) {
+         Column(Modifier.padding(start = 16.dp, end = 8.dp, top = 12.dp, bottom = 8.dp)) {
+@@ -1424,15 +1427,19 @@ private fun AlarmReadyCard(
+             } }, end = {
+                 when {
+                     !settings.alarmsEnabled -> TextButton(onClick = { vm.setAlarmsEnabled(true) }) { Text("켜기") }
+-                    next == null && fixes.isEmpty() -> TextButton(onClick = onOpenShiftTypes) { Text(alarmKindsButton(settings.workStyle)) }
++                    next == null -> TextButton(onClick = onOpenShiftTypes) { Text(alarmKindsButton(settings.workStyle)) }
+                 }
+             })
+             snoozeAt?.let { at ->
+                 LineWithButton("${Fmt.time(AlarmScheduler.millisToLocal(at).toLocalTime())}에 다시 울려요", "지금 끄기", vm::cancelSnooze)
+             }
+             // 2.0.0 [RVI-38] (디자인 품질 2: 글자 단추는 2개까지) The most serious one with its button; the rest are counted, all in 알람 점검.
+-            fixes.firstOrNull()?.let { fix -> LineWithButton(fix.text, fix.label, fix.onFix) }
+-            if (fixes.size > 1) {
++            if (!urgent && settings.alarmsEnabled && fixes.isNotEmpty()) {
++                // [RVIB-25] Nothing rings yet: one quiet line to 알람 점검, for when alarms are put on.
++                LineWithButton("알람을 켜면 볼 것이 ${fixes.size}가지 있어요", "보기", { onOpenDiagnostics(false) },
++                    color = MaterialTheme.colorScheme.onSurfaceVariant)
++            } else fixes.firstOrNull()?.let { fix -> LineWithButton(fix.text, fix.label, fix.onFix) }
++            if ((urgent || !settings.alarmsEnabled) && fixes.size > 1) {
+                 LineWithButton("고칠 것이 ${fixes.size - 1}가지 더 있어요", "모두 보기", { onOpenDiagnostics(false) },
+                     color = MaterialTheme.colorScheme.onSurfaceVariant)
+             }
+diff --git a/shift-calendar-app/app/src/main/java/com/bamnat/app/ui/shifts/ShiftTypesScreen.kt b/shift-calendar-app/app/src/main/java/com/bamnat/app/ui/shifts/ShiftTypesScreen.kt
+index 436e3d65e..d1f31f455 100644
+--- a/shift-calendar-app/app/src/main/java/com/bamnat/app/ui/shifts/ShiftTypesScreen.kt
++++ b/shift-calendar-app/app/src/main/java/com/bamnat/app/ui/shifts/ShiftTypesScreen.kt
+@@ -15,7 +15,6 @@ import androidx.compose.ui.semantics.contentDescription
+ import androidx.compose.ui.semantics.semantics
+ import com.bamnat.app.ui.components.vector
+ import com.bamnat.core.model.ShiftIcon
+-import android.widget.Toast
+ import com.bamnat.app.data.ScheduleRepository
+ import com.bamnat.core.model.AlarmSpec
+ import androidx.compose.runtime.mutableIntStateOf
+@@ -266,7 +265,7 @@ fun ShiftTypesScreen(
+                     val context = androidx.compose.ui.platform.LocalContext.current
+                     val revive = {
+                         vm.unfold(type.id)
+-                        android.widget.Toast.makeText(context, "‘${type.name}’${com.bamnat.app.ui.Fmt.obj(type.name)} 다시 써요", android.widget.Toast.LENGTH_SHORT).show()
++                        com.bamnat.app.ui.components.AppSnack.show("‘${type.name}’${com.bamnat.app.ui.Fmt.obj(type.name)} 다시 써요")
+                     }
+                     Row(
+                         Modifier.fillMaxWidth().heightIn(min = 48.dp).clickable(onClickLabel = "다시 쓰기", onClick = revive).padding(start = 8.dp),
+@@ -632,7 +631,7 @@ fun ShiftTypeEditorDialog(
+     val close: () -> Unit = {
+         if (draft != initial && draft.name.isNotBlank()) {
+             onSave(saved())
+-            Toast.makeText(context, "저장했어요", Toast.LENGTH_SHORT).show()
++            com.bamnat.app.ui.components.AppSnack.show("저장했어요")
+         } else {
+             onDismiss()
+         }
+diff --git a/shift-calendar-app/app/src/main/java/com/bamnat/app/ui/sleep/SleepScreen.kt b/shift-calendar-app/app/src/main/java/com/bamnat/app/ui/sleep/SleepScreen.kt
+index 9faa347b5..e03812372 100644
+--- a/shift-calendar-app/app/src/main/java/com/bamnat/app/ui/sleep/SleepScreen.kt
++++ b/shift-calendar-app/app/src/main/java/com/bamnat/app/ui/sleep/SleepScreen.kt
+@@ -425,6 +425,27 @@ class SleepViewModel(private val container: AppContainer) : ViewModel() {
+         }
+     }
+ 
++    /**
++     * 2.0.0 [RVIB-27] (PC-171) '낮잠' any time: asleep now and a wake [minutes] on, or at the next alarm when that comes first, as
++     * 오늘의 흐름's '낮잠 자기' ([com.bamnat.app.sleep.NapStart]: the same ring, the same words, one 되돌리기).
++     */
++    fun napFor(minutes: Int) {
++        container.appScope.launch {
++            val until = com.bamnat.app.sleep.NapStart.wakeFor(container, Today.dateTime(), minutes)
++            val nap = com.bamnat.app.sleep.NapStart.start(container, until)
++            _messages.emit(UndoMessage(nap.message) { nap.undo() })
++        }
++    }
++
++    /** [RVIB-27] Each '낮잠' choice with when it wakes, and whether the next alarm cut it short. */
++    suspend fun napChoices(): List<Triple<Int, LocalDateTime, Boolean>> {
++        val now = Today.dateTime()
++        return com.bamnat.core.sleep.NapAlarm.CHOICES.map { m ->
++            val at = com.bamnat.app.sleep.NapStart.wakeFor(container, now, m)
++            Triple(m, at, at.isBefore(now.plusMinutes(m.toLong())))
++        }
++    }
++
+     /** [UX-06] "깼어요": the open sleep ends now. */
+     fun wokeUp() {
+         container.appScope.launch {
+@@ -540,7 +561,7 @@ private fun SleepScreenBody(vm: SleepViewModel, wide: Boolean, onBack: () -> Uni
+             // 1.39 [SLEEP-15] 팀원: 피곤해요 to the team, nameless, once a day — only with a link whose leader asked for it.
+             if (tiredLinks.isNotEmpty()) TiredCard(tiredToday, vm::sayTired)
+             NowCard(s.log.firstOrNull { it.end == null && !it.imported }, onAsleep = { vm.fellAsleep(); onNight() }, onAwake = vm::wokeUp,
+-                onNight = onNight)
++                onNight = onNight, onNap = vm::napFor, napChoices = vm::napChoices)
+             // 2.0.0 [RVIB-13] (PC-122, 디자인 품질 1·2·9) Opened for the first time, the page was three cards with a filled button each
+             // and '아직 잠 기록이 없어요' under them, behind '기록 추가': with no record yet, 지금 자려고요? and the empty line come
+             // first, and the two sound cards wait folded under them (open while a sound plays or a night is measured).
+@@ -698,7 +719,8 @@ private fun PlanCompare(sum: com.bamnat.core.sleep.PlanVsActual.Summary) {
+  * only the calendar's day had them, so the screen about sleep could not start one.
+  */
+ @Composable
+-private fun NowCard(open: SleepEntry?, onAsleep: () -> Unit, onAwake: () -> Unit, onNight: () -> Unit = {}) {
++private fun NowCard(open: SleepEntry?, onAsleep: () -> Unit, onAwake: () -> Unit, onNight: () -> Unit = {}, onNap: (Int) -> Unit = {},
++    napChoices: suspend () -> List<Triple<Int, LocalDateTime, Boolean>> = { emptyList() }) {
+     Surface(shape = MaterialTheme.shapes.large, color = MaterialTheme.colorScheme.secondaryContainer, modifier = Modifier.fillMaxWidth()) {
+         Row(Modifier.padding(horizontal = 16.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+             Icon(Icons.Outlined.Bedtime, null, tint = MaterialTheme.colorScheme.onSecondaryContainer)
+@@ -719,7 +741,11 @@ private fun NowCard(open: SleepEntry?, onAsleep: () -> Unit, onAwake: () -> Unit
+                     }
+                 },
+                 end = {
+-                    if (open == null) Button(onClick = onAsleep, modifier = Modifier.heightIn(min = 48.dp)) { Text("잠들었어요", maxLines = 1) }
++                    if (open == null) Column(horizontalAlignment = Alignment.End) {
++                        Button(onClick = onAsleep, modifier = Modifier.heightIn(min = 48.dp)) { Text("잠들었어요", maxLines = 1) }
++                        // 2.0.0 [RVIB-27] (PC-171) 낮잠 any time, beside the one filled button: a text button with its lengths.
++                        NapButton(onNap, napChoices)
++                    }
+                     else Column(horizontalAlignment = Alignment.End) {
+                         Button(onClick = onAwake, modifier = Modifier.heightIn(min = 48.dp)) { Text("깼어요", maxLines = 1) }
+                         // 1.39 [FLOW-13] Back to the dark night screen (clock, tomorrow's work and alarm, sounds).
+@@ -731,6 +757,33 @@ private fun NowCard(open: SleepEntry?, onAsleep: () -> Unit, onAwake: () -> Unit
+     }
+ }
+ 
++/**
++ * 2.0.0 [RVIB-27] (PC-171 '낮잠 30분 단추가 어디 있나요?') '낮잠' on the sleep page, any time: 20·30·60·90분, each saying when it wakes;
++ * one the next alarm comes before says it wakes with that alarm.
++ */
++@Composable
++private fun NapButton(onNap: (Int) -> Unit, choices: suspend () -> List<Triple<Int, LocalDateTime, Boolean>>) {
++    var open by remember { mutableStateOf(false) }
++    var list by remember { mutableStateOf(emptyList<Triple<Int, LocalDateTime, Boolean>>()) }
++    LaunchedEffect(open) { if (open) list = choices() }
++    Box {
++        TextButton(onClick = { open = true }, modifier = Modifier.heightIn(min = 48.dp)) { Text("낮잠", maxLines = 1) }
++        androidx.compose.material3.DropdownMenu(expanded = open && list.isNotEmpty(), onDismissRequest = { open = false }) {
++            for ((m, at, cut) in list) androidx.compose.material3.DropdownMenuItem(
++                text = { Text(if (cut) "${napLength(m)} · ${Fmt.time(at.toLocalTime())} 알람에 깨요" else "${napLength(m)} · ${Fmt.time(at.toLocalTime())}에 깨워요") },
++                onClick = { open = false; onNap(m) },
++                modifier = Modifier.heightIn(min = 48.dp),
++            )
++        }
++    }
++}
++
++internal fun napLength(m: Int): String = when {
++    m < 60 -> "${m}분"
++    m % 60 == 0 -> "${m / 60}시간"
++    else -> "${m / 60}시간 ${m % 60}분"
++}
++
+ /** [SLP-16] What the taps are for, said where the user first wonders. */
+ /** 1.39 사용자 2026-11-08: the pattern cards still to come, each with its count and a bar, so a new log says what it will open. */
+ @Composable
+diff --git a/shift-calendar-app/app/src/main/java/com/bamnat/app/ui/work/FieldTools.kt b/shift-calendar-app/app/src/main/java/com/bamnat/app/ui/work/FieldTools.kt
+index 87a37c552..34ca6fd8d 100644
+--- a/shift-calendar-app/app/src/main/java/com/bamnat/app/ui/work/FieldTools.kt
++++ b/shift-calendar-app/app/src/main/java/com/bamnat/app/ui/work/FieldTools.kt
+@@ -1,7 +1,6 @@
+ package com.bamnat.app.ui.work
+ 
+ import com.bamnat.app.ui.guide.FeatureCard
+-import android.widget.Toast
+ import androidx.compose.foundation.clickable
+ import androidx.compose.foundation.layout.Arrangement
+ import androidx.compose.foundation.layout.Column
+@@ -252,7 +251,7 @@ private fun QuoteScreen(calendarId: String, initial: Quote, onClose: () -> Unit)
+                         store.update(calendarId) { t -> t.copy(quotes = t.quotes.map { if (it.id == saved.id) it.copy(jobId = job.id) else it }) }
+                     }
+                     q = saved.copy(jobId = -1)
+-                    Toast.makeText(context, "${Fmt.monthDay(jobDay)}에 일감으로 저장했어요", Toast.LENGTH_SHORT).show()
++                    com.bamnat.app.ui.components.AppSnack.show("${Fmt.monthDay(jobDay)}에 일감으로 저장했어요")
+                 }) { Text("일감으로 저장") }
+             }
+         }
+diff --git a/shift-calendar-app/app/src/test/java/com/bamnat/app/alarm/BatteryNoteTest.kt b/shift-calendar-app/app/src/test/java/com/bamnat/app/alarm/BatteryNoteTest.kt
+new file mode 100644
+index 000000000..d67268537
+--- /dev/null
++++ b/shift-calendar-app/app/src/test/java/com/bamnat/app/alarm/BatteryNoteTest.kt
+@@ -0,0 +1,42 @@
++package com.bamnat.app.alarm
++
++import androidx.test.core.app.ApplicationProvider
++import androidx.test.ext.junit.runners.AndroidJUnit4
++import com.bamnat.app.NoticeLinks
++import com.bamnat.app.inbox.Inbox
++import com.bamnat.app.inbox.InboxSection
++import kotlinx.coroutines.runBlocking
++import org.junit.Assert.assertEquals
++import org.junit.Assert.assertFalse
++import org.junit.Assert.assertTrue
++import org.junit.Test
++import org.junit.runner.RunWith
++
++/**
++ * 2.0.0 [RVIB-24] (HQ-106) 배터리 절약 안내: one row in the 알림함's 안내 (not the band), only while alarms are on and one is coming and
++ * the phone saves battery on 밤낮, told once; a tap opens 알람 점검.
++ */
++@RunWith(AndroidJUnit4::class)
++class BatteryNoteTest {
++    @Test fun dueOnlyWhenAnAlarmCouldBeLate() {
++        assertTrue(BatteryNote.due(alarmsOn = true, alarmComing = true, unrestricted = false, told = false))
++        assertFalse("battery use left unrestricted", BatteryNote.due(true, true, unrestricted = true, told = false))
++        assertFalse("nothing to ring", BatteryNote.due(true, alarmComing = false, unrestricted = false, told = false))
++        assertFalse("alarms off", BatteryNote.due(alarmsOn = false, alarmComing = true, unrestricted = false, told = false))
++        assertFalse("told before", BatteryNote.due(true, true, false, told = true))
++    }
++
++    @Test fun theRowIsANoticeThatOpensTheAlarmCheck() {
++        val row = BatteryNote.row()
++        assertEquals(InboxSection.NOTICE, row.section)
++        assertEquals(NoticeLinks.Target.ALARM_CHECK, row.target)
++        assertEquals("배터리 절약 때문에 알람이 늦게 울릴 수 있어요", row.title)
++        assertEquals(BatteryNote.KIND, row.kind)
++    }
++
++    @Test fun anUnrestrictedPhoneGetsNoRow() = runBlocking {
++        val context = ApplicationProvider.getApplicationContext<android.content.Context>()
++        BatteryNote.maybePost(context, unrestricted = true)
++        assertFalse(Inbox.get(context).rows.value.any { it.kind == BatteryNote.KIND })
++    }
++}
+diff --git a/shift-calendar-app/app/src/test/java/com/bamnat/app/screenshots/RvibScreenshotTest.kt b/shift-calendar-app/app/src/test/java/com/bamnat/app/screenshots/RvibScreenshotTest.kt
+index 1689b65e9..ff214c224 100644
+--- a/shift-calendar-app/app/src/test/java/com/bamnat/app/screenshots/RvibScreenshotTest.kt
++++ b/shift-calendar-app/app/src/test/java/com/bamnat/app/screenshots/RvibScreenshotTest.kt
+@@ -346,6 +346,63 @@ class RvibScreenshotTest : ScreenshotBase() {
+         }
+     }
+ 
++    // [RVIB-27] (PC-171) 수면 기록의 '낮잠': 채운 단추는 '잠들었어요' 하나, 낮잠은 글자 단추에 20·30·60·90분과 깨는 시각.
++    @Test fun napAnyTime() = eight("nap_any_time") { wide ->
++        runBlocking { c.sleepRepository.recent(days = 3650).first().forEach { c.sleepRepository.delete(it.id) } }
++        val vm = com.bamnat.app.ui.sleep.SleepViewModel(c)
++        content { com.bamnat.app.ui.sleep.SleepScreen(vm, wide = wide, onBack = {}) }
++        settle()
++        tapText("낮잠", exact = true)
++        // The choices are a menu (a popup window): read there.
++        org.junit.Assert.assertTrue(inPopup("20분 · "))
++        org.junit.Assert.assertTrue(inPopup("1시간 30분 · "))
++    }
++
++    // [RVIB-27] A choice puts the sleep in and says when it wakes, with one 되돌리기, as 오늘의 흐름's 낮잠 자기.
++    @Test fun napAnyTimeStarts() = shoot("rvib_nap_any_time_started_l100f", FOLDED) {
++        runBlocking { c.sleepRepository.recent(days = 3650).first().forEach { c.sleepRepository.delete(it.id) } }
++        val vm = com.bamnat.app.ui.sleep.SleepViewModel(c)
++        content { com.bamnat.app.ui.sleep.SleepScreen(vm, wide = false, onBack = {}) }
++        settle()
++        tapText("낮잠", exact = true)
++        org.junit.Assert.assertTrue(tapInPopup("30분 · "))
++        org.junit.Assert.assertTrue(appears("낮잠 자는 중이에요"))
++        org.junit.Assert.assertTrue(runBlocking { c.sleepRepository.recent(days = 1).first().any { it.end == null } })
++    }
++
++    // [RVIB-25] (PC-164) 울릴 알람이 없는 현장: 설정 첫 화면 알람 카드에 위험색 '알람 확인이 필요해요'가 없어요.
++    @Test fun quietAlarmCardWithNothingToRing() = shoot("rvib_quiet_alarm_card_field_l100f", FOLDED, fresh(com.bamnat.core.work.WorkStyle.FIELD) {
++        runBlocking {
++            c.scheduleRepository.shiftTypes.first().forEach { t -> if (t.alarmEnabled) c.scheduleRepository.saveShiftType(t.copy(alarmEnabled = false)) }
++        }
++        settle()
++        tab(SETTINGS_TAB, wide = false)
++        org.junit.Assert.assertTrue(appears("울릴 알람이 없어요"))
++        org.junit.Assert.assertFalse(shows("알람 확인이 필요해요"))
++    })
++
++    // [RVIB-26] (PC-165) 투자: 설정 › 알람은 '켜진 투자 알람이 없어요', 알림과 잠에 일감 줄이 없어요. 현장은 '일 끝난 뒤 가계부 정리 알림'.
++    @Test fun typeWordsOnTheTwoPages() {
++        shoot("rvib_type_words_invest_l100f", FOLDED, fresh(com.bamnat.core.work.WorkStyle.INVEST) {
++            // A trader's first setup leaves the 근무 종류 as they are: put every alarm off, as an investor with no alarms is.
++            runBlocking {
++                c.scheduleRepository.shiftTypes.first().forEach { t -> if (t.alarmEnabled) c.scheduleRepository.saveShiftType(t.copy(alarmEnabled = false)) }
++            }
++            settle()
++            settingsPage("알람")
++            org.junit.Assert.assertTrue(scrolledTo("켜진 투자 알람이 없어요"))
++        })
++        shoot("rvib_type_words_invest_notices_l100f", FOLDED, fresh(com.bamnat.core.work.WorkStyle.INVEST) {
++            settingsPage("알림과 잠")
++            org.junit.Assert.assertFalse(shows("일감 시작 전"))
++        })
++        shoot("rvib_type_words_field_notices_l100f", FOLDED, fresh(com.bamnat.core.work.WorkStyle.FIELD) {
++            settingsPage("알림과 잠")
++            org.junit.Assert.assertTrue(scrolledTo("일 끝난 뒤 가계부 정리 알림"))
++            org.junit.Assert.assertFalse(shows("퇴근 뒤 가계부"))
++        })
++    }
++
+     private companion object {
+         const val FOLDED_NIGHT = "w369dp-h905dp-port-night-420dpi"
+         const val UNFOLDED_NIGHT = "w707dp-h823dp-port-night-420dpi"
+diff --git a/shift-calendar-app/app/src/test/java/com/bamnat/app/screenshots/ScreenshotBase.kt b/shift-calendar-app/app/src/test/java/com/bamnat/app/screenshots/ScreenshotBase.kt
+index 78e64866c..5c20bf284 100644
+--- a/shift-calendar-app/app/src/test/java/com/bamnat/app/screenshots/ScreenshotBase.kt
++++ b/shift-calendar-app/app/src/test/java/com/bamnat/app/screenshots/ScreenshotBase.kt
+@@ -550,6 +550,23 @@ abstract class ScreenshotBase {
+             hit
+         }
+ 
++        /**
++         * 2.0.0 [RVIB-27] Presses the item of an open menu (a popup window, see [shownPopups]) that starts with [prefix]: the menu's own
++         * click, as the activity's window does not reach a popup's touches. False when no such item is there.
++         */
++        fun tapInPopup(prefix: String): Boolean {
++            var done = false
++            scenario.onActivity { activity ->
++                for (p in shownPopups(activity)) {
++                    val nodes = rootOf(p)?.semanticsOwner?.getAllSemanticsNodes(mergingEnabled = true).orEmpty()
++                    val hit = nodes.firstOrNull { n -> n.words().any { it.startsWith(prefix) } && n.config.contains(SemanticsActions.OnClick) }
++                    if (hit != null) { hit.config[SemanticsActions.OnClick].action?.invoke(); done = true; break }
++                }
++            }
++            settle()
++            return done
++        }
++
+         /**
+          * 2.0.0 [RVH-86] Closes an open menu as the phone's back key does: the key goes to the popup's own window, which the
+          * activity's back ([back]) does not reach.
+diff --git a/shift-calendar-app/app/src/test/java/com/bamnat/app/ui/calendar/RestSaidTest.kt b/shift-calendar-app/app/src/test/java/com/bamnat/app/ui/calendar/RestSaidTest.kt
+new file mode 100644
+index 000000000..5d63baf79
+--- /dev/null
++++ b/shift-calendar-app/app/src/test/java/com/bamnat/app/ui/calendar/RestSaidTest.kt
+@@ -0,0 +1,23 @@
++package com.bamnat.app.ui.calendar
++
++import org.junit.Assert.assertEquals
++import org.junit.Assert.assertNull
++import org.junit.Test
++
++/** 2.0.0 [HQ-128] The card's rest warning is the line alone; the limit it was told by goes to ⓘ. */
++class RestSaidTest {
++    @Test fun theLimitLeavesTheLine() {
++        val (line, note) = restSaid("내일 · 10/9부터 7일째 쉬는 날 없이 근무 (7일째부터 알려요 · 기본)")
++        assertEquals("내일 · 10/9부터 7일째 쉬는 날 없이 근무", line)
++        assertEquals("7일째부터 알려요 · 기본", note)
++        val (l2, n2) = restSaid("야간이 끝난 12/3 뒤 쉬는 날 1일 (2일보다 적으면 알려요)")
++        assertEquals("야간이 끝난 12/3 뒤 쉬는 날 1일", l2)
++        assertEquals("2일보다 적으면 알려요", n2)
++    }
++
++    @Test fun aLineWithoutALimitStaysWhole() {
++        val said = "근무 사이가 9시간이에요 (11시간보다 짧아요)"
++        assertEquals(said to null, restSaid(said))
++        assertNull(restSaid("쉬는 날이 없어요").second)
++    }
++}
+diff --git a/shift-calendar-app/core/src/main/kotlin/com/bamnat/core/guide/FeatureRegistry.kt b/shift-calendar-app/core/src/main/kotlin/com/bamnat/core/guide/FeatureRegistry.kt
+index ecea9293c..d97797f32 100644
+--- a/shift-calendar-app/core/src/main/kotlin/com/bamnat/core/guide/FeatureRegistry.kt
++++ b/shift-calendar-app/core/src/main/kotlin/com/bamnat/core/guide/FeatureRegistry.kt
+@@ -222,6 +222,10 @@ object FeatureRegistry {
+         // (it was 교대 only, and an office worker searching '잠' found no feature).
+         f("sleep.log", "SLP-16", "수면 기록", "잠든 시간과 깬 시간을 적고 근무별 평균을 봐요",
+             ALL, "설정 › 알림과 잠 › 수면 기록 보기 (달력 › 오늘 칸 › 몸에서도)", at(Place.SLEEP), "잠", "수면", "잠들었어요", "깼어요", "낮잠"),
++        // 2.0.0 [RVIB-27] (PC-171 '낮잠 30분 단추가 어디 있나요?') The two ways to a nap, said in one line where '낮잠' is searched.
++        f("sleep.nap", "SLEEP-23", "낮잠", "수면 기록의 ‘낮잠’으로 아무 때나 20분~1시간 30분 자고 깨요. 밤에 일하기 전이나 일 사이가 빌 때는 오늘의 흐름에도 ‘낮잠 자기’가 떠요",
++            ALL, "설정 › 알림과 잠 › 수면 기록 보기 › 낮잠", at(Place.SLEEP), "낮잠", "낮잠 30분", "쪽잠", "파워냅", "잠깐 자기",
++            under = "sleep.log"),
+         // 1.38 수면 도약 [SLEEP-19]: what is new on 수면 기록, found by what people call it.
+         f("sleep.noise", "SLEEP-04", "잠드는 소리", "백색·분홍·갈색 소음, 빗소리·선풍기·파도를 섞어 틀고, 정한 시간에 서서히 꺼져요",
+             ALL, "설정 › 알림과 잠 › 수면 기록 보기 › 잠드는 소리", at(Place.SLEEP), "백색 소음", "빗소리", "수면 소리", "자장가", "잠 안 와요",
+diff --git a/shift-calendar-app/core/src/main/kotlin/com/bamnat/core/sleep/NapAlarm.kt b/shift-calendar-app/core/src/main/kotlin/com/bamnat/core/sleep/NapAlarm.kt
+index 7caf8d99c..af60a1f9d 100644
+--- a/shift-calendar-app/core/src/main/kotlin/com/bamnat/core/sleep/NapAlarm.kt
++++ b/shift-calendar-app/core/src/main/kotlin/com/bamnat/core/sleep/NapAlarm.kt
+@@ -14,6 +14,15 @@ import java.time.LocalDateTime
+ object NapAlarm {
+     const val NEAR_MINUTES = 10L
+ 
++    /** 2.0.0 [RVIB-27] (PC-171) How long the sleep page's '낮잠' may be, in minutes. */
++    val CHOICES = listOf(20, 30, 60, 90)
++
++    /** The wake [minutes] after [now], or [nextAlarm] when that comes first: a nap never runs past the alarm that wakes for work. */
++    fun wakeFor(now: LocalDateTime, minutes: Int, nextAlarm: LocalDateTime?): LocalDateTime {
++        val wake = now.plusMinutes(minutes.toLong())
++        return if (nextAlarm != null && nextAlarm.isAfter(now) && nextAlarm.isBefore(wake)) nextAlarm else wake
++    }
++
+     fun merge(date: LocalDate, dayAlarms: List<LocalDateTime>, wake: LocalDateTime): List<DayAlarm>? {
+         if (near(dayAlarms, wake) != null) return null
+         return (dayAlarms + wake).mapNotNull { DayAlarm.ringingAt(date, it) }
+diff --git a/shift-calendar-app/core/src/main/kotlin/com/bamnat/core/work/TypeWords.kt b/shift-calendar-app/core/src/main/kotlin/com/bamnat/core/work/TypeWords.kt
+index 3d96903d9..347234b69 100644
+--- a/shift-calendar-app/core/src/main/kotlin/com/bamnat/core/work/TypeWords.kt
++++ b/shift-calendar-app/core/src/main/kotlin/com/bamnat/core/work/TypeWords.kt
+@@ -18,17 +18,20 @@ object TypeWords {
+     private val ROTA = listOf("교대", "전공의", "근무 주기", "조 변경", "모든 조", "주주휴휴")
+     // 2.0.0 [RVH-53] HQ-27: 회사 찾기 is for work that has a company (an 알바 that joined one keeps it: see the screen test).
+     private val EMPLOYEE = listOf("연차", "대근", "주휴", "퇴근", "근무·급여", "근무 알람", "근무마다", "근무별", "회사 사정", "근무표", "회사 찾기", "회사 이름으로")
++    // 2.0.0 [RVIB-26] (PC-165) 일감 is a 현장's (and a 교대's 부업): the others have no 일감 to set a notice on.
++    private val NO_JOBS = listOf("일감 시작 전", "일감마다")
+ 
+     /** What must not show for [style]; nothing for 교대 (and a calendar from before kinds of work, which is 교대). */
+     fun forbidden(style: WorkStyle?): List<String> = when (style) {
+         null, WorkStyle.SHIFT -> emptyList()
+-        WorkStyle.DAY -> ROTA + NIGHT
++        WorkStyle.DAY -> ROTA + NIGHT + NO_JOBS
+         // [RVH-50] HQ-18: 잔업·특근 are a factory's and an office's words; an 알바 says 추가 근무 and 쉬는 날 출근.
+-        WorkStyle.HOURLY -> ROTA + NIGHT + listOf("52시간", "대근", "근무·급여", "잔업", "특근")
+-        WorkStyle.FIELD -> ROTA + NIGHT + EMPLOYEE
++        WorkStyle.HOURLY -> ROTA + NIGHT + NO_JOBS + listOf("52시간", "대근", "근무·급여", "잔업", "특근")
++        // 2.0.0 [RVIB-26] (PC-165) A 현장's day is an 일정: its end is '일이 끝나', not '근무가 끝나'.
++        WorkStyle.FIELD -> ROTA + NIGHT + EMPLOYEE + listOf("근무가 끝나", "근무 끝", "근무 몇 분 전")
+         // [RVJ-44] 검토 PC-106: a shop's 사장님 has no '회사 규칙' (the 급여 대장 said '회사 규칙에 넣지 않은 … 가산').
+-        WorkStyle.BUSINESS -> ROTA + NIGHT + EMPLOYEE + listOf("출근", "연속 근무", "야간", "쉬는 날", "회사 규칙")
+-        WorkStyle.INVEST -> ROTA + NIGHT + EMPLOYEE + listOf("출근", "연속 근무", "야간", "근무", "명세서", "급여", "회사")
++        WorkStyle.BUSINESS -> ROTA + NIGHT + EMPLOYEE + NO_JOBS + listOf("출근", "연속 근무", "야간", "쉬는 날", "회사 규칙")
++        WorkStyle.INVEST -> ROTA + NIGHT + EMPLOYEE + NO_JOBS + listOf("출근", "연속 근무", "야간", "근무", "명세서", "급여", "회사")
+     }
+ 
+     /**
+@@ -73,7 +76,7 @@ object TypeWords {
+         swap("근무 알람", "알람")
+         swap("근무 주기", w.pattern)
+         when (style) {
+-            WorkStyle.FIELD -> { swap("근무마다", "일정마다"); swap("근무별", "일정별"); swap("퇴근 뒤", "일 끝난 뒤"); swap("퇴근 후", "일 끝난 뒤"); swap("퇴근길", "돌아가는 길"); swap("퇴근", "일 끝") }
++            WorkStyle.FIELD -> { swap("근무가 끝나", "일이 끝나"); swap("근무 끝", "일 끝"); swap("근무 몇 분 전", "일정 몇 분 전"); swap("근무마다", "일정마다"); swap("근무별", "일정별"); swap("퇴근 뒤", "일 끝난 뒤"); swap("퇴근 후", "일 끝난 뒤"); swap("퇴근길", "돌아가는 길"); swap("퇴근", "일 끝") }
+             WorkStyle.BUSINESS -> { swap("근무마다", "영업일마다"); swap("근무별", "날별"); swap("퇴근 뒤", "마감 뒤"); swap("퇴근길", "돌아가는 길"); swap("퇴근", "마감"); swap("쉬는 날", w.offDay) }
+             WorkStyle.INVEST -> { swap("근무마다", "날마다"); swap("근무별", "날별"); swap("퇴근 뒤", "장 마감 뒤"); swap("퇴근", "장 마감"); swap("근무", w.workDay) }
+             WorkStyle.HOURLY -> {
+diff --git a/shift-calendar-app/core/src/test/kotlin/com/bamnat/core/NapChoiceTest.kt b/shift-calendar-app/core/src/test/kotlin/com/bamnat/core/NapChoiceTest.kt
+new file mode 100644
+index 000000000..4f292d737
+--- /dev/null
++++ b/shift-calendar-app/core/src/test/kotlin/com/bamnat/core/NapChoiceTest.kt
+@@ -0,0 +1,38 @@
++package com.bamnat.core
++
++import com.bamnat.core.sleep.NapAlarm
++import com.bamnat.core.work.TypeWords
++import com.bamnat.core.work.WorkStyle
++import org.junit.Assert.assertEquals
++import org.junit.Assert.assertTrue
++import org.junit.Test
++import java.time.LocalDateTime
++
++/** 2.0.0 [RVIB-27] (PC-171) The sleep page's '낮잠' and [RVIB-26] (PC-165) a 현장's words on the notice pages. */
++class NapChoiceTest {
++    private val now = LocalDateTime.of(2026, 11, 18, 14, 0)
++
++    @Test fun theChoices() = assertEquals(listOf(20, 30, 60, 90), NapAlarm.CHOICES)
++
++    @Test fun aNapWakesAfterItsLength() {
++        assertEquals(now.plusMinutes(30), NapAlarm.wakeFor(now, 30, null))
++        assertEquals(now.plusMinutes(90), NapAlarm.wakeFor(now, 90, now.plusHours(3)))
++    }
++
++    @Test fun theNextAlarmCutsItShort() {
++        val alarm = now.plusMinutes(45)
++        assertEquals(alarm, NapAlarm.wakeFor(now, 60, alarm))
++        assertEquals(now.plusMinutes(20), NapAlarm.wakeFor(now, 20, alarm))
++        // An alarm already past is not the one that wakes.
++        assertEquals(now.plusMinutes(20), NapAlarm.wakeFor(now, 20, now.minusMinutes(5)))
++    }
++
++    @Test fun aFieldWorkersDayEndsAsAnIlJeong() {
++        assertEquals("일 끝난 뒤 가계부 정리 알림", TypeWords.say(WorkStyle.FIELD, "퇴근 뒤 가계부 정리 알림"))
++        assertEquals("일이 끝나고 30분 뒤", TypeWords.say(WorkStyle.FIELD, "근무가 끝나고 30분 뒤"))
++        assertEquals("일 끝 30분 뒤 오늘 쓴 돈", TypeWords.say(WorkStyle.FIELD, "근무 끝 30분 뒤 오늘 쓴 돈"))
++        assertTrue(TypeWords.leaks(WorkStyle.DAY, "일감 시작 전 알림은 일감마다 정해요.").isNotEmpty())
++        assertTrue(TypeWords.leaks(WorkStyle.FIELD, "일감 시작 전 알림은 일감마다 정해요.").isEmpty())
++        assertTrue(TypeWords.leaks(null, "근무가 끝나고").isEmpty())
++    }
++}
+diff --git a/shift-calendar-app/core/src/test/resources/free-features.txt b/shift-calendar-app/core/src/test/resources/free-features.txt
+index 39ac415ce..ec35ed0c4 100644
+--- a/shift-calendar-app/core/src/test/resources/free-features.txt
++++ b/shift-calendar-app/core/src/test/resources/free-features.txt
+@@ -302,3 +302,4 @@ shift.progress
+ invest.holdingShot
+ invest.quantity
+ invest.story
++sleep.nap
+diff --git "a/shift-calendar-app/docs/plans/2.0.0-\352\262\200\355\206\240-\354\266\224\354\240\201.csv" "b/shift-calendar-app/docs/plans/2.0.0-\352\262\200\355\206\240-\354\266\224\354\240\201.csv"
+index 8244e7b44..f559e8a62 100644
+--- "a/shift-calendar-app/docs/plans/2.0.0-\352\262\200\355\206\240-\354\266\224\354\240\201.csv"
++++ "b/shift-calendar-app/docs/plans/2.0.0-\352\262\200\355\206\240-\354\266\224\354\240\201.csv"
+@@ -2463,7 +2463,7 @@ HQ-102,디자인,07b 근무표·명세서 인식,낮음,"총괄 사진 검토(11
+ HQ-104,디자인,01 달력,낮음,갈래 K가 10차(가계부 주의색)에서 찾아 넘김(11-13),달력 하루 머리의 '받을 돈'이 빨강이에요,"조건 6. ui/calendar/DayHeader.kt 476 근처. 약속일이 지나지 않은 받을 돈은 주의색이 아니어야 하고, 지난 것이면 주황이 맞아요(가계부 쪽은 RVK-45에서 주황으로 옮김). 달력 칸·하루 창에서 같은 금액 색을 쓰는 다른 자리도 함께",app ui/calendar/DayHeader.kt,H,RVH-82,코드 고침(확인 전),"H 10묶음과 함께. 11-13 04:05 KST H에 알림 · 갈래 H 10묶음: core Job.overdue로 약속일 지난 것만 주황, 그 전은 조용한 글. 달력 칸·목록 표식·칸 모서리·여러 날 막대·오늘 일감 줄·월 요약·범례도 같이, 주 시간 넘음 막대·글도 주황(JobOverdueTest)"
+ HQ-103,디자인,05 급여 화면·통계·팀·사장님,낮음,갈래 K가 10차(가계부 주의색)에서 찾아 넘김(11-13),"급여·사장님 화면에 '주의' 뜻으로 쓴 빨강이 남아 있어요: 가게 도구·알바 도구의 최저임금 줄, 급여 대장, 팀 관리, 명세서 맞춰 보기","조건 6(빨강은 위험만, 주황은 주의만). K가 가계부 쪽을 주황으로 옮기며(RVK-45) 같은 꼴을 찾은 자리: ui/work/ShopTools.kt 94·106·419(최저임금), ui/work/PartTimeTools.kt 136·236·385, ui/work/PayrollScreen.kt 985, ui/work/ManageScreen.kt 242, ui/pay/PayslipCheck.kt 158. 자리마다 뜻을 보고 '저장을 막는 잘못된 값·법 위반 위험'만 빨강으로 남기고 나머지는 주황(공통 caution 색, StatTile은 caution 인자)으로. K의 MoneyCautionRedTest처럼 급여·사장님 화면에도 새 빨강을 막는 세는 시험을 두면 좋아요. 최저임금 미달은 '위험'으로 볼지 J가 판단(법 위반 가능성을 알리는 줄이면 빨강 한 번은 괜찮음, 한 화면에 여러 번은 안 됨)","app ui/work/ShopTools.kt·PartTimeTools.kt·PayrollScreen.kt·ManageScreen.kt, ui/pay/PayslipCheck.kt",J,RVJ-66,코드 고침(확인 전),"급여·팀·사장님·통계 화면의 챙길 일 빨강을 주의(bamnat.caution)로, 빨강은 되돌릴 수 없는 지우기·나가기, 저장을 막는 값, 법(주 52시간·특례 11시간), 기록 고장에만. 남은 빨강을 파일마다 세는 PayRedIsDangerTest(빨간 WarningBanner 포함). 통계의 법을 넘은 주·특례 11시간은 빨간 띠 하나, 3개월 평균·시간외 상한·알바 계약 끝남·출퇴근 알림 꺼짐은 주의 카드. 팀 표는 RVJ-68(HQ-107)과 함께 주 52시간만 빨강"
+ HQ-105,디자인,07b 근무표·명세서 인식,낮음,갈래 J가 HQ-102를 고치며 같은 꼴을 찾아 넘김(11-13),근무표 사진 읽기: 확대 단추(−·+)와 배율 글이 사진 오른쪽 아래에 겹쳐 떠서 읽는 줄을 가려요,"조건 9. ui/imports/RosterPhotoViews.kt의 RosterPhoto가 ⊖ ⊕와 배율 글을 Alignment.BottomEnd로 사진 위에 그려요. J가 명세서 사진 칸에서 한 것(HQ-102)처럼 사진 아래 얇은 한 줄 띠로 빼고, 사진 높이에서 띠 높이를 빼 아래 줄 자리는 그대로. 130% 넘으면 배율 글은 빼고, 한 줄에 안 들어가면 나머지 단추는 ⋮ 하나로. 가능하면 J의 띠 부품을 같이 써요",app ui/imports/RosterPhotoViews.kt RosterPhoto,L,,할 일,L 다음 묶음에서. 04:10 KST L에 알림
+-HQ-106,사용성,03 알람·알림·위젯·수면·워치,낮음,통합 4차 PC 메모(PC-139)와 갈래 I 답(11-13),"배터리 최적화로 알람이 늦게 울릴 수 있을 때: 달력 위 띠에는 올리지 않고(지금 그대로), 알림함(종)에 한 번 알려요","지금은 설정 > 알람과 진단에만 나와요(I: 띠에는 알람이 아예 못 울리는 것만, 설계대로). 사용자 지시(11-12 20:38~20:40 KST: 달력 위는 꼭 봐야 하는 것만, 나머지 알림은 알림함, 거부하면 되풀이하지 않기)에 맞춰: 근무 알람이 켜져 있고 앱이 배터리 최적화 대상일 때 알림함에 주의 줄 하나('배터리 절약 때문에 알람이 늦게 울릴 수 있어요', 단추 '설정 열기', 닫기·다시 보지 않기). '전체 지움'으로 지워져도 되는 줄(못 울리는 다섯 줄과 달리). 다시 보지 않기를 누르면 다시 안 띄움. 제조사별 말(삼성 '절전 예외')은 진단 화면 글을 그대로",app 알림함(갈래 P의 종) + 알람 진단,I,,할 일,I 다음 PR에서(알림함 줄은 P의 부품으로). 04:10 KST I에 알림
++HQ-106,사용성,03 알람·알림·위젯·수면·워치,낮음,통합 4차 PC 메모(PC-139)와 갈래 I 답(11-13),"배터리 최적화로 알람이 늦게 울릴 수 있을 때: 달력 위 띠에는 올리지 않고(지금 그대로), 알림함(종)에 한 번 알려요","지금은 설정 > 알람과 진단에만 나와요(I: 띠에는 알람이 아예 못 울리는 것만, 설계대로). 사용자 지시(11-12 20:38~20:40 KST: 달력 위는 꼭 봐야 하는 것만, 나머지 알림은 알림함, 거부하면 되풀이하지 않기)에 맞춰: 근무 알람이 켜져 있고 앱이 배터리 최적화 대상일 때 알림함에 주의 줄 하나('배터리 절약 때문에 알람이 늦게 울릴 수 있어요', 단추 '설정 열기', 닫기·다시 보지 않기). '전체 지움'으로 지워져도 되는 줄(못 울리는 다섯 줄과 달리). 다시 보지 않기를 누르면 다시 안 띄움. 제조사별 말(삼성 '절전 예외')은 진단 화면 글을 그대로",app 알림함(갈래 P의 종) + 알람 진단,I,RVIB-24,코드 고침(확인 전),"I 다음 PR에서(알림함 줄은 P의 부품으로). 04:10 KST I에 알림 · I 4묶음 RVIB-24 코드 고침(확인 전): 알림함 안내에 한 번(BatteryNote), 눌러서 알람 점검"
+ HQ-107,디자인,05 급여 화면·통계·팀·사장님,중간,"총괄이 Q1 #513·K #515 사진을 보다가 찾음(11-13 04:45 KST 무렵, 전부터 있던 것)",팀 근무표 '확인할 것' 목록: 규칙 줄까지 줄 전체가 빨강 글자라 한 화면에 빨강이 여섯 줄이에요(조건 6),"LeaderTeamScreen의 '확인할 것 N' 카드가 RULE(야간 뒤 쉬는 날 같은 점검 기준)과 WEEK_HOURS 줄을 모두 error 색 글자 + '⚠ ' 글자로 그려요. 기본 6줄이 다 빨강이고 어두운 화면에서는 더 세게 보여요(Q1 사진 뒤-01 어두운 100% 편 폭). 점검 기준은 '그대로 확정해도 돼요'라고 말하는 주의예요. 방향: 법 위반(주 52시간 넘김, 5인 이상)만 위험 아이콘(공통 아이콘, 글자 '⚠' 아님) + 조용한 글, 규칙 줄은 주황 아이콘 + 조용한 글, 숫자만 굵게. 같은 줄이 여럿이면 '야간 뒤 2일째 근무 6건'처럼 묶어 한 줄로 줄이고 펼치면 날짜별로. 맞바꾼 뒤 창('맞바꿨어요. 확인할 것')도 같은 말·색으로.",app/ui/team/LeaderTeamScreen.kt 586~612,J,RVJ-68,코드 고침(확인 전),"팀 근무표 '확인할 것'을 같은 것끼리 한 줄('N-O-D(나오데) · 야간 뒤 2일째 근무 6건', 숫자만 굵게)로, 누르면 날짜·사람이 펼쳐지고 날짜를 누르면 그 칸으로. 글은 조용한 색, 주 52시간(근로기준법 제53조)만 빨강, 팀 기준·인원 부족은 주황, 책임자 없음은 안내. 법 줄이 맨 위. 칸·모자란 날·맞바꾼 뒤 창·바꾸기 요청·관리 화면 할 일도 같은 말과 표시(TeamSignParts). 시험 RvjTeamCheckScreenshotTest·core DutyCheckTest"
+ HQ-108,디자인,05 급여 화면·통계·팀·사장님,중간,"총괄이 Q1 #513·K #515 사진을 보다가 찾음(11-13 04:45 KST 무렵, 전부터 있던 것)",팀 근무표(리더) 표 아래에 테두리 단추 아홉 개가 같은 무게로 줄지어 있어요(조건 2),"'근무 신청 받기·바꾸기 요청 받기·지난달 이어 칠하기·빈칸 자동 채우기·근무별 인원·신청·희망 0·공정성 표·팀원·파일·사진에서 가져오기' 아홉 개가 모두 같은 테두리 단추이고 그 아래 채운 '링크 다시 보내기'가 있어요(Q1 사진 뒤-01, 접은 폭에서는 다섯 줄). 무엇이 지금 할 일인지 보이지 않아요. 방향: 지금 단계에 맞는 것 하나만 채우고(표를 만드는 중이면 '확정하고 링크 보내기', 확정 뒤면 '링크 다시 보내기'), 자주 쓰는 둘(예: 근무 신청 받기, 빈칸 자동 채우기)만 밖에 두고 나머지는 '더 보기' 시트로(시트 안은 묶음 제목: 받기 / 채우기 / 보기). 리더가 가장 자주 하는 일의 누르는 횟수를 앞뒤로 세어 늘지 않게(조건 8).",app/ui/team/LeaderTeamScreen.kt,J,RVJ-69,코드 고침(확인 전),"팀 근무표 아래 단추를 이달 단계마다 채운 단추 하나(빈칸 자동 채우기 → 확정하고 팀원 링크 보내기 → 다시 확정)와 그 단계의 글자 단추 둘로, 나머지(신청·바꾸기 받기·지난달 이어 칠하기·근무별 인원·공정성 표·팀원·가져오기)는 '더 보기' 시트의 같은 자리. 접은 폭 다섯 줄 → 한두 줄. 시험 RvjTeamCheckScreenshotTest·TeamToolsTest"
+ HQ-109,디자인,11b 프로·결제·광고·깃발·마을 뼈대,낮음,"총괄이 Q1 #513·K #515 사진을 보다가 찾음(11-13 04:45 KST 무렵, 전부터 있던 것)",프로 화면 맨 아래: 글자 단추가 넷('결제·환불 문의·이용약관·개인정보처리방침·사업자 정보')에 테두리 단추 둘이 줄지어 있어요(조건 2),"Q1 #513이 '결제·환불 문의'를 더해 글자 단추가 셋에서 넷이 됐어요(글자 200% 접은 폭에서는 단추만 여섯 줄). 방향: 약관·처리방침·사업자 정보는 단추가 아니라 조용한 링크 한 줄('이용약관 · 개인정보처리방침 · 사업자 정보', 줄 높이 48dp 유지)로 묶고, '결제·환불 문의'는 '구매 복원' 옆 글자 단추 하나로 남겨요. 요금제 창·잠긴 기능 시트의 같은 아래 줄도 함께.",app/ui/settings/ProScreen(프로 시작하기 카드 아래 줄),O,RVO-27,코드 고침(확인 전),"O 3·4차가 프로 화면을 고치는 중이라 그 PR에 함께. Q1은 이 파일을 더 고치지 않음 / RVO-27 (갈래 O 5차): '구매 복원'·'결제·환불 문의' 글자 단추 둘, 약관·처리방침·사업자 정보는 조용한 링크 한 줄(48dp). 요금제 창 결제 장과 출시 전 결제 카드도 같은 줄, 잠긴 기능 시트에는 그 줄이 없어 그대로. 시험 ReviewOShotsTest.payLinksQuietLine"
+@@ -2485,10 +2485,10 @@ HQ-124,사용성,24 관리자 앱 실동작,중간,총괄이 나간 판 1.39.0 
+ HQ-125,디자인,13b 앱 뼈대·내비·공통 부품,낮음,총괄이 갈래 B PR #433 사진(07·08 사진으로 보내기 창)에서 찾음(11-19 08:05 KST),"눌리는 한 줄(ToneLine에 onClick)이 눌리는 줄로 보이지 않아요: '… · 만들기', '… · 입사일 넣기'처럼 가는 곳 낱말까지 모두 회색이에요","알림함 줄과 안내 카드는 가는 곳 낱말이 파란 글자(결산 보기·허용·보내기)인데, 카드·창 안 한 줄은 ⓘ와 회색 글뿐이라 읽는 글로 보여요. 눌리는 줄은 12곳(사진으로 보내기 창의 결산 줄, 사장님 신고 줄 4곳, 급여 대장 3곳, 사업장 5인 이상, 근거 줄 등)","app/src/main/java/com/bamnat/app/ui/components/ToneLine.kt, 쓰는 곳: ui/calendar/ImageShareSheet.kt, ui/work/BossFilingParts.kt·PayrollScreen.kt·ManageScreen.kt, ui/components/NotesLine.kt",J,,할 일,"방향: onClick이 있으면 마지막 ' · ' 뒤 낱말(가는 곳)을 알림함 줄과 같은 색·굵기로 보여 주거나, 가는 곳 낱말을 따로 받는 칸(action)을 두어 한 모양으로. 색만으로 전하지 않게 화면 읽기는 지금처럼 단추로 읽어요(조건 5·14). 갈래 P의 안내 카드 모양과 맞추고, 12곳을 밝은·어두운 × 200% 접은 폭 사진으로 확인. #433은 공통 부품을 그대로 쓴 것이라 막지 않아요"
+ HQ-126,발견,10b 회사·광장 통신·로직,중간,총괄이 갈래 N PR #523(PC-187 고침) 코드를 읽다 찾음(11-19 08:06 KST),"빠른 연결(HTTP/3·HTTP/2, SPD-26)이 안드로이드 13 아래 폰에서 사라져요: Play 서비스 Cronet을 빼면서 휴대폰의 HttpEngine은 14부터만 써요","1.31~1.39는 Play 서비스가 있는 모든 폰에서 빠른 연결을 썼어요. #523 뒤에는 안드로이드 14 이상만 쓰고 12·13은 예전 연결이에요. 꺼지지 않는 것이 먼저라 #523은 막지 않지만, 있던 것이 줄어든 채 남으면 안 돼요(사용자 10-27 '조회하는 로딩이 너무 느리다'에서 넣은 것)","app/src/main/java/com/bamnat/app/company/NetEngine.kt(available·build·viaEngine), ui/diag/SelfCheck.kt 연결 방식 줄",N,RVN-23,코드 고침(확인 전),"방향: ① HttpEngine은 'S Extensions 7'에도 있으니(developer.android.com/reference/android/net/http/HttpEngine) 안드로이드 12·13에서 확장 판이 7 이상이면 같은 길을 써요(SdkExtensions.getExtensionVersion). PC의 API 33 가상폰에서 연결 방식 줄과 Play 서비스 갱신 때 안 꺼지는지 확인. ② 그 폰이 얼마나 되는지와 예전 연결로 얼마나 느려지는지는 자가 점검 조회 속도 숫자로 앞뒤를 재서 PR에 적어요. ③ 확장 판이 낮은 폰에 줄 다른 길(앱 안에 넣는 Cronet은 크기 예산과 함께)은 숫자를 본 뒤 판단. 자가 점검의 '빠른 연결은 안드로이드 14부터' 줄도 같이 고쳐요 → 갈래 N(11-19): ① NetEngine.available이 API 34 이상 또는 API 31~33에서 SdkExtensions.getExtensionVersion(S) >= 7이면 HttpEngine. 엔진 클래스를 만지는 곳(build·openConnection·NetworkException)은 모두 같은 검사 뒤. 자가 점검은 12·13에서 확장 판이 낮으면 '기본 연결 · 빠른 연결은 Google Play 시스템 업데이트 뒤에', 11 이하는 '안드로이드 14부터'. 시험 NetEngineTest(31·33 + 확장 7·12), 사진 2308·2309. ②는 PC N-PC187-05·07 숫자로, ③은 그 숫자를 본 뒤"
+ HQ-127,발견,10b 회사·광장 통신·로직,중간,총괄이 갈래 N PR #523(PC-187 고침) 코드를 읽다 찾음(11-19 08:06 KST),Play 서비스가 갱신될 때 앱을 끝낼 수 있는 모듈이 Cronet 말고도 있는지 확인이 필요해요: 광고(앱을 열 때마다 올림)·글자 인식,"PC-187은 cronet_dynamite가 바뀌어 앱이 끝난 것이에요. 광고 SDK는 동의가 있으면 앱이 앞에 올 때마다 MobileAds.initialize로 Play 서비스의 광고 모듈을 올리고(ads/Ads.kt start), 글자 인식(근무표·명세서 사진)도 Play 서비스 모듈을 써요. 이 모듈들이 바뀔 때도 같은 강제 종료가 나는지는 확인 필요(원문·재현 없음). 난다면 밤새 도는 수면 기록·울리는 알람이 같은 식으로 끊겨요(PC-188이 마지막 안전망)","app/src/main/java/com/bamnat/app/ads/Ads.kt(start·startSdk), pay/OcrModel.kt, app/build.gradle.kts(play-services-ads 25.2.0, play-services-mlkit-text-recognition-korean, document-scanner)",N,RVN-23,코드 고침(확인 전),"방향: ① #523 빌드를 안드로이드 17 가상폰에서 평소처럼 쓴 뒤 logcat의 DynamiteModule·'forcing restart' 줄로 앱 프로세스에 올라온 모듈 목록을 받아요(PC에 부탁, 확인할-것 A17 절). ② 광고 모듈이 올라온 채 Play 서비스를 갱신·강제 종료해 앱이 끝나는지 재현. ③ 끝난다면 광고 SDK를 앱을 열 때가 아니라 광고를 실제로 볼 때(보상형을 고른 때) 올리도록 늦추는 안을 O와 맞춰요(띠 광고가 없으니 가능, 광고 약속·동의 창 차례는 그대로). 글자 인식은 쓰는 동안만 올라오는지 확인. 원문을 찾으면 주석에 출처를, 못 찾으면 확인 필요로 → 갈래 N(11-19): 의존 라이브러리에서 DynamiteModule을 부르는 곳은 Cronet(뺌)·광고(ads.dynamite, measurement.dynamite)·ML Kit 한국어 글자 인식(사진을 읽을 때만) 셋. 위치·워치·FCM·결제·Play 리뷰·업데이트·무결성·UMP는 다른 앱과 주고받기만. 광고 모듈 갱신 때의 강제 종료는 공개 문서에 없어 확인 필요(PC N-PC187-06). ③ 미리: 동의 창(UMP)은 그대로 앱이 앞에 올 때, MobileAds.initialize는 '광고 보고 … 7일 열기'를 누를 때(Ads.prepare)만, 기다림은 원래 '광고를 준비하는 중…'(15초) 안. 시험 NetEngineTest.theAdsSdkStartsOnlyWithAPress·theGoogleModulesInTheAppAreKnown. O와 맞춘 뒤 합침 → O와 맞춤(11-19, RVO-18 순서): 광고를 시작할 수 없는 폰(설치 뒤 쉬는 날·프로·스위치 꺼짐)은 기다리지 않고 곧바로 열고(not_ready), Ads.prepare는 그 검사 뒤 기다리기 직전에만. AD_LATE_WORDS 그대로"
+-HQ-128,디자인,03 알람·알림·위젯·수면·워치,중간,"총괄이 갈래 I PR #519 사진(계획/2.0.0-화면사진/I/결정19/)에서 찾음(11-19 08:08 KST, 그 PR 전부터 있음)","오늘의 흐름 카드의 휴식 경고 줄이 빨간 글 그대로예요: 글자 200% 접은 폭에서 빨간 글 네 줄, 어두운 화면에서는 파란 카드 위 붉은 글이라 잘 안 읽혀요","'내일 · 10/9부터 7일째 쉬는 날 없이 근무 (7일째부터 알려요 · 기본)'이 글 전체가 빨강이에요. 같은 화면 아래 주 시간 줄도 빨강이라 한 화면에 빨강이 여러 번이고(조건 6), 괄호 속 기준 설명까지 늘 보여 200%에서 네 줄이에요(조건 4). 어두운 화면의 카드 바탕(파랑) 위 붉은 글은 사진으로 어림한 대비가 3.5:1쯤이라 100% 글자에서는 모자랄 수 있어요(조건 14, 재서 확인 필요)","app/src/main/java/com/bamnat/app/ui/calendar 오늘의 흐름 카드(휴식 경고 줄), 사진 01 밝은 200·어두운 200 접은, 02 어두운 200",I,,할 일,"방향: 카드 안 한 줄 부품(ToneLine)과 같은 모양으로. 뜻은 △ 아이콘 색으로만, 글은 카드의 본문 색. 괄호 속 '(7일째부터 알려요 · 기본)'은 ⓘ나 '기준 바꾸기' 안으로 옮겨 한두 줄로. 어두운·밤 색 카드 바탕에서 글과 아이콘의 대비를 재서 PR에 적어요(글 4.5:1). 같은 구조: 흐름 카드의 다른 경고 줄, 날 패널의 '이 주 … 넘음' 줄"
++HQ-128,디자인,03 알람·알림·위젯·수면·워치,중간,"총괄이 갈래 I PR #519 사진(계획/2.0.0-화면사진/I/결정19/)에서 찾음(11-19 08:08 KST, 그 PR 전부터 있음)","오늘의 흐름 카드의 휴식 경고 줄이 빨간 글 그대로예요: 글자 200% 접은 폭에서 빨간 글 네 줄, 어두운 화면에서는 파란 카드 위 붉은 글이라 잘 안 읽혀요","'내일 · 10/9부터 7일째 쉬는 날 없이 근무 (7일째부터 알려요 · 기본)'이 글 전체가 빨강이에요. 같은 화면 아래 주 시간 줄도 빨강이라 한 화면에 빨강이 여러 번이고(조건 6), 괄호 속 기준 설명까지 늘 보여 200%에서 네 줄이에요(조건 4). 어두운 화면의 카드 바탕(파랑) 위 붉은 글은 사진으로 어림한 대비가 3.5:1쯤이라 100% 글자에서는 모자랄 수 있어요(조건 14, 재서 확인 필요)","app/src/main/java/com/bamnat/app/ui/calendar 오늘의 흐름 카드(휴식 경고 줄), 사진 01 밝은 200·어두운 200 접은, 02 어두운 200",I,RVIB-31,코드 고침(확인 전),"방향: 카드 안 한 줄 부품(ToneLine)과 같은 모양으로. 뜻은 △ 아이콘 색으로만, 글은 카드의 본문 색. 괄호 속 '(7일째부터 알려요 · 기본)'은 ⓘ나 '기준 바꾸기' 안으로 옮겨 한두 줄로. 어두운·밤 색 카드 바탕에서 글과 아이콘의 대비를 재서 PR에 적어요(글 4.5:1). 같은 구조: 흐름 카드의 다른 경고 줄, 날 패널의 '이 주 … 넘음' 줄 | 갈래 I(11-19): 빨강은 P RVP-13에서 이미 주의색 ToneLine. 줄은 '내일 · 10/9부터 7일째 쉬는 날 없이 근무'만, 괄호 속 '(7일째부터 알려요 · 기본)'는 ⓘ '지금 알리는 줄'로(restSaid, RestSaidTest). 같은 구조 날 패널 '이 주 … 넘음'은 H 몫"
+ HQ-129,디자인,01 달력,낮음,"총괄이 갈래 I PR #519 사진(계획/2.0.0-화면사진/I/결정19/)에서 찾음(11-19 08:08 KST, 그 PR 전부터 있음)",접은 폭 달력에서 보기 줄('모든 조'·ⓘ·월)과 오늘의 흐름 카드 사이가 100px쯤(글자 200%에서도 같게) 비어 있어요,조 줄이 없는 알바 달력도 같은 자리가 비어요. 달력 아래 첫 카드가 그만큼 내려가 접은 폭 200%에서는 흐름 카드 다음 카드가 한 줄만 보여요(조건 1·5: 간격은 공통 값만),"app/src/main/java/com/bamnat/app/ui/calendar/CalendarScreen.kt(달력 아래 보기 줄과 첫 카드 사이), 사진 01·02 접은 폭 네 장",H,RVH-84,코드 고침(확인 전),"방향: 빈 자리가 접힌 안내 자리나 움직임용 자리인지 코드에서 찾아 쓰지 않을 때는 0으로, 간격은 공통 값(8·12dp)으로. 접은 폭·편 폭 × 100%·200% 사진으로 앞뒤를 보여 주세요. PC-52(떠 있는 단추가 카드를 덮음)와 같은 화면이라 함께 봐요 · 갈래 H 11묶음(RVH-84): 그 자리는 빠른 입력이 올라가 앉는 자리(FAB_ROOM)예요. 결정19 사진은 단추가 아직 내려와 있던 때라 비어 보였고, 같은 장면을 이 나무에서 네 모양으로 찍으면 단추가 그 자리에 있어요(사진 55). 쪽이 화면보다 짧거나 첫 근무 카드가 떠 있어 단추가 앉지 않을 때는 12dp로 줄임"
+ HQ-130,사용성,11a 설정 화면,낮음,"총괄이 갈래 I PR #519 사진(계획/2.0.0-화면사진/I/결정19/)에서 찾음(11-19 08:08 KST, 그 PR 전부터 있음)","설정 줄의 한 줄 요약 + ⓘ가 글자 200% 접은 폭에서 여덟 글자쯤에서 잘려 뜻이 안 읽혀요('다시 시작 10분 …', '근무 날에 어느 …', '근무 알람을 끄…')","한 줄 요약은 조건 4의 좋은 모양이지만(RVP-08·U13-10), 큰 글자에서는 요약이 낱말 두세 개만 남아 스위치가 무엇을 하는지 ⓘ를 눌러야만 알 수 있어요. 큰 글자를 쓰는 사람일수록 한 번 더 눌러야 해요(조건 12·14)","설정 줄 공통 부품(한 줄 요약 + ⓘ), 사진 03 밝은 200·어두운 200 접은",P,RVP-08,코드 고침(확인 전),"방향: 글자 크기 1.5배 이상이거나 요약이 한 줄에 반도 안 들어가면 요약을 두 줄까지 보여 줘요(그래도 넘치면 … + ⓘ). 요약 문장은 앞 여덟 글자 안에 뜻이 오게 다듬고(I가 #519에서 '다시 시작 10분 전에 소리 없이 알려 줘요'로 바꾼 것처럼), 설정 화면 전체를 200% 접은 폭 사진으로 훑어요 · P 6: 접힌 설명(Explain)은 글자 1.5배 이상이거나 한 줄에 반도 안 들어가면 두 줄까지(넘치면 … + ⓘ). 앞 여덟 글자에 뜻이 오게 요약 아홉을 다듬음(퇴근 뒤 가계부 정리·근무 전 한 줄 예고·알람 뒤 오늘 카드·방해 금지·시세 견주기·근무 시간으로 보기·달력만 보기·칸이·휴대폰 캘린더). 시험 ReviewP6SettingsSummaryTest: 설정 일곱 쪽을 두 번째로 열어(접힌 설명) 접은 폭 200% 밝은·어두운, 접힌 요약마다 12글자 전에 잘리지 않음(지금 15~22글자 보임), 사진 rvp6_settings_*"
+-HQ-131,발견,03 알람·알림·위젯·수면·워치,낮음,"총괄이 갈래 Q2 PR #526 사진·답 글을 보다 찾음(11-19 08:19 KST, 1.39.0에도 있음)",알람 점검의 안내 글이 '위 복사 단추'라고 하는데 복사는 ⋮ 안에 있어요,"알람 점검 맨 위 한 줄이 '위 복사 단추로 문의에 붙여요'(2.0.0 RVI-86, 1.39.0은 '오른쪽 위 복사 버튼으로')라고 말하지만, 위 막대에 보이는 것은 보내기 단추 하나이고 복사는 ⋮ 더 보기 › '보고서 복사'예요(ALRM-05에서 200% 제목 때문에 ⋮로 옮김). 글이 가리키는 단추가 화면에 없어 헤매요(총괄도 사용자에게 길을 잘못 안내했다가 고침, 11-19). 고칠 방향: 글을 실제 길에 맞추거나('위 ⋮ › 보고서 복사', 또는 '아래 점검 내용과 함께 문의하기로 바로 보내요'처럼 가장 짧은 길을 먼저), 100% 글자에서는 복사 단추를 다시 보이게 하고 200%에서만 ⋮로. HelpFaq·관리자 앱 '기록 부탁 답'(Q2 RVA-63)의 길 설명과 한 낱말로 맞추기. 조건 4·8·13.","app/src/main/java/com/bamnat/app/ui/diag/DiagnosticsScreen.kt 408~456줄, ui/settings/HelpFaq.kt 71줄",I,,할 일,"방향: 글을 실제 길에 맞추고, 가장 짧은 길(아래 '점검 내용과 함께 문의하기')을 먼저 말해요. 도움말·관리자 앱 답 글과 같은 낱말로."
++HQ-131,발견,03 알람·알림·위젯·수면·워치,낮음,"총괄이 갈래 Q2 PR #526 사진·답 글을 보다 찾음(11-19 08:19 KST, 1.39.0에도 있음)",알람 점검의 안내 글이 '위 복사 단추'라고 하는데 복사는 ⋮ 안에 있어요,"알람 점검 맨 위 한 줄이 '위 복사 단추로 문의에 붙여요'(2.0.0 RVI-86, 1.39.0은 '오른쪽 위 복사 버튼으로')라고 말하지만, 위 막대에 보이는 것은 보내기 단추 하나이고 복사는 ⋮ 더 보기 › '보고서 복사'예요(ALRM-05에서 200% 제목 때문에 ⋮로 옮김). 글이 가리키는 단추가 화면에 없어 헤매요(총괄도 사용자에게 길을 잘못 안내했다가 고침, 11-19). 고칠 방향: 글을 실제 길에 맞추거나('위 ⋮ › 보고서 복사', 또는 '아래 점검 내용과 함께 문의하기로 바로 보내요'처럼 가장 짧은 길을 먼저), 100% 글자에서는 복사 단추를 다시 보이게 하고 200%에서만 ⋮로. HelpFaq·관리자 앱 '기록 부탁 답'(Q2 RVA-63)의 길 설명과 한 낱말로 맞추기. 조건 4·8·13.","app/src/main/java/com/bamnat/app/ui/diag/DiagnosticsScreen.kt 408~456줄, ui/settings/HelpFaq.kt 71줄",I,RVIB-32,코드 고침(확인 전),"방향: 글을 실제 길에 맞추고, 가장 짧은 길(아래 '점검 내용과 함께 문의하기')을 먼저 말해요. 도움말·관리자 앱 답 글과 같은 낱말로. | 갈래 I(11-19): 알람 점검 맨 위 한 줄을 '문의할 때 ‘점검 기록도 보내기’를 켜면 함께 가요'로(Q2 CRASH_ASK_DRAFT·문의 화면 줄과 같은 낱말). 복사는 ⋮ › 보고서 복사 그대로"
+ HQ-132,발견,24 관리자 앱 실동작,중간,총괄이 1.39.0 닫힘 문의를 운영 열쇠로 읽다가 스스로 속은 것을 찾음(11-19 08:56 KST),"운영 열쇠로 문의를 읽으면 '알람 점검' 칸이 말없이 빠져서, 기록이 가려진 것인지 안 온 것인지 알 수 없어요","서버는 열쇠로 GET /inquiries/<id>를 읽을 때 context의 '알람 점검'을 지워요(desk.js keyView, 설계 9장: 점검 기록은 운영자만). 지운 흔적이 없어 총괄이 '네 건 모두 기록 없이 왔다'고 잘못 읽었고(HQ-118), 갈래 L·Q2·PC가 반나절 '빠지는 곳'을 찾았어요. 운영 장부를 도는 Claude(문의 답 초안)도 같은 식으로 '기록을 보내 주세요'를 다시 부탁할 수 있어요(Q2 RVA-63의 '기록 부탁 답'과 맞물림).","server/company-worker/src/desk.js(keyView 485줄), index.js(열쇠 GET /inquiries), crash-repeat.js(멈춤 기록 표식), docs/ops-desk.md",Q2,RVA-64,코드 고침(확인 전),"방향: 내용은 지금처럼 가리되 열쇠로 읽는 몸에 표식을 남겨요. 예: context['알람 점검'] = '(가려짐: 운영자만 봐요 · n줄 · 멈춤 기록 있음/없음)'. RVA-63의 있음·없음·못 읽음 표식과 같은 셈을 쓰고, 운영 장부 줄(ledger?view=claude)·넘길 글에도 같은 표식. docs/ops-desk.md에 '열쇠로는 점검 기록을 볼 수 없어요. 없다고 적지 말고 표식을 봐요'를 적어요. 시험: 열쇠 읽기에 내용은 없고 표식은 있음. 멈춘 곳 한 줄(예외 종류@코드 자리)까지 열쇠에 보일지는 처리방침·설계 9장에 닿아 사용자 카드가 먼저(총괄). · Q2 [RVA-64]: 열쇠 문의 context['알람 점검'], 장부 줄 diag, 넘길 글 '점검 기록' 줄을 '(가려짐: 운영자만 봐요 · n줄 · 멈춤 기록 …)' 표식으로, 기록이 안 오면 표식 없음. 점검 기록은 왔지만 앱 멈춤 칸이 없으면 '멈춤 칸 없음'. ops-desk.md에 '없다고 적지 말고 표식을 봐요'. 멈춘 곳 줄은 싣지 않음"
+ HQ-133,디자인,05 급여 화면·통계·팀·사장님,낮음,총괄이 갈래 PR 사진을 열어 보다 찾음(11-19 09:10 KST),빈칸 자동 채우기 창의 네 안이 같은 빨간 ⚠ 줄('주 52시간 넘김 1건 · 기준 넘김 26건')을 안마다 되풀이해요(조건 6·4),"J #527(RVJ-70)에서 글은 본문 색이 되고 안마다 '이 안으로 채우기'가 생겼지만, 네 안이 모두 같은 법 넘김 줄과 빨간 세모를 한 번씩 그려 한 창에 빨강이 네 번이에요. 리더가 견줘 볼 것은 안마다 다른 값(시간 차이·야간 차이·희망)인데 같은 줄에 묻혀요.","app ui/team/TeamToolParts.kt·LeaderTeamScreen.kt(빈칸 자동 채우기 창), 계획/2.0.0-화면사진/J/527/06-빈칸채우기-이안으로채우기.jpg",J,,할 일,"방향: 모든 안에 같은 값은 창 위에 한 번만('어느 안으로 채워도 주 52시간 넘김 1건이 남아요', 빨강 하나), 안마다는 서로 다른 값만 보이고 가장 좋은 값을 굵게. 안마다 넘김 수가 다를 때만 그 안에 표시. 사진 밝은·어두운 200%."
+ HQ-134,디자인,05 급여 화면·통계·팀·사장님,낮음,총괄이 갈래 PR 사진을 열어 보다 찾음(11-19 09:10 KST),급여 계산 머리 줄 '가나다화학 방식 · 월급제'가 접은 폭에서 '가나다화학 / 방식 · 월급제'로 회사 이름과 '방식' 사이에서 끊겨요(조건 12·4),J #527(RVJ-67)로 회사 방식 이름이 머리 줄에 나와요. 접은 폭 100%에서 이미 두 줄이고 낱말 묶음('가나다화학 방식') 가운데서 줄이 바뀌어요. 회사 이름이 길면(예: 열 글자 넘는 사업장 이름) 세 줄이 되거나 달 고르기(‹ 2026년 10월 ›)를 밀 수 있어요. 글자 200%·긴 이름 사진이 없어요.,"app ui/pay/PayScreen.kt(머리 줄)·PayLabels.kt, 계획/2.0.0-화면사진/J/527/12-급여머리줄-회사방식.jpg",J,,할 일,방향: '회사 이름 방식'을 떼지 않는 한 덩어리로 두고 ' · 월급제' 앞에서만 줄을 바꿔요. 긴 이름은 한 줄 말줄임(눌러서 전체는 설정 고치기 위 문장에서). 긴 이름·글자 200%·접은 폭 사진으로 달 고르기와 겹치지 않는지 확인.
+@@ -2576,14 +2576,14 @@ PC-160,발견,02 근무·교대·연차·첫 설정·안내,낮음,"통합 4차(
+ PC-161,디자인,06a 가계부 화면,중간,"통합 4차(2dd7ff92) PC(11-13 04:19 KST 셋째 기록, 7절 U16·3절 조건 12·4)","가계부(장부) 탭 머리: 보통 폭(411dp, 1080×2424 밀도 420) 글자 100%에서 탭 제목('가계부'·'장부')이 눌려 글자 조각만 보여요","머리 한 줄에 ‹ 2026년 11월 › 와 아이콘 넷이 있어 제목 자리가 한 글자 폭도 안 돼요. 1.39.0과 3차 빌드에서는 아이콘이 셋이고 제목이 다 보였어요. 일근·가게로 새로 시작한 폰에서 봄(접은 폭에서는 못 봄). 가장 흔한 폰 폭의 기본 글자 크기라 5차에 넣으면 좋아요. 방향: 제목을 윗줄로 올리거나(근무·급여·매출 탭처럼) 찾기를 ⋮ 안으로, 아이콘이 넷을 넘지 않게. 조건 12는 '못 미침'으로 둘 수 없음","app ui/money 가계부 탭 머리, PC 사진 4차-일근-t06·4차-가게-t06·r4-가계부-장부-머리",K,RVK-48,코드 고침(확인 전),"K 11차(DB 36)보다 먼저 작은 PR로 올 수 있으면 5차에. 04:23 KST K에 알림 · K(RVK-48): 찾기는 제목과 함께 들어갈 자리가 없으면 ⋮ 맨 위 '기능·설정 찾기'로(너비·글자 크기를 잼), 411dp 머리는 눈·⋮·나 셋. 시험 RvkPc161ScreenshotTest(411dp 가계부·장부·어두운·⋮ 안 찾기)"
+ PC-162,유형 빈틈,30 유형별 빈틈,중간,"통합 4차(2dd7ff92) PC(11-13 04:19 KST 셋째 기록, 5절 1)","일근·알바: 설정 › 알림과 잠 › 휴식 점검에 '근무 사이 휴식이 짧거나 야간이 이어지면 달력에 알려 줘요', '근무표 점검 기준 · 기본 · 휴식 11시간, 연속 야간 3일, 한 달 야간 15일'이 보여요","야간이 없는 평일 09–18 일근과 오후 알바에게 야간 기준이 보여요. T30-79·T30-90(유형 분기 없이 새는 말)의 실제 화면. 유형 낱말 검사 시험에 설정 › 알림과 잠 화면과 '야간' 낱말을 넣어 같은 꼴을 모두 찾기. 야간 근무가 없는 달력에는 '휴식 11시간'만, 또는 줄을 숨김","app 설정 › 알림과 잠 휴식 점검 줄, PC 글 tour-4차-일근.txt·tour-4차-알바.txt",H,RVH-92,코드 고침(확인 전),"H 10묶음(유형 낱말)에서. 설정 줄이 I 코드면 I와 나눔. 04:23 KST H에 알림 / 코드 자리: SettingsPages.kt 482줄 NavRow와 RestRulesSheet(I가 확인, H 몫). · 갈래 H 12묶음: 설정 줄은 RVH-73(10묶음, #507), 근무표 점검 기준 창은 RVH-92(야간이 없는 일근·알바에게 야간 뒤 쉬는 날·연속 야간·한 달 야간·병원 기준 묶음·간호 근거 숨김, 설정과 달력 둘 다)"
+ PC-163,유형 빈틈,30 유형별 빈틈,낮음,"통합 4차(2dd7ff92) PC(11-13 04:19 KST 셋째 기록, 5절 3)","알바: 출근·시급 › 3개월 평균·주별 근무시간에 주 평균 12시간 28분인 사람에게 '기준 52시간', '주별 근무시간 (주 52시간 기준)'이 보여요",주 15시간 안팎 알바에게는 52시간 기준보다 주휴 기준(15시간)이 뜻이 있어요. 알바에는 '주 15시간(주휴 기준)' 선을 보이고 52시간 말은 40시간을 넘는 주가 있을 때만. PC-12(알바에 맞지 않는 말)와 함께,"app 출근·시급 탭 주별 근무시간·3개월 평균, PC 글 tour-4차-알바.txt",H,RVH-87,코드 고침(확인 전),"H 10묶음에서 PC-12와 함께. 04:23 KST H에 알림 · 갈래 H 11묶음(RVH-87): 40시간 넘는 주가 없는 알바는 3개월 평균 칸 '주휴 기준 15시간 넘음/아래', 주별 머리 '주휴 기준 주 15시간', 막대의 선은 15시간(닿을 표시라 주의색 없음), 풀이 한 줄. 40시간 넘는 주가 있으면 예전 52시간 말"
+-PC-164,유형 빈틈,30 유형별 빈틈,낮음,"통합 4차(2dd7ff92) PC(11-13 04:19 KST 셋째 기록, 5절 4)",가게·현장: 울릴 알람이 없는 폰('120일 안에 울릴 알람이 없어요')인데도 설정 첫 화면 맨 위에 빨간 카드 '알람 확인이 필요해요 · … · 고치기'가 떠요,알람을 쓰지 않는 유형·폰에는 위험색 카드를 띄우지 않기(조건 6·13). 울릴 알람이 하나도 없으면 조용한 한 줄('시작 전 알람을 켜면 울려요')이나 숨김. P 4/4의 C5(설정 첫 화면은 알람이 울리지 않을 수 있는 카드만 위험색)와 맞춤,"app 설정 첫 화면 알람 진단 카드, PC 사진 4차-가게-t11",I,,할 일,I 다음 PR에서(HQ-106과 함께). 04:23 KST I에 알림
+-PC-165,유형 빈틈,30 유형별 빈틈,낮음,"통합 4차(2dd7ff92) PC(11-13 04:19 KST 셋째 기록, 5절 5·6)","설정 › 알림과 잠·설정 › 알람의 말이 유형을 가리지 않아요: 일감이 없는 유형에 '일감 시작 전 알림은 일감마다 정해요', 투자에 '시작 전 알람이 켜진 근무가 없어요'·'팀·가게 관리 · 팀 근무표 · 할 일', 현장에 '근무 몇 분 전 알람부터 알려 주기'·'퇴근 뒤 가계부 정리 알림 · 근무가 끝나고 30분 뒤…'","일근·알바·가게·투자에는 일감 줄을 숨기고, 투자는 '투자 알람'·현장은 '일감' 말로(조건 13). 유형 낱말 검사 시험이 설정 › 알림과 잠·설정 › 알람 화면도 보게","app 설정 › 알림과 잠·설정 › 알람, PC 글 tour-4차-*.txt",I,,할 일,I 다음 PR에서. 04:23 KST I에 알림
++PC-164,유형 빈틈,30 유형별 빈틈,낮음,"통합 4차(2dd7ff92) PC(11-13 04:19 KST 셋째 기록, 5절 4)",가게·현장: 울릴 알람이 없는 폰('120일 안에 울릴 알람이 없어요')인데도 설정 첫 화면 맨 위에 빨간 카드 '알람 확인이 필요해요 · … · 고치기'가 떠요,알람을 쓰지 않는 유형·폰에는 위험색 카드를 띄우지 않기(조건 6·13). 울릴 알람이 하나도 없으면 조용한 한 줄('시작 전 알람을 켜면 울려요')이나 숨김. P 4/4의 C5(설정 첫 화면은 알람이 울리지 않을 수 있는 카드만 위험색)와 맞춤,"app 설정 첫 화면 알람 진단 카드, PC 사진 4차-가게-t11",I,RVIB-25,코드 고침(확인 전),I 다음 PR에서(HQ-106과 함께). 04:23 KST I에 알림 · I 4묶음 RVIB-25 코드 고침(확인 전): 울릴 알람이 없으면 조용한 카드와 한 줄
++PC-165,유형 빈틈,30 유형별 빈틈,낮음,"통합 4차(2dd7ff92) PC(11-13 04:19 KST 셋째 기록, 5절 5·6)","설정 › 알림과 잠·설정 › 알람의 말이 유형을 가리지 않아요: 일감이 없는 유형에 '일감 시작 전 알림은 일감마다 정해요', 투자에 '시작 전 알람이 켜진 근무가 없어요'·'팀·가게 관리 · 팀 근무표 · 할 일', 현장에 '근무 몇 분 전 알람부터 알려 주기'·'퇴근 뒤 가계부 정리 알림 · 근무가 끝나고 30분 뒤…'","일근·알바·가게·투자에는 일감 줄을 숨기고, 투자는 '투자 알람'·현장은 '일감' 말로(조건 13). 유형 낱말 검사 시험이 설정 › 알림과 잠·설정 › 알람 화면도 보게","app 설정 › 알림과 잠·설정 › 알람, PC 글 tour-4차-*.txt",I,RVIB-26,코드 고침(확인 전),I 다음 PR에서. 04:23 KST I에 알림 · I 4묶음 RVIB-26 코드 고침(확인 전): 두 화면 낱말과 유형 낱말 검사 새 말
+ PC-166,유형 빈틈,30 유형별 빈틈,낮음,"통합 4차(2dd7ff92) PC(11-13 04:19 KST 셋째 기록, 5절 6·8, O25~O27 됨)","프로 화면: 현장에 '급여(공수) 리포트'·'근무표 PDF(한 달·1년)', 모든 유형의 보상 이용권 카드에 '받는 때: 회사 근태·급여 방식이 채택되거나 제안이 반영될 때…'가 그대로예요","현장은 '공수 리포트'·'일감 달력 PDF'처럼 그 유형 말로. 보상 이용권의 '받는 때'는 가게·투자·현장에는 그 유형이 받을 수 있는 길(친구 초대, 제안 반영, 작품 채택)만 보이게(조건 13)","app 설정 › 프로 유형별 다섯 줄·보상 이용권 카드, PC 글 tour-4차-현장.txt 등",O,RVO-27,코드 고침(확인 전),"O 다음 차에서. 04:23 KST O에 알림 / RVO-27 (갈래 O 5차): 현장 다섯 줄·머리말을 출역일 증빙·거래내역서·일정 PDF로, 프로 기능 모아보기는 FeatureRegistry.said로 그 유형 말, '받는 때'는 현장·가게·투자에 회사 방식 채택 없이 초대 먼저. 시험 ProPitchTest.noLineLeaksAnotherKindsWord·PassesWhenTest"
+ PC-167,유형 빈틈,30 유형별 빈틈,낮음,"통합 4차(2dd7ff92) PC(11-13 04:19 KST 셋째 기록, 5절 7 앞)","가게: 매출·영업 탭 맨 아래에 '자정을 넘겨 일한 시간은 시작한 날에 모두 셉니다 · 쉬는 시간은 빼고 계산해요. 일한 시간은 참고용이에요'(근무자 말, '셉니다' 말투). 일근 급여 쪽에도 '…7일 전체를 셉니다'","가게에는 영업 말로('자정을 넘긴 영업은 연 날에 세요'), 말투는 '~해요'로 통일(조건 13·16). '셉니다'·'합니다'를 쓰는 다른 설명 줄도 코드에서 찾아 함께","app ui/work 매출·영업 탭 아래 설명, 급여 계산 설명 줄, PC 글 tour-4차-가게.txt·tour-4차-일근.txt",J,RVJ-67,코드 고침(확인 전),"가게 매출·영업 탭 맨 아래 '자정을 넘겨 영업한 시간은 문을 연 날에 모두 세요', 주별 시간 '주마다 영업한 시간은', 근무자·직원은 각자 말. 같은 구조로 '~니다' 화면 글(통계·건강 리포트·세금 카드)을 '~해요'로, 앱 전체 화면 글에 '~니다'가 다시 생기지 않게 HaeyoToneTest"
+ PC-168,유형 빈틈,30 유형별 빈틈,낮음,"통합 4차(2dd7ff92) PC(11-13 04:19 KST 셋째 기록, 5절 7 뒤)",가게: 알람이 없는 날인데 달력 칸을 길게 누른 메뉴에 '이 날 알람 끄기'가 보여요,그날 울릴 알람이 없으면 그 줄을 숨기기(조건 13). 현장·투자의 길게 누른 메뉴도 함께,"app ui/calendar 칸 길게 누른 메뉴, PC 글 tour-4차-가게.txt",H,RVH-86,코드 고침(확인 전),H 10묶음에서. 04:23 KST H에 알림 · 갈래 H 11묶음(RVH-86): 길게 누른 메뉴의 알람 줄은 그날 울릴 알람이 있거나 이미 끈 날만(하루 창 알람 칩과 같은 plannedAlarms). 가게·현장·투자도 같은 메뉴라 함께
+ PC-169,유형 빈틈,30 유형별 빈틈,낮음,"통합 4차(2dd7ff92) PC(11-13 04:19 KST 셋째 기록, 5절 8)","가계부 › 받을 돈의 설명 '외상, 밀린 일당, 빌려준 돈처럼…'이 유형과 상관없이 같아요","가게는 외상·미수 매출, 현장은 밀린 일당·일감 잔금, 그 밖은 빌려준 돈을 앞에(조건 13). 빈 화면 글도 함께","app ui/money 받을 돈 설명·빈 화면, PC 글 tour-4차-*.txt",K,RVK-47,코드 고침(확인 전),"K 11차에서 HQ-101과 함께. 04:23 KST K에 알림 · K 11차: 장부 요약 받을 돈 빈 카드 설명이 유형 말로(가게 '외상 매출, 거래처 미수금', 현장 '일감 잔금, 밀린 일당', 그 밖 '빌려준 돈, 대신 내 준 돈')"
+ PC-170,유형 빈틈,30 유형별 빈틈,낮음,"통합 4차(2dd7ff92) PC(11-13 04:19 KST 셋째 기록, 5절 9, D-487 D30-3·D31-4)","받는 웹 페이지: 가게가 날짜만 보낸 링크의 제목이 '가나다식당의 근무표'이고 '출근 알람은 아니에요', '가족 근무를 내 달력 옆에서 바로'가 보여요. 신고 창의 '신고 보내기' 단추 높이는 37px","매출을 함께 보낸 가게 링크(D30-1)는 '영업일' 말로 맞아요. 날짜만 보낸 링크는 유형을 알 수 없어 A안(근무표 말)인데, 이름에 가게 유형 표시가 함께 오면 '영업일'로, 아니면 '일정'처럼 가운데 말로. '신고 보내기'는 44px로(조건 9·13)","server share-worker 받는 페이지 낱말·신고 창, PC D-487 D30-3",D,RVD-32,코드 고침(확인 전),"D 다음 서버 묶음에서. 04:23 KST D에 알림 / D #514(cc880f934) 합침: 무엇인지 말하지 않는 옛 링크는 가운데 말('보낸 분의 근무표를 내 달력 옆에서 바로', 캘린더 줄 '알람은 아니에요'), 신고 보내기·열기 줄·사유 줄 44px. 낱말 칸 word는 3.14 스위치 뒤에서만 남김(3.14 범위 카드). 총괄: 사진 pc170-compare·after-dark-380-200 직접 봄"
+-PC-171,사용성,03 알람·알림·위젯·수면·워치,낮음,"통합 4차(2dd7ff92) PC(11-13 04:19 KST 셋째 기록, 2절 I-453 A4 못 봄)","'낮잠 30분' 단추를 PC가 찾지 못했어요(수면 기록 › 오늘, 오늘의 흐름 카드 출근 50분 전 어디에도 안 보임). 설정 찾기 '낮잠'은 오늘의 흐름 보기·하루 브리핑·수면 기록만 알려 줘요","어디서 누르는지 I가 PC 확인 파일에 적어 주고, 정해진 때에만 보이는 단추면 설정 찾기 '낮잠'이 그 조건('야간 출근 전 오후에 오늘의 흐름 카드에 떠요')을 말하게(조건 8)","app 오늘의 흐름·수면 기록 낮잠 단추, 설정 찾기",I,,할 일,"I: 자리와 조건을 총괄에 알려 주면 5차 확인할-것에 적음. 04:23 KST I에 알림 / I 답(11-13 04:30 KST 무렵): 앱에 '낮잠 30분' 단추는 없어요. 오늘의 흐름 카드의 '낮잠 자기'는 ① 연속 야간 첫날 오후에 수면 계획이 낮잠을 잡았을 때 낮잠 한 시간 전부터 끝날 때까지 ② 결정 19 뒤 두 구간 사이에만 뜨고, 야간 근무 중에는 '쪽잠 20분'이에요. 5차 확인 목록에 이 조건을 적어요. 아무 때나 낮잠을 여는 자리('지금 자려고요?' 옆, 채운 단추 아님, 20·30·60·90분, 다음 근무 알람 전으로 줄임, 요금은 지금 낮잠과 같음)는 총괄이 다듬기로 승인, I 다음 묶음."
++PC-171,사용성,03 알람·알림·위젯·수면·워치,낮음,"통합 4차(2dd7ff92) PC(11-13 04:19 KST 셋째 기록, 2절 I-453 A4 못 봄)","'낮잠 30분' 단추를 PC가 찾지 못했어요(수면 기록 › 오늘, 오늘의 흐름 카드 출근 50분 전 어디에도 안 보임). 설정 찾기 '낮잠'은 오늘의 흐름 보기·하루 브리핑·수면 기록만 알려 줘요","어디서 누르는지 I가 PC 확인 파일에 적어 주고, 정해진 때에만 보이는 단추면 설정 찾기 '낮잠'이 그 조건('야간 출근 전 오후에 오늘의 흐름 카드에 떠요')을 말하게(조건 8)","app 오늘의 흐름·수면 기록 낮잠 단추, 설정 찾기",I,RVIB-27,코드 고침(확인 전),"I: 자리와 조건을 총괄에 알려 주면 5차 확인할-것에 적음. 04:23 KST I에 알림 / I 답(11-13 04:30 KST 무렵): 앱에 '낮잠 30분' 단추는 없어요. 오늘의 흐름 카드의 '낮잠 자기'는 ① 연속 야간 첫날 오후에 수면 계획이 낮잠을 잡았을 때 낮잠 한 시간 전부터 끝날 때까지 ② 결정 19 뒤 두 구간 사이에만 뜨고, 야간 근무 중에는 '쪽잠 20분'이에요. 5차 확인 목록에 이 조건을 적어요. 아무 때나 낮잠을 여는 자리('지금 자려고요?' 옆, 채운 단추 아님, 20·30·60·90분, 다음 근무 알람 전으로 줄임, 요금은 지금 낮잠과 같음)는 총괄이 다듬기로 승인, I 다음 묶음. | I: 자리와 조건을 총괄에 알려 주면 5차 확인할-것에 적음. 04:23 KST I에 알림 · I 4묶음 RVIB-27 코드 고침(확인 전): 수면 기록 낮잠 단추(20·30·60·90분), 기능 찾기 낮잠 한 줄. 자리: 수면 기록 › 지금 자려고요? 옆 낮잠(아무 때나), 오늘의 흐름 낮잠 자기(첫 야간 전 오후, 두 구간 날 사이)"
+ PC-172,발견,06a 가계부 화면,높음,"통합 4차(2dd7ff92) PC(11-13 04:58 KST 넷째 기록, 5절 14·7절 U19, 데이터)",가계부가 다른 달을 보고 있을 때 '돈 적기'의 날짜 기본값이 그달 말일이에요: 다음 달 근무표를 받아 시작한 직원 폰은 오늘(11월 12일) 쓴 돈이 12월 31일로 들어가요,"직원 폰은 달력이 12월로 열리고 가계부도 '2026년 12월 · 12월 나간 돈'으로 열려요. 거기서 '돈 적기'를 열면 날짜가 '12월 31일 (목)'로 잡혀 있고, 금액 1,000원만 적고 저장하니 내역에 '12월 31일 (목) · -1,000원'으로 들어갔어요(폰 날짜 11월 12일). '한 줄로 적기 › 채우기'는 11월 12일로 바꿔요. 11/12로 넣은 기록은 12월 화면에서 안 보여 11월로 넘겨야 보여요. 다른 달을 보던 모든 유형에 같아요","app ui/money/MoneyScreen.kt 1086~1090 addDate의 else month.atEndOfMonth(), PC r4-119·tour-4차-직원.txt",K,RVK-49,확인됨,"방향: 앞날 달을 볼 때 기본 날짜는 오늘(저장 뒤 '11월 12일에 적었어요 · 그 달 보기'), 달력이 다음 달로 열려도 가계부는 오늘이 든 달로 열기. 지난 달을 볼 때 말일이 맞는지도 함께 판단. 같은 구조: 받을 돈·매출 적기·일감 적기·매매 기록의 기본 날짜, 메모 새로 쓰기(I, 못 봄). 조건 10·13. 5차 빌드 전에 | K b08c3e42e(#515 덧붙임, 통합에 합침): 기본 날짜는 보는 달과 상관없이 늘 오늘(근무 기준 하루), 새 기록이 보던 달 밖이면 '○월 ○일에 적었어요 · 그 달 보기'. 지난 달을 볼 때도 오늘(빠진 기록은 시트의 날짜 줄로). 받을 돈·투자 매매는 원래 오늘, 일감·매출은 화면에서 고른 날 그대로. 가계부를 오늘 달로 따로 열기는 NAV-01(탭들이 같은 달) 때문에 안 함(달력이 받은 표의 달로 열리는 것은 HQ-114로 H에). 시험 RvkPc172ScreenshotTest(앞 코드에서 둘 다 실패). 통합 5차에서 확인 5차 d43e6036 PC 확인(코디네이터 전달 11-19 09:54 KST): 12월·10월을 보다가 돈 적기를 해도 날짜가 그달로 가지 않고, 저장하면 '11월 18일에 적었어요 · 그 달 보기'가 떠요. 야간 근무 중 새벽의 기본 날짜는 (PC-192)"
+ PC-173,유형 빈틈,30 유형별 빈틈,중간,"통합 4차(2dd7ff92) PC(11-13 04:58 KST 넷째 기록, 5절 13)","직원(한 달 치 근무표만 받은 사람): 근무·급여의 징검다리 연휴가 표가 없는 달을 모두 쉬는 날로 세고, 3개월 평균이 표가 없는 달을 0시간으로 넣어요",12월 표만 받은 직원에게 '12/30~1/30 · 신정 · 연차: 12/31(목) · 연차 1일로 32일 쉬어요'가 나와요(표가 없는 1월을 모두 쉬는 날로 셈). '3개월 평균 (10월–12월) 주 평균 13시간 10분'도 표가 없는 10·11월을 0으로 넣은 값이에요(12월 주별은 56·52·35·30시간),"app ui/leave/LeaveBridges.kt, ui/stats/StatsScreen.kt·WorkTypeCards.kt, PC tour-4차-직원.txt",H,RVH-85,코드 고침(확인 전),"방향: 받은 근무표가 덮는 기간(첫 날~끝 날) 밖은 '모름'으로 두어 연휴 추천·평균에서 빼고, 평균은 표가 있는 주만으로 셈하고 '12월 4주 기준'처럼 기간을 말하기. 직접 넣은 근무가 한 달뿐인 새 폰도 같은지 함께(PC-163과 같은 카드) · 갈래 H 11묶음(RVH-85): 달력이 덮는 기간(주기·적은 날의 첫 날~끝 날) 밖에 닿는 연휴 추천은 빼고(LeaveBridgesTest), 3개월 평균도 그 기간만 세요(12월 표만이면 '12월 평균', WorkHoursCalculatorTest.threeMonthAverageCountsOnlyTheCoveredStretch). 기간 안의 빈 날은 그대로 쉬는 날"
+ PC-174,유형 빈틈,30 유형별 빈틈,낮음,"통합 4차(2dd7ff92) PC(11-13 04:58 KST 넷째 기록, 5절 10·7절 U17, G6-05 됨(다듬을 것 있음))",가게 영업일을 받은 달력에 '민지님 근무표 점검 1건 · 11/1부터 32일 연속 근무 (7일 연속부터 알려요 · 기본)'와 '받은 근무표는 바뀌지 않고…'가 나와요,날마다 영업하는 가게의 영업일을 근무로 세어 점검하고 낱말도 근무표예요. 받은 일정(현장 링크)은 PC가 못 봄,"app 받은 달력의 근무표 점검 카드, PC r4-101",G,RVG-39,코드 고침(확인 전),방향: 영업일·일정 링크(word가 영업일·일정)에는 근무표 점검을 빼요. 조건 13 | 링크 이름이 근무표일 때만 근무표 점검(영업일·일정·달력 링크는 빼요). 알려진 한계: 3.14 전에 날짜만 보낸 가게 링크는 아직 근무표라 남아요(G 10차)
+diff --git a/shift-calendar-app/docs/tracker.csv b/shift-calendar-app/docs/tracker.csv
+index 900debe91..7b3272451 100644
+--- a/shift-calendar-app/docs/tracker.csv
++++ b/shift-calendar-app/docs/tracker.csv
+@@ -3332,6 +3332,13 @@ RVA-66,"PC-195 문의 상세 멈춤 안내를 화면에 보이는 칸 이름으
+ RVA-67,"PC-201 멈춤 기록 부탁 답을 새 문의 순서로: 보고서 복사(3,400자 넘음)는 문의 답장 칸 2,000자에 안 들어가 보낼 수 없었어요. 설정 › 도움말과 문의 › 문의하기 › '앱이 이상해요'(점검 기록도 보내기 켜짐) › '앱이 닫혀서 기록 보내요' 한 줄로, 관리자 앱 안내·장부 글·넘길 글도 같은 말",2.0.0,진행 중,,"crash-repeat.js CRASH_ASK_DRAFT·CRASH_ASK_LINE, admin-app.js crashNote, admin/views/ledger.js, desk.js 안내, test q2-one [RVA-67]·ui [RVA-63]"
+ RVA-68,"PC-202 닫힘 낱말이 없어도 점검 기록 '앱 멈춤' 칸에 멈춘 기록이 있으면 닫힘 문의로: '멈춤 기록 있음' 표식·같은 보낸 분 묶음·개선 신호, 낱말이 주제를 못 정했으면 '앱 동작'",2.0.0,진행 중,,"crash-repeat.js isCloseAsk, inquiries.js triage, test q2-one [RVA-68]"
+ RVA-69,"HQ-150의 Q2 몫(O RVO-28 뒤): 기록 부탁 답을 앱 판에 맞게(2.0.0부터 답장의 '점검 기록도 보내기', 그 전은 새 문의), 문의 상세 대화에 '점검 기록 함께 옴'(누르면 알람 점검 줄로), 알람 점검 칸 옆에 '답장과 함께 ○' 받은 때, 운영 장부 줄도 판에 맞는 안내·부탁 답",2.0.0,진행 중,,"crash-repeat.js CRASH_ASK_DRAFT_REPLY·crashAskDraft·replyCarriesRecord, inquiries.js crashView·diagAt, ledger.js crash.reply·crashDraftReply, admin-app.js crashNote·crash-draft·대화·함께 온 정보, admin/views/ledger.js, test q2-one·ui [RVA-69]"
++RVIB-22,"PC-181(4차 r4-127): 짧은 잠 뒤 휴대폰 토스트가 '기록 추가'를 덮던 것은 밤 화면의 Toast(RVIB-14에서 앱 알림 줄로). 같은 구조로 앱 화면 안 Toast 32곳을 앱 알림 줄(AppSnack)로, 세는 시험 상한 42 → 10",2.0.0,진행 중,,ui/components/AppSnack.kt
++RVIB-24,"HQ-106: 배터리 절약으로 알람이 늦게 울릴 수 있을 때 알림함 안내에 한 번(눌러서 알람 점검, 닫기·다시 보지 않기), 띠에는 올리지 않음",2.0.0,진행 중,,alarm/BatteryNote.kt
++RVIB-25,PC-164: 울릴 알람이 없는 폰(가게·현장 등)은 설정 첫 화면 알람 카드가 위험색 '알람 확인이 필요해요' 대신 조용한 '울릴 알람이 없어요'와 '알람을 켜면 볼 것이 N가지' 한 줄,2.0.0,진행 중,,ui/settings/SettingsScreen.kt
++RVIB-26,"PC-165: 설정 › 알림과 잠·알람의 유형 낱말(일감 줄은 현장·교대만, 투자 '켜진 투자 알람이 없어요', 투자에 팀·가게 관리 숨김, 현장 '일 끝난 뒤 가계부 정리 알림', 내 정보의 맞지 않는 질문 빼기), 유형 낱말 검사에 새 말",2.0.0,진행 중,,core/work/TypeWords.kt
++RVIB-27,"PC-171: 수면 기록 '낮잠' 글자 단추(20·30·60·90분, 다음 알람보다 늦으면 알람에 맞춤, 오늘의 흐름 낮잠과 같은 길 NapStart), 기능 찾기 '낮잠'이 두 길을 한 줄로",2.0.0,진행 중,,sleep/NapStart.kt
++RVIB-31,"HQ-128: 오늘의 흐름 카드 휴식 경고 줄은 주의색 한 줄(RVP-13)만, 괄호 속 기준('7일째부터 알려요 · 기본')은 ⓘ 안 '지금 알리는 줄'로 옮겨 200%에서 줄 수를 줄임",2.0.0,진행 중,,ui/calendar/TodayFlowCard.kt
++RVIB-32,HQ-131: 알람 점검 맨 위 안내가 없는 '위 복사 단추' 대신 문의의 '점검 기록도 보내기'(Q2 답 글과 같은 낱말)를 가리킴,2.0.0,진행 중,,ui/diag/DiagnosticsScreen.kt
+ RVQ-58,"실서버 11-19 크롬 읽기(HQ-117): 내린·지운·없는 작품에 온 '넣었어요·7일 유지'(POST /api/recipes/<번호>/applied)는 404 대신 {ok:true, counted:false}로 답해요. 1.38·1.39 앱은 실패면 앱을 열 때마다 다시 보내(sendKept·countUse) counters rapplied가 망마다 하루 14~25였고 recipe_counts는 0이었어요. 세는 것(보이는 작품·은퇴 작품)은 그대로이고 없는 코드도 같은 답이라 코드가 있는지 알려 주지 않아요. 2.0.0 앱이 404도 끝으로 보는 것은 앱 파일(RecipeRepository.kt)이라 갈래 M 몫",2.0.0,진행 중,,"server/company-worker/src/recipes.js applied; server/company-worker/test/rvq58-applied-gone.test.mjs '[RVQ-58]'"
+ RVQ-56,"검토 SX-03·T21-02(갈래 Q1 4g): 처리방침 3.14 30일 줄 깃발 market.wear·stats.kind_use(O와 정함). 장터 '입은 뒤' 숫자(30분 안에 뺌·글자 크기 되돌림, 작품·날 합계)와 관리자 비율·개선 신호 recipe-wear, 유형별 기능 쓰임과 관리자 '유형별로 덜 쓰는 기능'",2.0.0,진행 중,,"core FlagCatalog STATS_KIND_USE_FLAG·MARKET_WEAR_FLAG, src/flags.js flagOn, src/recipes.js WEAR·wearOf·applied, src/usage.js, src/observe.js obsKinds·obsWear·recipe-wear·at-314, src/admin/views/glance.js kindUse; test/rvq56-wear-kind-use.test.mjs, test/ui/admin-ui.test.mjs '[RVQ-56]'"
+ RVQ-57,"검토 I22c-02(갈래 Q1 4h, 2.1로 넘김: 사용자 11-19 12:53 KST, 이 판 공유 서버엔 방 빈 바닥만 있고 코드는 프로젝트 계획/2.1-대기/I22c-02-공유서버-방-실시간-푸시.patch): 앱 없는 팀원용 실시간 팀 방. 공유 서버 Durable Object TeamRound가 새 신청·바꾸기 라운드의 칸을 한곳에서 차례로 바꿔요(마지막 자리 두 번 감·답과 거두기 겹침 없음). 받는 웹은 WebSocket으로 그 방에 붙어 다른 분이 고른 칸이 바로 보이고(끊기면 열 때 읽기), 웹 알림(라운드 열림·내 칸 바뀜·마감 하루 전)은 처리방침 3.15 LEGAL 깃발 team.push 뒤에 꺼진 채. 사용자 카드(11-19 11:13 KST '둘 다 2.0.0에'): wrangler.toml에 TEAM_ROUND 바인딩·migration, 첫 배포는 갈래 D 바닥 판(RVD-33)을 배포 도구 mode migrate로. 나눌 곳: 앱의 팀 라운드 화면(J 팀 근무표)은 바뀌지 않음(실시간·알림은 받는 웹만), 앱이 만드는 라운드는 서버가 방으로 만듦",2.0.0,진행 중,,"share-worker/src/index.js TeamRound·roomOf·askApply·swapApply·swapDecide·liveSlot·TEAM_LIVE_JS·TEAM_SW_JS, src/push.js(회사 서버와 같음), wrangler.toml, core FlagCatalog TEAM_PUSH_FLAG; test/rvq57-team-room.test.mjs, test/rvq57-team-live.test.mjs"
+diff --git a/shift-calendar-app/ops/dev-status.jsonl b/shift-calendar-app/ops/dev-status.jsonl
+index 0274361d6..9a3f24a58 100644
+--- a/shift-calendar-app/ops/dev-status.jsonl
++++ b/shift-calendar-app/ops/dev-status.jsonl
+@@ -878,6 +878,13 @@
+ {"track": "RVQ-49", "title": "연결 코드 훼방 막기, 초대 규칙 저장 전 미리 보기", "status": "check", "size": "fix", "route": "server", "test": "[RVQ-49] U22b-11", "check": "관리자 앱 › 보상 › 친구 초대: 친구 수를 낮추고 저장하면 '드릴 보상 N건 · M분 · K개월'을 먼저 물어요"}
+ {"track": "RVS-21", "title": "스튜디오가 큰 글자에서도 작품 이름·안내·예시 달력을 자르지 않아요", "status": "doing", "size": "fix", "route": "app", "check": "글자 200%·접은 폭에서 스튜디오를 열면 맨 위 작품 이름이 두 줄까지 보이고, 예시 위 '고칠 곳을 화면에서 눌러요' 안내가 배율 칩에 가리지 않으며, '편 화면' 예시의 달력 칸 근무 표시(야·주·휴)가 다 보임"}
+ {"track": "RVA-69", "title": "기록 부탁 답을 앱 판에 맞게, 답장으로 온 점검 기록 표시", "status": "check", "size": "polish", "route": "server", "test": "[RVA-69] 기록 부탁 답: 2.0.0부터는 답장의 '점검 기록도 보내기'", "check": "2.0.0 앱 닫힘 문의에 '기록 부탁 답 넣기'로 보낸 답대로 답장에 점검 기록을 켜서 보내고, 관리자 앱 대화의 '점검 기록 함께 옴'과 알람 점검 옆 받은 때를 380·1440에서"}
++{"track": "RVIB-22", "title": "앱 화면 안 알림은 휴대폰 토스트 대신 앱 알림 줄로", "status": "check", "size": "polish", "route": "app", "check": "수면 기록·밤 화면에서 짧게 자고 '깼어요', 메모 사진 넘침, 틀 저장, 복사 같은 곳에서 휴대폰 토스트 대신 아래 앱 알림 줄이 뜨고 '기록 추가' 같은 단추를 덮지 않는지(PC-181)", "test": "DesignRulesTest.toastsAndRawColoursOnlyGoDown", "miss": "토스트 세는 시험이 늘지만 않게 막았고, 이미 있던 토스트가 단추를 덮는 것은 보지 않았어요"}
++{"track": "RVIB-24", "title": "배터리 절약 알람 안내를 알림함에 한 번", "status": "check", "size": "polish", "route": "app", "check": "배터리 사용이 '최적화'인 폰에 근무 알람이 있으면 알림함 안내에 '배터리 절약 때문에 알람이 늦게 울릴 수 있어요' 한 줄, 누르면 알람 점검, 닫거나 다시 보지 않기 뒤 다시 안 뜨는지, 달력 위 띠에는 없는지(HQ-106)", "test": "BatteryNoteTest"}
++{"track": "RVIB-25", "title": "울릴 알람이 없으면 설정 알람 카드를 조용히", "status": "check", "size": "fix", "route": "app", "check": "가게·현장에 울릴 알람이 하나도 없을 때 설정 첫 화면 알람 카드가 위험색 없이 '울릴 알람이 없어요'와 '알람을 켜면 볼 것이 N가지' 한 줄인지, 알람이 있는 폰은 그대로 '알람 확인이 필요해요'인지(PC-164)", "test": "RvibScreenshotTest.quietAlarmCardWithNothingToRing", "miss": "설정 알람 카드 시험이 알람이 있는 교대 폰만 봤어요"}
++{"track": "RVIB-26", "title": "알림과 잠·알람 설정의 말을 유형에 맞게", "status": "check", "size": "fix", "route": "app", "check": "일근·알바·가게·투자에 '일감 시작 전 알림' 줄이 없고, 투자 알람 쪽은 '켜진 투자 알람이 없어요', 투자 설정에 팀·가게 관리가 없고, 현장은 '일 끝난 뒤 가계부 정리 알림 · 일이 끝나고 30분 뒤'인지(PC-165)", "test": "RvibScreenshotTest.typeWordsOnTheTwoPages NapChoiceTest.aFieldWorkersDayEndsAsAnIlJeong TypeWordsScreenTest", "miss": "유형 낱말 검사 목록에 '일감'(일감이 없는 유형)과 현장의 '근무가 끝나'가 없었어요"}
++{"track": "RVIB-27", "title": "수면 기록에서 아무 때나 낮잠", "status": "check", "size": "polish", "route": "app", "check": "수면 기록 '지금 자려고요?' 옆 '낮잠' 글자 단추에서 20분·30분·1시간·1시간 30분과 깨는 시각이 보이고, 다음 근무 알람보다 늦으면 그 알람에 깬다고 말하고, 고르면 자는 중·낮잠 알람·되돌리기가 오늘의 흐름 낮잠과 같은지, 설정 찾기 '낮잠'이 두 길을 말하는지(PC-171)", "test": "RvibScreenshotTest.napAnyTime RvibScreenshotTest.napAnyTimeStarts NapChoiceTest", "miss": "낮잠은 오늘의 흐름에 정해진 때에만 떠서, 아무 때나 낮잠을 찾는 길을 시험하지 않았어요"}
++{"track": "RVIB-31", "title": "오늘의 흐름 휴식 경고 줄을 한두 줄로", "status": "check", "size": "polish", "route": "app", "check": "글자 200% 접은 폭과 어두운 화면에서 흐름 카드의 휴식 경고가 주의색 한두 줄이고, ⓘ를 열면 '지금 알리는 줄'에 '7일째부터 알려요 · 기본'과 바꾸는 길이 있는지(HQ-128)", "miss": "200%에서 휴식 경고가 네 줄이었어요"}
++{"track": "RVIB-32", "title": "알람 점검 안내 글이 있는 단추를 가리켜요", "status": "check", "size": "polish", "route": "app", "check": "알람 점검 맨 위 한 줄이 '점검 기록도 보내기'를 말하고 문의하기에 그 줄이 있는지, ⋮ › 보고서 복사도 있는지(HQ-131)", "miss": "글이 없는 위 복사 단추를 가리켰어요"}
+ {"track": "RVQ-50", "title": "문의 이어 쓰기 사진·알림·다시 열림, 중복 문의 한 건, 두 관리자 동시 답 확인", "status": "check", "size": "fix", "route": "server", "test": "[RVQ-50] SVC-70", "check": "관리자 앱 › 문의: 답한 뒤 이어 쓴 문의가 '다시 열림'이고, 다른 관리자가 먼저 답했으면 보내기 전에 한 번 물어요"}
+ {"track": "RVQ-51", "title": "못 간 문의 답 알림을 다시 보내고 남겨요", "status": "check", "size": "fix", "route": "server", "test": "[RVQ-51] SVC-71", "check": "관리자 앱 › 문의 상세: 답 알림이 못 갔으면 '알림 못 감'과 다시 보내는 때가 보여요"}
+ {"track": "RVQ-52", "title": "문의 묶어 읽기, 밤낮 Q&A 공개 글 검사·미리 보기", "status": "check", "size": "fix", "route": "server", "test": "[RVQ-52] SVC-67", "check": "관리자 앱 › 자주 쓰는 답: 묻는 말을 적고 넣으면 공개될 글을 먼저 보여 주고 '올리기'로 저장해요"}

@@ -159,20 +159,20 @@ class AKScreenshotTest : ScreenshotBase() {
     }
 
     @Test fun memoChoseongSearch() = shoot("1165_ak_memo_search_choseong", FOLDED, memos {
-        typeInto("제목, 내용, #태그 검색", "ㅇㅅㅇㄱ")
+        memoSearch("ㅇㅅㅇㄱ")
         assertTrue(appears("인수인계", exact = true))
         assertTrue(gone("준비물", exact = true))
     })
 
     @Test fun memoShiftSearchAndChip() = shoot("1166_ak_memo_search_shift", FOLDED, memos {
-        tapText("필터 펼치기", exact = true, scrolls = 0)
+        memoFilters()
         tapText("야간 날", exact = true, scrolls = 0)
         assertTrue(appears("야간 특이사항", exact = true))
         assertTrue(gone("준비물", exact = true))
     })
 
     @Test fun memoDateSearch() = shoot("1167_ak_memo_search_date", PHONE, memos {
-        typeInto("제목, 내용, #태그 검색", "${today.monthValue}월 ${today.dayOfMonth}일")
+        memoSearch("${today.monthValue}월 ${today.dayOfMonth}일")
         assertTrue(appears("준비물", exact = true))
         assertTrue(gone("야간 특이사항", exact = true))
     })
@@ -181,7 +181,7 @@ class AKScreenshotTest : ScreenshotBase() {
         runBlocking { c.memoRepository.save(Memo(title = "긴 기록", body = "처음 줄\n" + "가나다라마바사 ".repeat(6_000) + "\n여기에 비상 연락처 정리\n" + "끝 ".repeat(1_000))) }
         tab(2, wide = false)
         tapText("일반 메모", prefix = true, scrolls = 0)
-        typeInto("제목, 내용, #태그 검색", "비상")
+        memoSearch("비상")
         assertTrue(appears("…여기에 비상 연락처 정리", exact = false))
     })
 
@@ -195,7 +195,7 @@ class AKScreenshotTest : ScreenshotBase() {
     @Test fun memoScheduleShiftChips() = shoot("1170_ak_memo_shift_chips", FOLDED, memos {
         tapText("일반 메모", prefix = true, scrolls = 0)
         tapText("다음 야간 때 열쇠 챙기기")
-        tapText("일정으로 넣기", exact = true)
+        tapLowest("알림 넣기") // 2.0.0 [RVI-75] the offer, not the editor chip of the same name
         assertTrue(appears("근무에 맞춰", exact = true))
         tapText("저장", exact = true)
         back() // the editor saves as it closes
@@ -206,7 +206,7 @@ class AKScreenshotTest : ScreenshotBase() {
 
     @Test fun memoLastSameShift() = shoot("1171_ak_memo_last_same_shift", FOLDED, memos {
         tapText("3번 라인 센서 점검 요청", exact = false)
-        tapText("지난 주간(10/9) 메모 1개 보기", exact = false)
+        tapText("지난 주간 메모 1개", exact = false)
         assertTrue(appears("열쇠는 경비실", exact = false))
     })
 

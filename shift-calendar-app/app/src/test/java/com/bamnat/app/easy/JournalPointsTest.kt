@@ -1,5 +1,7 @@
 package com.bamnat.app.easy
 
+import com.bamnat.app.TestClock
+import org.junit.After
 import android.os.Looper
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
@@ -17,6 +19,7 @@ import com.bamnat.core.journal.JournalEntry
 import com.bamnat.core.journal.JournalKind
 import com.bamnat.core.leave.LeavePromotion
 import com.bamnat.core.profile.FactKey
+import com.bamnat.core.time.Today
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
@@ -37,23 +40,26 @@ import java.time.LocalDateTime
 @RunWith(AndroidJUnit4::class)
 @Config(sdk = [35])
 class JournalPointsTest {
+    @After fun clockBack() = Today.reset()
+
     private val app get() = ApplicationProvider.getApplicationContext<BamnatApp>()
     private val c get() = app.container
 
     @Before fun ready() = runBlocking {
-        val end = System.currentTimeMillis() + 60_000
+        TestClock.at(10)  // 2.0.0 [RVR-44] (총괄 HQ-123): the hour is set (10:00 today, ticking), not the hour the run starts.
+        val end = System.currentTimeMillis() + 60_000  // real clock: a timeout
         while (c.scheduleRepository.shiftTypes.first().isEmpty()) {
-            check(System.currentTimeMillis() < end) { "Timed out waiting for the first shifts" }
+            check(System.currentTimeMillis() < end) { "Timed out waiting for the first shifts" }  // real clock: a timeout
             shadowOf(Looper.getMainLooper()).idle()
         }
         c.journal.clear()
     }
 
     private fun line(kind: JournalKind): JournalEntry {
-        val end = System.currentTimeMillis() + 30_000
+        val end = System.currentTimeMillis() + 30_000  // real clock: a timeout
         while (true) {
             runBlocking { c.journal.load() }.lastOrNull { it.kind == kind }?.let { return it }
-            check(System.currentTimeMillis() < end) { "No line of $kind" }
+            check(System.currentTimeMillis() < end) { "No line of $kind" }  // real clock: a timeout
             shadowOf(Looper.getMainLooper()).idle()
             Thread.yield()
         }
@@ -63,7 +69,7 @@ class JournalPointsTest {
         // 기록 지점 1: a working day tomorrow and the alarm lead answered re-plan the next alarm.
         runBlocking {
             val work = c.scheduleRepository.shiftTypes.first().first { it.hasTimes && !it.isOff }
-            c.scheduleRepository.setOverride(java.time.LocalDate.now().plusDays(1), com.bamnat.core.model.ShiftOverride.Shift(work.id))
+            c.scheduleRepository.setOverride(Today.date().plusDays(1), com.bamnat.core.model.ShiftOverride.Shift(work.id))
             c.answers.answer(PersonalCalendar.MAIN, FactKey.ALARM_LEAD, "90")
         }
         val first = line(JournalKind.ALARMS_PLANNED)
@@ -76,7 +82,7 @@ class JournalPointsTest {
     @Test fun `a payment written down says how many, never how much`() {
         // 기록 지점 9.
         val outcome = runBlocking {
-            c.capture("KB국민카드\nKB국민카드1234승인 8,000원 일시불 GS25", "com.kakao.talk", "카카오톡", System.currentTimeMillis(), fromMessenger = true)
+            c.capture("KB국민카드\nKB국민카드1234승인 8,000원 일시불 GS25", "com.kakao.talk", "카카오톡", Today.millis(), fromMessenger = true)
         }
         assertEquals(MoneyRepository.Outcome.SAVED, outcome)
         val e = line(JournalKind.MONEY_CAPTURED)
@@ -87,11 +93,11 @@ class JournalPointsTest {
     @Test fun `what waited and went, and the 연차 notice`() {
         // 기록 지점 7.
         c.inquiryApi = ScreenshotBase.FakeInquiryApi()
-        c.inquiryStore.queue(QueuedInquiry("request-id-0000001", InquiryKind.BUG, "알람이 안 울려요", InquiryInfo("1.23.0", "Pixel", "15"), Instant.now()))
+        c.inquiryStore.queue(QueuedInquiry("request-id-0000001", InquiryKind.BUG, "알람이 안 울려요", InquiryInfo("1.23.0", "Pixel", "15"), Today.instant()))
         assertTrue(runBlocking { InquiryOutbox.flush(c) })
         assertEquals(1, line(JournalKind.OUTBOX).count)
         // 기록 지점 8: the days left, not their pay.
-        val now = LocalDateTime.now()
+        val now = Today.dateTime()
         LeaveReminder.post(app, LeavePromotion.Notice(now, now.toLocalDate().plusMonths(2), firstYear = false, stage = 1), 3.0)
         assertEquals("3일", line(JournalKind.LEAVE_NOTICE).detail)
     }
@@ -99,7 +105,7 @@ class JournalPointsTest {
     @Test fun `no widget on the home screen, no widget line`() = runBlocking {
         // 기록 지점 6 writes only when there was something to redraw.
         WidgetRefresher.refresh(app)
-        c.journal.add(JournalEntry(Instant.now(), JournalKind.NEWS))
+        c.journal.add(JournalEntry(Today.instant(), JournalKind.NEWS))
         line(JournalKind.NEWS)
         assertTrue(c.journal.load().none { it.kind == JournalKind.WIDGETS })
     }

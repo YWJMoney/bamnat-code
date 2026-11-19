@@ -14,14 +14,18 @@ const L = adminLib();
 
 /** 통합계획 2-1: the keys the app's core FlagCatalog has too, stats.more the integrator added, and photo.wrong (AQ 1.29). */
 const CONTRACT = ["billing", "ads", "type.shift", "type.day", "type.hourly", "type.field", "type.business", "type.invest", "leave.hourly",
-  "plaza.write", "company.report", "inquiry.photos", "share.create", "usage.stats", "plaza.news", "stats.more", "photo.wrong" /* AQ 1.29 */, "stats.lookup" /* 1.31 */, "diag.observe" /* 1.32.1 */, "share.setup" /* 1.33 */, "share.look" /* 1.37 SHR-31 */,
+  "plaza.write", "company.report", "inquiry.photos", "share.create", "usage.stats", "plaza.news", "stats.more", "photo.wrong" /* AQ 1.29 */, "stats.lookup" /* 1.31 */, "diag.observe" /* 1.32.1 */, "share.setup" /* 1.33 */, "share.look" /* 1.37 SHR-31 */, "share.word" /* 2.0.0 RVG-38, 처리방침 3.14 */, "share.duty_codes" /* 2.0.0 RVL-80, 3.14 문장표 9 */,
+  "pay.birthyear", "company.slipcount" /* 2.0.0 RVJ-81·82, 처리방침 3.14 7일 줄 */, "team.app_count" /* 2.0.0 RVJ-83, 3.14 30일 줄 */,
   "plaza.fixed_amount" /* BC 1.30 결정 D102 */, "recipe.browse", "recipe.publish", "recipe.vote", "recipe.talk" /* 1.34 RCP-37 */,
   "team.leader", "boss.payroll", "health.compare" /* 1.38 Phase 3, on from 정식 출시일 */,
   "sleep.auto", "sleep.sound", "sleep.share" /* 1.38 SLEEP-01·06·11, same launch day */,
   "plaza.fix_request" /* 1.39 PAYP-05, on from 처리방침 3.12 */,
-  "community.care" /* 1.39 CARE-01, on from the 처리방침 3.12 day */, "plaza.people" /* 1.39 PLZC-10, 3.12 */,
+  "community.care" /* 1.39 CARE-01, on from the 처리방침 3.12 day and 2026-12-09 (2.0.0 RVD-18) */, "community.confirmed" /* 2.0.0 RVD-18, 3.12 */, "plaza.people" /* 1.39 PLZC-10, 3.12 */,
   "sleep.plan_share" /* 1.39 G5-N4, on from the 처리방침 3.12 day */, "stats.setup" /* 1.39 SETUP-20, 3.12 */,
-  "stats.life" /* 1.39 STAT2-02, 3.12 */, "stats.kind", "stats.keep" /* 1.39 OBS2-08, 3.12 */];
+  "stats.life" /* 1.39 STAT2-02, 3.12 */, "stats.kind", "stats.keep" /* 1.39 OBS2-08, 3.12 */, "stats.disc" /* 1.40 DISC-06, 3.13 */, "stats.crash" /* 2.0.0 RVL-90, 3.14 문장표 6 */,
+  "stats.kind_use" /* 2.0.0 RVQ-56 T21-02, 3.14 30일 줄 */, "market.wear" /* 2.0.0 RVQ-56 SX-03, 3.14 30일 줄 */,
+  "market.fair_count" /* 2.0.0 RVQ-59 I22c-03, 3.15 */,
+  "market.cardfonts" /* 2.0.0 RVM-21 MKT-32, 3.13 7일 줄 */];
 
 const MANAGER = { review: "edit", inquiries: "edit", dev: "edit", devStatus: "edit", companies: "edit", rewards: "edit", settings: "edit", community: "edit",
   takedown: "edit", ops: "edit", metrics: "view", shares: "edit", audit: "view", flags: "edit", flagOff: "none" };
@@ -49,7 +53,9 @@ test("[FLAG-20] the server's catalog has the contract's keys, each with its word
     assert.ok(f.basis && Object.values(f.basis).some(Boolean), `${f.key} basis`);
     assert.ok(["NORMAL", "LEGAL"].includes(f.risk));
     assert.deepEqual(L.checkConditions(f.conditions).list, f.conditions, `${f.key} conditions are what the API accepts`);
-    if (f.risk === "LEGAL") assert.ok(f.conditions.some((c) => c.type === "policy" || (c.type === "date" && c.policy)), `${f.key} policy`);
+    // 2.0.0 총괄 11-12 (나): a 7-day line after launch rests on its own day (core PolicyConsent.REVISION_EFFECTIVE), the server
+    // calendar's 3.13 being the 30-day line (market.cardfonts).
+    if (f.risk === "LEGAL") assert.ok(f.conditions.some((c) => c.type === "policy" || (c.type === "date" && (c.policy || c.from))), `${f.key} policy`);
   }
   // The two that replace 정식 출시 wait on the 3.1 effective day, the 3.1 hold and Play (core FlagCatalog.launch).
   const billing = FLAG_CATALOG.find((f) => f.key === "billing");
@@ -318,7 +324,11 @@ test("[FLAG-29][FLAG-33] the owner moves a policy's dates; too little notice is 
   assert.deepEqual((await statsMore()).warnings, []);
   assert.equal((await call("POST", "/api/admin/policy", { version: "3.2", posted: "2026-10-28", effective: "2026-10-20", why: "x" }, owner)).data.error, "policy");
   // [PRIV-05] stats.more follows 3.9 (3.2 brought to 정식 출시일).
-  const moved = await call("POST", "/api/admin/policy", { version: "3.9", posted: "2026-10-31", effective: "2026-11-15", unfavourable: true, why: "출시가 늦어짐" }, owner);
+  // 2.0.0 [RVQ-15] 검토 SRV-17: 알림 기간(불리하면 30일) 안으로 옮기면 한 번 더 확인해요.
+  const asked = await call("POST", "/api/admin/policy", { version: "3.9", posted: "2026-10-31", effective: "2026-11-15", unfavourable: true, why: "출시가 늦어짐" }, owner);
+  assert.equal(asked.status, 409);
+  assert.deepEqual([asked.data.error, asked.data.why, asked.data.days, asked.data.need], ["policy_confirm", "notice", 15, 30]);
+  const moved = await call("POST", "/api/admin/policy", { version: "3.9", posted: "2026-10-31", effective: "2026-11-15", unfavourable: true, why: "출시가 늦어짐", confirm: true }, owner);
   assert.equal(moved.status, 200);
   const row = await statsMore();
   assert.match(row.warnings[0], /15일.*30일/);

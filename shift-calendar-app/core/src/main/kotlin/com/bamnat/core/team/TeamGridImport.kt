@@ -14,10 +14,12 @@ object TeamGridImport {
     data class Row(val name: String, val role: String? = null, val cells: Map<LocalDate, String>, val doubtful: Set<LocalDate> = emptySet())
 
     /** Words that mean a day off in rosters people make, beside the team's own off label. */
-    private val OFF_WORDS = setOf("O", "OFF", "휴", "휴무", "비", "비번", "오프", "-", "X", "/", "OF", "쉼", "연", "연차", "V", "VA")
+    // 2.0.0 [RVJ-27] 검토 T05b-13 (한글 약자를 쓰는 팀은 코드 짝짓기가 덜 됨): 데·이·나·오 as wards write them, 오전·오후, 조근·석근·야근.
+    private val OFF_WORDS = setOf("O", "OFF", "휴", "휴무", "휴일", "비", "비번", "오", "오프", "-", "X", "/", "OF", "쉼", "연", "연차", "V", "VA")
     private val DAY_WORDS = mapOf(
-        "D" to setOf("D", "DAY", "데이", "주", "주간", "A"), "E" to setOf("E", "EVE", "EVENING", "이브", "이브닝", "저녁", "B"),
-        "N" to setOf("N", "NIGHT", "나이트", "야", "야간", "밤", "C"),
+        "D" to setOf("D", "DAY", "데", "데이", "주", "주간", "주근", "오전", "조근", "A"),
+        "E" to setOf("E", "EVE", "EVENING", "이", "이브", "이브닝", "저녁", "오후", "석근", "B"),
+        "N" to setOf("N", "NIGHT", "나", "나이트", "야", "야간", "야근", "밤", "심야", "C"),
     )
 
     private fun key(s: String) = s.trim().replace(" ", "").uppercase()
@@ -35,6 +37,8 @@ object TeamGridImport {
      * at most [limit] people on the team. Returns the new members and [memberOf] with their ids in.
      */
     fun newMembers(rows: List<Row>, memberOf: List<String?>, skipped: Set<Int>, teamId: String, members: List<TeamMember>, limit: Int = 60,
+                   /** [RVJ-27] 검토 PAYU-57: the new member's name as the leader fixed it before putting the file in, by row. */
+                   names: Map<Int, String> = emptyMap(),
                    id: () -> String = { java.util.UUID.randomUUID().toString() }): Pair<List<TeamMember>, List<String?>> {
         var sort = (members.maxOfOrNull { it.sort } ?: -1) + 1
         var room = limit - members.size
@@ -43,7 +47,8 @@ object TeamGridImport {
             memberOf.getOrNull(i) ?: if (i in skipped || room <= 0) null else {
                 // "민지 책임" as the 팀 만들기 paste reads it: 책임 is the role and the 책임 skill.
                 val p = TeamPaste.people((rows[i].name + " " + rows[i].role.orEmpty()).trim()).firstOrNull()
-                val m = TeamMember(id(), teamId, p?.name ?: rows[i].name.trim(), p?.role ?: rows[i].role.orEmpty(), p?.skill ?: Skill.REG, sort = sort++)
+                val name = names[i]?.trim()?.take(TeamPaste.NAME_MAX)?.takeIf { it.isNotEmpty() } ?: p?.name ?: rows[i].name.trim()
+                val m = TeamMember(id(), teamId, name, p?.role ?: rows[i].role.orEmpty(), p?.skill ?: Skill.REG, sort = sort++)
                 room--; made += m; m.id
             }
         }
@@ -60,7 +65,20 @@ object TeamGridImport {
         shifts.firstOrNull { key(it.label) == k }?.id
             ?: shifts.firstOrNull { key(it.name) == k }?.id
             ?: if (k in OFF_WORDS) shifts.firstOrNull { it.isOff }?.id
-            else DAY_WORDS.entries.firstOrNull { k in it.value }?.key?.let { d -> shifts.firstOrNull { !it.isOff && key(it.label) == d }?.id }
+            // [RVJ-27] The team's own label or name can be any word of the same kind of day: a file's D on a team that writes 데
+            // (or 주간), a file's 데 on a team that writes D. It was the letter D·E·N alone, so those teams paired every code by hand.
+            else DAY_WORDS.entries.firstOrNull { k in it.value }?.let { (d, words) ->
+                (shifts.firstOrNull { !it.isOff && key(it.label) == d } ?: shifts.firstOrNull { !it.isOff && (key(it.label) in words || key(it.name) in words) })?.id
+            }
+    }
+
+    /**
+     * 2.0.0 [RVJ-27] 검토 U05b-16: the codes [guessCodes] paired by the words rosters use, not by the team's own label or name (A·B·C
+     * as D·E·N, 연·V as 휴무, a file's 주간 on a team that writes D): the list marks these '짐작' so the leader looks at them.
+     */
+    fun looselyGuessed(codes: Collection<String>, shifts: List<TeamShift>): Set<String> {
+        val guessed = guessCodes(codes, shifts)
+        return codes.filter { c -> guessed[c] != null && key(c).let { k -> shifts.none { key(it.label) == k || key(it.name) == k } } }.toSet()
     }
 
     // ---- 1.38 [P3-L-17] 종이 신청표: the ward's request sheet photographed, its cells read as 신청 instead of 근무 ----
@@ -111,14 +129,68 @@ object TeamGridImport {
         r.cells.mapNotNull { (d, code) -> codes[code]?.let(WishKind::parse)?.let { (k, s) -> TeamWish(id, d, k, s, at) } }
     }
 
+    /** A name as it is compared: its role taken off, spaces and case aside. */
+    private fun nameKey(s: String) = TeamPaste.people(s).firstOrNull()?.name.orEmpty().replace(" ", "").lowercase()
+
+    /** The name a row's new member would get (the role taken off), for the leader to fix before it goes in. */
+    fun newName(row: Row): String = TeamPaste.people((row.name + " " + row.role.orEmpty()).trim()).firstOrNull()?.name ?: row.name.trim()
+
     /** Which member each row is: the same name (spaces and case aside, roles taken off), else null to be added. */
     fun matchNames(rows: List<Row>, members: List<TeamMember>): List<String?> {
         val used = HashSet<String>()
-        fun norm(s: String) = TeamPaste.people(s).firstOrNull()?.name.orEmpty().replace(" ", "").lowercase()
         return rows.map { r ->
-            val n = norm(r.name)
-            members.firstOrNull { it.active && it.id !in used && norm(it.name) == n }?.also { used += it.id }?.id
+            val n = nameKey(r.name)
+            members.firstOrNull { it.active && it.id !in used && nameKey(it.name) == n }?.also { used += it.id }?.id
         }
+    }
+
+    /**
+     * 2.0.0 [RVJ-27] 검토 PAYU-57 (한 글자 틀리게 읽힌 이름은 '새 팀원으로 더하기'가 기본이라 팀원이 겹쳐 생김): for each row [matched] left
+     * without a member, the member whose name is a letter off (a photo read 김민서 as 김민셔, or dropped a letter). The list
+     * chooses that member first and asks the leader to check, instead of adding a second 김민서. Only when it is the one such
+     * member for the row and the row the one such row for the member; a member the same name already took is not offered.
+     */
+    fun closeNames(rows: List<Row>, members: List<TeamMember>, matched: List<String?> = matchNames(rows, members)): List<String?> {
+        val taken = matched.filterNotNull().toSet()
+        val free = members.filter { it.active && it.id !in taken }.map { it.id to nameKey(it.name) }
+        val near = rows.indices.associateWith { i ->
+            val n = nameKey(rows[i].name)
+            if (matched.getOrNull(i) != null || n.isEmpty()) emptyList() else free.filter { closeName(n, it.second) }.map { it.first }
+        }
+        return rows.indices.map { i -> near.getValue(i).singleOrNull()?.takeIf { id -> near.values.count { id in it } == 1 } }
+    }
+
+    /**
+     * Two names a misread apart: one letter of three or more (김민지·김민셔, 이수·이수진), one stroke of a Hangul letter at any
+     * length (민서·민셔), or two letters of five or more. Not the same name, and not two short names that only share a family name.
+     */
+    internal fun closeName(a: String, b: String): Boolean {
+        if (a == b || a.isEmpty() || b.isEmpty()) return false
+        val n = maxOf(a.length, b.length)
+        val letters = editDistance(a, b)
+        return n >= 3 && letters <= 1 || n >= 5 && letters <= 2 || n >= 2 && letters <= 1 && editDistance(jamo(a), jamo(b)) <= 1
+    }
+
+    /** Hangul syllables as their 초성·중성·종성, so 서 and 셔 are one stroke apart and 서 and 지 two. */
+    private fun jamo(s: String): String = buildString {
+        s.forEach { c ->
+            if (c in '\uAC00'..'\uD7A3') {
+                val i = c - '\uAC00'
+                append((0x1100 + i / 588).toChar()); append((0x1161 + i % 588 / 28).toChar())
+                if (i % 28 > 0) append((0x11A7 + i % 28).toChar())
+            } else append(c)
+        }
+    }
+
+    private fun editDistance(a: String, b: String): Int {
+        var row = IntArray(b.length + 1) { it }
+        for (i in 1..a.length) {
+            val next = IntArray(b.length + 1)
+            next[0] = i
+            for (j in 1..b.length) next[j] = minOf(row[j] + 1, next[j - 1] + 1, row[j - 1] + if (a[i - 1] == b[j - 1]) 0 else 1)
+            row = next
+        }
+        return row[b.length]
     }
 
     /** What putting the rows on the board did, for the line after it and the keypad. */

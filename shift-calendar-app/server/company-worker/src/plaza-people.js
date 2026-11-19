@@ -28,6 +28,15 @@ export const PEOPLE_FORMS = {
 /** The 업종 무리 a writer may show (core IndustryGroups keys, 그 밖의 업종 left out); only for 교대·일근. */
 export const PEOPLE_INDUSTRIES = ["fire", "coast", "police", "correction", "hospital", "rail", "airport", "transit", "watch", "power", "semi",
   "chem", "steel", "auto", "food", "logistics", "maker", "hotel", "weather"];
+/**
+ * 2.0.0 [RVN-24] 검토 T22c-04: 현장·알바·가게의 업종 무리(core StyleTrades, 처리방침 3.12 1-4항 '이용자가 고른 경우 업종 무리'). 키는 유형마다
+ * 따로 읽어요(알바 dining과 가게 dining은 다른 목록의 같은 낱말).
+ */
+export const PEOPLE_TRADES = {
+  FIELD: ["build", "civil", "plant", "electric", "interior", "landscape"],
+  HOURLY: ["conv", "cafe", "dining", "parcel", "tutor", "retail", "event"],
+  BUSINESS: ["dining", "cafe", "retail", "beauty", "repair", "online"],
+};
 const PEOPLE_NOW_STYLES = ["SHIFT", "DAY", "FIELD", "HOURLY"];
 /** Which kind of work each kind of work's room is for. */
 const PEOPLE_ROOM_STYLE = { "style-shift": "SHIFT", "style-day": "DAY", "style-field": "FIELD", "style-shop": "BUSINESS",
@@ -53,7 +62,8 @@ export function peopleTag(raw, room, refuse) {
     out.f = raw.f;
   }
   if (raw.i !== undefined) {
-    if (!["SHIFT", "DAY"].includes(style) || !PEOPLE_INDUSTRIES.includes(raw.i)) refuse("tag", "tag");
+    const ok = ["SHIFT", "DAY"].includes(style) ? PEOPLE_INDUSTRIES.includes(raw.i) : (PEOPLE_TRADES[style] ?? []).includes(raw.i);
+    if (!ok) refuse("tag", "tag");
     out.i = raw.i;
   }
   if (raw.n !== undefined) {
@@ -96,8 +106,9 @@ export async function peopleFacts(all, env, devices) {
     const [a, b] = await Promise.all([
       all(env, `SELECT device, MIN(created_at) AS first FROM posts WHERE grp = 'room' AND company_id IN (${PEOPLE_ROOMS.map((r) => `'${r}'`).join(",")})
         AND parent IS NULL AND device IN (${q}) GROUP BY device`, ...part),
-      all(env, `SELECT a.device, COUNT(*) AS n FROM posts q JOIN posts a ON a.id = q.answer WHERE q.answer IS NOT NULL AND q.status = 'shown'
-        AND a.status = 'shown' AND a.device <> q.device AND a.device IN (${q}) GROUP BY a.device`, ...part),
+      // 1.40 [RVD-09] 검토 SVC-89: 글쓴이의 글(posts_device)에서 시작해 그 글을 뽑은 질문(posts_answer)으로. CROSS JOIN은 SQLite에 그 순서를 지켜요.
+      all(env, `SELECT a.device, COUNT(*) AS n FROM posts a CROSS JOIN posts q ON q.answer = a.id WHERE a.device IN (${q}) AND a.status = 'shown'
+        AND q.status = 'shown' AND a.device <> q.device GROUP BY a.device`, ...part),
     ]);
     for (const r of a) first.set(r.device, r.first);
     for (const r of b) helped.set(r.device, r.n);
@@ -125,6 +136,9 @@ export const POLL_SPLIT_MIN = 5;
 /**
  * 1.39 [PLZC-31] 근무형태별 투표 결과 of the polls [ids]: Map id → [{f, counts}] (f null: 그 밖의 근무), only groups of POLL_SPLIT_MIN or
  * more, and only where at least one 근무형태 stands on its own. Nobody's own vote shows.
+ * 2.0.0 [RVN-24] 검토 SVC-94: the groups shown always add up to the whole poll (whose counts go with it), so a rest of 1~4 that was
+ * left out could be read as whole − shown. Such a rest takes in the smallest 근무형태 shown (then 5 or more), and a poll with none
+ * left on its own shows no split at all.
  */
 export async function pollByForm(all, env, ids, options) {
   const out = new Map();
@@ -141,16 +155,20 @@ export async function pollByForm(all, env, ids, options) {
     }
     const sum = (a) => a.reduce((x, y) => x + y, 0);
     const named = [...groups].filter(([f, c]) => f && sum(c) >= POLL_SPLIT_MIN).sort((a, b) => sum(b[1]) - sum(a[1]));
-    if (!named.length) continue;
     const rest = Array(size).fill(0);
     for (const [f, c] of groups) if (!named.some(([g]) => g === f)) c.forEach((n, i) => { rest[i] += n; });
-    out.set(id, [...named.map(([f, counts]) => ({ f, counts })), ...(sum(rest) >= POLL_SPLIT_MIN ? [{ f: null, counts: rest }] : [])]);
+    if (sum(rest) > 0 && sum(rest) < POLL_SPLIT_MIN && named.length) named.pop()[1].forEach((n, i) => { rest[i] += n; });
+    if (!named.length) continue;
+    out.set(id, [...named.map(([f, counts]) => ({ f, counts })), ...(sum(rest) > 0 ? [{ f: null, counts: rest }] : [])]);
   }
   return out;
 }
 
-/** 1.39 [PLZC-20] The kinds of work whose plaza takes a 근무 카드 (the ones that count days at work). */
-export const CARD_STYLES = ["SHIFT", "DAY", "FIELD", "HOURLY"];
+/**
+ * 1.39 [PLZC-20] The kinds of work whose plaza takes a 근무 카드 (the ones that count days at work). 2.0.0 [RVN-24] T22c-03: 가게 too (the
+ * app says 영업 카드, the same five numbers); 투자 has no days at work.
+ */
+export const CARD_STYLES = ["SHIFT", "DAY", "FIELD", "HOURLY", "BUSINESS"];
 
 /**
  * 1.39 [PLZC-20] 근무 카드: this month so far by the writer's calendar, numbers only. d days of the month gone, w days at work, n of them

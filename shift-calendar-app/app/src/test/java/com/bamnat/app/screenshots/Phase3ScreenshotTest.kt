@@ -123,7 +123,7 @@ class Phase3ScreenshotTest : ScreenshotBase() {
         settle()
         tapText("열기", exact = true)
         settle()
-        tapText("지난달", exact = true)
+        // 2.0.0 [RVJ-53] The board opens on this month itself now (it opened on next month, so this went back a month).
     }
 
     /** 1.39 G6 [SETUP-18] A team made while the 리더's first setup waits: its times are asked once when the board opens. */

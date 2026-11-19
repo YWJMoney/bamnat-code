@@ -8,16 +8,17 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.Button
+import com.bamnat.app.ui.components.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
+import com.bamnat.app.ui.components.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -33,6 +34,10 @@ import com.bamnat.core.tier.PlanBand
 import com.bamnat.core.tier.WorkPlanKind
 import com.bamnat.core.tier.WorkPlanRules
 
+/** 2.0.0 [RVO-15] 검토 PRO-16: how long the sheet waits for Play's offers before it says they did not come. */
+const val OFFERS_WAIT_MS = 6_000L
+const val OFFERS_MISSING = "Play 결제를 불러오지 못했어요. 인터넷과 Play 스토어 로그인을 확인하고 다시 불러와 주세요"
+
 /**
  * 1.38 Phase 3 요금 (사용자 2026-11-05 20:22, 계획 8장): the ask for a 팀·직원 요금제, shown only at the moment the free taste ends (first
  * month's 확정 is behind, or the fourth staff member). Every band with its 월·연·1년 이용권, the one that fits marked; a band that is too
@@ -45,9 +50,19 @@ fun WorkPlanSheet(kind: WorkPlanKind, need: WorkPlanRules.Need, onDismiss: () ->
     val gate by c.featureGate.state.collectAsStateWithLifecycle()
     val offers by c.billing.work.collectAsStateWithLifecycle()
     var message by remember { mutableStateOf<String?>(null) }
+    // 2.0.0 [RVO-15] 검토 PRO-16: Play's offers that do not come (no network, Play signed out, a product not there) no longer leave
+    // '불러오는 중' up for good: after a few seconds it says so, with '다시 불러오기'.
+    val billingState by c.billing.state.collectAsStateWithLifecycle()
+    var tries by remember { mutableIntStateOf(0) }
+    var gaveUp by remember { mutableStateOf(false) }
     LaunchedEffect(Unit) {
         c.telemetry.event(if (kind == WorkPlanKind.TEAM) com.bamnat.core.stats.UsageEvent.PLAN_VIEW_TEAM.key else com.bamnat.core.stats.UsageEvent.PLAN_VIEW_STAFF.key)
+    }
+    LaunchedEffect(tries) {
+        gaveUp = false
         runCatching { c.billing.refresh() }
+        kotlinx.coroutines.delay(OFFERS_WAIT_MS)
+        gaveUp = true
     }
     // Bought (or changed): the need is met, the sheet closes by itself.
     LaunchedEffect(gate.hold(kind)?.cap) { if ((gate.hold(kind)?.cap ?: 0) >= need.count && need.count > 0) onDismiss() }
@@ -61,7 +76,7 @@ fun WorkPlanSheet(kind: WorkPlanKind, need: WorkPlanRules.Need, onDismiss: () ->
             Column(Modifier.heightIn(max = 520.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 // 1.39 [FLOW-25] the band that fits, when its yearly plan starts free: 오늘 0원 · the day it turns paid · told before.
                 offers.firstOrNull { it.kind == kind && it.cap == need.band?.cap && it.way == WorkOffer.Way.YEARLY && it.trial }?.let { o ->
-                    if (held == null) Text(trialHead(com.bamnat.core.time.Today.date(), "연 ${o.price}"), style = MaterialTheme.typography.titleSmall,
+                    if (held == null) com.bamnat.app.ui.components.DotText(trialHead(com.bamnat.core.time.Today.date(), "연 ${o.price}"), style = MaterialTheme.typography.titleSmall,
                         color = MaterialTheme.colorScheme.primary)
                 }
                 Text(WorkPlanRules.words(kind, need, table), style = MaterialTheme.typography.bodyMedium)
@@ -78,8 +93,15 @@ fun WorkPlanSheet(kind: WorkPlanKind, need: WorkPlanRules.Need, onDismiss: () ->
                         style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
                 }
                 if (offers.none { it.kind == kind }) {
-                    Text("Play 결제를 불러오는 중이에요. 아래 금액은 안내용이고, 실제 금액은 Play 결제 화면에 나와요.",
-                        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    if (!gaveUp && billingState != com.bamnat.app.billing.BillingState.UNAVAILABLE) {
+                        Text("Play 결제를 불러오는 중이에요. 아래 금액은 안내용이고, 실제 금액은 Play 결제 화면에 나와요.",
+                            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    } else {
+                        Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+                            Text(OFFERS_MISSING, style = MaterialTheme.typography.bodySmall, modifier = Modifier.weight(1f))
+                            TextButton(onClick = { tries++ }, modifier = Modifier.heightIn(min = 48.dp)) { Text("다시 불러오기") }
+                        }
+                    }
                 }
                 table.bands(kind).forEach { band ->
                     BandCard(kind, band, fits = band.cap >= need.count, picked = band == need.band, held = held?.cap == band.cap,
@@ -125,13 +147,14 @@ private fun BandCard(
             }
             if (held) return@Column
             yearly?.let { o ->
-                if (o.trial) Text(trialHead(com.bamnat.core.time.Today.date(), "연 ${o.price}"), style = MaterialTheme.typography.labelMedium,
+                if (o.trial) com.bamnat.app.ui.components.DotText(trialHead(com.bamnat.core.time.Today.date(), "연 ${o.price}"), style = MaterialTheme.typography.labelMedium,
                     color = MaterialTheme.colorScheme.primary)
                 Button(onClick = { onBuy(o) }, modifier = Modifier.fillMaxWidth()) {
-                    Text(if (o.trial) "1개월 무료로 시작 (연 ${o.price})" else "연 ${o.price}로 구독")
+                    // 2.0.0 [RVO-07] (검토 PRO-13 "연 39,000원로") 조사를 금액에 맞게.
+                    Text(if (o.trial) "1개월 무료로 시작 (연 ${o.price})" else "연 ${o.price}${com.bamnat.app.ui.Fmt.ro(o.price)} 구독")
                 }
             }
-            monthly?.let { o -> OutlinedButton(onClick = { onBuy(o) }, modifier = Modifier.fillMaxWidth()) { Text("월 ${o.price}로 구독") } }
+            monthly?.let { o -> OutlinedButton(onClick = { onBuy(o) }, modifier = Modifier.fillMaxWidth()) { Text("월 ${o.price}${com.bamnat.app.ui.Fmt.ro(o.price)} 구독") } }
             // No double payment: the pass is for someone not subscribed to this kind.
             if (!passBlocked) pass?.let { o ->
                 OutlinedButton(onClick = { onBuy(o) }, modifier = Modifier.fillMaxWidth()) { Text("1년 이용권 ${o.price} · 자동 결제 없음") }

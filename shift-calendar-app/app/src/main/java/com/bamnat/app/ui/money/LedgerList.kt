@@ -58,14 +58,14 @@ import androidx.compose.material3.Checkbox
 import com.bamnat.app.ui.components.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FilledTonalButton
+import com.bamnat.app.ui.components.FilledTonalButton
 import com.bamnat.app.ui.components.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.InputChip
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
+import com.bamnat.app.ui.components.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.SwipeToDismissBox
@@ -80,6 +80,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -128,30 +129,16 @@ data class LedgerView(
     val filter: LedgerFilter = LedgerFilter(),
     val sort: LedgerSort = LedgerSort.NEWEST,
 ) {
-    fun range(month: YearMonth): Pair<LocalDate?, LocalDate?> = period.range(month)
-    fun applied(month: YearMonth): LedgerFilter = range(month).let { (from, to) -> filter.copy(from = from, to = to) }
+    /** 2.0.0 [RVK-20] (U06a-07·MONEY-18) With 급여일 주기 on, '이 달' is the pay [cycle] ("10/25~11/24"). */
+    fun range(month: YearMonth, cycle: com.bamnat.core.money.PayCycle.Range? = null): Pair<LocalDate?, LocalDate?> =
+        if (period == LedgerPeriod.MONTH && cycle != null) cycle.from to cycle.to else period.range(month)
+    fun applied(month: YearMonth, cycle: com.bamnat.core.money.PayCycle.Range? = null): LedgerFilter =
+        range(month, cycle).let { (from, to) -> filter.copy(from = from, to = to) }
     val narrowed: Boolean get() = filter.count > 0 || filter.query.isNotBlank()
 }
 
 /** [SWIPE-01] How far a line must slide, as a share of its width, before letting go acts on it. */
 internal const val SWIPE_THRESHOLD = 0.5f
-
-/**
- * [SWIPE-01] Asked before a line slid to the left goes: what it is, so the right one is removed.
- * After 삭제 the money view model offers 되돌리기, which puts the same line back.
- */
-@Composable
-internal fun DeleteLineDialog(e: MoneyEntry, onDismiss: () -> Unit, onConfirm: () -> Unit) {
-    val what = listOfNotNull(Fmt.shortDate(e.date), e.title.ifBlank { e.category }, signedWon(e)).joinToString(" · ")
-    com.bamnat.app.ui.components.ConfirmDialog(
-        title = "삭제할까요?",
-        message = "$what\n\n삭제한 뒤에도 바로 나오는 ‘되돌리기’로 다시 살릴 수 있어요.",
-        confirmLabel = "삭제",
-        destructive = true,
-        onDismiss = onDismiss,
-        onConfirm = onConfirm,
-    )
-}
 
 /** What the list can do to its lines; the money view model does it, with undo. */
 interface LedgerListActions {
@@ -181,17 +168,24 @@ fun LedgerListPane(
     actions: LedgerListActions,
     wide: Boolean,
     onAdd: () -> Unit,
+    /** 2.0.0 [RVK-20] The pay cycle '이 달' stands for, with 급여일 주기 on. */
+    cycle: com.bamnat.core.money.PayCycle.Range? = null,
 ) {
-    val filter = remember(view, month) { view.applied(month) }
+    val filter = remember(view, month, cycle) { view.applied(month, cycle) }
     val shown = remember(book, filter, view.sort) { Ledger.search(book.entries, filter, view.sort, book.accounts) }
     // 1.37 [LEDH-36] 평소보다 큰 지출, marked quietly on its line.
     val bigOnes = remember(book.entries) { com.bamnat.core.money.LedgerSmarts.unusual(book.entries, com.bamnat.core.time.Today.date()) }
     val totals = remember(shown, filter) { Ledger.totals(shown, filter) }
     val byDate = view.sort == LedgerSort.NEWEST || view.sort == LedgerSort.OLDEST
     val days = remember(shown, byDate) { if (byDate) Ledger.days(shown) else emptyList() }
-    var filtering by remember { mutableStateOf(false) }
-    var exporting by remember { mutableStateOf(false) }
-    var moving by remember { mutableStateOf(false) }
+    // 2.0.0 [RVK-03] (MONEY-01): open sheets come back after a rebuilt screen.
+    var filtering by rememberSaveable { mutableStateOf(false) }
+    var exporting by rememberSaveable { mutableStateOf(false) }
+    var moving by rememberSaveable { mutableStateOf(false) }
+    // 2.0.0 [RVK-10] (MONEY-04·U06a-11): the 휴지통 of picked lines asks first, saying how many and how much ('모두 고르기' with
+    // 전체 can be the whole 가계부); what goes stays 30 days in 최근 지운 기록. 2.0.0 [RVK-61] (총괄 HQ-111 묶음): one line goes without
+    // asking, as it is kept 30 days and 되돌리기 puts it back; only two or more ask.
+    var askingDelete by rememberSaveable { mutableStateOf(false) }
     val selecting = selection.isNotEmpty()
     val picked = remember(shown, selection) { shown.filter { it.id in selection } }
     BackHandler(enabled = selecting) { onSelection(emptySet()) }
@@ -225,7 +219,7 @@ fun LedgerListPane(
                     onClose = { onSelection(emptySet()) },
                     onAll = { onSelection(if (picked.size == shown.size) emptySet() else shown.map { it.id }.toSet()) },
                     onMove = { moving = true },
-                    onDelete = { actions.delete(picked); onSelection(emptySet()) })
+                    onDelete = { if (picked.size == 1) { actions.delete(picked); onSelection(emptySet()) } else askingDelete = true })
             }
             val listState = rememberLazyListState()
             LazyColumn(state = listState, modifier = Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = FabClearance + 8.dp)) {
@@ -233,7 +227,7 @@ fun LedgerListPane(
                     item(key = "tools") {
                         Column(Modifier.padding(horizontal = 16.dp).padding(top = 8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                             SearchRow(view, onView, onFilter = { filtering = true }, onExport = { exporting = true })
-                            PeriodChips(view, month, onView)
+                            PeriodChips(view, month, onView, cycle)
                             ActiveConditions(book, view, onView)
                             if (shown.isNotEmpty()) TotalsStrip(totals, view.filter.categories.isNotEmpty())
                             // PC 확인 bad7d860 사용성 제안: the 판 chips show before the first line too, so they are found.
@@ -255,8 +249,10 @@ fun LedgerListPane(
                 if (shown.isEmpty()) {
                     item(key = "empty") {
                         when {
+                            // 2.0.0 [RVK-35] (PC-126) One '돈 적기': the floating one, always there (this one stood beside it). Named as it
+                            // shows (갈래 P 5: the bar under the page says its words at every letter size).
                             book.entries.isEmpty() -> LedgerEmpty(Icons.AutoMirrored.Outlined.ReceiptLong, "아직 적은 돈이 없어요",
-                                "‘돈 적기’를 누르거나 위 ⋮ > 자동 기록을 켜면 여기에 쌓여요.", action = "돈 적기", onAction = onAdd,
+                                (if (com.bamnat.app.ui.components.addDocks() || !com.bamnat.app.ui.components.bigLetters()) "아래 ‘돈 적기’" else "아래 + 단추") + "를 누르거나 위 ⋮ › 자동 기록을 켜면 여기에 쌓여요.",
                                 kani = com.bamnat.app.ui.components.KaniMood.Point)
                             view.narrowed -> LedgerEmpty(Icons.Outlined.SearchOff, "조건에 맞는 기록이 없어요",
                                 "기간을 넓히거나 조건을 지워 보세요.", action = "조건 지우기", onAction = { onView(view.copy(filter = LedgerFilter())) })
@@ -306,7 +302,7 @@ fun LedgerListPane(
             Column(Modifier.weight(1f).fillMaxSize().verticalScroll(rememberScrollState()).padding(vertical = 8.dp),
                 verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 SearchRow(view, onView, onFilter = null, onExport = { exporting = true })
-                PeriodChips(view, month, onView)
+                PeriodChips(view, month, onView, cycle)
                 if (shown.isNotEmpty()) TotalsStrip(totals, view.filter.categories.isNotEmpty())
                 // [TAB-06] The 판 chips on a wide screen too.
                 LedgerBoardChips(board, pickBoard)
@@ -328,10 +324,22 @@ fun LedgerListPane(
     }
 
     if (filtering) {
-        FilterSheet(book, view, month, onApply = { onView(it); filtering = false }, onDismiss = { filtering = false })
+        FilterSheet(book, view, month, cycle, onApply = { onView(it); filtering = false }, onDismiss = { filtering = false })
     }
     if (exporting) {
-        ExportDialog(shown, book, view.range(month), actions::message) { exporting = false }
+        ExportDialog(shown, book, view.range(month, cycle), actions::message) { exporting = false }
+    }
+    if (askingDelete && picked.size > 1) {
+        val done = { askingDelete = false }
+        com.bamnat.app.ui.components.ConfirmDialog(
+            title = "기록 ${picked.size}건을 지울까요?",
+            message = "${Fmt.shortDate(picked.minOf { it.date })}~${Fmt.shortDate(picked.maxOf { it.date })} · 모두 ${Fmt.won(picked.sumOf { kotlin.math.abs(it.amount) })}\n\n" +
+                "지운 기록은 30일 동안 가계부 메뉴 › 최근 지운 기록에서 되살릴 수 있어요.",
+            confirmLabel = "${picked.size}건 지우기",
+            destructive = true,
+            onDismiss = done,
+            onConfirm = { done(); actions.delete(picked); onSelection(emptySet()) },
+        )
     }
     if (moving && picked.isNotEmpty()) {
         MoveDialog(book, picked, onPick = { c -> actions.recategorize(picked, c); onSelection(emptySet()); moving = false }, onDismiss = { moving = false })
@@ -342,20 +350,24 @@ fun LedgerListPane(
 @Composable
 private fun SearchRow(view: LedgerView, onView: (LedgerView) -> Unit, onFilter: (() -> Unit)?, onExport: () -> Unit) {
     var sorting by remember { mutableStateOf(false) }
+    // 2.0.0 [RVK-43] (검토 MONEY-31) What is typed shows at once; the view model's copy comes a frame later ([EchoText]).
+    val echo = remember { EchoText(view.filter.query, max = 40) }
+    LaunchedEffect(view.filter.query) { echo.outside(view.filter.query) }
+    LaunchedEffect(echo.text) { kotlinx.coroutines.delay(1_000); echo.settle() }
     Row(verticalAlignment = Alignment.CenterVertically) {
         OutlinedTextField(
-            value = view.filter.query,
-            onValueChange = { onView(view.copy(filter = view.filter.copy(query = it.take(40)))) },
+            value = echo.text,
+            onValueChange = { onView(view.copy(filter = view.filter.copy(query = echo.typed(it)))) },
             singleLine = true,
             placeholder = { Text("기록 찾기", maxLines = 1, overflow = TextOverflow.Ellipsis) },
             supportingText = null,
             leadingIcon = { Icon(Icons.Filled.Search, null) }, colors = com.bamnat.app.ui.theme.PhotoGround.fieldColors(),
             trailingIcon = {
-                if (view.filter.query.isNotEmpty()) IconButton(onClick = { onView(view.copy(filter = view.filter.copy(query = ""))) }) {
+                if (echo.text.isNotEmpty()) IconButton(onClick = { onView(view.copy(filter = view.filter.copy(query = echo.typed("")))) }) {
                     Icon(Icons.Filled.Close, "찾는 말 지우기")
                 }
             },
-            shape = RoundedCornerShape(28.dp),
+            shape = MaterialTheme.shapes.extraLarge,
             keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
             modifier = Modifier.weight(1f).semantics { contentDescription = "가게, 메모, #태그, 금액으로 기록 찾기" },
         )
@@ -382,12 +394,14 @@ private fun SearchRow(view: LedgerView, onView: (LedgerView) -> Unit, onFilter: 
     }
 }
 
+// 2.0.0 [RVK-35] (PC-126) On the folded phone '전체' was cut at the right edge of a row that slid: the five wrap now, all seen.
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun PeriodChips(view: LedgerView, month: YearMonth, onView: (LedgerView) -> Unit) {
-    Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+private fun PeriodChips(view: LedgerView, month: YearMonth, onView: (LedgerView) -> Unit, cycle: com.bamnat.core.money.PayCycle.Range? = null) {
+    androidx.compose.foundation.layout.FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
         LedgerPeriod.entries.forEach { p ->
             val label = when (p) {
-                LedgerPeriod.MONTH -> Fmt.monthShort(month)
+                LedgerPeriod.MONTH -> cycle?.label ?: Fmt.monthShort(month)
                 LedgerPeriod.YEAR -> "${month.year}년"
                 else -> p.label
             }
@@ -541,14 +555,13 @@ private fun LedgerRow(
     big: Boolean = false,
 ) {
     val haptics = LocalHapticFeedback.current
-    // [SWIPE-01] A slide to the left never removes the line by itself: it springs back and asks first,
-    // and it has to go half the row's width, so a slanted scroll cannot set it off.
-    var asking by remember { mutableStateOf(false) }
+    // [SWIPE-01] A slide to the left has to go half the row's width, so a slanted scroll cannot set it off. 2.0.0 [RVK-61] It then
+    // removes the line at once and 되돌리기 (30일 in 최근 지운 기록) puts it back; before it sprang back and asked 지울까요?.
     val state = rememberSwipeToDismissBoxState(
         confirmValueChange = { v ->
             if (v == SwipeToDismissBoxValue.EndToStart) {
                 haptics.performHapticFeedback(HapticFeedbackType.Reject)
-                asking = true
+                actions.delete(listOf(e))
                 false
             } else true
         },
@@ -560,9 +573,6 @@ private fun LedgerRow(
             SwipeToDismissBoxValue.EndToStart -> state.reset()
             SwipeToDismissBoxValue.Settled -> Unit
         }
-    }
-    if (asking) {
-        DeleteLineDialog(e, onDismiss = { asking = false }, onConfirm = { asking = false; actions.delete(listOf(e)) })
     }
     val cal = LocalCalendarColors.current
     SwipeToDismissBox(
@@ -620,7 +630,7 @@ private fun LedgerRow(
                     if (selecting) this.selected = selected
                     customActions = listOf(
                         CustomAccessibilityAction("오늘로 복사") { actions.duplicate(e); true },
-                        CustomAccessibilityAction("지우기") { asking = true; true },
+                        CustomAccessibilityAction("지우기") { actions.delete(listOf(e)); true },
                         CustomAccessibilityAction(if (selected) "고르기 풀기" else "고르기") { onToggle(); true },
                     )
                 },
@@ -637,6 +647,28 @@ private fun LedgerRow(
             val inOut = setOfNotNull(when (e.kind) { MoneyKind.INCOME -> "in"; MoneyKind.EXPENSE -> "out"; else -> null })
             val rowPart = bp.style("money.row", inOut, dayScope)
             val amountPart = bp.style("money.amount", inOut, dayScope)
+            // 2.0.0 [RVK-57] (HQ-147, 조건 12) The amount and what is under it, beside the name or, at a big font, under it.
+            val amountBlock: @Composable () -> Unit = {
+                Column(horizontalAlignment = Alignment.End) {
+                    Text(signedWon(e), style = when (look.amount) {
+                        "s" -> MaterialTheme.typography.bodyMedium
+                        "l" -> MaterialTheme.typography.titleLarge
+                        else -> MaterialTheme.typography.titleSmall
+                    }.merge(NumberStyle).let { com.bamnat.app.ui.parts.PartMods.text(amountPart.copy(ink = null), it) },
+                        fontWeight = amountPart.weight?.let { FontWeight(it) } ?: FontWeight.Bold,
+                        color = amountPart.ink?.let { androidx.compose.ui.graphics.Color(it.toInt()) } ?: amountColor(e), maxLines = 1)
+                    when {
+                        e.installments > 1 -> Unit
+                        e.kind == MoneyKind.TRANSFER -> Text("이체", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        e.amount < 0 -> Text("취소", style = MaterialTheme.typography.labelSmall, color = cal.income)
+                        // 1.37 [LEDH-07] 근무 시간 환산, for spending of 5만 원 and more.
+                        e.kind == MoneyKind.EXPENSE -> LocalWorkTime.current?.words(e.amount)?.let {
+                            Text(it, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
+                        }
+                    }
+                }
+            }
+            val bigRow = LocalDensity.current.fontScale >= 1.5f
             Row(Modifier.heightIn(min = rowPart.h?.dp ?: minH).then(com.bamnat.app.ui.parts.PartMods.box(rowPart.copy(pad = null, padX = null, padY = null), androidx.compose.ui.graphics.RectangleShape))
                 .padding(horizontal = rowPart.padH?.dp ?: 16.dp, vertical = rowPart.padV?.dp ?: padV), verticalAlignment = Alignment.CenterVertically) {
                 if (selecting) {
@@ -651,36 +683,33 @@ private fun LedgerRow(
                 }
                 Spacer(Modifier.width(12.dp))
                 Column(Modifier.weight(1f)) {
-                    Text(e.title, style = MaterialTheme.typography.bodyLarge, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                    if (caption.isNotEmpty()) {
+                    // 2.0.0 [RVK-42] Big letters: a long name ('라마바전자 무선청소기') takes two lines before it is cut.
+                    Text(e.title, style = MaterialTheme.typography.bodyLarge, maxLines = if (com.bamnat.app.ui.components.bigLetters()) 2 else 1,
+                        overflow = TextOverflow.Ellipsis)
+                    // 2.0.0 [RVK-57] (HQ-147): at 150% and up the caption has the row's width (it was '신한 …' beside the amount) and the
+                    // amount sits beside it when both fit, else under it at the right.
+                    if (bigRow) com.bamnat.app.ui.components.TextThenAmount(start = {
+                        if (caption.isNotEmpty()) Text(caption, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 2, overflow = TextOverflow.Ellipsis)
+                    }, end = amountBlock)
+                    else if (caption.isNotEmpty()) {
                         Text(caption, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
                             maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    }
+                    // E 1.32 [LEDX-04] Which 회차 this month is, and what is still to pay. 2.0.0 [RVK-42] (조건 12) Its own line under the
+                    // name: beside the amount it squeezed the name to '라마바전…' and the card to '신한 De…' on a folded phone.
+                    if (e.installments > 1) {
+                        Text(com.bamnat.core.money.LedgerSmarts.installmentText(e, com.bamnat.core.time.Today.date(), book.accounts) ?: "${e.installments}개월 할부",
+                            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 2)
                     }
                     if (e.tags.isNotEmpty() || e.memo.isNotBlank()) {
                         Text((e.tags.map { "#$it" } + listOfNotNull(e.memo.takeIf { it.isNotBlank() })).joinToString(" "),
                             style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary, maxLines = 1, overflow = TextOverflow.Ellipsis)
                     }
                 }
-                Spacer(Modifier.width(8.dp))
-                Column(horizontalAlignment = Alignment.End) {
-                    Text(signedWon(e), style = when (look.amount) {
-                        "s" -> MaterialTheme.typography.bodyMedium
-                        "l" -> MaterialTheme.typography.titleLarge
-                        else -> MaterialTheme.typography.titleSmall
-                    }.merge(NumberStyle).let { com.bamnat.app.ui.parts.PartMods.text(amountPart.copy(ink = null), it) },
-                        fontWeight = amountPart.weight?.let { FontWeight(it) } ?: FontWeight.Bold,
-                        color = amountPart.ink?.let { androidx.compose.ui.graphics.Color(it.toInt()) } ?: amountColor(e), maxLines = 1)
-                    when {
-                        // E 1.32 [LEDX-04] Which 회차 this month is, and what is still to pay.
-                        e.installments > 1 -> Text(com.bamnat.core.money.LedgerSmarts.installmentText(e, com.bamnat.core.time.Today.date()) ?: "${e.installments}개월 할부",
-                            style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        e.kind == MoneyKind.TRANSFER -> Text("이체", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        e.amount < 0 -> Text("취소", style = MaterialTheme.typography.labelSmall, color = cal.income)
-                        // 1.37 [LEDH-07] 근무 시간 환산, for spending of 5만 원 and more.
-                        e.kind == MoneyKind.EXPENSE -> LocalWorkTime.current?.words(e.amount)?.let {
-                            Text(it, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
-                        }
-                    }
+                if (!bigRow) {
+                    Spacer(Modifier.width(8.dp))
+                    amountBlock()
                 }
             }
         }
@@ -749,9 +778,10 @@ private fun FilterTitle(text: String) {
 /** [LEDG-07] The conditions in a sheet, with how many lines they would leave before they are applied. */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun FilterSheet(book: MoneyBook, view: LedgerView, month: YearMonth, onApply: (LedgerView) -> Unit, onDismiss: () -> Unit) {
+private fun FilterSheet(book: MoneyBook, view: LedgerView, month: YearMonth, cycle: com.bamnat.core.money.PayCycle.Range?,
+                        onApply: (LedgerView) -> Unit, onDismiss: () -> Unit) {
     var f by remember { mutableStateOf(view.filter) }
-    val count = remember(book, f, view.period, month) { Ledger.search(book.entries, view.copy(filter = f).applied(month), view.sort, book.accounts).size }
+    val count = remember(book, f, view.period, month, cycle) { Ledger.search(book.entries, view.copy(filter = f).applied(month, cycle), view.sort, book.accounts).size }
     com.bamnat.app.ui.components.AppSheet(onDismissRequest = onDismiss, closeButton = false, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
         Column(Modifier.fillMaxWidth().imePadding()) {
             Row(Modifier.fillMaxWidth().padding(start = 20.dp, end = 8.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -831,7 +861,7 @@ private fun ExportDialog(shown: List<MoneyEntry>, book: MoneyBook, range: Pair<L
             }
         },
         confirmButton = {
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            androidx.compose.foundation.layout.FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 OutlinedButton(enabled = shown.isNotEmpty(), onClick = { runCatching { save.launch(name) }.onFailure { onMessage("파일을 저장할 곳을 열지 못했어요"); onDismiss() } }) {
                     Text("파일로 저장")
                 }

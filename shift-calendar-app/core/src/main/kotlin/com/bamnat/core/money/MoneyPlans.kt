@@ -36,6 +36,13 @@ data class FixedCost(
     /** First and last day it repeats on; null for no limit. */
     val start: LocalDate? = null,
     val end: LocalDate? = null,
+    /**
+     * 2.0.0 [RVK-46] (검토 MONEY-07) Where a repeating 이체 goes: 적금 통장, 대출, 내 다른 계좌. Its line moves the money from [accountId]
+     * to this one, so the balances and 순자산 stay right instead of falling every month. Null for spending and income.
+     */
+    val toAccountId: Long? = null,
+    /** 2.0.0 [RVK-60] (검토 I06ab-01, DB 37) The category's fixed id; [category] is its name. Empty until saved, like [MoneyEntry.categoryId]. */
+    val categoryId: String = "",
 ) {
     fun dueIn(month: YearMonth): LocalDate = month.atDay(day.coerceIn(1, month.lengthOfMonth()))
 
@@ -96,11 +103,13 @@ object UpcomingPayments {
     private fun cardBills(accounts: List<MoneyAccount>, entries: List<MoneyEntry>, from: LocalDate, to: LocalDate): List<Upcoming> =
         accounts.filter { it.hasBill && !it.hidden }.flatMap { card ->
             val months = generateSequence(YearMonth.from(from)) { it.plusMonths(1) }.takeWhile { !it.isAfter(YearMonth.from(to)) }.toList()
-            // fc374a23 PC 확인: what was paid to the card already comes off the bill (paid early or in parts too).
-            val owed = CardCycle.left(card, (1L..3L).map { YearMonth.from(from).minusMonths(it) } + months, entries, accounts, from)
+            // fc374a23 PC 확인: what was paid to the card already comes off the bill (paid early or in parts too). 2.0.0 [RVK-37] (검토
+            // MONEY-44) A part paid early leaves the rest due: no more one transfer of any amount near the day hiding the whole bill.
+            // A payment already written for a day still ahead counts too.
+            val owed = CardCycle.left(card, (1L..3L).map { YearMonth.from(from).minusMonths(it) } + months, entries, accounts, to)
             months.mapNotNull { m ->
                 val day = CardCycle.payDate(card, m)
-                if (day.isBefore(from) || day.isAfter(to) || CardCycle.paid(card, m, entries)) return@mapNotNull null
+                if (day.isBefore(from) || day.isAfter(to)) return@mapNotNull null
                 val amount = owed[m] ?: CardCycle.bill(card, m, entries, accounts).amount
                 if (amount <= 0) null else Upcoming(cardCost(card, amount), day, ChronoUnit.DAYS.between(from, day).toInt(), card.id)
             }
@@ -109,7 +118,7 @@ object UpcomingPayments {
     /** The 카드값 line a card's bill is written as. */
     fun cardCost(card: MoneyAccount, amount: Long) = FixedCost(
         id = -card.id, name = card.name, amount = amount, day = card.payDay ?: 1, kind = MoneyKind.TRANSFER, category = CARD_BILL,
-        remind = card.remind, accountId = card.payFromId,
+        remind = card.remind, accountId = card.payFromId, categoryId = CategoryRole.CARD.id,
     )
 
     internal fun replacedByCard(c: FixedCost, accounts: List<MoneyAccount>) =
@@ -140,12 +149,14 @@ object UpcomingPayments {
 
     /** The ledger line for paying [cost] on [date]. */
     fun entry(cost: FixedCost, date: LocalDate) = MoneyEntry(
-        date = date, kind = cost.kind, amount = cost.amount, category = cost.category,
+        date = date, kind = cost.kind, amount = cost.amount, category = cost.category, categoryId = cost.categoryId,
         source = MoneySource.FIXED, merchant = cost.name, accountId = cost.accountId, fixedId = cost.id.takeIf { it > 0 },
+        // 2.0.0 [RVK-46] (검토 MONEY-07) A repeating 이체 lands where it was set to go.
+        toAccountId = cost.toAccountId.takeIf { cost.kind == MoneyKind.TRANSFER && it != cost.accountId },
     )
 
     /** [LEDG-08] The line for [u]: a card's bill moves money from its account to the card. */
-    fun entry(u: Upcoming, date: LocalDate) = entry(u.cost, date).copy(toAccountId = u.cardId)
+    fun entry(u: Upcoming, date: LocalDate) = entry(u.cost, date).let { e -> e.copy(toAccountId = u.cardId ?: e.toAccountId) }
 
     const val CARD_BILL = "카드값"
 }
@@ -163,7 +174,9 @@ object Recurring {
      */
     fun due(costs: List<FixedCost>, entries: List<MoneyEntry>, today: LocalDate, through: Map<Long, LocalDate> = emptyMap()): List<MoneyEntry> =
         costs.filter { it.auto && it.amount > 0 }.flatMap { c ->
-            val after = through[c.id]?.plusDays(1)
+            // 2.0.0 [RVK-41] (검토 MONEY-59) A mark past today (the phone's clock was set ahead and back) does not say today was done:
+            // today's line is written when it is not there yet, and the days after on their days instead of never.
+            val after = through[c.id]?.let { if (it.isAfter(today)) today else it.plusDays(1) }
             val from = listOfNotNull(c.start ?: after ?: today, after, today.minusDays(CATCH_UP_DAYS)).max()
             c.occurrences(from, today).filter { !UpcomingPayments.recorded(c, it, entries) }.map { UpcomingPayments.entry(c, it) }
         }.sortedWith(compareBy({ it.date }, { it.fixedId }))
@@ -189,6 +202,8 @@ object MoneyAlerts {
         accounts: List<MoneyAccount> = emptyList(),
         /** [SHOP-04] The kinds of work the user's calendars have, for the tax deadlines that go with them. */
         styles: Set<com.bamnat.core.work.WorkStyle> = emptySet(),
+        /** 2.0.0 [RVK-40] (검토 MONEY-50) The shops' 일반·간이과세. */
+        vat: Set<TaxDeadlines.Vat> = emptySet(),
     ): List<Alert> = buildList {
         for (j in jobs) {
             // [FLD-03] A cancelled job neither starts nor owes.
@@ -199,7 +214,8 @@ object MoneyAlerts {
                 val text = listOfNotNull(start.toString(), j.place.takeIf { it.isNotBlank() }, j.client.takeIf { it.isNotBlank() }).joinToString(" · ")
                 add(Alert(j.date.atTime(start).minusMinutes(before.toLong()), "job-${j.id}", j.title.ifBlank { "일감" }, "${JobReminders.label(before)} · $text"))
             }
-            if (j.unpaid > 0) {
+            // 2.0.0 [RVK-40] (검토 MONEY-51·T06b-05) A 가계약 is not money owed yet, as in 받을 돈 and 미래 잔액.
+            if (j.unpaid > 0 && j.status != JobStatus.TENTATIVE) {
                 // [FLD-09] The day after the promised day and a week after it; without one, after the last day.
                 val from = j.due ?: j.lastDate
                 for ((n, after) in listOf(1L, 7L).withIndex()) {
@@ -211,9 +227,11 @@ object MoneyAlerts {
         val until = YearMonth.from(today).plusMonths(1).atEndOfMonth()
         // A 카드값 line the card's own bill stands in for is not reminded twice ([UpcomingPayments.within]).
         for (c in costs.filter { it.remind && !UpcomingPayments.replacedByCard(it, accounts) }) for (due in c.occurrences(today, until)) {
-            // [LEDG-09] A line that writes itself says so on the day; the rest are reminders until written.
+            // [LEDG-09] A line that writes itself says so on the day; the rest are reminders until written. 2.0.0 [RVK-41] (검토
+            // MONEY-59) Only when it was written: the alert is worked out again when it rings, after the catching up.
             if (c.auto) {
-                add(Alert(due.atTime(BILL_AT), "bill-${c.id}-$due-0", "가계부에 적었어요", "${c.schedule} ${c.name} ${won(c.amount)}"))
+                add(if (UpcomingPayments.recorded(c, due, entries)) Alert(due.atTime(BILL_AT), "bill-${c.id}-$due-0", "가계부에 적었어요", "${c.schedule} ${c.name} ${won(c.amount)}")
+                    else Alert(due.atTime(BILL_AT), "bill-${c.id}-$due-0", "가계부에 아직 안 적혔어요", "${c.name} ${won(c.amount)} · 눌러서 적어 주세요"))
                 continue
             }
             if (UpcomingPayments.recorded(c, due, entries)) continue
@@ -241,7 +259,7 @@ object MoneyAlerts {
             add(Alert(at.first.atTime(NUDGE_AT), "owed-${r.id}-$n", at.second, "${r.name}$who · ${won(r.left)}"))
         }
         // [SHOP-04] 부가세 and 종합소득세 deadlines for shop and field work.
-        for (t in TaxDeadlines.alerts(today, styles)) add(Alert(t.at, t.key, t.title, t.text))
+        for (t in TaxDeadlines.alerts(today, styles, vat)) add(Alert(t.at, t.key, t.title, t.text))
     }
 
     /** The alerts at the earliest time strictly after [now]; empty when none is ahead. */
@@ -250,8 +268,9 @@ object MoneyAlerts {
         receivables: List<Receivable> = emptyList(),
         accounts: List<MoneyAccount> = emptyList(),
         styles: Set<com.bamnat.core.work.WorkStyle> = emptySet(),
+        vat: Set<TaxDeadlines.Vat> = emptySet(),
     ): List<Alert> {
-        val ahead = all(jobs, costs, entries, now.toLocalDate(), receivables, accounts, styles).filter { it.at.isAfter(now) }
+        val ahead = all(jobs, costs, entries, now.toLocalDate(), receivables, accounts, styles, vat).filter { it.at.isAfter(now) }
         val first = ahead.minOfOrNull { it.at } ?: return emptyList()
         return ahead.filter { it.at == first }.sortedBy { it.key }
     }
@@ -262,10 +281,11 @@ object MoneyAlerts {
         receivables: List<Receivable> = emptyList(),
         accounts: List<MoneyAccount> = emptyList(),
         styles: Set<com.bamnat.core.work.WorkStyle> = emptySet(),
+        vat: Set<TaxDeadlines.Vat> = emptySet(),
     ): List<Alert> =
-        all(jobs, costs, entries, at.toLocalDate(), receivables, accounts, styles).filter { it.at == at }.sortedBy { it.key }
+        all(jobs, costs, entries, at.toLocalDate(), receivables, accounts, styles, vat).filter { it.at == at }.sortedBy { it.key }
 
-    private fun won(v: Long) = "%,d원".format(v)
+    private fun won(v: Long) = "%,d원".format(java.util.Locale.ROOT, v)
 }
 
 /** [WORK-05] Amounts written in a day's memo (+50,000, 수입 5만원, 지출 3만 5천원) offered as ledger lines. */
@@ -274,22 +294,20 @@ object MemoAmounts {
 
     private val INCOME = Regex("수입|입금|받음|받았|벌었|팁|용돈|부수입|들어옴|들어왔")
     private val EXPENSE = Regex("지출|씀|썼|냄|냈|결제|사용|나감|나갔")
-    private val AMOUNT = Regex("(\\d+(?:\\.\\d+)?)\\s*만\\s*(?:(\\d)\\s*천)?\\s*원?|(\\d)\\s*천\\s*원|(\\d{1,3}(?:,\\d{3})+|\\d{3,})\\s*원?")
-
     fun find(memo: String): List<Found> = memo.lines().mapNotNull { raw ->
         val line = raw.trim()
-        val all = AMOUNT.findAll(line).toList()
-        // A unit (원·만·천), a sign or a thousands comma marks money; a bare 2026 is a year, not won.
-        val m = all.firstOrNull { Regex("[원만천]").containsMatchIn(it.value) && !line.startsWith("년", it.range.last + 1) }
-            ?: all.firstOrNull { line.substring(0, it.range.first).trimEnd().let { b -> b.endsWith("+") || b.endsWith("-") || b.endsWith("＋") || b.endsWith("－") } }
-            ?: all.firstOrNull { it.value.contains(',') }
-            ?: all.firstOrNull { it.value.trim().length >= 4 && !line.startsWith("년", it.range.last + 1) }
-            ?: return@mapNotNull null
-        val amount = when {
-            m.groupValues[1].isNotEmpty() -> Math.round(m.groupValues[1].toDouble() * 10_000) + (m.groupValues[2].toLongOrNull() ?: 0) * 1000
-            m.groupValues[3].isNotEmpty() -> m.groupValues[3].toLong() * 1000
-            else -> m.groupValues[4].replace(",", "").toLong()
+        // 2.0.0 [RVK-02] (검토 MONEY-57) 금액 읽기는 한 줄로 적기와 같은 [KoreanAmount]: '15천원'이 5,000원, '2천만원'이 못 읽히던 것.
+        // 천·백만 있는 말("3천 걸음")은 뒤에 원이 붙을 때만 돈으로 봐요(예전과 같아요).
+        val all = KoreanAmount.find(line).filter { f ->
+            (f.units.any { it in "억만원" } || !f.units.any { it in "천백" }) && (f.unit || f.text.trim().length >= 3)
         }
+        // A unit (원·만·천), a sign or a thousands comma marks money; a bare 2026 is a year, not won.
+        val m = all.firstOrNull { it.units.isNotEmpty() && !line.startsWith("년", it.range.last + 1) }
+            ?: all.firstOrNull { line.substring(0, it.range.first).trimEnd().let { b -> b.endsWith("+") || b.endsWith("-") || b.endsWith("＋") || b.endsWith("－") } }
+            ?: all.firstOrNull { it.text.contains(',') }
+            ?: all.firstOrNull { it.text.trim().length >= 4 && !line.startsWith("년", it.range.last + 1) }
+            ?: return@mapNotNull null
+        val amount = m.value
         if (amount <= 0) return@mapNotNull null
         val before = line.substring(0, m.range.first).trimEnd()
         val kind = when {

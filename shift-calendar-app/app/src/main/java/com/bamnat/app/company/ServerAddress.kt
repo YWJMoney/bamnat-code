@@ -35,10 +35,9 @@ object ServerAddress {
     /** True when [e] says the request never reached the server, so sending it elsewhere is safe. */
     fun neverArrived(e: Throwable): Boolean = when (e) {
         is UnknownHostException, is ConnectException, is NoRouteToHostException, is SSLHandshakeException -> true
-        else -> e is IOException && e.message.orEmpty().let { m ->
-            // Cronet's own errors (NetworkException) name the cause in their message.
-            NEVER_ARRIVED.any { m.contains(it) }
-        }
+        // 2.0.0 [RVN-23] (PC-187) the phone's HttpEngine says it by its error kind ([NetEngine.neverArrived]); its message, as
+        // Cronet's did before, also names the cause ("net::ERR_NAME_NOT_RESOLVED").
+        else -> NetEngine.neverArrived(e) || e is IOException && e.message.orEmpty().let { m -> NEVER_ARRIVED.any { m.contains(it) } }
     }
 
     /**

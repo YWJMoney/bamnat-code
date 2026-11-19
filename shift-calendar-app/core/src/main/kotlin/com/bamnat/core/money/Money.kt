@@ -45,6 +45,11 @@ data class MoneyEntry(
     val receipt: String = "",
     /** 1.32 [LEDX-17] 유이자 할부: the card's yearly 할부 수수료율 in percent (e.g. 15.9); 0 for 무이자. */
     val installmentRate: Double = 0.0,
+    /**
+     * 2.0.0 [RVK-60] (검토 I06ab-01, DB 37) The category's fixed id ([CategoryIds]); [category] is only its name now. Empty for a line
+     * made in code and not saved yet: the ledger gives it the id its name stands for when it is saved.
+     */
+    val categoryId: String = "",
 ) {
     /** What a list shows as the line's name. */
     // 1.32 [LEDX-12] A company's legal name shows as the shop people know (우아한형제들 → 배달의민족); [merchant] keeps what the text said.
@@ -54,19 +59,29 @@ data class MoneyEntry(
      * [LEDG-11] What each category got of this line, signed like [amount]: the parts of a split
      * payment, or the whole amount under [category]. The pieces always add up to [amount].
      */
-    fun shares(): List<Pair<String, Long>> {
-        if (parts.isEmpty()) return listOf(category to amount)
+    fun shares(): List<Pair<String, Long>> =
+        pieces().groupBy { it.category }.map { (c, list) -> c to list.sumOf { it.amount } }
+
+    /** [shares] piece by piece, each with its category's id (2.0.0 [RVK-60]), signed like [amount]; nothing of 0. */
+    fun pieces(): List<EntryPart> {
+        if (parts.isEmpty()) return listOf(EntryPart(category, amount, categoryId))
         val sign = if (amount < 0) -1 else 1
         val whole = kotlin.math.abs(amount)
         val given = parts.filter { it.amount > 0 }
         val sum = given.sumOf { it.amount }
         // Parts that no longer add up (the amount was changed elsewhere) leave the difference with the main category.
-        val fixed = if (sum == whole) given else given + EntryPart(category, whole - sum)
-        return fixed.filter { it.amount != 0L }.groupBy { it.category }.map { (c, list) -> c to sign * list.sumOf { it.amount } }
+        val fixed = if (sum == whole) given else given + EntryPart(category, whole - sum, categoryId)
+        return fixed.filter { it.amount != 0L }.map { it.copy(amount = sign * it.amount) }
     }
 
     /** [LEDG-11] What [c] got of this line; 0 when it has no part of it. */
     fun shareOf(c: String): Long = shares().filter { it.first == c }.sumOf { it.second }
+
+    /** 2.0.0 [RVK-60] Whether the line is [role]'s (급여, 카드값 …), whatever the user calls that category now. */
+    fun isRole(role: CategoryRole): Boolean = CategoryIds.matches(categoryId, category, role)
+
+    /** 2.0.0 [RVK-60] What [role]'s category got of this line, signed like [amount], by id: a renamed 급여 is still pay. */
+    fun shareOf(role: CategoryRole): Long = pieces().filter { CategoryIds.matches(it.id, it.category, role) }.sumOf { it.amount }
 
     /** Spread over more than one category. */
     val isSplit: Boolean get() = shares().size > 1
@@ -78,7 +93,7 @@ data class MoneyEntry(
 }
 
 /** [LEDG-11] One category's piece of a split payment, in whole won. */
-data class EntryPart(val category: String, val amount: Long)
+data class EntryPart(val category: String, val amount: Long, val id: String = "")
 
 /**
  * A booked job for field and freelance work [WORK-02]: who, where, when and for how much, with
@@ -112,6 +127,11 @@ data class Job(
     val units: Double? = null,
     /** [FLD-09] When the money is promised; null follows the last day. */
     val due: LocalDate? = null,
+    /**
+     * 2.0.0 [RVK-46] (검토 MONEY-29·T06a-01·I06ab-04) Money that came in besides 선금·잔금: 계약금·중도금, or the pay in several parts, each
+     * with the day it came. It counts toward [received] with the deposit and balance ticked as paid.
+     */
+    val payments: List<JobPayment> = emptyList(),
 ) {
     val lastDate: LocalDate get() = endDate?.takeIf { it.isAfter(date) } ?: date
     val days: Int get() = (lastDate.toEpochDay() - date.toEpochDay()).toInt() + 1
@@ -123,7 +143,11 @@ data class Job(
     /** What actually reaches the account; deposit and balance are parts of it. */
     val payable: Long get() = amount - withheld
     val balance: Long get() = (payable - deposit).coerceAtLeast(0)
-    val received: Long get() = (if (depositPaid) deposit.coerceAtMost(payable) else 0) + (if (balancePaid) balance else 0)
+    /** What came in: the deposit and balance ticked as paid and [payments], never more than [payable]. */
+    val received: Long get() = ((if (depositPaid) deposit.coerceAtMost(payable) else 0) + (if (balancePaid) balance else 0) +
+        payments.sumOf { it.amount.coerceAtLeast(0) }).coerceAtMost(payable.coerceAtLeast(0))
+    /** 2.0.0 [RVK-46] The last day money came in for this job, when its payments say so. */
+    val lastPaid: LocalDate? get() = payments.maxOfOrNull { it.date }
     /** [FLD-03] A cancelled job is owed nothing more; a deposit already paid is kept. */
     val unpaid: Long get() = if (cancelled) 0 else (payable - received).coerceAtLeast(0)
     val profit: Long get() = payable - costs
@@ -139,6 +163,29 @@ data class Job(
 
     /** [FLD-03] 입금 완료 follows from the money, not from a step the user picks. */
     val fullyPaid: Boolean get() = !cancelled && amount > 0 && unpaid == 0L
+
+    /**
+     * 2.0.0 (HQ, 조건 6) Money still owed after the day it was promised (or the last day): the only 받을 돈 the calendar marks in
+     * 주의 colour. Before that day it is plain news, not a warning; a 가계약 is never late.
+     */
+    fun overdue(today: LocalDate): Boolean = unpaid > 0 && status != JobStatus.TENTATIVE && (due ?: lastDate).isBefore(today)
+}
+
+/** 2.0.0 [RVK-46] (검토 MONEY-29·T06a-01) One payment for a [Job] besides its 선금·잔금, with its day. */
+data class JobPayment(
+    val id: Long = 0,
+    val jobId: Long = 0,
+    val date: LocalDate,
+    val amount: Long,
+    /** What it was: '계약금', '중도금', or "" for a plain part. */
+    val label: String = "",
+    val note: String = "",
+) {
+    companion object {
+        const val MAX_LABEL = 20
+        /** The usual names, in the order money comes in for building work. */
+        val LABELS = listOf("계약금", "중도금", "잔금")
+    }
 }
 
 /** [WORK-02] Withholding on 사업소득: 소득세 3% + 지방소득세 (소득세의 10%), each below 10 won dropped. */
@@ -239,20 +286,94 @@ object MoneyCategories {
         val mine = edits.filter { it.kind == kind }.sortedWith(compareBy({ it.position }, { it.name }))
         if (mine.isEmpty()) return base
         val touched = mine.map { it.name }.toSet()
-        val shown = mine.filter { !it.hidden }.map { it.name } + base.filter { it !in touched }
+        // 2.0.0 [RVK-60] A built-in one the user renamed (식비 → 외식) is theirs by its id: its first name does not come back as well.
+        val touchedIds = mine.map { it.id.ifEmpty { CategoryIds.of(kind, it.name) } }.toSet()
+        val shown = mine.filter { !it.hidden }.map { it.name } + base.filter { it !in touched && CategoryIds.of(kind, it) !in touchedIds }
         return shown.filter { it != OTHER }.distinct() + OTHER
     }
 
     /** [LEDG-14] A name the user may give a category: trimmed, short, and nothing a CSV or list would trip over. */
     fun clean(name: String): String = name.replace(Regex("[\\t\\n\\r,#]"), " ").replace(Regex("\\s+"), " ").trim().take(MAX_NAME)
 
+    /**
+     * 2.0.0 [RVK-08] (검토 MONEY-03·T06a-10) kept 급여·카드값·내 계좌·이자·금융·대출 상환 from being renamed, as the sums found them by
+     * name. 2.0.0 [RVK-60] (검토 I06ab-01, DB 37) The sums find them by their fixed id ([CategoryRole]) now, so only 기타, where every
+     * line without a home goes, keeps its name.
+     */
+    val FIXED_NAMES: Set<String> = setOf(OTHER)
+
+    /** False for 기타 ([FIXED_NAMES]). */
+    fun renamable(name: String): Boolean = name !in FIXED_NAMES
+
+    /**
+     * 2.0.0 [RVK-60] Whether [name] may be given to the category with [id] of [kind]: never the first name of a 급여·카드값-like
+     * category ([CategoryRole]) that is another one's, so 부수입 renamed 급여 is never taken for pay.
+     */
+    fun nameFree(kind: MoneyKind, name: String, id: String): Boolean =
+        CategoryRole.entries.none { it.kind == kind && it.builtin == name && it.id != id }
+
+    /**
+     * 2.0.0 [RVK-09] (검토 MONEY-02): renames given as (이름 → 새 이름) all meant at once, put in an order that never lands
+     * one category on another: each goes through a name nobody uses first, so 식비→외식 with 장보기→식비, or a swap, keeps
+     * the two apart. Returns (from, to) steps to run in order; the fixed names (from or to) and empty or unchanged ones are left out.
+     */
+    fun renameSteps(renames: List<Pair<String, String>>): List<Pair<String, String>> {
+        val wanted = renames.mapNotNull { (from, to) ->
+            val name = clean(to)
+            if (name.isEmpty() || name == from || !renamable(from) || !renamable(name)) null else from to name
+        }.distinctBy { it.first }
+        if (wanted.isEmpty()) return emptyList()
+        val temp = wanted.mapIndexed { i, (from, _) -> from to "\u0001rename$i" }
+        return temp + wanted.mapIndexed { i, (_, to) -> temp[i].second to to }
+    }
+
     const val SALARY = "급여"
     const val OTHER = "기타"
     const val MAX_NAME = 12
 }
 
-/** [LEDG-14] One category the user added, hid or moved, for one kind of line. */
-data class CategoryEdit(val kind: MoneyKind, val name: String, val position: Int, val hidden: Boolean = false)
+/**
+ * [LEDG-14] One category the user added, hid or moved, for one kind of line. 2.0.0 [RVK-46] (검토 U06a-15·I06aa-09) With the icon
+ * ([CategoryLook.ICONS] key) and color (a [CategoryLook.COLORS] place, 1 on) the user picked; "" and 0 keep the usual look.
+ */
+data class CategoryEdit(
+    val kind: MoneyKind, val name: String, val position: Int, val hidden: Boolean = false,
+    val icon: String = "", val color: Int = 0,
+    /** 2.0.0 [RVK-60] (검토 I06ab-01, DB 37) Its fixed id ([CategoryIds]); empty for one written before 37 or by code, which takes its name's. */
+    val id: String = "",
+    /** 2.0.0 [RVK-60] 집 or 일·가게 money, when the user said ([CategoryScope.FOLLOW] when not). */
+    val scope: CategoryScope = CategoryScope.FOLLOW,
+    /** 2.0.0 [RVK-60] The 표준 묶음 the user joined it to ("" for none; a built-in one has its own, [CategoryIds.standard]). */
+    val standard: String = "",
+)
+
+/**
+ * 2.0.0 [RVK-46] (검토 U06a-15·I06aa-09) The looks a category can be given: a picture by key (the app draws each) and a place in the
+ * ledger's palette, so a color follows light and dark. A key or place this app does not know (a newer app's backup) keeps the usual look.
+ */
+object CategoryLook {
+    val ICONS = listOf(
+        "food", "cafe", "store", "delivery", "cart", "bus", "car", "fuel", "hospital", "phone", "bill", "subscribe",
+        "home", "gift", "school", "game", "clean", "clothes", "insurance", "pet", "child", "fitness", "travel", "music",
+        "beauty", "drink", "laptop", "tools", "work", "savings", "money", "heart",
+    )
+
+    /** Palette places 1 to [COLORS]; 0 is the usual color. */
+    // The palette's 11th, red, is left out: red is for danger only (조건 6).
+    const val COLORS = 10
+
+    fun icon(key: String): String = key.takeIf { it in ICONS }.orEmpty()
+
+    fun color(place: Int): Int = place.takeIf { it in 1..COLORS } ?: 0
+
+    /** The user's look for each name that has one; a name in two kinds takes the first that set one. */
+    // 2.0.0 [RVK-60] A built-in one renamed (급여 → 월급) is here too, so it keeps its usual picture under its new name.
+    fun byName(edits: List<CategoryEdit>): Map<String, CategoryEdit> =
+        edits.filter { icon(it.icon).isNotEmpty() || color(it.color) != 0 || renamedBuiltin(it) != null }.groupBy { it.name }.mapValues { it.value.first() }
+
+    /** 2.0.0 [RVK-60] The first name of a built-in category [edit] renamed; null when it is not one or keeps that name. */
+    fun renamedBuiltin(edit: CategoryEdit): String? = CategoryIds.builtinName(edit.id)?.takeIf { it != edit.name }
+}
 
 data class CategoryTotal(val category: String, val amount: Long, val count: Int)
 
@@ -285,7 +406,15 @@ data class MonthMoney(
     val otherIncome: Long,
     val expenses: Long,
     val expenseByCategory: List<CategoryTotal>,
+    /** 2.0.0 [RVK-20] (검토 U06a-07·MONEY-18) Counted over a pay cycle (급여일 주기) instead of the calendar month; null for the month. */
+    val range: PayCycle.Range? = null,
 ) {
+    /** The first and last day counted: the cycle's, or the month's. */
+    val from: LocalDate get() = range?.from ?: month.atDay(1)
+    val to: LocalDate get() = range?.to ?: month.atEndOfMonth()
+    /** "11월" or "10/25~11/24", for a title. */
+    val label: String get() = range?.label ?: "${month.monthValue}월"
+
     /**
      * [TAX-01] One of the two, never both. [J133-02] 1.33 (보고서 A10): the salary written down wins once it came in (it is
      * the money in the account); before that the estimate stands in, as [payExpected] (들어올 돈).
@@ -322,8 +451,18 @@ object MoneyCalculator {
         payEstimate: Long? = null,
         /** 1.37 PC 6차: counted on this day, a job is earned once done or past ([Job.isDone]), as the calendar's 번 돈. */
         today: LocalDate? = null,
-    ): MonthMoney {
-        val inMonth = { d: LocalDate -> YearMonth.from(d) == month }
+    ): MonthMoney = counted(month, null, entries, jobs, sales, payEstimate, today)
+
+    /**
+     * 2.0.0 [RVK-20] (검토 U06a-07·MONEY-18) The same sums over a pay cycle, from a pay day to the day before the next, shown as
+     * [month]'s. The pay that starts the cycle is in it as written down; no estimate (the next pay starts the next cycle).
+     */
+    fun cycle(month: YearMonth, range: PayCycle.Range, entries: List<MoneyEntry>, jobs: List<Job>, sales: List<DailySales>,
+              today: LocalDate? = null): MonthMoney = counted(month, range, entries, jobs, sales, null, today)
+
+    private fun counted(month: YearMonth, range: PayCycle.Range?, entries: List<MoneyEntry>, jobs: List<Job>, sales: List<DailySales>,
+                        payEstimate: Long?, today: LocalDate?): MonthMoney {
+        val inMonth = { d: LocalDate -> if (range != null) range.contains(d) else YearMonth.from(d) == month }
         val e = entries.filter { inMonth(it.date) }
         val all = jobs.filter { inMonth(it.date) }
         val j = if (today == null) all else all.filter { it.cancelled || it.isDone(today) }
@@ -331,7 +470,7 @@ object MoneyCalculator {
         val s = sales.filter { inMonth(it.date) }
         val incomes = e.filter { it.kind == MoneyKind.INCOME }
         // [LEDG-11] A split income line counts its 급여 share as pay, the rest as other income ([com.bamnat.core.pay.PayGaps]).
-        val salary = incomes.sumOf { it.shareOf(MoneyCategories.SALARY) }
+        val salary = incomes.sumOf { it.shareOf(CategoryRole.SALARY) }
         val spent = e.filter { it.kind == MoneyKind.EXPENSE }
         // [LEDG-11] A split payment counts under each of its categories.
         val shares = spent.flatMap { it.shares() }
@@ -356,6 +495,7 @@ object MoneyCalculator {
             expenseByCategory = shares.groupBy { it.first }
                 .map { (c, list) -> CategoryTotal(c, list.sumOf { it.second }, list.size) }
                 .sortedWith(compareByDescending<CategoryTotal> { it.amount }.thenBy { it.category }),
+            range = range,
         )
     }
 
@@ -415,6 +555,13 @@ data class MoneyBook(
     val styles: Set<com.bamnat.core.work.WorkStyle> = emptySet(),
     /** [COMN-04] Lines from payment notifications waiting in 확인 대기함, kept out of every total until confirmed. */
     val pending: List<MoneyEntry> = emptyList(),
+    /** 2.0.0 [RVK-40] (검토 MONEY-50) The shops' 일반·간이과세 behind this book, for the 부가세 deadlines. */
+    val vat: Set<TaxDeadlines.Vat> = emptySet(),
+    /**
+     * 2.0.0 [RVK-46] (검토 T06a-05·I06ab-03) 줄 돈: money the user owes, kept apart from [receivables] so nothing that adds up 받을 돈 or
+     * money coming in ever counts it.
+     */
+    val payables: List<Receivable> = emptyList(),
 ) {
     /** [SHOP-04] Every kind of work behind this book, for the tax deadlines that go with them. */
     val allStyles: Set<com.bamnat.core.work.WorkStyle> get() = styles + setOfNotNull(style)
@@ -432,6 +579,8 @@ data class MoneyBook(
     }
 
     fun month(month: YearMonth, payEstimate: Long? = null, today: LocalDate? = null) = MoneyCalculator.month(month, entries, jobs, sales, payEstimate, today)
+    /** 2.0.0 [RVK-20] [month] counted over the pay cycle [range]. */
+    fun cycle(month: YearMonth, range: PayCycle.Range, today: LocalDate? = null) = MoneyCalculator.cycle(month, range, entries, jobs, sales, today)
     fun days(month: YearMonth) = MoneyCalculator.days(month, entries, jobs, sales)
     /** [RECV-02] Everything still owed, written down or left on a job. */
     fun owed(today: LocalDate) = Receivables.owed(receivables, jobs, today)
@@ -460,6 +609,7 @@ data class MoneyBook(
                 moved.flatMap { it.entries }, moved.flatMap { it.jobs }, moved.flatMap { it.sales }, moved.flatMap { it.fixed },
                 moved.flatMap { it.receivables }, moved.flatMap { it.accounts },
                 styles = books.flatMap { it.allStyles }.toSet(), pending = moved.flatMap { it.pending },
+                vat = books.flatMap { it.vat }.toSet(), payables = moved.flatMap { it.payables },
             )
         }
 
@@ -469,7 +619,7 @@ data class MoneyBook(
             val m = { id: Long? -> id?.plus(by) }
             return copy(
                 entries = entries.map { it.copy(accountId = m(it.accountId), toAccountId = m(it.toAccountId), fixedId = m(it.fixedId)) },
-                fixed = fixed.map { it.copy(id = it.id + by, accountId = m(it.accountId)) },
+                fixed = fixed.map { it.copy(id = it.id + by, accountId = m(it.accountId), toAccountId = m(it.toAccountId)) },
                 accounts = accounts.map { it.copy(id = it.id + by, payFromId = m(it.payFromId)) },
             )
         }

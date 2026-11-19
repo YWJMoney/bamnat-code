@@ -8,6 +8,9 @@ on:
 concurrency:
   group: baseline-profile
   cancel-in-progress: false
+# 2.0.0 [RVL-61] (검토 DATA-27) Reads the code (and uploads a file); nothing here writes to the repository.
+permissions:
+  contents: read
 jobs:
   generate:
     runs-on: ubuntu-latest

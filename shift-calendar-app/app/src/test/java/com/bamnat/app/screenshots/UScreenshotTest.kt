@@ -90,10 +90,11 @@ class UScreenshotTest : ScreenshotBase() {
     })
 
     // ---- 369: the ways out ----
-    @Test fun noDays() = shoot("816_u_no_row_of_dates", PHONE_393, asked(days = false) { reveal("사진 위에서 누르기") })
+    @Test fun noDays() = shoot("816_u_no_row_of_dates", PHONE_393, asked(days = false) { reveal("사진에서 내 줄 알려 주기") })
     @Test fun tapDialog() = shoot("817_u_tap_on_photo", PHONE_393, asked(days = false) {
-        tapText("사진 위에서 누르기")
-        assertTrue(appears("날짜 줄(1 2 3 …)을 눌러 주세요"))
+        tapText("사진에서 내 줄 알려 주기")
+        // 2.0.0 [RVL-38] The window now says the step first: "1. 날짜 줄을 눌러 주세요", then "2. 내 줄을 눌러 주세요".
+        assertTrue(appears("1. 날짜 줄을 눌러 주세요"))
     })
     @Test fun diagnosis() = shoot("818_u_what_was_read", PHONE_393, asked {
         tapText("무엇을 읽었는지 보기")

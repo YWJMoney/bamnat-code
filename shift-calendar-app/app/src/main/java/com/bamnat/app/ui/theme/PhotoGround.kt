@@ -1,6 +1,8 @@
 package com.bamnat.app.ui.theme
 
 import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.graphics.drawOutline
+import androidx.compose.ui.graphics.drawscope.translate
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Color
@@ -58,14 +60,23 @@ object PhotoGround {
      * the opaque ground, rounded; nothing otherwise.
      */
     @Composable
-    fun head(top: androidx.compose.ui.unit.Dp = 0.dp): androidx.compose.ui.Modifier {
+    fun head(top: androidx.compose.ui.unit.Dp = 0.dp, side: androidx.compose.ui.unit.Dp = 0.dp, bottom: androidx.compose.ui.unit.Dp = 0.dp,
+             shape: androidx.compose.ui.graphics.Shape? = null): androidx.compose.ui.Modifier {
         if (!on()) return androidx.compose.ui.Modifier
         val c = solid(MaterialTheme.colorScheme.surface)
         // Drawn behind (and under a 꾸밈 층 laid on the row), [top] left as it was so the row's own spacing stays.
+        // 2.0.0 [PC-62] 야간 회복 스테이션 (달력 머리 둘레에 검은 네모): a head with its own box (부품 달력 머리: 바깥 여백·모서리) has the
+        // ground under that box only, [side]·[bottom] in and in its [shape], not a square round the whole row.
         return androidx.compose.ui.Modifier.drawBehind {
+            val x = side.toPx()
             val y = top.toPx()
-            drawRoundRect(c, topLeft = androidx.compose.ui.geometry.Offset(0f, y), size = androidx.compose.ui.geometry.Size(size.width, size.height - y),
+            val box = androidx.compose.ui.geometry.Size(size.width - 2 * x, size.height - y - bottom.toPx())
+            if (box.width <= 0f || box.height <= 0f) return@drawBehind
+            if (shape == null) drawRoundRect(c, topLeft = androidx.compose.ui.geometry.Offset(x, y), size = box,
                 cornerRadius = androidx.compose.ui.geometry.CornerRadius(14.dp.toPx()))
+            else translate(x, y) {
+                drawOutline(shape.createOutline(box, layoutDirection, this), c)
+            }
         }
     }
 }

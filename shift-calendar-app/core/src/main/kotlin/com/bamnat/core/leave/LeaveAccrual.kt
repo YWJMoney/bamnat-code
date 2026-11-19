@@ -39,6 +39,16 @@ data class LeavePolicy(
      * gives a day per month fully attended, which the user adds by hand).
      */
     val lowAttendanceYears: Set<Int> = emptySet(),
+    /**
+     * 2.0.0 [RVH-45] 시간 단위 연차: the company lets leave be taken by the hour ('우리 회사는 시간 단위로 써요'). Off, the day sheet has
+     * no hour chips; leave of half a day (반차) is there always. 설계 docs/plans/2.0.0/두-구간-근무-시간-연차-설계.md 3절.
+     */
+    val byHours: Boolean = false,
+    /**
+     * [RVH-45] How long one day of leave is, in minutes (1일 기준, 설계 3-2절): an hour's leave takes minutes ÷ this of a day. Fixed (8시간,
+     * or a short-hours worker's 1일 소정근로시간), not the day's own shift, so the same 2 hours is always the same part of a day.
+     */
+    val dayMinutes: Int = com.bamnat.core.model.Leave.DAY_MINUTES,
 ) {
     fun fiscalStart(onOrBefore: LocalDate): LocalDate {
         val m = fiscalStartMonth.coerceIn(1, 12)

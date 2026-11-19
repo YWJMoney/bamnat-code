@@ -1,5 +1,12 @@
 package com.bamnat.app.ui.calendar
 
+import androidx.compose.material.icons.filled.KeyboardArrowUp
+import androidx.compose.ui.unit.Constraints
+import androidx.compose.ui.text.rememberTextMeasurer
+import androidx.compose.ui.layout.SubcomposeLayout
+import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.key
 import com.bamnat.core.schedule.QuickOrder
 import com.bamnat.app.data.rules
 import com.bamnat.app.appContainer
@@ -74,6 +81,8 @@ import com.bamnat.app.data.ScheduleSnapshot
 import com.bamnat.app.ui.Fmt
 import com.bamnat.app.ui.components.LeaveMark
 import com.bamnat.app.ui.components.ShiftBadge
+import com.bamnat.app.ui.components.ToneLine
+import com.bamnat.app.ui.theme.color
 import com.bamnat.app.ui.theme.LocalCalendarColors
 import com.bamnat.app.ui.theme.NumberStyle
 import com.bamnat.core.alarm.AlarmPlanner
@@ -94,17 +103,19 @@ import androidx.compose.material.icons.outlined.Storefront
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.foundation.gestures.animateScrollBy
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.rememberLazyListState
-import androidx.compose.foundation.shape.CircleShape
+import com.bamnat.app.ui.theme.pill
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.ui.semantics.contentDescription
-import kotlinx.coroutines.launch
 import java.time.LocalDate
+import com.bamnat.app.ui.theme.Tone
+import com.bamnat.app.ui.theme.color
+import com.bamnat.app.ui.theme.container
 
 /** The day's alarms as they ring with its switch on, so a day turned off still shows what it would ring. */
 internal fun plannedAlarms(snapshot: ScheduleSnapshot, day: ResolvedDay): List<PlannedAlarm> =
@@ -123,7 +134,7 @@ internal fun whenText(alarm: PlannedAlarm, date: LocalDate): String =
 
 /** [DAY-01] One fact about the day in the header: 알람 끔, 직접 바꿈, 메모 2 … */
 private data class DayToken(val text: String, val tone: Tone, val said: String? = null, val struck: Boolean = false) {
-    enum class Tone { PLAIN, ACCENT, WARNING, ERROR }
+    enum class Tone { PLAIN, ACCENT, ERROR }
 }
 
 /** "주간 · 09:00 – 18:00 · 8시간", "야간 · 연차 (11시간)", "쉬는 날". */
@@ -177,6 +188,8 @@ fun DayHeader(
     compact: Boolean = onOpen != null,
     /** The first memo's token ("메모 · 도시락"); off while the day's story line (FLOW-08) shows the memos already. */
     memoToken: Boolean = true,
+    /** [CAL-01] The week of this day over the hour limit; said in the head's one 주의 line with the day's rest signs ([RVH-59]). */
+    weekNote: String? = null,
 ) {
     val settings by vm.settings.collectAsStateWithLifecycle()
     var dragged by remember { mutableFloatStateOf(0f) }
@@ -266,7 +279,7 @@ fun DayHeader(
             },
             label = "day-body",
         ) { d ->
-            DayFacts(d, today, snapshot, vm, settings, Modifier.padding(horizontal = 12.dp), memoToken)
+            DayFacts(d, today, snapshot, vm, settings, Modifier.padding(horizontal = 12.dp), memoToken, weekNote)
         }
         // Under the calendar the folded FAB sits over the row's end, so the last chip can scroll out from under it.
         if (!chipsFirst && headChips) ShiftChips(day, snapshot, vm, settings, Modifier.padding(top = 6.dp), endSpace = 12.dp)
@@ -279,7 +292,7 @@ fun DayHeader(
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun DayFacts(day: ResolvedDay, today: LocalDate, snapshot: ScheduleSnapshot, vm: CalendarViewModel, settings: AppSettings, modifier: Modifier, memoToken: Boolean = true) {
+private fun DayFacts(day: ResolvedDay, today: LocalDate, snapshot: ScheduleSnapshot, vm: CalendarViewModel, settings: AppSettings, modifier: Modifier, memoToken: Boolean = true, weekNote: String? = null) {
     val cal = LocalCalendarColors.current
     val focus = CalendarFocus.of(settings.workStyle)
     val book by vm.moneyBook.collectAsStateWithLifecycle()
@@ -304,7 +317,7 @@ private fun DayFacts(day: ResolvedDay, today: LocalDate, snapshot: ScheduleSnaps
             }
         }
         // [CAL-05] A field worker's jobs and a shop's sales come first: they are what the day is about.
-        for (j in dayBook.jobs.take(MAX_JOB_LINES)) DayJobLine(j, day.date)
+        for (j in dayBook.jobs.take(MAX_JOB_LINES)) DayJobLine(j, day.date, today)
         if (dayBook.jobs.size > MAX_JOB_LINES) {
             Text("일감 외 ${dayBook.jobs.size - MAX_JOB_LINES}건", style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(start = 28.dp))
@@ -349,7 +362,8 @@ private fun DayFacts(day: ResolvedDay, today: LocalDate, snapshot: ScheduleSnaps
             Text(
                 "이 날 합계 ${HoursFormat.korean(day.totalMinutes)}",
                 style = MaterialTheme.typography.titleSmall.merge(NumberStyle),
-                color = cal.holidayWork,
+                // 2.0.0 [RVP-13] (검토 UIX-15·U13-06) A plain sum is not a caution: the page's own ink, orange only for 주의.
+                color = MaterialTheme.colorScheme.onSurface,
             )
         }
         val tokens = dayTokens(day, snapshot, vm, settings, memoToken)
@@ -358,6 +372,10 @@ private fun DayFacts(day: ResolvedDay, today: LocalDate, snapshot: ScheduleSnaps
                 for (t in tokens) Token(t)
             }
         }
+        // 2.0.0 [RVH-59] 검토 PC-63 (대근을 넣은 날짜 창 한 화면에 빨강 칩 '야간 뒤 휴식 부족', 빨강 '이 주 66시간', 큰 빨강 상자 '휴식 점검'):
+        // what is for reference is said once, here, in one 주의 line (the mark orange, the words quiet). The 몸 group keeps the detail
+        // without colour; red stays for what cannot be undone.
+        dayCaution(day, snapshot, vm, settings, weekNote)?.let { ToneLine(it, tone = com.bamnat.app.ui.theme.Tone.Caution) }
     }
 }
 
@@ -421,19 +439,27 @@ private fun ShiftChips(day: ResolvedDay, snapshot: ScheduleSnapshot, vm: Calenda
     val types = remember(snapshot, style, day.shiftType?.id, folded) { dayTypes(snapshot, style, day.shiftType?.id, folded) }
     if (types.isEmpty()) return
     val fullLeave = day.leave?.isFullDay == true
-    ChipRow(modifier, start = 12.dp, end = endSpace) {
-        for (t in types) item(key = "shift-${t.id}") {
+    // 2.0.0 [RVH-71] 검토 HQ-87: the 쉬는 날 chip (the most common change) and the day's own chip are never in "+n". With big
+    // letters the chips may take two lines first; at the usual size one, so the sheet's fixed head stays short (조건 1: at folded
+    // 100% a second line pushed the day's groups under it).
+    val lines = if (androidx.compose.ui.platform.LocalDensity.current.fontScale >= 1.3f) 2 else 1
+    ChipRow(modifier, start = 12.dp, end = endSpace, lines = lines) {
+        for (t in types) {
             val on = !fullLeave && day.shiftType?.id == t.id
-            FilterChip(
-                selected = on,
-                onClick = { if (day.shiftType?.id != t.id) vm.assignQuick(day, com.bamnat.core.model.ShiftOverride.Shift(t.id), snapshot) },
-                label = { ChipText(t.name) },
-                leadingIcon = { ShiftBadge(t, size = 18.dp, outlined = t.isOff) },
-                // 1.39 PC 5차 (가게 유형 TalkBack '영업, 지금 근무'): said without '근무', which a shop's or a field day's chip is not.
-                modifier = Modifier.semantics { contentDescription = if (on) "${t.name}, 이날 골라 둔 것" else "${t.name}${Fmt.ro(t.name)} 바꾸기" },
-            )
+            // 2.0.0 [RVH-71] Without its badge when the row is tight: the name says the same, and the chip is 18dp narrower.
+            val shiftChip: @Composable (Boolean) -> Unit = { badge ->
+                FilterChip(
+                    selected = on,
+                    onClick = { if (day.shiftType?.id != t.id) vm.assignQuick(day, com.bamnat.core.model.ShiftOverride.Shift(t.id), snapshot) },
+                    label = { ChipText(t.name) },
+                    leadingIcon = if (badge) ({ ShiftBadge(t, size = 18.dp, outlined = t.isOff) }) else null,
+                    // 1.39 PC 5차 (가게 유형 TalkBack '영업, 지금 근무'): said without '근무', which a shop's or a field day's chip is not.
+                    modifier = Modifier.semantics { contentDescription = if (on) "${t.name}, 이날 골라 둔 것" else "${t.name}${Fmt.ro(t.name)} 바꾸기" },
+                )
+            }
+            item(key = "shift-${t.id}", pin = t.isOff || on, narrow = { shiftChip(false) }) { shiftChip(true) }
         }
-        if (snapshot.shiftTypes.none { it.isOff }) item(key = "shift-off") {
+        if (snapshot.shiftTypes.none { it.isOff }) item(key = "shift-off", pin = true) {
             FilterChip(
                 selected = !day.isWorkDay && day.shiftType == null && !fullLeave,
                 onClick = { if (day.isWorkDay || day.shiftType != null) vm.assignQuick(day, com.bamnat.core.model.ShiftOverride.Off, snapshot) },
@@ -446,10 +472,13 @@ private const val MAX_JOB_LINES = 3
 
 /** [CAL-05] "09:00–17:00 욕실 타일 시공 · 3일 중 2일째", with what it pays or what is still owed. */
 @Composable
-private fun DayJobLine(job: com.bamnat.core.money.Job, date: LocalDate) {
+private fun DayJobLine(job: com.bamnat.core.money.Job, date: LocalDate, today: LocalDate) {
     val cal = LocalCalendarColors.current
-    Row(verticalAlignment = Alignment.CenterVertically) {
-        JobBadge(count = 1, owed = job.unpaid > 0)
+    // 2.0.0 [RVH-56] 검토 HQ-36 (L이 찾은 같은 구조, 조건 12): the badge sits on the job's first line, not in the middle of the block
+    // once the amount goes under it at a big font (설정 WarningLine HQ-35 the same way). The box is the first line's height.
+    val firstLine = with(androidx.compose.ui.platform.LocalDensity.current) { MaterialTheme.typography.bodyLarge.lineHeight.toDp() }
+    Row(verticalAlignment = Alignment.Top) {
+        Box(Modifier.heightIn(min = firstLine), contentAlignment = Alignment.Center) { JobBadge(count = 1, owed = job.overdue(today)) }
         Spacer(Modifier.width(8.dp))
         // [BIGTXT-01] 1.39 (사용자 사진: 큰 글자에서 '페…'·'09:0/0') the amount goes under the job when both do not fit.
         com.bamnat.app.ui.components.SideOrBelow(Modifier.weight(1f), minStart = 168.dp, start = {
@@ -469,7 +498,10 @@ private fun DayJobLine(job: com.bamnat.core.money.Job, date: LocalDate) {
         }
         }, end = {
             if (job.unpaid > 0) {
-                Text("받을 돈 ${Fmt.wonShort(job.unpaid)}", style = MaterialTheme.typography.labelLarge.merge(NumberStyle), color = cal.warning)
+                // 2.0.0 [RVH-82] 총괄 (K 10차와 같은 빨강, 조건 6): 받을 돈 is news until its promised day passes, then 주의 (orange),
+                // never red: nothing here is lost or past undoing.
+                Text("받을 돈 ${Fmt.wonShort(job.unpaid)}", style = MaterialTheme.typography.labelLarge.merge(NumberStyle),
+                    color = if (job.overdue(today)) com.bamnat.app.ui.theme.Tone.Caution.color() else MaterialTheme.colorScheme.onSurfaceVariant)
             } else if (job.payable > 0) {
                 Text(Fmt.wonShort(job.payable), style = MaterialTheme.typography.labelLarge.merge(NumberStyle), color = cal.income)
             }
@@ -499,9 +531,6 @@ private fun dayTokens(day: ResolvedDay, snapshot: ScheduleSnapshot, vm: Calendar
     val memos by vm.datedMemos.collectAsStateWithLifecycle()
     val dayMemos = remember(memos, day.date) { memos.filter { it.date == day.date } }
     val alarms = remember(snapshot, day.date) { plannedAlarms(snapshot, day) }
-    val rest = remember(snapshot, day.date, settings.rules) {
-        if (settings.restCheck) vm.restIssuesOn(snapshot, day.date, settings.rules) else emptyList()
-    }
     val calendarAlarms by vm.calendarAlarmsOn.collectAsStateWithLifecycle()
     return buildList {
         // [CAL-13] An added calendar kept from ringing says so on each of its days.
@@ -513,7 +542,8 @@ private fun dayTokens(day: ResolvedDay, snapshot: ScheduleSnapshot, vm: Calendar
             val off = day.alarmSkipped || !settings.alarmsEnabled
             add(if (off) DayToken(text, DayToken.Tone.ERROR, said = "$text 꺼짐", struck = true) else DayToken(text, DayToken.Tone.PLAIN))
         }
-        if (day.extras.any { it.entry.needsReview }) add(DayToken("추가 근무 확인 필요", DayToken.Tone.WARNING))
+        // [RVH-59] Quiet: the 추가 근무 group's card says it in 주의 (조건 6, one place).
+        if (day.extras.any { it.entry.needsReview }) add(DayToken("추가 근무 확인 필요", DayToken.Tone.PLAIN))
         // [EASE-12] A changed shift has its own line ("원래 → 새 근무"); the token stays for changed times.
         // [READ-37] 1.38 PC: on a calendar without an order (매달 근무표) every day is put in by hand or from a photo, so
         // "직접 바꿈" said nothing on each of them; only a day's own times are worth a word there.
@@ -525,19 +555,28 @@ private fun dayTokens(day: ResolvedDay, snapshot: ScheduleSnapshot, vm: Calendar
             val more = if (dayMemos.size > 1) " 외 ${dayMemos.size - 1}" else ""
             add(DayToken(if (shown.isEmpty()) "메모 ${dayMemos.size}" else "메모 · $shown$more", DayToken.Tone.PLAIN))
         }
-        rest.firstOrNull()?.let { add(DayToken(it.kind.label, DayToken.Tone.WARNING)) }
-        // [CAL-01] A week over the limit is said in its own line under the header, with the limit.
+        // [CAL-01][RVH-59] The day's rest signs and a week over the limit are said in the head's one 주의 line ([dayCaution]).
     }
+}
+
+/**
+ * 2.0.0 [RVH-59] 검토 PC-63: the day's rest signs ("야간 뒤 휴식 부족") and its week over the limit ("이 주 66시간 · 52시간 넘음") in one
+ * line, or null when there are none.
+ */
+@Composable
+private fun dayCaution(day: ResolvedDay, snapshot: ScheduleSnapshot, vm: CalendarViewModel, settings: AppSettings, weekNote: String?): String? {
+    val rest = remember(snapshot, day.date, settings.rules, settings.restSigns) {
+        if (settings.restSigns) vm.restIssuesOn(snapshot, day.date, settings.rules) else emptyList()
+    }
+    return (rest.map { it.kind.label }.distinct() + listOfNotNull(weekNote)).joinToString(" · ").ifEmpty { null }
 }
 
 @Composable
 private fun Token(t: DayToken) {
-    val cal = LocalCalendarColors.current
     val scheme = MaterialTheme.colorScheme
     val (bg, fg) = when (t.tone) {
         DayToken.Tone.PLAIN -> scheme.surfaceContainerHigh to scheme.onSurfaceVariant
         DayToken.Tone.ACCENT -> scheme.tertiaryContainer to scheme.onTertiaryContainer
-        DayToken.Tone.WARNING -> cal.warningContainer to cal.warning
         DayToken.Tone.ERROR -> scheme.errorContainer to scheme.onErrorContainer
     }
     Text(
@@ -570,7 +609,8 @@ private fun QuickChips(
     val focus = CalendarFocus.of(settings.workStyle)
     val moneyFirst = focus.moneyFirst
     val calendarAlarms by vm.calendarAlarmsOn.collectAsStateWithLifecycle()
-    var addingMoney by remember { mutableStateOf(false) }
+    // 2.0.0 [RVK-05] (MONEY-12): 하루 마감·일감 sheets stay open through a rebuilt screen.
+    var addingMoney by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf(false) }
     val book by vm.moneyBook.collectAsStateWithLifecycle()
     // [HRLY-08][DAYW-03] Work run past midnight is clocked out on the day it started.
     val now = rememberMinute()
@@ -604,7 +644,7 @@ private fun QuickChips(
     // [J133-19] 1.33 (실사용 테스트 "야간인 날에 '주간 대근'을 누르면 하루 22시간 근무"): on a working day a 대근 of another shift
     // asks first whether the day's shift changes or the 대근 comes on top of it.
     var coverAsk by remember { mutableStateOf<ExtraChoice?>(null) }
-    coverAsk?.let { c -> CoverOrChangeDialog(day, c, snapshot,
+    coverAsk?.let { c -> CoverOrChangeDialog(day, c, snapshot, settings.workStyle,
         onChange = { id -> coverAsk = null; vm.assign(day.date, com.bamnat.core.model.ShiftOverride.Shift(id)) },
         onAdd = { coverAsk = null; vm.toggleExtra(day, c) },
         onDismiss = { coverAsk = null }) }
@@ -748,61 +788,155 @@ internal fun Modifier.fadingEdges(back: () -> Boolean, forward: () -> Boolean, w
         )
     }
 
+/** [RVH-49] What a [ChipRow] holds: one chip per [item], in order (the same calls as the sideways row it replaced). */
+internal class ChipScope {
+    internal val items = mutableListOf<Pair<Any?, @Composable () -> Unit>>()
+    /** 2.0.0 [RVH-71] Chips that never go into "+n" (the day's 쉬는 날: 검토 HQ-87). */
+    internal val pinned = mutableSetOf<Int>()
+    /** 2.0.0 [RVH-71] A narrower look of a chip (its badge left out), taken when the chips do not all fit as they are. */
+    internal val compact = mutableMapOf<Int, @Composable () -> Unit>()
+    fun item(key: Any? = null, pin: Boolean = false, narrow: (@Composable () -> Unit)? = null, content: @Composable () -> Unit) {
+        if (pin) pinned += items.size
+        narrow?.let { compact[items.size] = it }
+        items += key to content
+    }
+}
+
 /**
- * [CAL-18] Chips in one line that scrolls sideways. While some are out of sight to the right, the
- * end fades and a "+2 ›" button says how many; a tap on it brings them in.
+ * 2.0.0 [RVH-71] Where the chips of widths [w] go on up to [lines] lines of [room] (gap [gap]), each line filled in order, with a
+ * [more]-wide button after the last chip when it is not 0; null when they do not fit. The line each chip goes on, in order.
+ */
+internal fun chipLines(w: List<Int>, room: Int, gap: Int, lines: Int, more: Int = 0): List<Int>? {
+    var line = 0
+    var x = 0
+    val at = ArrayList<Int>(w.size)
+    for (width in w + listOfNotNull(more.takeIf { it > 0 })) {
+        val need = if (x == 0) width else x + gap + width
+        if (need <= room || x == 0) {
+            if (x == 0 && width > room && line > 0) return null
+            x = need
+        } else {
+            line++
+            x = width
+        }
+        if (line >= lines || x > room) return null
+        at += line
+    }
+    return at.take(w.size)
+}
+
+/**
+ * [CAL-18] Chips in one line. 2.0.0 [RVH-49] 총괄 사진 검토 HQ-16 (편 폭 날짜 창에서 '야간'·'오후 대근' 칩이 글자 가운데서 잘림): the
+ * row no longer scrolls sideways under a fade. It shows as many whole chips as fit, never a chip cut in two, then "+2 ›" for the
+ * rest; a tap on it opens every chip wrapped on as many lines as they need, and '접기' puts them back in one line (사용자 11-04
+ * '좌우로 스크롤해야 보이는 줄은 펼쳐서 한눈에'). Taps to reach a chip out of sight stay one, as the scroll to the end was.
+ * 2.0.0 [RVH-71] [lines]: how many lines the chips may take before "+n"; a chip given with `pin` is never put in it.
  */
 @Composable
-internal fun ChipRow(modifier: Modifier = Modifier, start: Dp, end: Dp, content: LazyListScope.() -> Unit) {
-    val state = rememberLazyListState()
-    val scope = rememberCoroutineScope()
-    // A chip that ends under the button or past the edge counts as out of sight; none once at the end.
-    val more by remember(state) {
-        derivedStateOf {
-            if (!state.canScrollForward) 0 else {
-                val info = state.layoutInfo
-                val edge = info.viewportEndOffset
-                val lastShown = info.visibleItemsInfo.lastOrNull { it.offset + it.size <= edge }?.index
-                    ?: ((info.visibleItemsInfo.firstOrNull()?.index ?: 0) - 1)
-                info.totalItemsCount - 1 - lastShown
-            }
-        }
-    }
-    // [CAL-51] 상-4: the button sits beside the row instead of over its last chip ("오후 대근" under "+7 ›").
-    Row(modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-        LazyRow(
-            state = state,
-            // [J133-67] A narrower fade: a chip's words at the edge were too faint to read.
-            modifier = Modifier.weight(1f).fadingEdges(back = { state.canScrollBackward }, forward = { state.canScrollForward }, width = 16.dp),
-            contentPadding = PaddingValues(start = start, end = if (more > 0) 8.dp else end),
+internal fun ChipRow(modifier: Modifier = Modifier, start: Dp, end: Dp, lines: Int = 1, content: ChipScope.() -> Unit) {
+    val scope = ChipScope().apply(content)
+    val chips = scope.items
+    val pinned = scope.pinned
+    var open by rememberSaveable { mutableStateOf(false) }
+    // A slot made for a chip of the day before (more chips) can be drawn once more before it goes: it then draws nothing.
+    val chip: @Composable (Int) -> Unit = { i -> chips.getOrNull(i)?.let { (k, c) -> key(k ?: "chip#$i") { c() } } }
+    val narrowChip: @Composable (Int) -> Unit = { i -> chips.getOrNull(i)?.let { (k, c) -> key(k ?: "chip#$i") { (scope.compact[i] ?: c)() } } }
+    if (open) {
+        FlowRow(
+            modifier.fillMaxWidth().padding(start = start, end = maxOf(end, 4.dp)),
             horizontalArrangement = Arrangement.spacedBy(8.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            content = content,
-        )
-        if (more > 0) {
-            MoreButton(more, Modifier.padding(start = 4.dp, end = maxOf(end, 4.dp))) {
-                // [J133-67] 1.33 (중간 빌드 확인: '+6'이 조금만 넘겨 또 눌러야 했어요): one tap brings the rest in, to the row's end.
-                scope.launch { state.animateScrollToItem((state.layoutInfo.totalItemsCount - 1).coerceAtLeast(0)) }
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+            itemVerticalAlignment = Alignment.CenterVertically,
+        ) {
+            chips.indices.forEach { chip(it) }
+            MoreButton("접기", "칩 접기", Icons.Filled.KeyboardArrowUp) { open = false }
+        }
+        return
+    }
+    val measurer = rememberTextMeasurer()
+    val moreStyle = MaterialTheme.typography.labelLarge.merge(NumberStyle)
+    SubcomposeLayout(modifier.fillMaxWidth()) { constraints ->
+        val gap = 8.dp.roundToPx()
+        val s = start.roundToPx()
+        val room = (constraints.maxWidth - s - end.roundToPx()).coerceAtLeast(0)
+        val loose = Constraints(maxWidth = room, maxHeight = constraints.maxHeight)
+        // An item may say nothing (a chip shown only on some days): it takes no place.
+        // Measured in copies that are not there for TalkBack or touch (#451 a11y: chips measured but left out of the row were
+        // still read and counted, with no place on screen); only the chips placed below are composed for real.
+        fun widthsOf(tag: String, c: @Composable (Int) -> Unit) = chips.indices.map { i ->
+            subcompose("$tag#$i") { androidx.compose.foundation.layout.Box(Modifier.clearAndSetSemantics { }) { c(i) } }.map { it.measure(loose) }
+        }.map { p -> if (p.isEmpty()) 0 else p.sumOf { it.width } + gap * (p.size - 1) }
+        var widths = widthsOf("size", chip)
+        val shown = widths.indices.filter { widths[it] > 0 }
+        // 2.0.0 [RVH-71] 검토 HQ-87 (접은 폭 200%에서 '휴무'가 '+2' 안): the chips take up to [lines] lines before any folds into
+        // "+n", and a pinned chip (the 쉬는 날) stays out of it, in its own place among the ones shown.
+        var place: List<Int> = shown
+        var at: List<Int>? = chipLines(shown.map { widths[it] }, room, gap, lines)
+        // When they do not fit as they are, the chips that have a narrower look take it, so fewer (often none) go into "+n":
+        // 접은 폭 알바의 '오전·오후 알바·쉬는 날' stay one tap away (조건 8), where their badges had pushed '오후 알바' in.
+        val narrow = at == null && scope.compact.isNotEmpty()
+        if (narrow) {
+            widths = widthsOf("narrow", narrowChip)
+            at = chipLines(shown.map { widths[it] }, room, gap, lines)
+        }
+        val draw = if (narrow) narrowChip else chip
+        var more: androidx.compose.ui.layout.Placeable? = null
+        if (at == null) {
+            val hiddenMost = shown.size
+            // The button's width as it will be: 10dp + "+n" + 18dp arrow + 4dp ([MoreButton]), and 4dp before it ([chipLines] puts a
+            // chip gap before it, so the 4dp is counted less that gap: the same room as before two lines).
+            val reserve = measurer.measure("+$hiddenMost", moreStyle, maxLines = 1, softWrap = false).size.width + 36.dp.roundToPx() - gap
+            val free = shown.filter { it !in pinned }
+            val keep = shown.filter { it in pinned }.takeIf { k -> chipLines(k.map { widths[it] }, room, gap, lines, reserve) != null }.orEmpty()
+            var k = 0
+            fun pick(n: Int) = shown.filter { it in keep || it in free.take(n) }
+            while (k < free.size && chipLines(pick(k + 1).map { widths[it] }, room, gap, lines, reserve) != null) k++
+            place = pick(k)
+            at = chipLines(place.map { widths[it] }, room, gap, lines, reserve) ?: place.map { 0 }
+            val hidden = shown.size - place.size
+            more = subcompose("more") { MoreButton("+$hidden", "${hidden}개 더 보기") { open = true } }.first().measure(Constraints())
+        }
+        val real = place.associateWith { i -> subcompose(if (narrow) "nchip#$i" else "chip#$i") { draw(i) }.map { it.measure(loose) } }
+        val rows = (at.maxOrNull() ?: 0) + 1
+        val rowHeight = IntArray(rows)
+        place.forEachIndexed { n, i -> rowHeight[at[n]] = maxOf(rowHeight[at[n]], real.getValue(i).maxOfOrNull { it.height } ?: 0) }
+        more?.let { m -> rowHeight[rows - 1] = maxOf(rowHeight[rows - 1], m.height) }
+        val top = IntArray(rows).also { t -> for (r in 1 until rows) t[r] = t[r - 1] + rowHeight[r - 1] + gap }
+        val height = top[rows - 1] + rowHeight[rows - 1]
+        layout(constraints.maxWidth, height) {
+            var x = s
+            var row = 0
+            place.forEachIndexed { n, i ->
+                if (at[n] != row) { row = at[n]; x = s }
+                for (p in real.getValue(i)) {
+                    p.placeRelative(x, top[row] + (rowHeight[row] - p.height) / 2)
+                    x += p.width + gap
+                }
+            }
+            more?.let {
+                val last = rows - 1
+                val after = if (place.isEmpty() || row != last) s else x - gap + 4.dp.roundToPx()
+                it.placeRelative(after, top[last] + (rowHeight[last] - it.height) / 2)
             }
         }
     }
 }
 
-/** [CAL-18] "+2 ›": how many chips are out of sight, as a button that scrolls to them. */
+/** [CAL-18] "+2 ›": how many chips are out of sight, as a button that opens them; [RVH-49] '접기' in the same shape closes them. */
 @Composable
-private fun MoreButton(count: Int, modifier: Modifier = Modifier, onClick: () -> Unit) {
+private fun MoreButton(text: String, said: String, icon: androidx.compose.ui.graphics.vector.ImageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
+    modifier: Modifier = Modifier, onClick: () -> Unit) {
     Surface(
         onClick = onClick,
-        shape = CircleShape,
+        shape = MaterialTheme.pill /* [RVP-05] PC-128: 칩 줄의 칩과 같은 모서리 */,
         color = MaterialTheme.colorScheme.secondaryContainer,
         contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
         shadowElevation = 2.dp,
-        modifier = modifier,
+        modifier = modifier.semantics(mergeDescendants = true) { contentDescription = said },
     ) {
         Row(Modifier.heightIn(min = 32.dp).padding(start = 10.dp, end = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-            ChipText("+$count", MaterialTheme.typography.labelLarge.merge(NumberStyle),
-                Modifier.semantics { contentDescription = "${count}개 더 보기" })
-            Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, null, Modifier.size(18.dp))
+            ChipText(text, MaterialTheme.typography.labelLarge.merge(NumberStyle))
+            Icon(icon, null, Modifier.size(18.dp))
         }
     }
 }
@@ -832,21 +966,9 @@ fun DayPreview(
         modifier = modifier.fillMaxWidth(),
     ) {
         Column {
-            DayHeader(day, today, snapshot, vm, onDateChange, onMemo,
-                Modifier.padding(top = 4.dp, bottom = if (weekNote != null) 4.dp else 10.dp), onOpen = onOpen)
-            weekNote?.let { WeekNoteLine(it, Modifier.padding(start = 16.dp, end = 16.dp, bottom = 12.dp)) }
+            DayHeader(day, today, snapshot, vm, onDateChange, onMemo, Modifier.padding(top = 4.dp, bottom = 10.dp), onOpen = onOpen,
+                weekNote = weekNote)
         }
-    }
-}
-
-/** [CAL-01] "이 주 73시간 30분 · 64시간 넘음": the line that goes with the bar beside an over-limit week. */
-@Composable
-internal fun WeekNoteLine(text: String, modifier: Modifier = Modifier) {
-    val warning = LocalCalendarColors.current.warning
-    Row(modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-        Icon(Icons.Filled.WarningAmber, null, tint = warning, modifier = Modifier.size(16.dp))
-        Spacer(Modifier.width(6.dp))
-        Text(text, style = MaterialTheme.typography.bodySmall.merge(NumberStyle), color = warning)
     }
 }
 
@@ -865,14 +987,15 @@ internal fun ChipText(text: String, style: androidx.compose.ui.text.TextStyle = 
         // The line as tall as the letters: labelLarge's 20sp line, doubled, alone overran the chip.
         style = style.copy(color = androidx.compose.material3.LocalContentColor.current, lineHeight = 1.2.em).merge(FooterTrim),
         maxLines = 1, softWrap = false,
-        autoSize = androidx.compose.foundation.text.TextAutoSize.StepBased(minFontSize = 9.sp, maxFontSize = style.fontSize.takeIf { it.isSp } ?: 14.sp),
+        autoSize = androidx.compose.foundation.text.TextAutoSize.StepBased(minFontSize = 10.sp, maxFontSize = style.fontSize.takeIf { it.isSp } ?: 14.sp),
     )
 }
 
 /** [J133-19] 근무를 바꿀까요, 더할까요: a 대근 chip on a day that already has a shift. */
 @Composable
-private fun CoverOrChangeDialog(day: ResolvedDay, c: ExtraChoice, snapshot: ScheduleSnapshot, onChange: (Long) -> Unit, onAdd: () -> Unit, onDismiss: () -> Unit) {
+private fun CoverOrChangeDialog(day: ResolvedDay, c: ExtraChoice, snapshot: ScheduleSnapshot, style: com.bamnat.core.work.WorkStyle?, onChange: (Long) -> Unit, onAdd: () -> Unit, onDismiss: () -> Unit) {
     val now = day.shiftType?.name ?: "근무"
+    val word = ExtraText.coverWord(style) // 2.0.0 [RVH-07] 검토 CAL-11
     val covered = snapshot.shiftTypes.firstOrNull { it.id == c.entry.coveredShiftId }
     val total = (day.scheduledMinutes + c.entry.paidMinutes) / 60.0
     val hours = if (total % 1.0 == 0.0) "${total.toInt()}시간" else "%.1f시간".format(total)
@@ -882,14 +1005,14 @@ private fun CoverOrChangeDialog(day: ResolvedDay, c: ExtraChoice, snapshot: Sche
         text = {
             Text(buildString {
                 covered?.let { append("근무를 ${it.name}${Fmt.ro(it.name)} 바꾸면 이 날은 ${it.name} 하나로 계산돼요. ") }
-                append("‘${c.name}’${Fmt.obj(c.name)} 더하면 $now 근무에 대근이 붙어 하루 $hours 일한 것으로 계산돼요.")
+                append("‘${c.name}’${Fmt.obj(c.name)} 더하면 $now 근무에 $word${Fmt.iga(word)} 붙어 하루 $hours 일한 것으로 계산돼요.")
                 if (total > 16) append(" 실제로 이어서 일했을 때만 더해 주세요.")
             })
         },
         confirmButton = {
             Column(horizontalAlignment = Alignment.End) {
                 covered?.let { t -> TextButton(onClick = { onChange(t.id) }) { Text("근무를 ${t.name}${Fmt.ro(t.name)} 바꾸기") } }
-                TextButton(onClick = onAdd) { Text("대근으로 더하기 (하루 $hours)") }
+                TextButton(onClick = onAdd) { Text("$word${Fmt.ro(word)} 더하기 (하루 $hours)") }
             }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("취소") } },

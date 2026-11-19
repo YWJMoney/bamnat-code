@@ -34,7 +34,19 @@ data class MonthReport(
     /** Days gone by in the month with no spending at all (무지출). */
     val noSpendDays: Int,
     val daysCounted: Int,
+    /** 2.0.0 [RVK-20] (MONEY-18) The pay cycle counted instead of [month] (설정 › 급여일 주기로 보기), or null. */
+    val range: PayCycle.Range? = null,
 ) {
+    /** Days in the month or the cycle: the pace chart's width. */
+    val length: Int get() = range?.days ?: month.lengthOfMonth()
+    /** What it is set against: "지난달", or "지난 주기" with 급여일 주기. */
+    val earlier: String get() = if (range != null) "지난 주기" else "지난달"
+    /** "지난달과" or "지난 주기와" (the particle follows the word). */
+    val earlierWith: String get() = if (range != null) "지난 주기와" else "지난달과"
+    /** "이번 달", or "이번 주기". */
+    val thisOne: String get() = if (range != null) "이번 주기" else "이번 달"
+    /** Whether [today] is in it (the stretch still going). */
+    fun holds(today: LocalDate): Boolean = range?.contains(today) ?: (YearMonth.from(today) == month)
     val balance: Long get() = income - spent
     val spentDiff: Long get() = spent - previousSpent
     /** What the month before had spent by the same day, to set this month's pace against. */
@@ -73,11 +85,12 @@ object Reports {
         }.sortedWith(compareByDescending<CategoryShare> { it.amount }.thenBy { it.category })
     }
 
-    /** Spending on each day of [month], ledger and job costs together. */
-    private fun daily(month: YearMonth, entries: List<MoneyEntry>, jobs: List<Job>): LongArray {
-        val out = LongArray(month.lengthOfMonth())
-        for (e in entries) if (e.kind == MoneyKind.EXPENSE && YearMonth.from(e.date) == month) out[e.date.dayOfMonth - 1] += e.amount
-        for (j in jobs) if (j.costs > 0 && YearMonth.from(j.date) == month) out[j.date.dayOfMonth - 1] += j.costs
+    /** Spending on each day from [from] to [to] (a month, or 2.0.0 [RVK-20] a pay cycle), ledger and job costs together. */
+    private fun daily(from: LocalDate, to: LocalDate, entries: List<MoneyEntry>, jobs: List<Job>): LongArray {
+        val out = LongArray(java.time.temporal.ChronoUnit.DAYS.between(from, to).toInt() + 1)
+        fun at(d: LocalDate): Int? = if (d.isBefore(from) || d.isAfter(to)) null else java.time.temporal.ChronoUnit.DAYS.between(from, d).toInt()
+        for (e in entries) if (e.kind == MoneyKind.EXPENSE) at(e.date)?.let { out[it] += e.amount }
+        for (j in jobs) if (j.costs > 0) at(j.date)?.let { out[it] += j.costs }
         return out
     }
 
@@ -92,12 +105,20 @@ object Reports {
      */
     fun month(current: MonthMoney, previous: MonthMoney?, book: MoneyBook, today: LocalDate): MonthReport {
         val month = current.month
-        val now = YearMonth.from(today)
-        val days = when { month == now -> today.dayOfMonth; month.isBefore(now) -> month.lengthOfMonth(); else -> 0 }
-        val day = daily(month, book.entries, book.jobs)
+        // 2.0.0 [RVK-20] (MONEY-18): with 급여일 주기 the days are the cycle's, and the one before is the cycle before.
+        val from = current.from
+        val to = current.to
+        val length = java.time.temporal.ChronoUnit.DAYS.between(from, to).toInt() + 1
+        val days = when {
+            today.isBefore(from) -> 0
+            today.isAfter(to) -> length
+            else -> java.time.temporal.ChronoUnit.DAYS.between(from, today).toInt() + 1
+        }
+        val day = daily(from, to, book.entries, book.jobs)
         val first = (book.entries.map { it.date } + book.jobs.map { it.date }).minOrNull()
-        val before = daily(month.minusMonths(1), book.entries, book.jobs)
-        val spending = book.entries.filter { it.kind == MoneyKind.EXPENSE && YearMonth.from(it.date) == month }
+        val before = if (previous?.range != null) daily(previous.from, previous.to, book.entries, book.jobs)
+            else month.minusMonths(1).let { daily(it.atDay(1), it.atEndOfMonth(), book.entries, book.jobs) }
+        val spending = book.entries.filter { it.kind == MoneyKind.EXPENSE && !it.date.isBefore(from) && !it.date.isAfter(to) }
         val byAccount = spending.groupBy { MoneyAccounts.of(it, book.accounts) }.map { (a, list) -> a to list.sumOf { it.amount } }
             .filter { it.second != 0L }.sortedByDescending { it.second }
         val byTag = spending.flatMap { e -> e.tags.map { it to e.amount } }.groupBy { it.first }.map { (t, list) -> t to list.sumOf { it.second } }
@@ -113,9 +134,10 @@ object Reports {
             biggest = spending.filter { it.amount > 0 }.sortedWith(compareByDescending<MoneyEntry> { it.amount }.thenBy { it.date }).take(5),
             byWeekday = weekday.toList(),
             // [J133-79] 빌드 5 ('무지출 30일'을 설치 전 날까지 셌어요): only from the first day anything was written down.
-            noSpendDays = (0 until days).count { day[it] <= 0 && first != null && !month.atDay(it + 1).isBefore(first) },
+            noSpendDays = (0 until days).count { day[it] <= 0 && first != null && !from.plusDays(it.toLong()).isBefore(first) },
             // 1.36 실사용 S19: 하루 평균 too counts from the first day written down, not from the 1st of the first month.
-            daysCounted = if (first == null) days else (0 until days).count { !month.atDay(it + 1).isBefore(first) },
+            daysCounted = if (first == null) days else (0 until days).count { !from.plusDays(it.toLong()).isBefore(first) },
+            range = current.range,
         )
     }
 

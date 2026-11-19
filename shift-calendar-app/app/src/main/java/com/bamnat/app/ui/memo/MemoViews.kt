@@ -1,5 +1,7 @@
 package com.bamnat.app.ui.memo
 
+import androidx.compose.foundation.shape.ZeroCornerSize
+
 import com.bamnat.app.ui.monthSwipe
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
@@ -44,6 +46,7 @@ import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.ArrowDownward
 import androidx.compose.material.icons.filled.ArrowUpward
 import com.bamnat.app.ui.components.DropdownMenu
@@ -74,45 +77,76 @@ import com.bamnat.core.memo.Memo
 import com.bamnat.core.memo.MemoProps
 import com.bamnat.core.memo.MemoView
 import java.time.LocalDate
+import androidx.compose.ui.semantics.Role
 
 /**
  * [TAB-02] 1.36 메모장 보기 칩: 목록 · 보드 · 표 · 갤러리, and for a 보드 what makes its 칸 and for every view the order. The 칸 names the
  * memos on screen carry ([MemoProps.columns]) are offered as 묶음 and 정렬, so a 틀 with 매출·상태 칸 can be seen by them at once.
  */
+@OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 @Composable
 internal fun MemoViewChips(
     view: MemoView, columns: List<Pair<String, MemoProps.Type>>, onChange: (MemoView) -> Unit,
     // PC 확인 fe5eb3cd 사용성 제안 "정렬이 위 아이콘과 칩 두 곳": the 메모장's own orders (최근 수정순…) are offered here too, and the icon is gone.
     baseOptions: List<Pair<String, String>> = listOf("" to "기본 순서"), baseLabel: String = "기본 순서",
     onSort: (String) -> Unit = { onChange(view.copy(sort = it)) },
-) {
-    Row(
-        Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 16.dp, vertical = 2.dp),
+) = androidx.compose.foundation.layout.BoxWithConstraints(Modifier.fillMaxWidth()) {
+    // 2.0.0 [RVIB-20] HQ-86 (조건 1·12): where the five views and 정렬 do not fit on one line (a phone, a folded Fold, the list pane, big
+    // letters) they are one chip that says what is on screen ('목록 · 날짜순 ▾') and opens both lists; the row is never cut at the edge
+    // to be slid along, and takes one line. Wide enough, each view keeps its own chip, one tap away.
+    val fits = maxWidth >= 520.dp * androidx.compose.ui.platform.LocalDensity.current.fontScale.coerceAtLeast(1f)
+    val sortLabel = when {
+        view.sort.isEmpty() -> baseLabel
+        view.sort == MemoView.SORT_TITLE -> "제목순"
+        view.sort.startsWith("-") -> view.sort.drop(3) + " 큰 순"
+        else -> view.sort.drop(2) + " 작은 순"
+    }
+    val sorts = baseOptions + columns.flatMap { (c, _) -> listOf("p:$c" to "$c 작은 순", "-p:$c" to "$c 큰 순") }
+    val viewLabel = MemoView.LABELS[view.view] ?: MemoView.LABELS[MemoView.VIEWS.first()]!!
+    androidx.compose.foundation.layout.FlowRow(
+        Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 2.dp),
         horizontalArrangement = Arrangement.spacedBy(6.dp),
-        verticalAlignment = Alignment.CenterVertically,
     ) {
-        for (v in MemoView.VIEWS) {
+        if (fits) for (v in MemoView.VIEWS) {
             FilterChip(
                 selected = view.view == v,
                 onClick = { onChange(view.copy(view = v)) },
                 label = { Text(MemoView.LABELS[v]!!) },
                 modifier = Modifier.semantics { contentDescription = "${MemoView.LABELS[v]}${Fmt.ro(MemoView.LABELS[v]!!)} 보기" },
             )
-        }
+        } else ViewSortChip(viewLabel, sortLabel, view.view, view.sort, sorts, onView = { onChange(view.copy(view = it)) }, onSort = onSort)
         if (view.view == MemoView.BOARD) {
             val byLabel = MemoView.BY_LABELS[view.by] ?: view.by.removePrefix("p:")
             PickChip("묶음: $byLabel", MemoView.BY_FIXED.map { it to MemoView.BY_LABELS[it]!! } + columns.map { "p:${it.first}" to it.first }) {
                 onChange(view.copy(by = it))
             }
         }
-        val sortLabel = when {
-            view.sort.isEmpty() -> baseLabel
-            view.sort == MemoView.SORT_TITLE -> "제목순"
-            view.sort.startsWith("-") -> view.sort.drop(3) + " 큰 순"
-            else -> view.sort.drop(2) + " 작은 순"
+        if (fits) PickChip("정렬: $sortLabel", sorts) { onSort(it) }
+    }
+}
+
+/** [RVIB-20] HQ-86 보기 and 정렬 in one chip: what is on screen as its words, both lists under it, the ones in use ticked. */
+@Composable
+private fun ViewSortChip(
+    viewLabel: String, sortLabel: String, current: String, currentSort: String, sorts: List<Pair<String, String>>,
+    onView: (String) -> Unit, onSort: (String) -> Unit,
+) {
+    var open by remember { mutableStateOf(false) }
+    Box {
+        FilterChip(selected = false, onClick = { open = true }, label = { Text("$viewLabel · $sortLabel", maxLines = 1) },
+            trailingIcon = { Icon(Icons.Filled.ArrowDropDown, null, Modifier.size(18.dp)) },
+            modifier = Modifier.semantics { contentDescription = "보기 $viewLabel, 정렬 $sortLabel. 바꾸기" })
+        DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
+            Text("보기", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp).semantics { heading() })
+            for (v in MemoView.VIEWS) DropdownMenuItem(text = { Text(MemoView.LABELS[v]!!) }, onClick = { open = false; onView(v) },
+                trailingIcon = { if (v == current) Icon(Icons.Filled.Check, null) })
+            androidx.compose.material3.HorizontalDivider()
+            Text("정렬", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp).semantics { heading() })
+            for ((key, text) in sorts) DropdownMenuItem(text = { Text(text) }, onClick = { open = false; onSort(key) },
+                trailingIcon = { if (key == currentSort || (key.startsWith("ms:") && text == sortLabel)) Icon(Icons.Filled.Check, null) })
         }
-        PickChip("정렬: $sortLabel", baseOptions +
-            columns.flatMap { (c, _) -> listOf("p:$c" to "$c 작은 순", "-p:$c" to "$c 큰 순") }) { onSort(it) }
     }
 }
 
@@ -142,8 +176,8 @@ internal fun PropPills(memo: Memo, max: Int = 3, modifier: Modifier = Modifier) 
                 style = com.bamnat.app.ui.parts.PartMods.text(part, MaterialTheme.typography.labelSmall),
                 color = MaterialTheme.colorScheme.onSecondaryContainer,
                 maxLines = 1,
-                modifier = Modifier.background(MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.7f), RoundedCornerShape(6.dp))
-                    .then(com.bamnat.app.ui.parts.PartMods.box(part, RoundedCornerShape(6.dp)))
+                modifier = Modifier.background(MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.7f), MaterialTheme.shapes.extraSmall)
+                    .then(com.bamnat.app.ui.parts.PartMods.box(part, MaterialTheme.shapes.extraSmall))
                     .padding(horizontal = 6.dp, vertical = 2.dp),
             )
         }
@@ -265,14 +299,14 @@ internal fun MemoBoardView(
             items(columns, key = { it.key }) { col ->
                 val lit = drag != null && target == col.key && drag?.from != col.key
                 Surface(
-                    shape = RoundedCornerShape(14.dp),
+                    shape = MaterialTheme.shapes.medium,
                     color = if (lit) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceContainerLow,
                     border = if (lit) androidx.compose.foundation.BorderStroke(2.dp, MaterialTheme.colorScheme.primary) else null,
                     // PC 확인 9aaf3eef 사용성 제안: an empty 칸 stays narrow and opens wide only while a card is dragged.
                     // PC 확인 d5678f31: one 칸 alone fills the width instead of leaving half the board empty.
                     modifier = Modifier.then(if (columns.size == 1) Modifier.fillParentMaxWidth() else Modifier.width(if (col.memos.isEmpty() && drag == null) 132.dp else 250.dp))
                         .animateItem().fillParentMaxHeight()
-                        .then(com.bamnat.app.ui.parts.PartMods.box(colPart, RoundedCornerShape(14.dp))),
+                        .then(com.bamnat.app.ui.parts.PartMods.box(colPart, MaterialTheme.shapes.medium)),
                 ) {
                     Column {
                         Row(Modifier.padding(horizontal = 12.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -314,7 +348,7 @@ internal fun MemoBoardView(
         // The card being dragged, as its title under the finger.
         drag?.let { d ->
             Surface(
-                shape = RoundedCornerShape(10.dp),
+                shape = MaterialTheme.shapes.small,
                 color = MaterialTheme.colorScheme.secondaryContainer,
                 shadowElevation = 6.dp,
                 modifier = Modifier.offset { androidx.compose.ui.unit.IntOffset((d.at.x - boardOrigin.x - 60.dp.toPx()).toInt(), (d.at.y - boardOrigin.y - 24.dp.toPx()).toInt()) }
@@ -443,7 +477,7 @@ internal fun MemoTableView(
     @Composable fun headCell(text: String, key: String, width: androidx.compose.ui.unit.Dp) {
         val on = view.sort.removePrefix("-") == key
         Row(
-            Modifier.width(width).clickable { onSort(if (view.sort == key) "-$key" else key) }.padding(horizontal = 8.dp, vertical = 10.dp)
+            Modifier.width(width).clickable(role = Role.Button) { onSort(if (view.sort == key) "-$key" else key) }.padding(horizontal = 8.dp, vertical = 10.dp)
                 .semantics { contentDescription = "$text 열, 눌러 정렬"; selected = on },
             verticalAlignment = Alignment.CenterVertically,
         ) {
@@ -454,7 +488,7 @@ internal fun MemoTableView(
     // [TAB-07] 부품 memo.table · memo.table.head.
     val headRowPart = com.bamnat.app.ui.parts.LocalBlueprint.current.style("memo.table.head")
     val step = with(density) { colW.toPx() }
-    Column(Modifier.fillMaxSize().padding(horizontal = 12.dp).then(com.bamnat.app.ui.parts.PartMods.box(com.bamnat.app.ui.parts.LocalBlueprint.current.style("memo.table"), RoundedCornerShape(10.dp)))
+    Column(Modifier.fillMaxSize().padding(horizontal = 12.dp).then(com.bamnat.app.ui.parts.PartMods.box(com.bamnat.app.ui.parts.LocalBlueprint.current.style("memo.table"), MaterialTheme.shapes.small))
         .scrollable(slide, androidx.compose.foundation.gestures.Orientation.Horizontal)
         .semantics {
             customActions = listOf(
@@ -462,8 +496,8 @@ internal fun MemoTableView(
                 androidx.compose.ui.semantics.CustomAccessibilityAction("왼쪽 열 보기") { slideX = (slideX - step).coerceIn(0f, maxX); true },
             )
         }) {
-        Row(Modifier.border(1.dp, line, RoundedCornerShape(topStart = 10.dp, topEnd = 10.dp)).background(MaterialTheme.colorScheme.surfaceContainer, RoundedCornerShape(topStart = 10.dp, topEnd = 10.dp))
-            .then(com.bamnat.app.ui.parts.PartMods.box(headRowPart, RoundedCornerShape(topStart = 10.dp, topEnd = 10.dp)))) {
+        Row(Modifier.border(1.dp, line, MaterialTheme.shapes.small.copy(bottomStart = ZeroCornerSize, bottomEnd = ZeroCornerSize)).background(MaterialTheme.colorScheme.surfaceContainer, MaterialTheme.shapes.small.copy(bottomStart = ZeroCornerSize, bottomEnd = ZeroCornerSize))
+            .then(com.bamnat.app.ui.parts.PartMods.box(headRowPart, MaterialTheme.shapes.small.copy(bottomStart = ZeroCornerSize, bottomEnd = ZeroCornerSize)))) {
             headCell("제목", MemoView.SORT_TITLE, titleW)
             Slid {
                 for ((c, _) in columns) headCell(c, "p:$c", colW)
@@ -695,7 +729,7 @@ internal fun MemoCalendarView(
     val first = ym.atDay(1).with(java.time.temporal.TemporalAdjusters.previousOrSame(weekStart))
     val weeks = ((java.time.temporal.ChronoUnit.DAYS.between(first, ym.atEndOfMonth()) / 7) + 1).toInt()
     val byDay = remember(memos, month, shiftsOf) {
-        val shiftly = memos.filter { com.bamnat.core.memo.MemoRepeat.followsSchedule(it.repeat) && shiftsOf(it) != null }
+        val shiftly = memos.filter { com.bamnat.core.memo.MemoRepeat.followsSchedule(it) && shiftsOf(it) != null }
         val laid = com.bamnat.core.memo.MemoRepeat.expand(shiftly, first, first.plusDays(weeks * 7L - 1), shiftsOf)
         val rest = MemoView.byDay(memos - shiftly.toSet())
         (rest.keys + laid.mapNotNull { it.date }).associateWith { d -> rest[d].orEmpty() + laid.filter { it.date == d } }
@@ -717,7 +751,7 @@ internal fun MemoCalendarView(
             }
         }
         item(key = "grid") {
-            Column(Modifier.fillMaxWidth().then(com.bamnat.app.ui.parts.PartMods.box(bp.style("memo.cal"), RoundedCornerShape(10.dp))),
+            Column(Modifier.fillMaxWidth().then(com.bamnat.app.ui.parts.PartMods.box(bp.style("memo.cal"), MaterialTheme.shapes.small)),
                 verticalArrangement = Arrangement.spacedBy(2.dp)) {
                 Row(Modifier.fillMaxWidth()) {
                     for (i in 0..6) {
@@ -736,10 +770,10 @@ internal fun MemoCalendarView(
                         val states = setOfNotNull("today".takeIf { date == today }, "sel".takeIf { isPicked })
                         Column(
                             Modifier.weight(1f).heightIn(min = 64.dp)
-                                .background(if (isPicked) MaterialTheme.colorScheme.primary.copy(alpha = 0.12f) else MaterialTheme.colorScheme.surfaceContainerLow, RoundedCornerShape(8.dp))
-                                .then(if (date == today) Modifier.border(1.5.dp, MaterialTheme.colorScheme.primary, RoundedCornerShape(8.dp)) else Modifier)
-                                .then(com.bamnat.app.ui.parts.PartMods.box(bp.style("memo.cal.cell", states, com.bamnat.app.logic.scopeOn(date)), RoundedCornerShape(8.dp)))
-                                .clickable { picked = if (isPicked) null else date.toString() }
+                                .background(if (isPicked) MaterialTheme.colorScheme.primary.copy(alpha = 0.12f) else MaterialTheme.colorScheme.surfaceContainerLow, MaterialTheme.shapes.small)
+                                .then(if (date == today) Modifier.border(1.5.dp, MaterialTheme.colorScheme.primary, MaterialTheme.shapes.small) else Modifier)
+                                .then(com.bamnat.app.ui.parts.PartMods.box(bp.style("memo.cal.cell", states, com.bamnat.app.logic.scopeOn(date)), MaterialTheme.shapes.small))
+                                .clickable(role = Role.Button) { picked = if (isPicked) null else date.toString() }
                                 .semantics(mergeDescendants = true) {
                                     contentDescription = Fmt.monthDay(date) + (shiftOn(date)?.let { " ${it.name}" } ?: "") + if (list.isEmpty()) " 메모 없음" else " 메모 ${list.size}개: " + list.joinToString(", ") { it.title.ifBlank { it.preview } }
                                     selected = isPicked
@@ -823,7 +857,7 @@ internal fun MemoGalleryView(memos: List<Memo>, view: MemoView, actions: CardAct
             val lead = title.codePointAt(0).let { String(Character.toChars(it)) }
             val emoji = lead.firstOrNull()?.let { Character.getType(it) == Character.SURROGATE.toInt() || Character.getType(it) == Character.OTHER_SYMBOL.toInt() } == true
             Surface(
-                shape = RoundedCornerShape(18.dp),
+                shape = MaterialTheme.shapes.large,
                 color = memoBackground(memo.colorIndex),
                 border = if (memo.id in selection) androidx.compose.foundation.BorderStroke(2.dp, MaterialTheme.colorScheme.primary) else null,
                 modifier = Modifier.fillMaxWidth().heightIn(min = 150.dp).combinedClickable(onClick = { actions.onOpen(memo) }, onLongClick = { actions.onSelect(memo) }),

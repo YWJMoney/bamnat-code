@@ -13,6 +13,7 @@ import com.bamnat.core.pay.SlipTemplate
  * - 명세서 줄 이름 → 종류 ("가족수당" → 수당, "야근수당" → 야간근로수당): "slip:<이름>" → [SlipRole] name.
  * - 듀티표 글자 고친 횟수 ("OF" → 야간, 두 번째에 [DutyCodeBook]으로 옮겨요): "duty:<달력>:<글자>" → "<칸>|<횟수>".
  * - [PHOTO-24] 1.30 회사 명세서 틀: "tpl:<n>" → [SlipTemplate] (줄 이름·종류·자리, 금액 없음).
+ * - 2.0.0 [RVL-80] 근무표 틀: "rform:<달력>" → 내 줄의 자리(몇 번째 줄·모두 몇 줄)와 지난달 누른 자리(표 높이의 천분율), 이름·근무 없음.
  * On this phone, in the backup (설정 파일 "read_fixes", [SettingsFilesBackup.PARTS]), never sent anywhere (D68). No
  * amount, no name of a person, no photo is kept: only the words of a payslip's line names (and where they stand) and a
  * roster's codes.
@@ -68,8 +69,18 @@ class ReadFixBook(context: Context) {
         return false
     }
 
+    /** 2.0.0 [RVL-80] (검토 I07bc-02) The shape of [calendarId]'s roster sheet, as last put in; no name, no cell, no picture. */
+    fun rosterForm(calendarId: String): com.bamnat.core.imports.RosterForm? =
+        com.bamnat.core.imports.RosterForm.decode(prefs.getString(FORM + calendarId, null))
+
+    fun learnRosterForm(calendarId: String, form: com.bamnat.core.imports.RosterForm) {
+        prefs.edit().putString(FORM + calendarId, form.encode()).apply()
+    }
+
     companion object {
         const val PREFS = "read_fixes"
+        /** 2.0.0 [RVL-80] "rform:<달력>" → [com.bamnat.core.imports.RosterForm.encode]. */
+        private const val FORM = "rform:"
         private const val SLIP = "slip:"
         private const val DUTY = "duty:"
         /** [PHOTO-24] "tpl:0" … "tpl:2": the payslip templates, newest first. */

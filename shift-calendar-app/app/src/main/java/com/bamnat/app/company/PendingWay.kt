@@ -173,13 +173,13 @@ suspend fun CompanyScope.commit(
     if (store.pendingPay == way.text) store.pendingPay = null
     // [PAYF-04] Counted as one more phone using it ("n명 쓰고 있어요"); a cycle put in with it said so already.
     if ((way.source == PendingWay.Source.FIND || way.source == PendingWay.Source.NEWER) && c.companyApi.enabled) {
-        val device = store.device
         val cal = serverCal
         // 1.39 발굴 2-1: moving to the newer version, the older one is no longer counted as used.
         val old = before?.takeIf { way.source == PendingWay.Source.NEWER && it.setup != way.setup }
+        // 2.0.0 [RVN-13] COMP-48 kept for later when the server could not be reached.
         c.appScope.launch {
-            runCatching { c.companyApi.use(device, way.companyId, way.setup, true, cal) }
-            old?.let { o -> runCatching { c.companyApi.use(device, o.companyId, o.setup, false, cal) } }
+            SmallSends.send(c, store, SmallSends.use(way.companyId, way.setup, true, cal))
+            old?.let { o -> SmallSends.send(c, store, SmallSends.use(o.companyId, o.setup, false, cal)) }
         }
     }
     pendingWays.committed(way, BaseAsk.hoursToPropose(hours, way.hours))

@@ -49,19 +49,18 @@ import androidx.compose.material.icons.outlined.Search
 import com.bamnat.app.ui.components.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
+import com.bamnat.app.ui.components.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.TopAppBar
+import com.bamnat.app.ui.components.TopAppBar
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -73,6 +72,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.foundation.relocation.bringIntoViewRequester
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
@@ -80,6 +80,7 @@ import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.onClick
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.selected
@@ -192,6 +193,11 @@ fun CompanyFindScreen(
                     keyboardActions = KeyboardActions(onSearch = { keyboard?.hide() }),
                     modifier = Modifier.fillMaxWidth().focusRequester(focusRequester),
                 )
+                // 2.0.0 [RVN-24] 검토 I10ac-02: before a name is typed, the companies and public rows with my calendar's order.
+                val same by vm.same.collectAsStateWithLifecycle()
+                if (!typed) same?.let { w ->
+                    SameWorkRows(w, onCompany = { id -> keyboard?.hide(); onOpen(id) }, onRow = { row -> keyboard?.hide(); providing = row })
+                }
                 // AS 1.29 [SRCH-10] Companies already on screen while the server is still asked: say where it stands.
                 val stage by vm.stage.collectAsStateWithLifecycle()
                 stage?.let { SearchStageLine(it, nothingYet = false) }
@@ -216,10 +222,17 @@ fun CompanyFindScreen(
                         is CompanyFindViewModel.Result.Found -> if (r.hits.isEmpty()) {
                             if (!publicFound) {
                                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                                    FirstProviderCard(r.query.trim(), rewardShort(terms), onStart = { form ->
+                                    // 2.0.0 [RVN-19] 검토 U10a-11: the companies it may be first, then the name to check, the 사업장 apart.
+                                    NewCompanyStart(r.query.trim(), rewardShort(terms), plaza = vm.server, onStart = { name, site, form ->
                                         keyboard?.hide()
-                                        providing = PublicCycles.provided(r.query.trim(), form)
-                                    }, plaza = vm.server)
+                                        providing = PublicCycles.provided(name, form, site)
+                                    }, onLike = { l ->
+                                        keyboard?.hide()
+                                        when (l) {
+                                            is NameLike.Server -> onOpen(l.hit.id)
+                                            is NameLike.Public -> providing = l.row
+                                        }
+                                    })
                                     if (setup) TextButton(onClick = { byHand(r.query) }) { Text("‘${r.query.trim()}’ 근무를 처음부터 직접 정할게요") }
                                     else if (ready && vm.server) TextButton(onClick = { byHand(r.query) }) { Text("지금 쓰는 내 설정을 ‘${r.query.trim()}’로 나눌게요") }
                                 }
@@ -283,7 +296,7 @@ private fun HowItWorks() {
 
 @Composable
 private fun CompanyRow(hit: CompanyHit, onClick: () -> Unit) {
-    SoftCard(Modifier.clip(MaterialTheme.shapes.large).clickable(onClick = onClick)) {
+    SoftCard(Modifier.clip(MaterialTheme.shapes.large).clickable(role = Role.Button, onClick = onClick)) {
         Row(Modifier.padding(horizontal = 16.dp, vertical = 14.dp), verticalAlignment = Alignment.CenterVertically) {
             Surface(shape = CircleShape, color = MaterialTheme.colorScheme.secondaryContainer, modifier = Modifier.size(42.dp)) {
                 Box(contentAlignment = Alignment.Center) {
@@ -325,7 +338,7 @@ private fun Offline(code: String, onRetry: () -> Unit, onByHand: () -> Unit) {
                 Text(if (code == "offline") "인터넷에 연결되지 않아 찾지 못했어요" else companyProblem(code),
                     style = MaterialTheme.typography.titleSmall)
             }
-            Text("연결한 뒤 다시 찾거나, 지금은 직접 설정해도 돼요. 나중에 설정 > 회사 찾기에서 다시 찾을 수 있어요.",
+            Text("연결한 뒤 다시 찾거나, 지금은 직접 설정해도 돼요. 나중에 ${companyFindWay(androidx.compose.ui.platform.LocalContext.current.appContainer.settingsRepository.current.workStyle)}에서 다시 찾을 수 있어요.",
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 OutlinedButton(onClick = onRetry) { Text("다시 찾기") }
@@ -364,6 +377,9 @@ fun CompanyDetailScreen(
     val room by vm.room.collectAsStateWithLifecycle()
     val scope = rememberCoroutineScope()
     var choosing by remember { mutableStateOf<Pair<SharedSetup, Phases>?>(null) }
+    // 2.0.0 [RVN-08] COMP-11 What 이 설정 쓰기 changes, shown before it goes in; [confirming] when there is no row to pick.
+    var changes by remember { mutableStateOf<com.bamnat.app.data.CompanyShare.Preview?>(null) }
+    var confirming by remember { mutableStateOf<Pair<SharedSetup, Int?>?>(null) }
     var applying by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
     // [PLAZA-09] What 이 값 쓰기 changed, said once.
@@ -377,25 +393,63 @@ fun CompanyDetailScreen(
     // [PLAZA-02][PLAZA-05] Two rule sets of one department side by side: the 대표 판 and another, or a past version.
     var comparing by remember { mutableStateOf<Compare?>(null) }
     var keepOld by rememberSaveable { mutableStateOf(false) }
+    // 2.0.0 [RVN-18] 검토 U10a-16: opened from 내 활동 › 보낸 규칙, the page goes to that rule set once (out of its fold).
+    val app = androidx.compose.ui.platform.LocalContext.current.appContainer
+    val focus = remember { app.pendingCompanySetup.also { app.pendingCompanySetup = null } }
+    val focusAsk = remember { androidx.compose.foundation.relocation.BringIntoViewRequester() }
 
     // [PAYF-03] 1.29 AP: whether the pay way goes in with the cycle, asked once before the order (null: not asked, or no pay way).
     var withPay by remember { mutableStateOf(true) }
     var askingPay by remember { mutableStateOf<SharedSetup?>(null) }
+    // 2.0.0 [RVN-17] COMP-12 What 이 설정 쓰기 was doing when the calendar turned out to be held, to go on with after '잘못 골랐어요'.
+    val wait by vm.wait.collectAsStateWithLifecycle()
+    val freeing by vm.freeing.collectAsStateWithLifecycle()
+    var started by remember { mutableStateOf<Pair<CompanyPage, SharedSetup>?>(null) }
+    // COMP-12 The calendar is held by another company: asked before any order is picked (근무주기만 넣기 or '잘못 골랐어요').
+    var held by remember { mutableStateOf<MemberWait?>(null) }
+    var lastUse by remember { mutableStateOf<Triple<CompanyPage, SharedSetup, Int?>?>(null) }
     fun use(p: CompanyPage, s: SharedSetup, step: Int?) {
         applying = true
-        vm.apply(p, s, step, withPay = withPay, done = { r -> applying = false; choosing = null; onApplied(r, p.name) },
-            failed = { applying = false; choosing = null; error = it })
+        lastUse = Triple(p, s, step)
+        vm.apply(p, s, step, withPay = withPay, done = { r -> applying = false; choosing = null; confirming = null; lastUse = null; onApplied(r, p.name) },
+            // COMP-12 A held calendar is said by the wait card (with 잘못 골랐어요), not as a red band.
+            failed = { applying = false; choosing = null; confirming = null; if (vm.wait.value == null) error = it })
     }
     fun order(p: CompanyPage, s: SharedSetup) {
         scope.launch {
             val phases = vm.phases(s)
-            if (phases != null && phases.options.size > 1) choosing = s to phases else use(p, s, if (phases != null) 0 else null)
+            changes = vm.preview(s)
+            // COMP-11 Over a calendar that already has its order, one look first even when there is only one way to put it in.
+            when {
+                phases != null && phases.options.size > 1 -> choosing = s to phases
+                hasPattern == true -> confirming = s to (if (phases != null) 0 else null)
+                else -> use(p, s, if (phases != null) 0 else null)
+            }
         }
+    }
+    fun startNow(p: CompanyPage, s: SharedSetup) {
+        // [PAYF-03] 사용자 2026-10-27: 'n명이 쓰고 있어요'를 눌러 적용할 때 급여까지 같이 넣을지 한 번 묻기.
+        if (s.hasPay) askingPay = s else { withPay = false; order(p, s) }
     }
     fun start(p: CompanyPage, s: SharedSetup) {
         if (onPick != null) return onPick(p, s)
-        // [PAYF-03] 사용자 2026-10-27: 'n명이 쓰고 있어요'를 눌러 적용할 때 급여까지 같이 넣을지 한 번 묻기.
-        if (s.hasPay) askingPay = s else { withPay = false; order(p, s) }
+        error = null
+        started = p to s
+        lastUse = null
+        // 2.0.0 [RVN-17] 총괄 사진 검토 (rvn_95·97): held, and the page already says so with its 잘못 골랐어요: the button is 근무주기만
+        // 넣기 and does that, with no window in between.
+        if (!p.member && vm.heldNow.value != null) { withPay = false; order(p, s); return }
+        // 2.0.0 [RVN-17] COMP-12 A calendar held by another company hears it now, before an order is picked.
+        vm.beforeUse(p, go = { startNow(p, s) }, held = { held = it })
+    }
+    fun freeAndGoOn() = vm.undoJoin { lastUse?.let { (p, s, step) -> use(p, s, step) } ?: started?.let { (p, s) -> startNow(p, s) } }
+    held?.let { w ->
+        val (p, s) = started ?: return@let
+        HeldDialog(w, p.name,
+            // I10ab-02 The order alone: no pay question (the pay stays the held company's), and no joining.
+            onCycleOnly = { held = null; withPay = false; order(p, s) },
+            onUndo = { held = null; vm.freeHeld(w); freeAndGoOn() },
+            onDismiss = { held = null })
     }
     askingPay?.let { s ->
         val p = page
@@ -427,18 +481,24 @@ fun CompanyDetailScreen(
                     verticalArrangement = Arrangement.spacedBy(12.dp),
                 ) {
                     val p = s.page
+                    // 2.0.0 [RVN-17] PC-155 A calendar held by another company: known as the page opens, said in the line above.
+                    val heldNow by vm.heldNow.collectAsStateWithLifecycle()
+                    LaunchedEffect(p.id, p.member) { vm.lookHeld(p) }
+                    val heldHere = heldNow?.takeIf { !p.member }
                     // [SPD-13] 1.30 AP1: the page kept from before is on screen while it is read again.
                     RefreshLine(vm.refreshing.collectAsStateWithLifecycle().value, vm.stale.collectAsStateWithLifecycle().value, onRetry = vm::load)
+                    // 2.0.0 [RVN-22] I10bb-01 맞아요·쓰고 있어요·회사 빼기 pressed without a connection, waiting to go.
+                    WaitingSendsLine(app)
+                    // 2.0.0 [RVN-22] I10bc-03 and what goes to its 광장 by itself tomorrow morning, with 취소.
+                    HeldShareLine(app, names = listOf(p.name) + p.aliases)
                     if (p.aliases.isNotEmpty()) {
                         Text("다른 이름: ${p.aliases.joinToString(", ")}", style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
-                    Row(verticalAlignment = Alignment.Top) {
-                        Icon(Icons.Outlined.Info, null, Modifier.size(18.dp).padding(top = 2.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
-                        Spacer(Modifier.width(8.dp))
-                        Text("같은 회사 분들이 알려 준 정보예요. 회사가 낸 공식 정보는 아니어서, 첫 명세서와 한 번 맞춰 봐 주세요.",
-                            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    }
+                    // 2.0.0 [RVN-22] HQ-113 (조건 1·4): one line with ⓘ for the rest, so the 판 cards start higher.
+                    com.bamnat.app.ui.components.Explain("company.unofficial",
+                        "같은 회사 분들이 알려 준 정보예요. 회사가 낸 공식 정보는 아니어서, 첫 명세서와 한 번 맞춰 봐 주세요.",
+                        iconOnly = false, firstInFull = false)
                     if (p.setups.isEmpty()) {
                         Text("아직 볼 수 있는 설정이 없어요.", style = MaterialTheme.typography.bodyLarge)
                     }
@@ -449,9 +509,14 @@ fun CompanyDetailScreen(
                         RoomSection(r, onTake = { card -> vm.take(card) { msg, ok -> if (ok) { error = null; notice = msg } else error = msg } })
                     }
                     // [PLAZA-08] Not a member: shift times and their order only; the pay way shows after joining.
-                    if (!p.member && p.setups.any { it.payHidden }) {
+                    // PC-155 Held by another company already: that, what can be done here (the 근무주기), and 잘못 골랐어요 beside it.
+                    if (heldHere != null && !p.limited) HeldNotice(heldHere, p.name, payHidden = p.setups.any { it.payHidden },
+                        freeing = freeing, onUndo = { vm.freeHeld(heldHere); vm.undoJoin { notice = "정해진 회사를 풀었어요. 이제 ‘${p.name}’ 설정을 그대로 쓸 수 있어요" } })
+                    else if (!p.member && p.setups.any { it.payHidden }) {
                         Text(if (p.limited) "오늘은 많이 봐서 근무 시각·순서만 보여요. 내일 다시 보여요."
-                            else "급여 계산 방식은 이 회사 설정을 쓰는(참여한) 분께만 보여요. 쓰면 이 회사 광장에 참여돼요.",
+                            // 2.0.0 [RVN-17] 검토 COMP-12 고르기 전에 알리고: what joining holds, before the choice.
+                            else ("급여 계산 방식은 이 회사 설정을 쓰는(참여한) 분께만 보여요. 쓰면 이 회사 광장에 참여되고, " +
+                                "이 달력은 ${p.joinWaitDays}일 동안 ‘${p.name}’${com.bamnat.core.text.Josa.fit(p.name, "으로")} 정해져요."),
                             style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                     // [PLAZA-05] The rule set this phone used is no longer the department's 대표 판 (결정 D74): say so once, with
@@ -484,15 +549,24 @@ fun CompanyDetailScreen(
                             { comparing = Compare("대표 판과 비교", l.text, u.text, "대표 판", "내가 쓰는 판", l) }
                         })
                     }
+                    val focused = focus?.takeIf { it.first == p.id }?.second?.takeIf { id -> p.setups.any { it.id == id } }
+                    LaunchedEffect(focused) {
+                        if (focused == null) return@LaunchedEffect
+                        sections.firstOrNull { sec -> sec.others.any { it.id == focused } }?.let { opened = (opened + DeptGroups.key(it.dept)).distinct() }
+                        kotlinx.coroutines.delay(FOCUS_SETTLE_MS)
+                        focusAsk.bringIntoView()
+                    }
+                    fun Modifier.focusOn(id: String) = if (id == focused) bringIntoViewRequester(focusAsk) else this
                     @Composable
-                    fun card(su: SharedSetup, lead: SharedSetup) {
+                    fun card(su: SharedSetup, lead: SharedSetup) = Box(Modifier.focusOn(su.id)) {
                         val using = applied?.takeIf { it.companyId == p.id && it.setup == su.id }
-                        SetupCard(su, diffs[su.id], using, onUse = { start(p, su) },
+                        SetupCard(su, diffs[su.id], using, onUse = { start(p, su) }, useLabel = HELD_USE.takeIf { heldHere != null },
                             // [PLAZA-09] A member reads the others' pay as 고친 점 cards above, the own one in full.
                             showPay = room == null || using != null || room?.page?.base?.setup == su.id,
                             // [COMM-06][COMM-07] Anyone who knows the company can vote and talk it over, using it or not.
                             vote = votes[su.id] ?: applied?.takeIf { it.companyId == p.id && it.setup == su.id }?.vote,
                             onVote = { ok, why -> vm.vote(p, su, ok, why) { e -> error = e } },
+                            onTakeBack = { vm.takeBack(p, su) },
                             onTalk = { vm.talk.show(p.id, su.id, "${p.name} · ${su.dept.ifEmpty { "회사 전체" }}") },
                             onPropose = { vm.talk.show(p.id, su.id, "${p.name} · ${su.dept.ifEmpty { "회사 전체" }}", kind = "proposal") },
                             // [PLZ-10][PLZ-04] My own month with these rules, and how the rule got here.
@@ -515,9 +589,11 @@ fun CompanyDetailScreen(
                             val open = key in opened
                             OthersFold(folded.size, open) { opened = if (open) opened - key else opened + key }
                             if (open) folded.forEach { o ->
-                                OtherVersionCard(o, diffs[o.id], using = null, onUse = { start(p, o) },
-                                    onCompare = { comparing = Compare("대표 판과 비교", sec.lead.text, o.text, "대표 판", "이 판", o) },
-                                    onTalk = { vm.talk.show(p.id, o.id, "${p.name} · ${o.dept.ifEmpty { "회사 전체" }}") })
+                                Box(Modifier.focusOn(o.id)) {
+                                    OtherVersionCard(o, diffs[o.id], using = null, onUse = { start(p, o) }, useLabel = HELD_USE.takeIf { heldHere != null },
+                                        onCompare = { comparing = Compare("대표 판과 비교", sec.lead.text, o.text, "대표 판", "이 판", o) },
+                                        onTalk = { vm.talk.show(p.id, o.id, "${p.name} · ${o.dept.ifEmpty { "회사 전체" }}") })
+                                }
                             }
                         }
                     }
@@ -532,7 +608,7 @@ fun CompanyDetailScreen(
                     Spacer(Modifier.height(24.dp))
                 }
             }
-            notice?.takeIf { error == null }?.let { msg ->
+            notice?.takeIf { error == null && wait == null }?.let { msg ->
                 Surface(color = MaterialTheme.colorScheme.secondaryContainer, shape = MaterialTheme.shapes.medium,
                     modifier = Modifier.align(Alignment.BottomCenter).padding(16.dp).navigationBarsPadding()) {
                     Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -540,6 +616,11 @@ fun CompanyDetailScreen(
                         TextButton(onClick = { notice = null }) { Text("닫기") }
                     }
                 }
+            }
+            // 2.0.0 [RVN-17] COMP-12 The calendar is held by another company: which, until when, and '잘못 골랐어요'.
+            wait?.takeIf { error == null }?.let { w ->
+                MemberWaitCard(w, company = page?.name.orEmpty(), busy = freeing, onUndo = ::freeAndGoOn, onClose = vm::closeWait,
+                    modifier = Modifier.align(Alignment.BottomCenter).padding(16.dp).navigationBarsPadding())
             }
             error?.let { msg ->
                 Surface(color = MaterialTheme.colorScheme.errorContainer, shape = MaterialTheme.shapes.medium,
@@ -562,7 +643,7 @@ fun CompanyDetailScreen(
             val su = page?.setups?.firstOrNull { it.id == now.setup }
             if (v.body != null && now.body != null && su != null) {
                 vm.closeHistory()
-                comparing = Compare("v${v.version}과 지금 비교", now.body, v.body, "지금 v${now.version}", "v${v.version}",
+                comparing = Compare("${v.version}판과 지금 비교", now.body, v.body, "지금 ${now.version}판", "${v.version}판",
                     su.copy(id = v.setup, text = v.body, version = v.version, adopted = false), back = true)
             }
         })
@@ -599,7 +680,50 @@ fun CompanyDetailScreen(
             busy = applying,
             onDismiss = { if (!applying) choosing = null },
             onPick = { step -> use(page, pick.first, step) },
+            changes = changes,
         )
+    }
+    val sure = confirming
+    if (sure != null && page != null) {
+        ApplyConfirmSheet(page.name, changes, busy = applying, onDismiss = { if (!applying) confirming = null }, onConfirm = { use(page, sure.first, sure.second) })
+    }
+}
+
+/**
+ * 2.0.0 [RVN-08] COMP-11 What goes in before it does: the kinds of day whose times change, the kinds added, and that the order
+ * changes from today; 되돌리기 follows on the app's snackbar. [RVN-20] I10aa-02 drawn by the common [ChangeSummary] (공개 근무주기 too).
+ */
+@Composable
+private fun SetupChanges(changes: com.bamnat.app.data.CompanyShare.Preview?, replacing: Boolean) =
+    com.bamnat.app.ui.components.ChangeSummary(changeLines(changes, replacing), undo = replacing)
+
+/** 2.0.0 [RVN-20] I10aa-02 The lines of [p] for [com.bamnat.app.ui.components.ChangeSummary]; [replacing]: over an order the calendar has. */
+internal fun changeLines(p: com.bamnat.app.data.CompanyShare.Preview?, replacing: Boolean): List<String> = buildList {
+    p?.changed?.forEach { add(it) }
+    p?.added?.forEach { add("새 근무 · $it") }
+    if (replacing) add(
+        when {
+            p?.cycle != null -> "오늘부터 ${p.cycle}일 순서로 바뀌어요. 지난 날짜와 직접 바꾼 날은 그대로예요."
+            p?.weekly == true -> "오늘부터 요일마다 정한 근무로 바뀌어요. 지난 날짜와 직접 바꾼 날은 그대로예요."
+            else -> "오늘부터 이 순서로 바뀌어요. 지난 날짜와 직접 바꾼 날은 그대로예요."
+        },
+    )
+}
+
+/** COMP-11 이 설정 쓰기 with no row to pick, over a calendar that has its own order: one look at what changes, then 넣기. */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun ApplyConfirmSheet(company: String, changes: com.bamnat.app.data.CompanyShare.Preview?, busy: Boolean, onDismiss: () -> Unit, onConfirm: () -> Unit) {
+    com.bamnat.app.ui.components.AppSheet(onDismissRequest = onDismiss, sheetState = busySheetState(busy)) {
+        Column(Modifier.padding(horizontal = 20.dp).padding(bottom = 20.dp).verticalScroll(rememberScrollState()),
+            verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text("‘$company’ 설정을 넣을까요?", style = MaterialTheme.typography.titleLarge)
+            SetupChanges(changes, replacing = true)
+            Button(onClick = onConfirm, enabled = !busy, modifier = Modifier.fillMaxWidth().padding(top = 4.dp)) {
+                if (busy) CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp) else Text("이 설정으로 바꾸기")
+            }
+            TextButton(onClick = onDismiss, enabled = !busy, modifier = Modifier.fillMaxWidth()) { Text("그대로 두기") }
+        }
     }
 }
 
@@ -619,6 +743,13 @@ private fun SetupCard(
     onDiff: (() -> Unit)? = null,
     onCompare: (() -> Unit)? = null,
     showPay: Boolean = true,
+    /** 2.0.0 [RVN-18] COMP-22-1 맞아요 ✓ pressed again takes it back. */
+    onTakeBack: (() -> Unit)? = null,
+    /**
+     * 2.0.0 [RVN-17] 총괄 사진 검토 (rvn_95·97): the use button's name when this calendar is held by another company: what pressing it
+     * does (근무주기만 넣기), not 이 설정 쓰기 followed by a window saying it cannot.
+     */
+    useLabel: String? = null,
 ) {
     var more by rememberSaveable(s.id) { mutableStateOf(false) }
     val main = s.lines.filter { (label, _) -> label == "근무" || label.startsWith("순서") || label == "연장·휴무일 근무" }
@@ -628,7 +759,7 @@ private fun SetupCard(
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(s.dept.ifEmpty { "회사 전체" }, style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
                 // [PLAZA-05] 결정 D74: the department's 대표 판 is the one most phones use; earlier versions stay in 바뀐 기록.
-                if (s.adopted) StatusChip("대표 판${s.version?.let { " v$it" } ?: ""}", Tone.GOOD)
+                if (s.adopted) StatusChip("대표 판${s.version?.let { " · ${it}판" } ?: ""}", Tone.GOOD)
                 // [PLAZA-10] 결정 D79: the first provider's version shows at once, as 제보 1 · 확인 중.
                 else StatusChip(if (s.senders <= 1) "제보 1 · 확인 중" else "확인 중", Tone.WAIT)
                 // [PLAZA-09] 안정: settled, no more nudges.
@@ -648,7 +779,7 @@ private fun SetupCard(
             main.forEach { (label, text) -> SetupLine(label, text) }
             if (pay.isNotEmpty()) {
                 Row(
-                    Modifier.fillMaxWidth().clip(MaterialTheme.shapes.small).clickable { more = !more }.padding(vertical = 6.dp),
+                    Modifier.fillMaxWidth().clip(MaterialTheme.shapes.small).clickable(role = Role.Button) { more = !more }.padding(vertical = 6.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Text(if (more) "급여 계산 방식 접기" else "급여 계산 방식 보기 (${pay.size}가지)", style = MaterialTheme.typography.labelLarge,
@@ -673,24 +804,40 @@ private fun SetupCard(
                     Text("지금 이 설정을 쓰고 있어요", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
                 }
             }
-            if (s.adopted) Button(onClick = onUse, modifier = Modifier.fillMaxWidth()) { Text(if (applied != null) "다시 넣기" else "이 설정 쓰기") }
-            else FilledTonalButton(onClick = onUse, modifier = Modifier.fillMaxWidth()) { Text("확인 중이지만 써 보기") }
+            if (s.adopted) Button(onClick = onUse, modifier = Modifier.fillMaxWidth()) { Text(useLabel ?: if (applied != null) "다시 넣기" else "이 설정 쓰기") }
+            else OutlinedButton(onClick = onUse, modifier = Modifier.fillMaxWidth()) { Text(useLabel ?: "확인 중이지만 써 보기") } // 2.0.0 [RVN-19] 총괄 사진 검토 rvn_91 (조건 2): 대표 판의 채운 단추가 화면에 하나
             if (onVote != null) {
                 Text("다니는 회사라면 이 규칙이 맞는지 알려 주세요", style = MaterialTheme.typography.labelMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 4.dp))
-                VoteButtons(vote ?: s.opinion.mine?.let { it == "ok" }, onVote, s.opinion, onPropose = onDiff ?: onPropose)
+                VoteButtons(vote ?: s.opinion.mine?.let { it == "ok" }, onVote, s.opinion, onPropose = onDiff ?: onPropose, onTakeBack = onTakeBack)
             }
-            if (onTry != null || onHistory != null) {
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
-                    onTry?.let { OutlinedButton(onClick = it, modifier = Modifier.weight(1f)) { Text("내 월급으로 시험") } }
-                    onHistory?.let { OutlinedButton(onClick = it, modifier = Modifier.weight(1f)) { Text("바뀐 기록") } }
+            // 2.0.0 [RVN-18] COMP-22-6 two buttons go one under the other with big letters (PairRow).
+            val buttons = listOfNotNull<Pair<String, @Composable (Modifier) -> Unit>>(
+                onTry?.let { go -> "월급 시험" to @Composable { m: Modifier -> OutlinedButton(onClick = go, modifier = m) { Text("내 월급으로 시험") } } },
+                onHistory?.let { go -> "바뀐 기록" to @Composable { m: Modifier -> OutlinedButton(onClick = go, modifier = m) { Text("바뀐 기록") } } },
+                // [PLAZA-02] U2: what is different here, said on this rule set's own values, not in a blank box.
+                onDiff?.let { go -> "다른 점 말하기" to @Composable { m: Modifier -> OutlinedButton(onClick = go, modifier = m) { Text("우리는 달라요 · 다른 점 말하기") } } },
+                onCompare?.let { go -> "대표 판 비교" to @Composable { m: Modifier -> OutlinedButton(onClick = go, modifier = m) { Text("대표 판과 비교") } } },
+            )
+            // 2.0.0 [RVN-19] 검토 U10a-08 (한 카드에 단추가 7가지까지): one big button (이 설정 쓰기) and the answer to 맞아요·달라요 stay;
+            // the rest are behind '이 판 더 보기', which says what is in it.
+            if (buttons.isNotEmpty()) {
+                var tools by rememberSaveable(s.id + ":tools") { mutableStateOf(false) }
+                Row(
+                    Modifier.fillMaxWidth().heightIn(min = 48.dp).clip(MaterialTheme.shapes.small)
+                        .clickable(role = Role.Button, onClickLabel = if (tools) "접기" else "펼치기") { tools = !tools },
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(if (tools) "이 판 접기" else "이 판 더 보기", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
+                    Spacer(Modifier.width(8.dp))
+                    Text(buttons.joinToString(" · ") { it.first }, style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
+                    Icon(if (tools) Icons.Filled.ExpandLess else Icons.Filled.ExpandMore, null, tint = MaterialTheme.colorScheme.primary)
                 }
-            }
-            if (onDiff != null || onCompare != null) {
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
-                    // [PLAZA-02] U2: what is different here, said on this rule set's own values, not in a blank box.
-                    onDiff?.let { OutlinedButton(onClick = it, modifier = Modifier.weight(1f)) { Text("우리는 달라요 · 다른 점 말하기") } }
-                    onCompare?.let { OutlinedButton(onClick = it, modifier = Modifier.weight(1f)) { Text("대표 판과 비교") } }
+                AnimatedVisibility(tools) {
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        buttons.map { it.second }.chunked(2).forEach { pair -> com.bamnat.app.ui.components.PairRow(first = pair[0], second = pair.getOrNull(1)) }
+                    }
                 }
             }
             if (onTalk != null) {
@@ -716,7 +863,7 @@ internal fun RoomSection(room: CompanyDetailViewModel.Room, onTake: (com.bamnat.
                 val b = r.base
                 when {
                     b == null -> Unit
-                    b.adopted -> StatusChip("대표 판${b.version?.let { " v$it" } ?: ""}", Tone.GOOD)
+                    b.adopted -> StatusChip("대표 판${b.version?.let { " · ${it}판" } ?: ""}", Tone.GOOD)
                     r.first -> StatusChip("제보 1 · 확인 중", Tone.WAIT)
                     else -> StatusChip("확인 중", Tone.WAIT)
                 }
@@ -753,11 +900,31 @@ internal fun RoomSection(room: CompanyDetailViewModel.Room, onTake: (com.bamnat.
  */
 @OptIn(ExperimentalMaterial3Api::class, androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 @Composable
-internal fun PhaseSheet(phases: Phases, replacing: Boolean, busy: Boolean, onDismiss: () -> Unit, onPick: (Int) -> Unit) {
+internal fun PhaseSheet(
+    phases: Phases,
+    replacing: Boolean,
+    busy: Boolean,
+    onDismiss: () -> Unit,
+    onPick: (Int) -> Unit,
+    /** 2.0.0 [RVN-08] COMP-11 What the setup changes besides the order, from the company screen (null elsewhere). */
+    changes: com.bamnat.app.data.CompanyShare.Preview? = null,
+) {
     var picked by remember(phases) { mutableStateOf(phases.current ?: phases.sent) }
     val today = remember { Today.date() }
-    com.bamnat.app.ui.components.AppSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
-        Column(Modifier.padding(horizontal = 20.dp).padding(bottom = 20.dp).verticalScroll(rememberScrollState()),
+    // 2.0.0 [RVN-19] 검토 U10a-09 (28일 주기는 확인 단추가 맨 아래까지 내려가야 보여요): a long order asks today's work first (then the
+    // next day's while rows that differ are left), the rows shrink to those, and the button stays at the bottom of the sheet.
+    var said by remember(phases) { mutableStateOf(emptyMap<Int, String>()) }
+    val narrowing = phases.teams.isEmpty() && phases.options.size > PHASE_ASK_ROWS
+    val left = if (narrowing) phases.left(said) else phases.options
+    val ask = if (narrowing) phases.nextAsk(said) else null
+    LaunchedEffect(said) {
+        if (said.isEmpty()) return@LaunchedEffect
+        picked = left.singleOrNull()?.step ?: picked?.takeIf { p -> left.any { it.step == p } }
+    }
+    // 2.0.0 [RVN-18] 검토 COMP-22-3: while it is putting the order in, the sheet stays up (dragged down it hid but kept the screen).
+    com.bamnat.app.ui.components.AppSheet(onDismissRequest = onDismiss, sheetState = busySheetState(busy)) {
+      Column(Modifier.fillMaxWidth()) {
+        Column(Modifier.weight(1f, fill = false).verticalScroll(rememberScrollState()).padding(horizontal = 20.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text("오늘은 어떤 근무예요?", style = MaterialTheme.typography.titleLarge)
             // [SETUP-02] A coworker on another 조 shares the order on other days: the sender's row is only a start.
@@ -766,10 +933,29 @@ internal fun PhaseSheet(phases: Phases, replacing: Boolean, busy: Boolean, onDis
                 "${Fmt.dayTitle(today)} · ${phases.cycle}일 순서예요. " + when {
                     phases.current != null -> "지금 달력과 같은 줄을 골라 두었어요."
                     phases.sent != null -> "${sender}의 오늘 줄을 골라 두었어요. 조가 다르면 내 근무와 같은 줄로 바꿔 주세요."
+                    narrowing -> "오늘 근무를 누르면 맞는 줄만 남아요."
                     else -> "다음 일주일이 내 근무와 같은 줄을 골라 주세요."
                 },
                 style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
+            if (ask != null) {
+                if (ask > 0) Text(if (ask == 1) "내일은요?" else "${Fmt.dayOfWeekShort(today.plusDays(ask.toLong()).dayOfWeek)}요일은요?",
+                    style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(top = 4.dp).semantics { heading() })
+                androidx.compose.foundation.layout.FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    left.map { phaseKind(it.days.getOrNull(ask)) }.distinct().forEach { k ->
+                        com.bamnat.app.ui.components.FilterChip(selected = false, onClick = { said = said + (ask to k) },
+                            label = { Text(k, style = MaterialTheme.typography.titleSmall) }, modifier = Modifier.heightIn(min = 48.dp))
+                    }
+                }
+            }
+            if (said.isNotEmpty()) {
+                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+                    Text(said.toSortedMap().entries.joinToString(" · ") { (d, k) ->
+                        (if (d == 0) "오늘" else if (d == 1) "내일" else Fmt.dayOfWeekShort(today.plusDays(d.toLong()).dayOfWeek) + "요일") + " " + k
+                    } + " · ${left.size}줄", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
+                    TextButton(onClick = { said = emptyMap() }, modifier = Modifier.heightIn(min = 48.dp)) { Text("다시 고르기") }
+                }
+            }
             // [CYC-06] 1.39: a file naming every 조 lets the row be picked by 조; the rows below stay for checking it.
             if (phases.teams.isNotEmpty()) {
                 Text("몇 조예요?", style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(top = 4.dp))
@@ -784,16 +970,24 @@ internal fun PhaseSheet(phases: Phases, replacing: Boolean, busy: Boolean, onDis
                 Text("조를 고르면 아래에서 그 조의 줄이 골라져요.", style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
+            // 2.0.0 [RVN-08] 디자인 품질 12: at 200% the week's seven badges grew past their cells and ran into one bar, and '오늘' stood
+            // on two lines. The grid is a picture of the order (each row's spoken name says every day in full, and '바뀌는 것' below
+            // keeps the whole text size), so its letters stop at 130% and the badges drop their icon once the text is big.
+            val base = androidx.compose.ui.platform.LocalDensity.current
+            val bigText = base.fontScale > WEEK_GRID_ICON_SCALE
+            androidx.compose.runtime.CompositionLocalProvider(androidx.compose.ui.platform.LocalDensity provides
+                androidx.compose.ui.unit.Density(base.density, base.fontScale.coerceAtMost(WEEK_GRID_MAX_SCALE))) {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Row(Modifier.fillMaxWidth().padding(start = 52.dp, end = 8.dp, top = 4.dp)) {
                 (0 until 7).forEach { d ->
                     val day = today.plusDays(d.toLong())
                     Text(if (d == 0) "오늘" else Fmt.dayOfWeekShort(day.dayOfWeek), style = MaterialTheme.typography.labelSmall,
                         fontWeight = if (d == 0) FontWeight.Bold else FontWeight.Normal,
                         color = if (d == 0) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
-                        textAlign = TextAlign.Center, modifier = Modifier.weight(1f))
+                        textAlign = TextAlign.Center, maxLines = 1, softWrap = false, modifier = Modifier.weight(1f))
                 }
             }
-            phases.options.forEachIndexed { row, o ->
+            left.forEachIndexed { row, o ->
                 val selected = picked == o.step
                 val scheme = MaterialTheme.colorScheme
                 // [COMM-13] One name for the row, so TalkBack reads "2번째 줄: 오늘 주간, 내일 야간, …" and not 56 letters in a run.
@@ -818,26 +1012,43 @@ internal fun PhaseSheet(phases: Phases, replacing: Boolean, busy: Boolean, onDis
                     RadioButton(selected = selected, onClick = null, modifier = Modifier.padding(horizontal = 10.dp))
                     o.days.forEach { t ->
                         Box(Modifier.weight(1f), contentAlignment = Alignment.Center) {
-                            ShiftBadge(t, size = 30.dp, text = t?.label ?: "휴", outlined = t == null || t.isOff)
+                            ShiftBadge(t, size = 30.dp, text = t?.label ?: "휴", outlined = t == null || t.isOff, showIcon = !bigText)
                         }
                     }
                 }
             }
-            if (replacing) {
+            }
+            }
+            if (changes != null) SetupChanges(changes, replacing)
+            else if (replacing) {
                 Text("오늘부터 이 순서로 바뀌어요. 지난 날짜와 직접 바꾼 날은 그대로예요.", style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
-            Button(onClick = { picked?.let(onPick) }, enabled = picked != null && !busy, modifier = Modifier.fillMaxWidth().padding(top = 4.dp)) {
+        }
+        // [RVN-19] U10a-09 The button under the rows, never scrolled away.
+        Column(Modifier.fillMaxWidth().padding(horizontal = 20.dp).padding(top = 8.dp, bottom = 20.dp)) {
+            Button(onClick = { picked?.let(onPick) }, enabled = picked != null && !busy, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
                 if (busy) CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp) else Text("이 순서로 쓸게요")
             }
             // [COMM-13] Why the button is grey, said under it rather than left to guess.
             if (picked == null) {
-                Text("내 근무와 같은 줄을 먼저 골라 주세요", style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.fillMaxWidth(), textAlign = TextAlign.Center)
+                Text(if (ask == 0) "오늘 근무를 누르거나 내 근무와 같은 줄을 골라 주세요" else "내 근무와 같은 줄을 먼저 골라 주세요",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.fillMaxWidth().padding(top = 4.dp), textAlign = TextAlign.Center)
             }
         }
+      }
     }
 }
+
+/** 2.0.0 [RVN-19] 검토 U10a-09 With more rows than this, '오늘은 어떤 근무예요?' asks today's work first. */
+internal const val PHASE_ASK_ROWS = 4
+
+/** 2.0.0 [RVN-08] How large the letters of the '오늘은 어떤 근무예요?' week grid grow (seven badges share one row). */
+private const val WEEK_GRID_MAX_SCALE = 1.3f
+
+/** 2.0.0 [RVN-08] Past this text size the week grid's badges show their letter without the icon, so seven fit in a row. */
+private const val WEEK_GRID_ICON_SCALE = 1.15f
 
 /** [PLAZA-02][PLAZA-05] What the compare sheet shows: [setup] is the second one, ready to apply; [back] for a past version. */
 private data class Compare(
@@ -885,13 +1096,14 @@ internal fun WithPayDialog(company: String, setup: SharedSetup, onAnswer: (Boole
 internal fun TrialBeforeAfter(trial: Trial?) {
     val t = trial?.takeIf { it.note == null && !it.loading && (it.now > 0 || it.then > 0) } ?: return
     val d = t.diff
-    Text("이번 달 예상 세전 ${com.bamnat.app.ui.pay.won(t.now)} → ${com.bamnat.app.ui.pay.won(t.then)}" +
-        if (d == 0L) " (같아요)" else " (${if (d > 0) "+" else "−"}${com.bamnat.app.ui.pay.won(kotlin.math.abs(d))})",
-        style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.primary)
-    t.lines.filter { it.now != it.then }.sortedByDescending { kotlin.math.abs(it.then - it.now) }.take(3).forEach { l ->
-        Text("· ${l.label} ${com.bamnat.app.ui.pay.won(l.now)} → ${com.bamnat.app.ui.pay.won(l.then)}",
-            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-    }
+    // 2.0.0 [RVN-20] I10aa-02 the common '넣기 전 요약' (one look the same as 회사 설정's and 공개 근무주기's).
+    com.bamnat.app.ui.components.ChangeSummary(
+        t.lines.filter { it.now != it.then }.sortedByDescending { kotlin.math.abs(it.then - it.now) }
+            .map { l -> com.bamnat.app.ui.components.changeLine(l.label, com.bamnat.app.ui.pay.won(l.now), com.bamnat.app.ui.pay.won(l.then)) },
+        title = "이번 달 예상 세전 ${com.bamnat.app.ui.pay.won(t.now)} → ${com.bamnat.app.ui.pay.won(t.then)}" +
+            if (d == 0L) " (같아요)" else " (${if (d > 0) "+" else "−"}${com.bamnat.app.ui.pay.won(kotlin.math.abs(d))})",
+        titleColor = MaterialTheme.colorScheme.primary, max = 3,
+    )
 }
 
 /**
@@ -901,12 +1113,42 @@ internal fun TrialBeforeAfter(trial: Trial?) {
 @Composable
 internal fun TeamsTodayLine() {
     val c = androidx.compose.ui.platform.LocalContext.current.appContainer
-    val snap by c.scheduleRepository.snapshot.collectAsStateWithLifecycle(initialValue = null)
+    // 2.0.0 [RVN-18] COMP-21 The calendar this company is on (before, always 내 달력's 조, also on a second calendar's company).
+    val calendar = LocalCompanyCalendar.current
+    val schedule = remember(calendar) { c.scopeOf(calendar).schedule }
+    val snap by schedule.snapshot.collectAsStateWithLifecycle(initialValue = null)
     val rosters by c.teams.rosters.collectAsStateWithLifecycle()
     val today = com.bamnat.core.time.Today.date()
-    val line = remember(snap, rosters, today) {
-        snap?.let { com.bamnat.app.ui.calendar.teamsTodayLine(it, rosters[com.bamnat.app.data.PersonalCalendar.MAIN], today) }
+    val line = remember(snap, rosters, today, calendar) {
+        snap?.let { com.bamnat.app.ui.calendar.teamsTodayLine(it, rosters[calendar], today) }
     } ?: return
     Text("오늘 $line", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.primary,
         modifier = Modifier.semantics { contentDescription = "우리 회사 오늘 근무: $line" })
+}
+
+/** 2.0.0 [RVN-18] U10a-16 How long the page has to lay out an opened fold before it is scrolled to the rule set. */
+private const val FOCUS_SETTLE_MS = 120L
+
+/** 2.0.0 [RVN-17] 총괄 사진 검토: the use button's name while this calendar is held by another company (what it does). */
+internal const val HELD_USE = "근무주기만 넣기"
+
+/**
+ * 2.0.0 [RVN-24] 검토 I10ac-02 내 달력이 회사를 찾아 주기: "이름을 몰라도" — the companies whose 대표 주기 and the public rows whose
+ * order is the one on my calendar, found on the phone. A company opens its page; a public row its sheet.
+ */
+@Composable
+internal fun SameWorkRows(w: CompanyFindViewModel.SameWork, onCompany: (String) -> Unit, onRow: (PublicCycle) -> Unit) {
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Text("내 근무 순서와 같은 곳", style = MaterialTheme.typography.titleSmall, modifier = Modifier.semantics { heading() })
+        Text("달력에 넣은 근무 순서로 폰 안에서 찾았어요", style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant)
+        w.companies.forEach { h ->
+            val pay = h.lead?.pay == true || h.lead?.payWay != null
+            BrowseRow(title = h.name, line = "같은 회사 분들이 맞춘 근무표" + if (pay) " · 급여 방식도 있어요" else "", onClick = { onCompany(h.id) })
+        }
+        w.rows.forEach { r ->
+            BrowseRow(title = listOf(r.company, r.site).filter { it.isNotEmpty() }.joinToString(" · "),
+                line = "${r.formName} · ${PublicCycles.BADGE}", onClick = { onRow(r) })
+        }
+    }
 }

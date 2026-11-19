@@ -17,7 +17,7 @@ object SetupDiff {
             var n = 0
             same.sortedBy { it.at }.forEach { i ->
                 // [PLAZA-05] The one in use is the department's 대표 판 (D74); the others are 제보 until people make one of them it.
-                out[i.id] = if (i.adopted) "대표 판${i.version?.let { " v$it" } ?: ""}" else "제보 ${++n}"
+                out[i.id] = if (i.adopted) "대표 판${PlazaWords.editionAfter(i.version)}" else "제보 ${++n}"
             }
         }
         return out

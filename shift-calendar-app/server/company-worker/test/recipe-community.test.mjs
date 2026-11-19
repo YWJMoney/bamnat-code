@@ -1,7 +1,7 @@
 // 1.35 [RCX-01]..[RCX-15] 나눔 판 완성: 계보, 새 판 확인, 요청 판, 제작자·배지·팔로우, 고른 것, 소식, 그림 표지. `npm test`.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { server, device, from, signIn, seasoned } from "./helpers.mjs";
+import { server, device, from, signIn, seasoned, neighbour } from "./helpers.mjs";
 import { weekOf } from "../src/recipe-community.js";
 
 const AFTER = Date.parse("2026-11-30T03:00:00Z");
@@ -47,7 +47,7 @@ test("[RCX-04] 요청 판: write, like, 만들게요, 완성 with a recipe; noth
   const early = server({ plaza: true });
   assert.equal((await early.call("POST", "/api/recipes/requests", { device: device(1), style: "SHIFT", body: "간호사 3교대 알람 세트 있었으면" }, from(1))).data.error, "not_yet");
   t.mock.timers.setTime(AFTER);
-  const { call } = server({ plaza: true });
+  const { call, DB } = server({ plaza: true });
   const ask = (n, body, style = "SHIFT") => call("POST", "/api/recipes/requests", { device: device(n), style, body }, from(n));
   assert.equal((await ask(1, "시급 10,320원 알바 세트")).data.error, "amount");
   assert.equal((await ask(1, "카톡방 bamnat.kr 오세요")).data.error, "link");
@@ -58,17 +58,32 @@ test("[RCX-04] 요청 판: write, like, 만들게요, 완성 with a recipe; noth
   assert.equal((await act(2, "like")).data.likes, 1);
   assert.equal((await act(3, "like")).data.likes, 2);
   assert.equal((await act(3, "like", { on: false })).data.likes, 1);
-  assert.equal((await act(4, "take")).data.state, "making");
+  // 2.0.0 [RVQ-44] SVC-29: 만들게요 from 이웃 (3 days on the 나눔 판).
+  const trust = await act(4, "take");
+  assert.deepEqual([trust.status, trust.data.error, trust.data.days], [403, "trust", 3]);
+  await neighbour(DB, 4, 5);
+  const took = (await act(4, "take")).data;
+  assert.equal(took.state, "making");
+  assert.equal(Date.parse(took.reopenAt) - Date.parse(took.makingSince), 14 * 24 * 60 * 60 * 1000);
   assert.equal((await act(5, "take")).status, 409, "one maker at a time");
   const mine = (await up(call, 4, { title: "간호사 알람 세트" })).data.code;
   assert.equal((await act(4, "done", { code: "ABCD2345" })).data.error, "code");
-  assert.equal((await act(4, "done", { code: mine })).data.state, "done");
+  const done = (await act(4, "done", { code: mine })).data;
+  assert.deepEqual([done.state, done.checking], ["done", true]);
   const list = (await call("GET", "/api/recipes/requests?style=SHIFT", undefined, dev(2))).data.items;
-  assert.deepEqual([list[0].state, list[0].code, list[0].liked, list[0].mine], ["done", mine, true, false]);
+  assert.deepEqual([list[0].state, list[0].code, list[0].liked, list[0].mine, list[0].checking, list[0].askCheck], ["done", mine, true, false, true, undefined]);
+  // U22b-08: only the one who asked is asked '이 작품이 맞나요?'.
+  const asker = (await call("GET", "/api/recipes/requests?style=SHIFT", undefined, dev(1))).data.items[0];
+  assert.equal(asker.askCheck, true);
+  assert.equal((await act(2, "check", { ok: true })).status, 403);
   // 1.36 [VIL-15] The one who asked hears of it in 소식, with the recipe that answers it; nobody else does.
   const news = (n) => call("GET", "/api/recipes/news", undefined, dev(n));
-  assert.deepEqual((await news(1)).data.requests.map((x) => [x.code, x.title]), [[mine, "간호사 알람 세트"]]);
+  assert.deepEqual((await news(1)).data.requests.map((x) => [x.code, x.title, x.askCheck]), [[mine, "간호사 알람 세트", true]]);
   assert.deepEqual((await news(2)).data.requests, []);
+  const ok = (await act(1, "check", { ok: true })).data;
+  assert.deepEqual([ok.state, ok.confirmed], ["done", true]);
+  assert.equal((await act(1, "check", { ok: true })).status, 409, "once");
+  assert.equal((await call("GET", "/api/recipes/requests?style=SHIFT", undefined, dev(1))).data.items[0].confirmed, true);
   // The operator can hide one.
   const admin = await signIn(call);
   await call("POST", `/api/admin/recipes/requests/${q}/hide`, {}, admin);
@@ -234,7 +249,9 @@ test("[PRF-05][PRF-06] 차단과 프로필 신고: 서로 팔로우가 끊기고
   const { call } = server({ plaza: true });
   await seasoned(call, t, [3, 4, 5]);
   const admin = await signIn(call);
-  const m1 = (await call("POST", "/api/recipes/makers/me", { device: device(1), bio: "공식 밤낮 팀이에요" }, from(1))).data.maker;
+  // 2.0.0 [RVQ-44] SVC-74: a 소개 that claims to be the 밤낮 팀 is refused as a work's title is.
+  assert.equal((await call("POST", "/api/recipes/makers/me", { device: device(1), bio: "공식 밤낮 팀이에요" }, from(1))).data.error, "name_taken");
+  const m1 = (await call("POST", "/api/recipes/makers/me", { device: device(1), bio: "야간 칸만 꾸미는 사람이에요" }, from(1))).data.maker;
   const m2 = (await call("POST", "/api/recipes/makers/me", { device: device(2), face: "🐼" }, from(2))).data.maker;
   await call("POST", `/api/recipes/makers/${m1}/follow`, { device: device(2) }, from(2));
   await call("POST", `/api/recipes/makers/${m2}/follow`, { device: device(1) }, from(1));
@@ -266,7 +283,7 @@ test("[PRF-05][PRF-06] 차단과 프로필 신고: 서로 팔로우가 끊기고
   assert.equal((await call("GET", `/api/recipes/makers/${m1}`, undefined, dev(3))).status, 404);
   await call("POST", `/api/admin/recipes/makers/${m1}/open`, {}, admin);
   await call("POST", `/api/admin/recipes/makers/${m1}/bio-show`, {}, admin);
-  assert.equal((await call("GET", `/api/recipes/makers/${m1}`, undefined, dev(3))).data.bio, "공식 밤낮 팀이에요");
+  assert.equal((await call("GET", `/api/recipes/makers/${m1}`, undefined, dev(3))).data.bio, "야간 칸만 꾸미는 사람이에요");
   // 모두 지우기 takes blocks and flags too.
   await call("DELETE", "/api/mine", undefined, dev(2));
   await call("DELETE", "/api/mine", undefined, dev(1));
@@ -305,7 +322,7 @@ test("[PRF-07] 모음: 내 공개 작품 2~6개, 테마는 하나, 다른 사람
 
 test("[PRF-08][PRF-09][PRF-10] 팔로잉 피드, 작품 통계, 이달의 제작자", async (t) => {
   t.mock.timers.enable({ apis: ["Date"], now: AFTER });
-  const { call } = server({ plaza: true });
+  const { call, DB } = server({ plaza: true });
   const admin = await signIn(call);
   const a = (await up(call, 1, {}, "public")).data.code;
   await up(call, 2, { title: "팔로우 안 한 분 것" }, "public");
@@ -321,11 +338,14 @@ test("[PRF-08][PRF-09][PRF-10] 팔로잉 피드, 작품 통계, 이달의 제작
   assert.equal(stats.items[0].days.length, 28);
   assert.equal(stats.week, stats.items[0].days.slice(-7).reduce((x, y) => x + y, 0));
   assert.equal(stats.week > 0, true);
-  const month = (await call("GET", "/api/recipes/makers/month?style=SHIFT")).data;
-  assert.deepEqual(month.items.map((x) => [x.maker, x.bio]), [[m1, "교대 꾸미기"]]);
-  // The operator's pick comes first.
-  await call("POST", "/api/admin/recipes/makers/month", { style: "SHIFT", makers: [m2] }, admin);
-  assert.deepEqual((await call("GET", "/api/recipes/makers/month?style=SHIFT")).data.items.map((x) => [x.maker, x.picked]), [[m2, true], [m1, false]]);
+  // 2.0.0 [RVQ-27] 검토 SVC-59: 이달의 제작자 are the operator's picks; the most put-on makers are candidates in the admin app only.
+  assert.deepEqual((await call("GET", "/api/recipes/makers/month?style=SHIFT")).data.items, []);
+  // 2.0.0 [RVN-24] SVC-107: 쓰는 분 셋으로는 후보가 아니에요(그달 30명부터).
+  assert.deepEqual((await call("GET", "/api/admin/recipes/makers/month", undefined, admin)).data.candidates.SHIFT, []);
+  DB.db.prepare("UPDATE recipe_counts SET applied = 30 WHERE code = ?").run(a);
+  assert.deepEqual((await call("GET", "/api/admin/recipes/makers/month", undefined, admin)).data.candidates.SHIFT.map((x) => [x.maker, x.users]), [[m1, 30]]);
+  await call("POST", "/api/admin/recipes/makers/month", { style: "SHIFT", makers: [m1, m2] }, admin);
+  assert.deepEqual((await call("GET", "/api/recipes/makers/month?style=SHIFT")).data.items.map((x) => [x.maker, x.picked, x.bio ?? null]), [[m1, true, "교대 꾸미기"], [m2, true, null]]);
 });
 
 test("[PRF-11] 프로필 링크의 공개 페이지: 이름·소개·대표 작품, 앱으로 열기; 숨긴 프로필은 없어요; 글은 그대로 찍지 않아요", async (t) => {
@@ -603,6 +623,9 @@ test("[VIL-19] 이달의 주제 공모: 운영자가 주제를 정하면 내 공
   // 1.36 [GRW-09] 고르면 주인 기기의 프로 내역에 만든 작품 보상이 생기고, 다시 저장해도 두 번 가지 않아요.
   assert.equal(picked.data.rewarded, 1);
   assert.equal((await call("POST", "/api/admin/village/contests/pick", { month: list.month, style: "SHIFT", codes: [mine] }, admin)).data.rewarded, 0);
+  // 2.0.0 [RVD-13] 확인 뒤 지급: the phone says it waits, then has it once an admin pays.
+  assert.ok((await call("GET", "/api/passes", undefined, { "x-device": device(1) })).data.pending.some((x) => x.why === "maker" && x.what.startsWith("이달의 주제에 뽑힘 · ")));
+  for (const w of (await call("GET", "/api/admin/rewards?status=owed&kind=maker", undefined, admin)).data.rewards) await call("POST", `/api/admin/rewards/${w.id}`, { status: "paid" }, admin);
   assert.ok((await call("GET", "/api/passes", undefined, { "x-device": device(1) })).data.items.some((x) => x.why === "maker" && x.what.startsWith("이달의 주제에 뽑힘 · ")));
   t.mock.timers.setTime(AFTER + 3 * 86_400_000); // December (KST): November's picks show
   const next = (await see(3)).data;

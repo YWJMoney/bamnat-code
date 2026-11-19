@@ -1,5 +1,6 @@
 package com.bamnat.app.ui.pay
 
+import com.bamnat.app.ui.theme.color
 import androidx.compose.material.icons.filled.Close
 import com.bamnat.core.pay.Unknowns
 import java.time.LocalDate
@@ -15,6 +16,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
@@ -23,7 +25,7 @@ import com.bamnat.app.ui.components.Button
 import com.bamnat.app.ui.components.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
+import com.bamnat.app.ui.components.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Switch
@@ -56,6 +58,8 @@ import com.bamnat.core.pay.Rounding
 import java.time.YearMonth
 import kotlin.math.abs
 import com.bamnat.core.time.Today
+import androidx.compose.ui.semantics.Role
+import com.bamnat.app.ui.theme.Tone
 
 /** A won amount typed as digits; shows the grouped value underneath so long numbers stay readable. */
 @Composable
@@ -74,7 +78,11 @@ internal fun MoneyField(
     // [PAYIN-02] 1.37 PC 5566ff20 (칸을 눌러 2,600,000 뒤에 250을 쳐서 26억이 경고 없이 저장됨): a tap on the field selects what is
     // in it, so typing replaces it; an amount over 1억 원 says so in red under the field (it can still be kept).
     var field by remember { mutableStateOf(androidx.compose.ui.text.input.TextFieldValue(value?.toString() ?: "")) }
-    if ((field.text.toLongOrNull()) != value) field = androidx.compose.ui.text.input.TextFieldValue(value?.toString() ?: "", androidx.compose.ui.text.TextRange((value?.toString() ?: "").length))
+    var focused by remember { mutableStateOf(false) }
+    // 2.0.0 [RVJ-65] 검토 PAYU-44: where the screen keeps the old amount until a new one comes (규칙 칸의 금액, which cannot be 0), the
+    // field emptied under the finger got the old number back, so its last digit never went. Emptied while typed in, it stays empty for
+    // the new amount; left empty, it shows again the amount that still counts.
+    if ((field.text.toLongOrNull()) != value && !(focused && field.text.isEmpty())) field = androidx.compose.ui.text.input.TextFieldValue(value?.toString() ?: "", androidx.compose.ui.text.TextRange((value?.toString() ?: "").length))
     // PC 3e347ec6 (누를 때 전체 선택이 안 돼 200,000에 150000을 치니 1,500,020,000): the tap that focuses the field moves the cursor
     // after the focus, sometimes more than once. For a short while after the focus every cursor-only move is taken back to
     // all-selected, and once more after the tap has settled; a later tap places the cursor as usual.
@@ -105,6 +113,7 @@ internal fun MoneyField(
         visualTransformation = com.bamnat.app.ui.components.GroupedNumber, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number, imeAction = androidx.compose.ui.text.input.ImeAction.Done),
         keyboardActions = androidx.compose.foundation.text.KeyboardActions(onDone = { keyboard?.hide(); onDone?.invoke() }),
         modifier = modifier.fillMaxWidth().onFocusChanged { f ->
+            focused = f.isFocused
             if (f.isFocused && focusedAt == 0L) { focusedAt = android.os.SystemClock.uptimeMillis(); all() }
             else if (!f.isFocused) focusedAt = 0L
         },
@@ -205,7 +214,7 @@ fun LineDetailDialog(
                 Fact("요율 기준", result.ratesVersion)
                 if (line.estimated) {
                     Text("입력하지 않은 값을 앱이 짐작해 넣은 부분이 있어요. ‘내 급여 값’에서 실제 값으로 바꾸면 정확해져요.",
-                        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.tertiary, modifier = Modifier.padding(top = 8.dp))
+                        style = MaterialTheme.typography.bodySmall, color = Tone.Caution.color(), modifier = Modifier.padding(top = 8.dp)) // [RVP-13] UIX-15
                 }
                 // 1.36 PC 급여 검토 W5: the days this line came from, so "연장 60시간" can be checked day by day.
                 val from = remember(line, result) {
@@ -233,7 +242,9 @@ fun LineDetailDialog(
 }
 
 // A 1.32 [FIX132-03] 모든 달 first and picked: 1.31's '이 달부터' left the months before on the old value.
-private enum class ScopeKind(val label: String) { ALL("모든 달 같게"), FROM("이 달부터 계속"), ONLY("이 달만"), RANGE("기간 지정") }
+// 2.0.0 [RVJ-08] 검토 PAYU-07·U05-02: with months already paid at the old value, '이 달부터' is picked first (a raise), and
+// '모든 달' is for a first value put in wrong. [RVJ-03] 검토 U04-04: 시급·일당 can also change on a day.
+private enum class ScopeKind(val label: String) { FROM("이 달부터 계속"), DATE("이 날짜부터"), ALL("모든 달 같게"), ONLY("이 달만"), RANGE("기간 지정") }
 
 /**
  * Changes a value with a scope and shows what it does to the next 12 months before applying
@@ -252,13 +263,21 @@ fun EditValueDialog(
 ) {
     val timeline = remember(profile, target) { vm.timelineOf(profile, target) }
     val current = timeline.on(month).value
-    var value by remember { mutableStateOf<Long?>(current) }
-    var scope by remember { mutableStateOf(ScopeKind.ALL) }
-    var until by remember { mutableStateOf(month.plusMonths(2)) }
+    // [RVJ-08] 검토 PAYU-04: kept when the app is sent away and back.
+    var value by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf<Long?>(current) }
+    // [RVJ-08] Months before this one already use the value: a change is most likely a raise from this month.
+    val hasPast = remember(timeline, month) { timeline.entries.any { it.from.isBefore(month.atDay(1)) } }
+    var scope by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf(if (hasPast) ScopeKind.FROM else ScopeKind.ALL) }
+    var until by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf(month.plusMonths(2)) }
+    val periodStart = remember(profile, month) { profile.period.start(month) }
+    // [RVJ-03] '이 날짜부터' for a 시급·일당 only: a 월급 is read for the month as a whole.
+    val byDay = target == ValueTarget.Base && profile.wageType != com.bamnat.core.pay.WageType.MONTHLY
+    var date by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf(month.atDay(1)) }
     val editScope = when (scope) {
         ScopeKind.ALL -> EditScope.AllMonths
         ScopeKind.ONLY -> EditScope.OnlyMonth(month)
-        ScopeKind.FROM -> EditScope.FromMonth(month)
+        ScopeKind.FROM -> EditScope.FromMonth(month, periodStart)
+        ScopeKind.DATE -> EditScope.FromDate(date)
         ScopeKind.RANGE -> EditScope.Range(month, maxOf(month, until))
     }
     val v = value
@@ -282,20 +301,24 @@ fun EditValueDialog(
                 Text("${month.monthValue}월 지금 값: ${won(current)}", style = MaterialTheme.typography.bodyMedium)
                 MoneyField("새 금액", value, { value = it }, Modifier.padding(top = 8.dp))
                 Text("어디에 적용할까요?", style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(top = 4.dp))
-                ScopeKind.entries.forEach { k ->
+                ScopeKind.entries.filter { it != ScopeKind.DATE || byDay }.forEach { k ->
                     val locked = k == ScopeKind.RANGE && !rangeOpen
                     val pick = { if (locked) { onDismiss(); com.bamnat.app.ui.pro.openPro(com.bamnat.app.tier.Feature.PAY_BULK_EDIT) } else scope = k }
-                    Row(Modifier.fillMaxWidth().clickable(onClick = pick), verticalAlignment = Alignment.CenterVertically) {
+                    Row(Modifier.fillMaxWidth().heightIn(min = 48.dp).clickable(role = Role.Button, onClick = pick), verticalAlignment = Alignment.CenterVertically) {
                         RadioButton(selected = scope == k, onClick = pick)
-                        Text(
-                            when (k) {
-                                ScopeKind.ALL -> "모든 달 같게 (지난달·다음 달 모두, 추천)"
-                                ScopeKind.ONLY -> "${month.monthValue}월만 (다음 달부터는 원래대로)"
-                                ScopeKind.FROM -> "${month.monthValue}월부터 계속 (오른 달처럼 그 전 달은 예전 값 그대로)"
-                                ScopeKind.RANGE -> "기간 지정"
-                            },
-                            style = MaterialTheme.typography.bodyMedium,
-                        )
+                        // 2.0.0 [RVJ-08] 품질 조건 4 (#444 사진 08: 200%에서 고르기 글이 줄마다 세 줄): 고르는 말 한 줄 + 작은 설명 한 줄.
+                        val (say, more) = when (k) {
+                            ScopeKind.ALL -> "모든 달 같게" to (if (hasPast) "처음 값을 잘못 넣었을 때 · 지난달도 바뀌어요" else "지난달·다음 달 모두")
+                            ScopeKind.ONLY -> "${month.monthValue}월만" to "다음 달부터는 원래대로"
+                            ScopeKind.FROM -> "${month.monthValue}월 급여부터 계속" to ("그 전 달은 예전 값 그대로" +
+                                (if (periodStart != month.atDay(1)) " · ${periodStart.monthValue}/${periodStart.dayOfMonth} 근무부터" else ""))
+                            ScopeKind.DATE -> "이 날짜부터" to "1월 1일에 오른 최저임금처럼 그날 근무부터"
+                            ScopeKind.RANGE -> "기간 지정" to null
+                        }
+                        Column(Modifier.weight(1f, fill = false).padding(vertical = 4.dp)) {
+                            Text(say, style = MaterialTheme.typography.bodyMedium)
+                            more?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
+                        }
                         if (k == ScopeKind.RANGE) com.bamnat.app.ui.money.ProPill(Modifier.padding(start = 8.dp), locked = locked) // [TIER-06]
                     }
                 }
@@ -303,23 +326,50 @@ fun EditValueDialog(
                     Text("언제까지", style = MaterialTheme.typography.labelLarge, modifier = Modifier.padding(start = 12.dp))
                     MonthStepper(maxOf(month, until), { until = it }, Modifier.padding(start = 12.dp))
                 }
+                if (scope == ScopeKind.DATE) com.bamnat.app.ui.work.DateField("바뀌는 날", date, { it?.let { d -> date = d } }, clearable = false,
+                    modifier = Modifier.padding(start = 12.dp))
                 plan?.let { p ->
                     HorizontalDivider(Modifier.padding(vertical = 8.dp))
-                    val changed = p.changedMonths
-                    Text(
+                    // [RVJ-08] 검토 PAYU-07: the months before this one that change, said first.
+                    val past = p.changedMonths.filter { it.month < month }
+                    // 2.0.0 [RVJ-55] 검토 PC-138: a closed month stays as closed, so the count and the sum are of the months that move.
+                    val pastMoving = past.filterNot { it.locked }
+                    if (pastMoving.isNotEmpty()) Text("지난 ${pastMoving.size}개월도 바뀌어요 · 합계 ${signed(pastMoving.sumOf { it.delta })}",
+                        // 주의(주황): 빨강은 위험에만 (디자인 품질 조건 6).
+                        style = MaterialTheme.typography.titleSmall, color = com.bamnat.app.ui.theme.Tone.Caution.color())
+                    val changed = p.changedMonths.filter { it.month >= month }
+                    val moving = changed.filterNot { it.locked }
+                    val same = v == current && scope == ScopeKind.ALL && timeline.entries.size <= 1
+                    // 2.0.0 [RVJ-46] 검토 PC-110: with the amount not changed yet nothing moves, and the window said '합계는 그대로예요 ·
+                    // … 마감한 달이에요' as if something had been tried. It says what this place will show once the amount is changed.
+                    val untouched = v == current && changed.isEmpty() && past.isEmpty()
+                    if (untouched) Text("금액을 바꾸면 달마다 얼마가 달라지는지 여기에 보여 드려요", style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    else Text(
                         // PC 3e347ec6: '그대로예요' under a new amount read as if it had not been taken.
-                        if (v == current && scope == ScopeKind.ALL && timeline.entries.size <= 1) "지금 값과 같아요"
-                        else if (changed.isEmpty()) "앞으로 12개월 합계는 그대로예요 (이 값이 쓰이는 근무가 없는 달이거나 마감한 달이에요)"
-                        else "${changed.size}개월이 바뀌어요 · 합계 ${signed(p.totalDelta)}",
+                        if (same) "지금 값과 같아요"
+                        else if (moving.isEmpty()) "앞으로 12개월 합계는 그대로예요"
+                        else "앞으로 ${moving.size}개월이 바뀌어요 · 합계 ${signed(moving.sumOf { it.delta })}",
                         style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.primary,
                     )
+                    // 2.0.0 품질 조건 4: 까닭은 작은 줄로 (200%에서 제목 글이 네 줄이던 것).
+                    if (!untouched && !same && moving.isEmpty()) Text("이 값이 쓰이는 근무가 없는 달이거나 마감한 달이에요", style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant)
                     Column(Modifier.heightIn(max = 220.dp).verticalScroll(rememberScrollState())) {
-                        changed.forEach { d ->
+                        (past + changed).forEach { d ->
                             Row(Modifier.fillMaxWidth().padding(vertical = 2.dp)) {
                                 Text("${d.month.year % 100}.${d.month.monthValue}", style = MaterialTheme.typography.bodySmall, modifier = Modifier.labelWidth(44.dp))
-                                Text("${won(d.before)} → ${won(d.after)}", style = MaterialTheme.typography.bodySmall, modifier = Modifier.weight(1f))
-                                Text(if (d.locked) "마감" else signed(d.delta), style = MaterialTheme.typography.bodySmall,
-                                    color = if (d.delta >= 0) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error)
+                                // [RVJ-55] PC-138: a closed month shows what it was closed at and stays there ('2,500,000원 · 마감(그대로)'), one
+                                // text across the row (beside a column of its own, 200% split '원' off the amount); at big letters it breaks
+                                // before '· 마감'.
+                                if (d.locked) Text("${won(d.kept ?: d.before)} ·\u00A0마감(그대로)", style = MaterialTheme.typography.bodySmall,
+                                    modifier = Modifier.weight(1f))
+                                else {
+                                    Text("${won(d.before)} → ${won(d.after)}", style = MaterialTheme.typography.bodySmall, modifier = Modifier.weight(1f))
+                                    Text(signed(d.delta), style = MaterialTheme.typography.bodySmall,
+                                        // [RVJ-46] A lower month is not a danger: the '−' says it, in the plain ink (조건 6, 빨강은 위험만).
+                                        color = if (d.delta >= 0) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface)
+                                }
                             }
                         }
                     }
@@ -342,13 +392,15 @@ private fun signed(v: Long) = (if (v > 0) "+" else if (v < 0) "−" else "") + w
 @Composable
 fun RaiseDialog(vm: PayViewModel, profile: PayProfile, target: ValueTarget, onDismiss: () -> Unit) {
     val timeline = remember(profile, target) { vm.timelineOf(profile, target) }
+    val closedMonths by vm.closed.collectAsState()
     val existing = timeline.raise
-    var month by remember { mutableStateOf(existing?.month ?: 1) }
-    var byPercent by remember { mutableStateOf(existing?.amount == null) }
-    var text by remember { mutableStateOf(existing?.let { it.percent?.toString() ?: it.amount?.toString() } ?: "") }
-    var unit by remember { mutableStateOf(existing?.unit ?: 10L) }
-    var rounding by remember { mutableStateOf(existing?.rounding ?: Rounding.UP) }
-    var scale by remember { mutableStateOf(false) }
+    // 2.0.0 [RVJ-77] (조건 10) What is being put in stays when the screen is made again (dark theme, Android closing the app behind).
+    var month by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf(existing?.month ?: 1) }
+    var byPercent by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf(existing?.amount == null) }
+    var text by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf(existing?.let { it.percent?.toString() ?: it.amount?.toString() } ?: "") }
+    var unit by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf(existing?.unit ?: 10L) }
+    var rounding by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf(existing?.rounding ?: Rounding.UP) }
+    var scale by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf(false) }
     if (scale) {
         PayScaleDialog(vm, profile, onDismiss = { scale = false; onDismiss() })
         return
@@ -359,9 +411,12 @@ fun RaiseDialog(vm: PayViewModel, profile: PayProfile, target: ValueTarget, onDi
         if (byPercent) RaiseRule(month, percent = n, unit = unit, rounding = rounding)
         else RaiseRule(month, amount = n.toLong(), unit = unit, rounding = rounding)
     }.getOrNull()
+    // 2.0.0 [RVJ-63] 검토 PAYU-45 (같은 구조): 밖을 누르거나 뒤로·취소 한 번에 고친 인상 규칙이 사라지지 않게 한 번 물어요.
+    val opened = remember { listOf(month, byPercent, text, unit, rounding) }
+    val guard = com.bamnat.app.ui.components.rememberCloseGuard(unsaved = listOf(month, byPercent, text, unit, rounding) != opened, onLeave = onDismiss)
 
     AlertDialog(
-        onDismissRequest = onDismiss,
+        onDismissRequest = guard::close,
         title = { Text("매년 인상 규칙") },
         text = {
             Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -407,7 +462,11 @@ fun RaiseDialog(vm: PayViewModel, profile: PayProfile, target: ValueTarget, onDi
                     val start = Today.month()
                     (0..3).forEach { y ->
                         val m = YearMonth.of(start.year + y, r.month).let { if (it < start) start else it }
-                        Fact(Fmt.month(m), won(t.on(m).value))
+                        // 2.0.0 [RVJ-55] 검토 PC-138 (인상 규칙도): a closed month stays as closed; the new value is shown from the first
+                        // open month after it.
+                        val lands = landsIn(m, closedMonths.keys)
+                        if (lands != m) Fact(Fmt.month(m), "마감(그대로)")
+                        Fact(Fmt.month(lands), won(t.on(lands).value))
                     }
                 }
             }
@@ -416,7 +475,7 @@ fun RaiseDialog(vm: PayViewModel, profile: PayProfile, target: ValueTarget, onDi
         dismissButton = {
             Row {
                 if (existing != null) TextButton(onClick = { vm.setRaise(target, null); onDismiss() }) { Text("규칙 없애기") }
-                TextButton(onClick = onDismiss) { Text("취소") }
+                TextButton(onClick = guard::close) { Text("취소") }
             }
         },
     )
@@ -432,8 +491,11 @@ fun RuleImportDialog(vm: PayViewModel, month: YearMonth, onDismiss: () -> Unit) 
     val settings by vm.settings.collectAsState()
     val profile by vm.profile.collectAsState()
     var from by remember { mutableStateOf(month) }
+    // 2.0.0 [RVJ-63] 검토 PAYU-45: 적던 규칙(글·골라 담은 것·읽은 칸)은 밖·뒤로·닫기 한 번에 사라지지 않고 한 번 물어요.
+    var started by remember { mutableStateOf(false) }
+    val guard = com.bamnat.app.ui.components.rememberCloseGuard(unsaved = started, onLeave = onDismiss)
     AlertDialog(
-        onDismissRequest = onDismiss,
+        onDismissRequest = guard::close,
         title = { Text("규칙을 말로 적기") },
         text = {
             Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -441,14 +503,16 @@ fun RuleImportDialog(vm: PayViewModel, month: YearMonth, onDismiss: () -> Unit) 
                     style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 Text("언제부터 적용할까요?", style = MaterialTheme.typography.titleSmall)
                 MonthStepper(from, { from = it })
-                RuleSentenceBox(settings.extraKinds.kinds, snapshot?.shiftTypes.orEmpty(), profile?.fiveOrMoreEmployees ?: true) { changes ->
+                RuleSentenceBox(settings.extraKinds.kinds, snapshot?.shiftTypes.orEmpty(), profile?.fiveOrMoreEmployees ?: true,
+                    current = com.bamnat.core.pay.RuleSheet.payNow(profile, com.bamnat.core.time.Today.date()), onStarted = { started = it },
+                    bonuses = profile?.items.orEmpty().filter { it.cadence == com.bamnat.core.pay.Cadence.BONUS }) { changes ->
                     vm.applyRuleChanges(changes, from)
                     onDismiss()
                 }
             }
         },
         confirmButton = {},
-        dismissButton = { TextButton(onClick = onDismiss) { Text("닫기") } },
+        dismissButton = { TextButton(onClick = guard::close) { Text("닫기") } },
     )
 }
 
@@ -475,8 +539,12 @@ fun AddBonusDialog(
     var festivals by remember { mutableStateOf(emptySet<com.bamnat.core.pay.Festival>()) }
     var festivalBefore by remember { mutableStateOf(false) }
     val times = months.size + festivals.size
+    // 2.0.0 [RVJ-63] 검토 PAYU-45: 고른 달·금액이 밖을 누르거나 뒤로·취소 한 번에 사라지지 않게 한 번 물어요.
+    val now = listOf(name, byPercent, percent, annual, amount, months, ordinary, festivals, festivalBefore)
+    val opened = remember { now }
+    val guard = com.bamnat.app.ui.components.rememberCloseGuard(unsaved = now != opened, onLeave = onDismiss)
     AlertDialog(
-        onDismissRequest = onDismiss,
+        onDismissRequest = guard::close,
         title = { Text("상여금 추가") },
         text = {
             Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -504,11 +572,9 @@ fun AddBonusDialog(
                             FilterChip(selected = annual == null && percent == p, onClick = { percent = p; annual = null }, label = { Text("$p%") })
                         }
                         // PC 6da49f0b (−/+ 단추가 줄바꿈되면서 '말일'·'-' 글자만 혼자 남음): the stepper keeps together on one line.
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            OutlinedButton(onClick = { percent = (percent - 10).coerceAtLeast(10); annual = null }) { Text("−") }
-                            Text("$percent%", style = MaterialTheme.typography.titleSmall, modifier = Modifier.align(Alignment.CenterVertically))
-                            OutlinedButton(onClick = { percent = (percent + 10).coerceAtMost(1000); annual = null }) { Text("+") }
-                        }
+                        // 2.0.0 [RVJ-78] (총괄 J-518 사진: '− 100% +'가 붙어 좁음) the app's one − 값 + (48dp 단추, 값 칸 고정 폭, 누르고 있으면 계속).
+                        com.bamnat.app.ui.components.CountStepper(percent, { percent = it; annual = null }, name = "한 번에 기본급의",
+                            range = 10..1000, step = 10, format = { "$it%" }, valueWidth = 88.dp)
                     }
                 } else {
                     MoneyField("1회 금액", amount, { amount = it })
@@ -544,7 +610,7 @@ fun AddBonusDialog(
                             label = { Text("${m}월") })
                     }
                 }
-                Row(Modifier.fillMaxWidth().clickable { ordinary = !ordinary }, verticalAlignment = Alignment.CenterVertically) {
+                Row(Modifier.fillMaxWidth().heightIn(min = 48.dp).clickable(role = Role.Button) { ordinary = !ordinary }, verticalAlignment = Alignment.CenterVertically) {
                     Column(Modifier.weight(1f)) {
                         Text("통상임금에 포함", style = MaterialTheme.typography.bodyLarge)
                         Text("정해진 조건으로 정기적으로 받는 상여는 재직 조건이 있어도 통상임금이에요(대법원 2024.12.19. 판결). 성과에 따라 달라지면 꺼 주세요. " +
@@ -564,7 +630,7 @@ fun AddBonusDialog(
                 enabled = times > 0 && (byPercent || (amount ?: 0) > 0),
             ) { Text("추가") }
         },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("취소") } },
+        dismissButton = { TextButton(onClick = guard::close) { Text("취소") } },
     )
 }
 
@@ -577,36 +643,82 @@ fun AddBonusDialog(
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun PayScaleDialog(vm: PayViewModel, profile: PayProfile, onDismiss: () -> Unit) {
-    // 기본급 by row, 1호봉 first; a blank row is null.
-    val rows = remember { androidx.compose.runtime.mutableStateListOf<Long?>(null, null) }
-    var other by remember { mutableStateOf(false) }
-    var text by remember { mutableStateOf("") }
-    var stepMonth by remember { mutableStateOf(1) }
-    var step by remember { mutableStateOf(1) }
+    // 2.0.0 [RVJ-77] 검토 PAYU-46·T05b-05·I05ba-01: the table last put in comes back (기본급 by 호봉, 승급 달, and the 호봉 it is at
+    // today), so a year's new table is a few changes or one '모든 호봉 n% 올리기', not 20~30 rows typed again.
+    val saved = profile.payScale
     val since = remember { Today.date().withDayOfMonth(1) }
+    // 기본급 by row, 1호봉 first; a blank row is null. Kept when the screen is made again (조건 10).
+    val rows = androidx.compose.runtime.saveable.rememberSaveable(saver = ScaleRowsSaver) {
+        androidx.compose.runtime.mutableStateListOf<Long?>().apply {
+            if (saved == null) { add(null); add(null) } else (1..saved.top.coerceAtMost(MAX_STEPS)).forEach { n -> add(saved.steps[n]) }
+        }
+    }
+    var other by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf(false) }
+    var text by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf("") }
+    val stepMonth0 = saved?.stepMonth ?: 1
+    val step0 = saved?.stepOn(since) ?: 1
+    var stepMonth by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf(stepMonth0) }
+    var step by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf(step0) }
+    val rows0 = remember(saved) { if (saved == null) listOf(null, null) else (1..saved.top.coerceAtMost(MAX_STEPS)).map { n -> saved.steps[n] } }
+    // The rows as they were before '모든 호봉 n% 올리기', for its 되돌리기; null when there is nothing to put back.
+    var beforeRaise by androidx.compose.runtime.saveable.rememberSaveable(saver = ScaleUndoSaver) { mutableStateOf<List<Long?>?>(null) }
+    var raising by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf(false) }
+    var raisePercent by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf(3.0) }
     val steps = rows.mapIndexedNotNull { i, a -> a?.takeIf { it > 0 }?.let { (i + 1) to it } }.toMap()
     val scale = steps.takeIf { it.isNotEmpty() }?.let {
         runCatching { PayScale(it, stepMonth, step.coerceIn(it.keys.min(), it.keys.max()), since) }.getOrNull()
     }
+    // 2.0.0 [RVJ-63] 검토 PAYU-45: 호봉표는 40줄까지 넣어요. 밖을 누르거나 뒤로·취소 한 번에 넣은 줄이 사라지지 않게 한 번 물어요.
+    val guard = com.bamnat.app.ui.components.rememberCloseGuard(
+        unsaved = rows.toList() != rows0 || text.isNotBlank() || stepMonth != stepMonth0 || step != step0, onLeave = onDismiss)
     AlertDialog(
-        onDismissRequest = onDismiss,
+        onDismissRequest = guard::close,
         title = { Text("호봉표로 기본급 넣기") },
         text = {
             Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                Text("호봉마다 기본급을 넣어요. 아래 줄을 더하면 위 호봉만큼 오른 금액으로 채워 둬요.", style = MaterialTheme.typography.bodySmall,
+                Text(if (saved != null) "지난번에 넣은 호봉표예요. 올해 표로 바뀐 줄만 고치거나, 아래에서 모든 호봉을 한 번에 올려요."
+                    else "호봉마다 기본급을 넣어요. 아래 줄을 더하면 위 호봉만큼 오른 금액으로 채워 둬요.", style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant)
                 rows.forEachIndexed { i, amount ->
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text("${i + 1}호봉", style = MaterialTheme.typography.titleSmall, modifier = Modifier.width(64.dp))
-                        StepAmountField(i + 1, amount, { rows[i] = it }, Modifier.weight(1f))
-                        if (rows.size > 1) androidx.compose.material3.IconButton(onClick = { rows.removeAt(i) }) {
+                    // 2.0.0 [RVJ-78] (총괄 J-518 사진: '1호봉' 이름표가 칸에 붙음) a gap after the name, which grows rather than wrapping at a big font.
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Text("${i + 1}호봉", style = MaterialTheme.typography.titleSmall, maxLines = 1, softWrap = false,
+                            modifier = Modifier.widthIn(min = 56.dp))
+                        // [RVJ-77] A row changed by hand after '모두 올리기' ends its 되돌리기, so 되돌리기 never takes back the user's own change.
+                        StepAmountField(i + 1, amount, { rows[i] = it; beforeRaise = null }, Modifier.weight(1f))
+                        if (rows.size > 1) androidx.compose.material3.IconButton(onClick = { rows.removeAt(i); beforeRaise = null }) {
                             androidx.compose.material3.Icon(androidx.compose.material.icons.Icons.Filled.Close, "${i + 1}호봉 줄 지우기")
                         }
                     }
                 }
                 if (rows.size < MAX_STEPS) com.bamnat.app.ui.components.AddButton("${rows.size + 1}호봉 더하기", onClick = {
+                    beforeRaise = null
                     rows += PayScale.nextAmount(rows.filterNotNull().filter { it > 0 })
                 })
+                // 2.0.0 [RVJ-77] (검토 I05ba-01) 호봉제는 해마다 표 전체가 올라요: every 호봉 by one percent, with 되돌리기 for that one change.
+                val filled = rows.count { (it ?: 0) > 0 }
+                val undo = beforeRaise
+                if (undo != null) Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("모든 호봉을 ${com.bamnat.app.ui.components.decimalText(raisePercent)}% 올렸어요", style = MaterialTheme.typography.bodyMedium,
+                        modifier = Modifier.weight(1f))
+                    TextButton(onClick = { rows.clear(); rows.addAll(undo); beforeRaise = null }) { Text("되돌리기") }
+                } else if (filled >= 2) {
+                    TextButton(onClick = { raising = !raising }) { Text(if (raising) "모든 호봉 올리기 접기" else "모든 호봉 % 올리기") }
+                    if (raising) {
+                        com.bamnat.app.ui.components.QuickDecimalChips(
+                            value = raisePercent, onChange = { raisePercent = it }, name = "올릴 비율",
+                            quick = listOf(2.0, 2.5, 3.0, 3.5, 5.0), step = 0.1, range = 0.1..30.0, unit = "%",
+                        )
+                        OutlinedButton(onClick = {
+                            beforeRaise = rows.toList()
+                            val raised = PayScale.raised(rows.toList(), raisePercent)
+                            rows.clear(); rows.addAll(raised)
+                            raising = false
+                        }) { Text("모든 호봉 ${com.bamnat.app.ui.components.decimalText(raisePercent)}% 올리기") }
+                        Text("원 단위에서 반올림해요. 회사 표와 다른 줄은 고쳐 주세요.", style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                }
                 TextButton(onClick = { other = !other }) { Text(if (other) "사진·글로 넣기 접기" else "사진·글로 넣기") }
                 if (other) {
                     var scanned by remember { mutableStateOf(false) }
@@ -617,7 +729,7 @@ fun PayScaleDialog(vm: PayViewModel, profile: PayProfile, onDismiss: () -> Unit)
                         placeholder = { Text("1호봉 2,400,000\n2호봉 2,480,000") }, minLines = 3, modifier = Modifier.fillMaxWidth())
                     val read = remember(text) { PayScale.parse(text) }
                     OutlinedButton(enabled = read.isNotEmpty(), onClick = {
-                        rows.clear()
+                        rows.clear(); beforeRaise = null
                         (1..read.keys.max().coerceAtMost(MAX_STEPS)).forEach { n -> rows += read[n] }
                         other = false
                     }) { Text(if (read.isEmpty()) "읽을 호봉이 없어요" else "${read.size}개 호봉을 줄에 채우기") }
@@ -641,16 +753,30 @@ fun PayScaleDialog(vm: PayViewModel, profile: PayProfile, onDismiss: () -> Unit)
         },
         confirmButton = {
             Button(enabled = scale != null, onClick = {
-                scale?.let { sc -> vm.update { p -> p.copy(base = sc.applyTo(p.base, since.plusYears(40)), estimatedFields = p.estimatedFields - Unknowns.BASE) } }
+                scale?.let { sc ->
+                    vm.update { p -> p.copy(base = sc.applyTo(p.base, since.plusYears(40)), estimatedFields = p.estimatedFields - Unknowns.BASE, payScale = sc) }
+                }
                 onDismiss()
             }) { Text("적용") }
         },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("취소") } },
+        dismissButton = { TextButton(onClick = guard::close) { Text("취소") } },
     )
 }
 
 /** Tables past this are not 호봉표 any more (공무원 봉급표 goes to 32). */
 private const val MAX_STEPS = 40
+
+/** 2.0.0 [RVJ-77] The 호봉표 rows through a screen made again: amounts, -1 for a blank row. */
+private val ScaleRowsSaver = androidx.compose.runtime.saveable.listSaver<androidx.compose.runtime.snapshots.SnapshotStateList<Long?>, Long>(
+    save = { list -> list.map { it ?: -1L } },
+    restore = { saved -> androidx.compose.runtime.mutableStateListOf<Long?>().apply { addAll(saved.map { it.takeIf { v -> v >= 0 } }) } },
+)
+
+/** 2.0.0 [RVJ-77] The rows before a raise, for 되돌리기, through a screen made again. */
+private val ScaleUndoSaver = androidx.compose.runtime.saveable.Saver<androidx.compose.runtime.MutableState<List<Long?>?>, LongArray>(
+    save = { st -> st.value?.map { it ?: -1L }?.toLongArray() },
+    restore = { a -> mutableStateOf(a.map { it.takeIf { v -> v >= 0 } }) },
+)
 
 /** [PAYX-47] One 호봉's 기본급: digits on the number pad, shown grouped (2,480,000) with no line under it. */
 @Composable

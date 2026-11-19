@@ -5,7 +5,7 @@
 // - opinion: 의견 쉬기 N일. 남이 보는 글(광장 글·답글, 토론 글, 작품 이야기, 요청, 안좋아요 의견, 급여 정보 댓글·보완 요청)을 못 써요.
 // - community: 마을 쉬기 N일. 위에 더해 마을의 모든 쓰기와 투표. `muted`(reason 'care')도 함께 써서 지금 있는 쓰기 길이 그대로 막혀요.
 // 읽기, 테마 입기, 내 앱, 문의하기(이의 제기)는 언제나 그대로예요. 설치 해시만 두고, 끝난 지 180일 뒤 지워요.
-import { DAY } from "./units.js";
+import { DAY, markRange } from "./units.js";
 
 export const CARE = {
   /** 운영자가 고르는 쉬기 기간(일). 운영 규칙 6항의 30일 안. */
@@ -51,6 +51,21 @@ export const CARE_SCHEMA = [
     result TEXT, decided_at INTEGER, UNIQUE (device, target))`,
   "CREATE INDEX IF NOT EXISTS care_appeals_inquiry ON care_appeals (inquiry_id)",
 ];
+
+/**
+ * 2.0.0 [RVQ-55] 검토 SVC-37: `muted`는 휴대폰마다 한 줄(이유 하나)이라, 마을 쉬기가 운영자의 말 못 하기를 덮어쓴 뒤 쉬기를 풀면 그 말 못 하기까지
+ * 사라졌어요. 덮어쓰기 전에 다시 셀 수 없는 이유(운영자 말 못 하기)는 `muted_kept`에 두고, 한 이유를 뺄 때는 남은 것(마을 쉬기·신고 누적
+ * 쓰기 막기·둔 것) 가운데 가장 늦게 끝나는 것으로 다시 채워요.
+ */
+export const MUTED_KEPT_SCHEMA = "CREATE TABLE IF NOT EXISTS muted_kept (device TEXT NOT NULL, reason TEXT NOT NULL, until INTEGER NOT NULL, PRIMARY KEY (device, reason))";
+export const keepOtherMute = (d, env, dev, now) => d.stmt(env,
+  "INSERT OR REPLACE INTO muted_kept (device, reason, until) SELECT device, reason, until FROM muted WHERE device = ? AND reason NOT IN ('care', 'strikes') AND until > ?", dev, now);
+export const restoreMute = (d, env, dev, now) => d.stmt(env, `INSERT OR IGNORE INTO muted (device, until, reason)
+  SELECT ?1, until, reason FROM (
+    SELECT MAX(until) AS until, 'care' AS reason FROM care_notes WHERE device = ?1 AND kind = 'community' AND lifted_at IS NULL AND until > ?2
+    UNION ALL SELECT until, 'strikes' FROM write_limits WHERE device = ?1 AND per_day = 0 AND until > ?2
+    UNION ALL SELECT until, reason FROM muted_kept WHERE device = ?1 AND until > ?2
+  ) WHERE until IS NOT NULL ORDER BY until DESC LIMIT 1`, dev, now);
 
 const HOLDS = ["opinion", "community"];
 const isoOf = (ms) => (ms == null ? null : new Date(ms).toISOString());
@@ -181,7 +196,7 @@ export async function careHold(d, env, dev, { scope, days, reason, note = null, 
   await d.batch(env, [
     d.stmt(env, `INSERT INTO care_notes (id, device, kind, reason, note, days, at, until, by, ref) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'operator', ?)`,
       id, dev, scope, reason, note, days, now, until, ref),
-    ...(scope === "community" ? [d.stmt(env, `INSERT INTO muted (device, until, reason) VALUES (?, ?, 'care')
+    ...(scope === "community" ? [keepOtherMute(d, env, dev, now), d.stmt(env, `INSERT INTO muted (device, until, reason) VALUES (?, ?, 'care')
       ON CONFLICT (device) DO UPDATE SET until = MAX(muted.until, excluded.until), reason = CASE WHEN excluded.until >= muted.until THEN 'care' ELSE muted.reason END`,
     dev, until)] : []),
     news(d, env, dev, scope, now),
@@ -189,21 +204,28 @@ export async function careHold(d, env, dev, { scope, days, reason, note = null, 
   return { id, kind: scope, reason, days, until: isoOf(until) };
 }
 
-/** 풀기(쉬기) 또는 거두기(경고). 마을 쉬기가 넣은 `muted`도 빼요(다른 쉬기가 남아 있으면 그 끝으로). */
-export async function careLift(d, env, id, now) {
+/** 2.0.0 [RVA-03] 운영자가 건 지 이만큼 안이면 '되돌리기'로 기록과 소식까지 없던 일로 해요(관리자 앱 15초 되돌리기 + 늦은 응답 여유). */
+export const CARE_UNDO_MS = 60 * 1000;
+
+/**
+ * 풀기(쉬기) 또는 거두기(경고). 마을 쉬기가 넣은 `muted`도 빼요(다른 쉬기가 남아 있으면 그 끝으로).
+ * 2.0.0 [RVA-03] 검토 ADM-04·U23-03: [undo]면 운영자가 1분 안에 건 것만, 기록과 그때 넣은 밤낮 소식 한 줄을 지워 받은 분에게 '풀렸어요'도 가지 않아요.
+ */
+export async function careLift(d, env, id, now, { undo = false } = {}) {
   const r = typeof id === "string" && /^c[A-Za-z0-9]{15}$/.test(id) ? await d.one(env, "SELECT * FROM care_notes WHERE id = ?", id) : null;
   if (!r || r.lifted_at) return null;
-  const stmts = [d.stmt(env, "UPDATE care_notes SET lifted_at = ? WHERE id = ?", now, id)];
+  if (undo && (r.by !== "operator" || now - r.at > CARE_UNDO_MS)) return { error: "late" };
+  const stmts = undo
+    ? [d.stmt(env, "DELETE FROM care_notes WHERE id = ?", id),
+      d.stmt(env, "DELETE FROM plaza_results WHERE device = ? AND kind = 'care' AND result = ? AND at = ?", r.device, r.kind, r.at)]
+    : [d.stmt(env, "UPDATE care_notes SET lifted_at = ? WHERE id = ?", now, id)];
   if (r.kind === "community") {
-    const other = await d.one(env, `SELECT MAX(until) AS until FROM care_notes WHERE device = ? AND kind = 'community' AND lifted_at IS NULL AND until > ? AND id != ?`,
-      r.device, now, id);
-    stmts.push(other?.until
-      ? d.stmt(env, "UPDATE muted SET until = ? WHERE device = ? AND reason = 'care'", other.until, r.device)
-      : d.stmt(env, "DELETE FROM muted WHERE device = ? AND reason = 'care'", r.device));
+    // [RVQ-55] SVC-37: 마을 쉬기 줄을 빼고, 남은 것(다른 마을 쉬기·쓰기 막기·운영자 말 못 하기) 가운데 가장 늦게 끝나는 것으로 다시 채워요.
+    stmts.push(d.stmt(env, "DELETE FROM muted WHERE device = ? AND reason = 'care'", r.device), restoreMute(d, env, r.device, now));
   }
-  if (r.kind !== "warn" && (r.until ?? 0) > now) stmts.push(news(d, env, r.device, "lifted", now));
+  if (!undo && r.kind !== "warn" && (r.until ?? 0) > now) stmts.push(news(d, env, r.device, "lifted", now));
   await d.batch(env, stmts);
-  return { id, lifted: true, kind: r.kind };
+  return { id, lifted: true, kind: r.kind, ...(undo ? { undone: true } : {}) };
 }
 
 /** 날마다 정리: 끝난 의견 쉬기는 소식 한 번(마을 쉬기는 `muted`가 끝날 때 'unmuted'로 알려요), 끝난 지 180일 지난 기록은 지움. */
@@ -256,11 +278,12 @@ export async function careTarget(d, env, q) {
   }
   const mark = s("mark").toLowerCase();
   if (/^[0-9a-f]{6,64}$/.test(mark)) {
-    const like = `${mark}%`;
+    // 2.0.0 [RVN-24] 검토 SVC-106: LIKE 대신 범위(색인을 타요).
+    const range = markRange(mark);
     const rows = await d.all(env, `SELECT DISTINCT device FROM (
-      SELECT device FROM posts WHERE device LIKE ?1 UNION SELECT owner AS device FROM recipes WHERE owner LIKE ?1
-      UNION SELECT device FROM inquiries WHERE device LIKE ?1 UNION SELECT device FROM write_limits WHERE device LIKE ?1
-      UNION SELECT device FROM care_notes WHERE device LIKE ?1) LIMIT 3`, like);
+      SELECT device FROM posts WHERE device >= ?1 AND device < ?2 UNION SELECT owner AS device FROM recipes WHERE owner >= ?1 AND owner < ?2
+      UNION SELECT device FROM inquiries WHERE device >= ?1 AND device < ?2 UNION SELECT device FROM write_limits WHERE device >= ?1 AND device < ?2
+      UNION SELECT device FROM care_notes WHERE device >= ?1 AND device < ?2) LIMIT 3`, ...range);
     if (!rows.length) return { missing: true };
     if (rows.length > 1) return { ambiguous: rows.length };
     return { device: rows[0].device };
@@ -279,7 +302,8 @@ const noteView = (r, now) => ({
 export async function carePerson(d, env, dev, now) {
   const [notes, strikes, limit, posts, appeals] = await Promise.all([
     d.all(env, "SELECT * FROM care_notes WHERE device = ? ORDER BY at DESC LIMIT 30", dev),
-    d.one(env, "SELECT COUNT(*) AS n FROM write_strikes WHERE device = ? AND at > ?", dev, now - CARE.keepDays * DAY),
+    // 2.0.0 [RVQ-27] D·총괄 11-19: 가려진 것 하나에 한 번(같은 글의 겹친 줄은 하나로).
+    d.one(env, "SELECT COUNT(DISTINCT kind || '|' || ref) AS n FROM write_strikes WHERE device = ? AND at > ?", dev, now - CARE.keepDays * DAY),
     d.one(env, "SELECT step, until, per_day FROM write_limits WHERE device = ? AND until > ?", dev, now),
     d.one(env, "SELECT COUNT(*) AS n, SUM(CASE WHEN status = 'hidden' THEN 1 ELSE 0 END) AS hidden FROM posts WHERE device = ?", dev),
     d.all(env, "SELECT target, result, inquiry_id FROM care_appeals WHERE device = ?", dev),
@@ -332,12 +356,16 @@ export async function careList(d, env, now) {
   const all = rows.map((r) => noteView(r, now));
   // 1.39 발굴: 약속한 48시간 안에 답하도록 기다리는 해명을 오래된 것부터, 30일이 지나면 세지 않는 '확인 전' 가려짐 수.
   const [waiting, open] = await Promise.all([
-    d.all(env, "SELECT target, inquiry_id, at FROM care_appeals WHERE result IS NULL ORDER BY at ASC LIMIT 50"),
-    d.one(env, "SELECT COUNT(*) AS n, MIN(at) AS oldest FROM write_strikes WHERE confirmed = 0 AND at > ?", now - 30 * DAY),
+    d.all(env, "SELECT target, inquiry_id, at FROM care_appeals WHERE result IS NULL AND inquiry_id <> '' ORDER BY at ASC LIMIT 50"),
+    // 2.0.0 [RVQ-27] D·총괄 11-19: 확인 대기는 가려진 것(사람·종류·글) 하나에 한 건(같은 글이 다시 가려져 쌓인 줄은 하나로).
+    d.one(env, "SELECT COUNT(DISTINCT device || '|' || kind || '|' || ref) AS n, MIN(at) AS oldest FROM write_strikes WHERE confirmed = 0 AND at > ?", now - 30 * DAY),
   ]);
   const HOUR = DAY / 24;
+  const on = await careOn(d, env, now);
   return {
-    on: await careOn(d, env, now),
+    on,
+    // 2.0.0 [RVD-18] 마을 돌봄 전(12-09)에도 처리방침 3.12 시행일부터 신고로 가려진 것은 확인을 기다려요.
+    confirmed: on || Boolean(d.legalOpen && (await d.legalOpen(env, "community.confirmed", now))),
     appeals: waiting.map((a) => ({ inquiry: a.inquiry_id, kind: a.target.startsWith("post:") ? "post" : a.target === "limit" ? "limit" : "note",
       at: isoOf(a.at), hoursLeft: Math.floor((a.at + APPEAL.answerHours * HOUR - now) / HOUR) })),
     unconfirmed: { n: open?.n ?? 0, ...(open?.oldest ? { daysLeft: Math.max(0, Math.ceil((open.oldest + 30 * DAY - now) / DAY)) } : {}) },
@@ -388,11 +416,26 @@ export async function careAppeal(d, env, dev, body, now, makeInquiry) {
   if (!t) return { error: "not_found", status: 404 };
   const text = typeof body.text === "string" ? body.text.normalize("NFC").replace(/\r\n?/g, "\n").trim() : "";
   if ([...text].length < APPEAL.min || [...text].length > APPEAL.max) return { error: "text", status: 400 };
-  const had = await d.one(env, "SELECT inquiry_id FROM care_appeals WHERE device = ? AND target = ?", dev, t.key);
-  if (had) return { error: "already", inquiry: had.inquiry_id, status: 409 };
-  const made = await makeInquiry(`[${t.repost ? "다시 보여 주세요" : "해명"}] ${t.text}\n\n${text}`);
-  if (made.error) return made;
-  await d.run(env, "INSERT INTO care_appeals (id, device, target, inquiry_id, at) VALUES (?, ?, ?, ?, ?)", `a${d.randomId(15)}`, dev, t.key, made.id, now);
+  // 2.0.0 [RVQ-55] 검토 SVC-37: 두 번 빨리 누르면 둘 다 '없음'을 읽고 문의를 둘 만들었어요. 자리를 먼저 잡고(UNIQUE device·target),
+  // 잡은 쪽만 문의를 만들어요. 문의를 못 만들면 자리를 돌려놓아요.
+  const id = `a${d.randomId(15)}`;
+  const got = await d.run(env, "INSERT OR IGNORE INTO care_appeals (id, device, target, inquiry_id, at) VALUES (?, ?, ?, '', ?)", id, dev, t.key, now);
+  if (!got?.meta?.changes) {
+    const had = await d.one(env, "SELECT inquiry_id FROM care_appeals WHERE device = ? AND target = ?", dev, t.key);
+    return { error: "already", inquiry: had?.inquiry_id || null, status: 409 };
+  }
+  let made;
+  try {
+    made = await makeInquiry(`[${t.repost ? "다시 보여 주세요" : "해명"}] ${t.text}\n\n${text}`);
+  } catch (e) {
+    await d.run(env, "DELETE FROM care_appeals WHERE id = ?", id);
+    throw e;
+  }
+  if (made.error) {
+    await d.run(env, "DELETE FROM care_appeals WHERE id = ?", id);
+    return made;
+  }
+  await d.run(env, "UPDATE care_appeals SET inquiry_id = ? WHERE id = ?", made.id, id);
   return { inquiry: made.id, answerHours: APPEAL.answerHours };
 }
 
@@ -435,6 +478,7 @@ export async function careAppealDecide(d, env, inquiryId, result, now) {
         d.stmt(env, "UPDATE write_limits SET until = MIN(until, ?), step = MAX(0, step - 1), times = MAX(0, times - 1) WHERE device = ? AND since = ?", now, a.device, since),
         d.stmt(env, "DELETE FROM write_strikes WHERE device = ? AND at <= ? AND at > ?", a.device, since, since - 60 * DAY),
         d.stmt(env, "DELETE FROM muted WHERE device = ? AND reason = 'strikes'", a.device),
+        restoreMute(d, env, a.device, now),
         news(d, env, a.device, "lifted", now),
       );
     } else {
@@ -448,4 +492,84 @@ export async function careAppealDecide(d, env, inquiryId, result, now) {
   }
   await d.batch(env, stmts);
   return { id: a.id, result };
+}
+
+// ---- 2.0.0 [RVN-24] K-결정-10 마을 돌봄 숫자 공개 ----
+//
+// 1.40-이후-논의/마을돌봄.md D2(사용자 2026-11-07 19:21 '3.12 시행 한 달 뒤'): 공개 운영 규칙 페이지 맨 아래에 달마다 '가린 글 n · 안내·경고 n ·
+// 쉬기 n · 해명 받아들임 n/n'을 합계만 실어요. 사람을 가리키는 값은 없고, 새로 모으는 것도 없어요(있는 기록을 세기만).
+// 달이 바뀐 뒤 매시 작업이 지난달을 한 번 세어 굳혀 두고(가려진 글은 90일, 기록은 180일 남으니 언제 세어도 같아요), 페이지는 굳힌 달만 읽어요.
+
+/** 운영 규칙의 이유로 가려진 것(고정 낱말이라 SQL에 그대로 적어요). 글쓴이가 지운 것은 빼요. */
+const HIDDEN_BY_RULES = ["abuse", "personal", "spam", "offtopic", "advice", "flags"];
+export const CARE_NUMBERS = {
+  /** 처리방침 3.12 시행(2026-11-09) 한 달 뒤부터 페이지에 보여요. */
+  showFrom: "2026-12-09",
+  /** 3.12 시행일 전의 기록(로컬 시험에서 강제로 켠 것 등)은 세지 않아요. */
+  countFrom: "2026-11-09",
+  keepMonths: 12,
+};
+const CARE_KST = 9 * 3600e3;
+const careKstMs = (date) => Date.parse(`${date}T00:00:00+09:00`);
+/** 한국 시각의 'YYYY-MM'. */
+export const careMonthOf = (now) => new Date(now + CARE_KST).toISOString().slice(0, 7);
+const careMonthBefore = (ym) => {
+  const [y, m] = ym.split("-").map(Number);
+  return m === 1 ? `${y - 1}-12` : `${y}-${String(m - 1).padStart(2, "0")}`;
+};
+
+/** [ym] 한 달(한국 시각, 3.12 시행일부터)의 합계. 가린 글은 운영 규칙의 이유로 가려진 채인 글(글쓴이가 지운 것은 빼요). */
+export async function careNumbersOf(d, env, ym) {
+  const [y, m] = ym.split("-").map(Number);
+  const start = Math.max(Date.UTC(y, m - 1, 1) - CARE_KST, careKstMs(CARE_NUMBERS.countFrom));
+  const end = Date.UTC(y, m, 1) - CARE_KST;
+  if (end <= start) return null;
+  const r = await d.one(env, `SELECT
+      (SELECT COUNT(*) FROM posts WHERE status = 'hidden' AND hide_reason IN (${HIDDEN_BY_RULES.map((r) => `'${r}'`).join(", ")})
+        AND hidden_at >= ?1 AND hidden_at < ?2) AS hidden,
+      (SELECT COUNT(*) FROM care_notes WHERE kind = 'warn' AND at >= ?1 AND at < ?2) AS warned,
+      (SELECT COUNT(*) FROM care_notes WHERE kind IN ('opinion', 'community') AND at >= ?1 AND at < ?2) AS held,
+      (SELECT COUNT(*) FROM care_appeals WHERE result IS NOT NULL AND decided_at >= ?1 AND decided_at < ?2) AS answered,
+      (SELECT COUNT(*) FROM care_appeals WHERE result = 'accepted' AND decided_at >= ?1 AND decided_at < ?2) AS accepted`,
+  start, end);
+  const since = new Date(start + CARE_KST).toISOString().slice(0, 10);
+  return { month: ym, since, hidden: r?.hidden ?? 0, warned: r?.warned ?? 0, held: r?.held ?? 0, appeals: { answered: r?.answered ?? 0, accepted: r?.accepted ?? 0 } };
+}
+
+async function careNumbersKept(d, env) {
+  const row = await d.one(env, "SELECT value FROM settings WHERE key = 'care_numbers'");
+  try {
+    const v = row ? JSON.parse(row.value) : null;
+    return v && Array.isArray(v.months) ? v : { months: [] };
+  } catch {
+    return { months: [] };
+  }
+}
+
+/** 매시: 지난달을 아직 굳히지 않았으면 세어 굳혀요(3.12 시행일이 든 달부터, 12달까지). */
+export async function careNumbersTick(d, env, now) {
+  const last = careMonthBefore(careMonthOf(now));
+  if (last < CARE_NUMBERS.countFrom.slice(0, 7)) return { skipped: "before" };
+  const kept = await careNumbersKept(d, env);
+  if (kept.months.some((x) => x.month === last)) return { kept: last };
+  const n = await careNumbersOf(d, env, last);
+  if (!n) return { skipped: "empty" };
+  const months = [{ ...n, at: new Date(now).toISOString() }, ...kept.months].sort((a, b) => b.month.localeCompare(a.month)).slice(0, CARE_NUMBERS.keepMonths);
+  await d.run(env, "INSERT INTO settings (key, value) VALUES ('care_numbers', ?) ON CONFLICT (key) DO UPDATE SET value = excluded.value", JSON.stringify({ months }));
+  return { counted: last };
+}
+
+/**
+ * GET /api/community/numbers: 공개 운영 규칙 페이지가 읽는 굳힌 달들(새것부터). [CARE_NUMBERS.showFrom] 전에는 빈 목록과 그날만.
+ * [admin]이면 페이지에 나가기 전의 달과 이번 달 지금까지도 함께(관리자 앱 › 마을 돌봄).
+ */
+export async function careNumbersView(d, env, now, { admin = false } = {}) {
+  const shown = now >= careKstMs(CARE_NUMBERS.showFrom);
+  const { months } = await careNumbersKept(d, env);
+  const out = { from: CARE_NUMBERS.showFrom, months: shown || admin ? months.map(({ at, ...m }) => m) : [] };
+  if (admin) {
+    out.shown = shown;
+    out.now = await careNumbersOf(d, env, careMonthOf(now));
+  }
+  return out;
 }

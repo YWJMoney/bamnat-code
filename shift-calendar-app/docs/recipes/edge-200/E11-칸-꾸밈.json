@@ -1,0 +1,44 @@
+{
+ "format": "bamnat-recipe",
+ "v": 1,
+ "title": "시험 E11 칸 꾸밈",
+ "summary": "칸 꾸밈 층 + 칸 부품, 탭 보기는 주",
+ "desc": "2.0.0 스튜디오 가장자리 시험 작품(보고서 9장). PC 확인과 앱 시험이 함께 써요. 장터에 내지 않아요.",
+ "styles": [
+  "SHIFT",
+  "DAY",
+  "HOURLY",
+  "FIELD",
+  "BUSINESS",
+  "INVEST"
+ ],
+ "pieces": [
+  {
+   "kind": "decor",
+   "items": [
+    {
+     "at": "cal.cell",
+     "emoji": "💗",
+     "x": 820,
+     "y": 200,
+     "w": 13,
+     "h": 13
+    }
+   ]
+  },
+  {
+   "kind": "parts",
+   "parts": [
+    {
+     "id": "cal.cell",
+     "fill": 4294440951,
+     "r": 10
+    }
+   ]
+  },
+  {
+   "kind": "tabView",
+   "cal": "weekly"
+  }
+ ]
+}

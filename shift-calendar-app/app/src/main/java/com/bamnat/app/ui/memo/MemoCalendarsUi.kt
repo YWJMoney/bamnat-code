@@ -1,6 +1,7 @@
 package com.bamnat.app.ui.memo
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -22,9 +23,6 @@ import androidx.compose.material3.Checkbox
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import com.bamnat.app.ui.components.SegmentedButton
-import androidx.compose.material3.SegmentedButtonDefaults
-import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -52,18 +50,9 @@ import com.bamnat.core.memo.MemoNotebook
 internal fun NotebookBar(state: MemoListState, onPick: (MemoNotebook) -> Unit) {
     if (!state.manyCalendars) return
     Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp)) {
-        SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
-            MemoNotebook.entries.forEachIndexed { i, n ->
-                SegmentedButton(
-                    selected = state.notebook == n,
-                    onClick = { onPick(n) },
-                    shape = SegmentedButtonDefaults.itemShape(i, MemoNotebook.entries.size),
-                    label = {
-                        Text(if (n == MemoNotebook.CALENDAR) state.activeName else n.label, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                    },
-                )
-            }
-        }
+        // [RVH-46] Words never cut at a large font.
+        com.bamnat.app.ui.components.ChoiceRow(MemoNotebook.entries.map { n -> if (n == MemoNotebook.CALENDAR) state.activeName else n.label },
+            selected = state.notebook.ordinal, onSelect = { onPick(MemoNotebook.entries[it]) })
         Text(
             when (state.notebook) {
                 // [MEMO-01] Each calendar keeps its own memos unless 설정 › 메모 공유 puts calendars together.
@@ -127,7 +116,8 @@ internal fun MemoCalendarsDialog(
         text = {
             Column(Modifier.verticalScroll(rememberScrollState())) {
                 Row(
-                    Modifier.fillMaxWidth().heightIn(min = 56.dp).clickable(role = Role.Switch) { all = !all },
+                    // 2.0.0 [RVJ-87] 검토 BOSS-66 같은 모양: one focus that says 켜짐·꺼짐.
+                    Modifier.fillMaxWidth().heightIn(min = 56.dp).toggleable(value = all, role = Role.Switch, onValueChange = { all = it }),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Column(Modifier.weight(1f)) {
@@ -135,7 +125,7 @@ internal fun MemoCalendarsDialog(
                         Text("나중에 만드는 달력에도 보이는 공용 메모예요", style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
-                    Switch(checked = all, onCheckedChange = { all = it })
+                    Switch(checked = all, onCheckedChange = null)
                 }
                 HorizontalDivider()
                 calendars.forEach { cal ->

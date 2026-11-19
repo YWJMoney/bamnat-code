@@ -32,9 +32,9 @@ class StoreScreenshotTest : ScreenshotBase() {
     private val c get() = app.container
 
     /** A tool, not a check: only when asked (BAMNAT_STORE_SHOTS=1), so the full suite never mixes its SDK 33 shot in. */
-    @org.junit.Before fun onlyWhenAsked() = org.junit.Assume.assumeTrue(System.getenv("BAMNAT_STORE_SHOTS") == "1")
+    @org.junit.Before fun onlyWhenAsked() = org.junit.Assume.assumeTrue("가게 사진은 BAMNAT_STORE_SHOTS=1일 때만 찍어요", System.getenv("BAMNAT_STORE_SHOTS") == "1")
 
-    @Test fun calendar() = shoot("store_1_calendar", STORE) {}
+    @Test fun calendar() = shoot("store_1a_calendar", STORE) {} // 2.0.0 [RVR-11] not store_1_calendar: CalendarScreenshotTest takes that key shot
 
     /** The same month with 잠금 화면 알람 already allowed, as on a phone set up once. */
     @Config(sdk = [33])
@@ -256,7 +256,7 @@ class StoreScreenshotTest : ScreenshotBase() {
     /** 11 공휴일: 2027년 2월, 설날 연휴 on the month. */
     @Config(sdk = [33])
     @Test fun holiday() = shoot("store_11_holiday", STORE) {
-        repeat(4) { tapText("다음 달", exact = true, scrolls = 0) }
+        repeat(4) { stepMonth("다음 달") }
     }
 
     /** 11 공휴일: the pay items, down to 휴일. */
@@ -276,13 +276,13 @@ class StoreScreenshotTest : ScreenshotBase() {
         content { com.bamnat.app.ui.sleep.SleepScreen(vm, wide = false, onBack = {}) }
     }
 
-    /** 13 수면, further down. */
+    /** 13 수면, its 패턴 (2.0.0 [RVI-58]: the folded screen is in three parts, 오늘 · 패턴 · 기록). */
     @Test fun sleep2Lower() = shoot("store_13b_sleep_lower", STORE) {
         sleep7()
         val vm = com.bamnat.app.ui.sleep.SleepViewModel(c)
         content { com.bamnat.app.ui.sleep.SleepScreen(vm, wide = false, onBack = {}) }
         settle()
-        scrollUp(700); scrollUp(700)
+        tapText("패턴", exact = true, scrolls = 0)
     }
 
     /** 14 가계부 */
@@ -294,6 +294,8 @@ class StoreScreenshotTest : ScreenshotBase() {
     @Test fun memoBoard() = shoot("store_15_memo_board", STORE) {
         photoMemo()
         tab(2, wide = false)
+        // [RVIB-20] On a phone 보기 and 정렬 are one chip (목록 · 날짜순 ▾) that lists them.
+        if (!shows("보드", exact = true)) tapText("보기 목록", prefix = true, scrolls = 0)
         tapText("보드", exact = true, scrolls = 0)
     }
 

@@ -4,6 +4,7 @@ import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import worker from "../src/index.js";
 import { BILLING_KEEP_FROM } from "../src/inquiries.js";
+import { keyView } from "../src/desk.js";
 import { server, device, from, signIn, report, ORIGIN, adminHome } from "./helpers.mjs";
 
 const sha = (s) => createHash("sha256").update(s).digest("hex");
@@ -63,6 +64,18 @@ test("contacts and amounts are refused with the field; so is anything it does no
     kind: "question", text: "대근 12시간이면 기본급의 15%가 맞나요? 19~07시 근무예요", info: { app: "1.12.0", name: "민지" },
   }));
   assert.equal(ok.status, 201);
+});
+
+test("2.0.0 [RVO-29] (PC-204) a 결제·환불 question may carry its Play order number, still not an amount", async () => {
+  const { call } = server();
+  for (const text of ["어제 프로 1년을 결제했는데 안 열려요. Play 주문 번호는 GPA.3312-4459-2207-48812예요", "gpa.3312-4459-2207-48812..0 환불돼요?"]) {
+    const res = await call("POST", "/api/inquiries", question(1, { kind: "billing", text }));
+    assert.equal(res.status, 201, text);
+  }
+  for (const text of ["GPA.3312-4459-2207-48812 결제한 13,900원 환불해 주세요", "주문 번호 3312-4459-2207-48812", "GPA.3312-4459-2207-488123"]) {
+    const res = await call("POST", "/api/inquiries", question(2, { kind: "billing", text }));
+    assert.equal(res.status, 400, text);
+  }
 });
 
 test("the developer answers in the developer app and the phone sees the answer", async () => {
@@ -408,4 +421,50 @@ test("1.36 [INQ-07] a deleted question taken out of the 결제·환불 record go
   assert.deepEqual([off.status, off.data], [200, { deleted: true }]);
   assert.equal(DB.db.prepare("SELECT COUNT(*) AS n FROM inquiries").get().n, 0);
   assert.equal((await call("GET", `/api/admin/inquiries/${id}`, undefined, admin)).status, 404);
+});
+
+// 2.0.0 [RVO-28] HQ-150 (PC-201): 운영팀이 기록을 부탁하면 답장에 '점검 기록도 보내기'로 기록이 함께 와요. 붙여 넣지 않아도 돼요.
+test("a reply can bring the alarm check: the question's record becomes it, and the reply says so", async () => {
+  const { call } = server();
+  const q = (await call("POST", "/api/inquiries", question(1, { text: "앱이 하루에 한 번씩 갑자기 닫혀요" }), from(1))).data;
+  const admin = await signIn(call);
+  const before = (await call("GET", `/api/admin/inquiries/${q.id}`, undefined, admin)).data;
+  assert.equal(before.crash.record, "unsent");
+  assert.ok(before.crash.draft);
+
+  const record = ("[앱 멈춤]\n가장 최근 기록: 11.19 07:02 · IllegalStateException\n남은 기록: 3개\n\n[알람 상태]\n알람 사용: 켜짐\n" +
+    "놓쳤을알람없음\n".repeat(900)).slice(0, 6000);
+  // Longer than a reply's words alone may be (16KB) once it is UTF-8.
+  assert.ok(new TextEncoder().encode(record).length > 16 * 1024);
+  const sent = await call("POST", `/api/inquiries/${q.id}/messages`, { text: "보내 드려요", info: { diag: record } }, mine(1));
+  assert.equal(sent.status, 201);
+  assert.deepEqual(sent.data.messages.map((m) => [m.from, m.diag ?? false]), [["user", false], ["user", true]]);
+
+  const after = (await call("GET", `/api/admin/inquiries/${q.id}`, undefined, admin)).data;
+  assert.equal(after.context["알람 점검"], record);
+  assert.equal(after.crash.record, "has");
+  // What came first is kept beside it (Q2: '처음에는 기록이 없었다' matters), once.
+  const first = (await call("POST", "/api/inquiries", question(1, { text: "앱이 또 닫혀요", info: { diag: "[알람 상태]\n알람 사용: 켜짐" } }), from(1))).data;
+  await call("POST", `/api/inquiries/${first.id}/messages`, { text: "보내요", info: { diag: record } }, mine(1));
+  await call("POST", `/api/inquiries/${first.id}/messages`, { text: "한 번 더", info: { diag: "[앱 멈춤]\n남은 기록: 0개" } }, mine(1));
+  const kept = (await call("GET", `/api/admin/inquiries/${first.id}`, undefined, admin)).data;
+  assert.equal(kept.context["알람 점검"], "[앱 멈춤]\n남은 기록: 0개");
+  assert.equal(kept.context["처음 점검 기록"], "[알람 상태]\n알람 사용: 켜짐");
+  assert.equal(after.crash.draft, undefined);
+  // The marker never reads as a person's name on the asker's lines.
+  assert.deepEqual(after.messages.map((m) => [m.from, m.diag ?? false, m.by ?? null]), [["user", false, null], ["user", true, null]]);
+
+  // Only the record may come with a reply, and only as long as a question's.
+  assert.equal((await call("POST", `/api/inquiries/${q.id}/messages`, { text: "하나 더", info: { app: "9.9" } }, mine(1))).status, 400);
+  assert.equal((await call("POST", `/api/inquiries/${q.id}/messages`, { text: "하나 더", info: { diag: "가".repeat(6001) } }, mine(1))).status, 400);
+  // A plain reply leaves the record as it is.
+  await call("POST", `/api/inquiries/${q.id}/messages`, { text: "고마워요" }, mine(1));
+  assert.equal((await call("GET", `/api/admin/inquiries/${q.id}`, undefined, admin)).data.context["알람 점검"], record);
+});
+
+test("an ops key sees neither record, only their marks", () => {
+  const d = keyView({ context: { "알람 점검": "[앱 멈춤]\n남은 기록: 0개", "처음 점검 기록": "[알람 상태]\n알람 사용: 켜짐", 앱: "2.0.0" } });
+  assert.match(d.context["알람 점검"], /^\(가려짐: 운영자만 봐요 · 2줄/);
+  assert.match(d.context["처음 점검 기록"], /^\(가려짐: 운영자만 봐요 · 2줄/);
+  assert.equal(d.context.앱, "2.0.0");
 });

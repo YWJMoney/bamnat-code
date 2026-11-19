@@ -36,9 +36,11 @@ data class PublicUse(
     /** The report sent from it, and the plaza page it went to. */
     val sentId: String? = null,
     val companyId: String? = null,
+    /** 2.0.0 [RVN-19] 검토 T10a-10: a first provider's 사업장, typed in its own box (a public row has its own). */
+    val site: String = "",
 ) {
     val cycle: PublicCycle?
-        get() = PublicCycles.byId(cycleId) ?: if (cycleId.isEmpty()) PublicCycles.provided(company, formKey) else null
+        get() = PublicCycles.byId(cycleId) ?: if (cycleId.isEmpty()) PublicCycles.provided(company, formKey, site) else null
 
     /** [SPAT-05] The invitation may show: not sent, not ended with 그만 볼게요, past its 14·30·90-day wait. */
     fun inviteDue(now: Long = Today.millis()): Boolean = sentId == null && ShareAsk.due(inviteNever, inviteDue, now, usesCompanySetup = false)
@@ -48,7 +50,7 @@ data class PublicUse(
     fun json(): String = JSONObject()
         .put("cycle", cycleId).put("company", company).put("form", formKey).put("codes", codes).put("picked", picked).put("at", at)
         .put("payClosed", payClosed).put("laters", inviteLaters).put("due", inviteDue).put("never", inviteNever)
-        .putOpt("sent", sentId).putOpt("companyId", companyId).toString()
+        .putOpt("sent", sentId).putOpt("companyId", companyId).putOpt("site", site.takeIf { it.isNotEmpty() }).toString()
 
     companion object {
         fun read(s: String?): PublicUse? = s?.let {
@@ -58,6 +60,7 @@ data class PublicUse(
                     o.getString("cycle"), o.getString("company"), o.optString("form"), o.optString("codes"), o.optBoolean("picked"), o.optLong("at"),
                     o.optBoolean("payClosed"), o.optInt("laters"), o.optLong("due"), o.optBoolean("never"),
                     o.optString("sent").takeIf { s -> s.isNotEmpty() }, o.optString("companyId").takeIf { s -> s.isNotEmpty() },
+                    o.optString("site"),
                 )
             }.getOrNull()
         }
@@ -98,10 +101,21 @@ object PublicCycleFiles {
         // pay (1.29 gave an added calendar the main calendar's pay, so its rules could land there), and it is remembered for
         // that calendar's pay and plaza steps as the main one's are.
         val scope = c.companyOf(calendar)
+        // 2.0.0 [RVN-08] COMP-11 Over an order the calendar had, 되돌리기 puts it back (as 회사 찾기's 이 설정 쓰기 does).
+        val was = scope.share.before()
+        val useBefore = scope.store.publicUse.value
         val r = scope.share.apply(text(cycle, codes), rotation = true, todayStep = todayStep)
         remember(scope.store, cycle, codes)
         c.telemetry.event("public_cycle_apply", if (cycle.id.isEmpty()) "provided" else cycle.orderState.name.lowercase())
-        return r
+        if (!was.hadOrder) return r
+        return r.copy(undo = {
+            runCatching {
+                scope.share.undo(was)
+                scope.store.setPublicUse(useBefore)
+                c.telemetry.event("public_cycle_apply", "undone")
+                true
+            }.getOrDefault(false)
+        })
     }
 
     /**
@@ -132,6 +146,7 @@ object PublicCycleFiles {
         // One invitation: this row's way on, not the hand-made one's as well.
         store.setDraft(null)
         store.setHandMade(false)
-        store.setPublicUse(PublicUse(cycle.id, cycle.company, cycle.formKey, codes, picked(cycle, codes), Today.millis()))
+        store.setPublicUse(PublicUse(cycle.id, cycle.company, cycle.formKey, codes, picked(cycle, codes), Today.millis(),
+            site = if (cycle.id.isEmpty()) cycle.site else ""))
     }
 }

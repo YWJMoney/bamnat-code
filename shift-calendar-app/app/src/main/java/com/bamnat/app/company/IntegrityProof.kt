@@ -33,7 +33,8 @@ object IntegrityProof {
         serverExchange(baseUrl, "POST", "/api/integrity", body, device)
     }): Boolean {
         val now = Today.millis()
-        if (now - failedAt < WAIT_AFTER_FAIL_MS) return false
+        // 2.0.0 [RVN-22] COMP-60-3: a fail 'after now' (the clock put back) does not hold the next try.
+        if (failedAt <= now && now - failedAt < WAIT_AFTER_FAIL_MS) return false
         val token = runCatching { engine?.invoke(nonce(device, now)) }.getOrNull()
         val ok = token != null && runCatching { send(JSONObject().put("device", device).put("token", token)) }.isSuccess
         if (!ok) failedAt = now

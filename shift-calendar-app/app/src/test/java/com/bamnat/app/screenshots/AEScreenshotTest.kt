@@ -29,9 +29,9 @@ import java.time.Instant
 /**
  * [INVITE-02][INVITE-03][INVITE-05][INVITE-07][INVITE-08] 1.26 묶음 AE's screenshots, numbers 1040~1059, each an end-to-end check:
  * a tap, what the screen shows, and what was sent and kept. 1040~1043 the inviter (nothing goes before the line is
- * agreed, the share sheet carries the link and code, the progress "3/5명 · 2명은 사용 기간 채우는 중"), 1044~1047 the
+ * agreed, the share sheet carries the link and code, the progress "친구 2명이 더 7일 쓰면 프로 1개월 · 3명 셌어요 · 2명은 7일 채우는 중"), 1044~1047 the
  * friend's card from Play's referrer (알리기 sends, 괜찮아요 sends nothing, the period of use counted once a day),
- * 1048~1050 초대 코드 넣기 within 7 days, 1051~1052 settings and search, 1053~1055 small, landscape, dark with 200%
+ * 1048~1050 초대 코드 넣기 within 7 days (2.0.0: the 코드를 받으셨나요? box), 1051~1052 settings and search, 1053~1055 small, landscape, dark with 200%
  * text, 1056 the developer app's rules said before anything is sent. The real server's round trip is InviteAppTest.
  */
 @RunWith(AndroidJUnit4::class)
@@ -118,8 +118,9 @@ class AEScreenshotTest : ScreenshotBase() {
         assertNotNull("the share sheet opened", text)
         assertTrue(text!!.contains("https://company.example/i/ABCD2345"))
         assertTrue(text.contains("ABCD-2345"))
-        reveal("0/5명")
-        assertTrue(appears("초대한 친구 0명 · 프로 0개월"))
+        reveal("친구 5명이 더 7일 쓰면 프로 1개월", exact = true)
+        assertTrue(appears("초대한 친구 0명", exact = true))
+        assertFalse(appears("프로 0개월", ms = 0))
         assertTrue(appears("초대 링크 보내기", exact = true))
     }
 
@@ -127,12 +128,28 @@ class AEScreenshotTest : ScreenshotBase() {
         api.viewAnswer = view(progress = 3, waiting = 2, friends = 8, given = 1)
         runBlocking { app.container.invites.makeLink() }
         openPro()
-        reveal("3/5명 · 2명은 사용 기간 채우는 중", exact = true)
+        reveal("친구 2명이 더 7일 쓰면 프로 1개월 · 3명 셌어요 · 2명은 7일 채우는 중", exact = true)
         assertTrue(appears("초대한 친구 8명 · 프로 1개월", exact = true))
         assertTrue(appears("내 초대 코드 ABCD-2345"))
         // Opening the screen asked the server afresh, once.
         assertTrue("view" in api.calls)
         noCuts("counts")
+    }
+
+    // 2.0.0 [RVO-25] (PC-151) A friend counted, the month waiting on the 운영팀: that first, the next goal under it, no '0/1명'·'프로 0개월'.
+    @Test fun aMonthBeingLookedAtComesFirst() = shoot("1043_ae_invite_pending", PHONE_393) {
+        api.viewAnswer = view(progress = 0, friends = 1, given = 0).copy(pending = 1)
+        runBlocking { app.container.invites.makeLink() }
+        openPro()
+        reveal(InviteRules.pending(1), exact = true)
+        assertTrue(appears("친구 5명이 더 7일 쓰면 프로 1개월", exact = true))
+        assertTrue(appears("초대한 친구 1명", exact = true))
+        assertFalse(appears("0/1명", ms = 0))
+        assertFalse(appears("프로 0개월", ms = 0))
+        fun top(t: String) = nodes(merged = false).first { n ->
+            n.config.getOrElseNullable(androidx.compose.ui.semantics.SemanticsProperties.Text) { null }?.joinToString("") { it.text } == t
+        }.boundsInRoot.top
+        assertTrue("the month being looked at is said first", top(InviteRules.pending(1)) < top("친구 5명이 더 7일 쓰면 프로 1개월"))
     }
 
     @Test fun overTheCapFriendsStillCount() = shoot("1043_ae_invite_cap", PHONE_393) {
@@ -154,9 +171,9 @@ class AEScreenshotTest : ScreenshotBase() {
         assertEquals("reading the referrer sends nothing", emptyList<String>(), sent())
     }
 
-    /** The card sits in the calendar's notices; under the alarm warning it waits folded in "알림 n개 더 보기". */
+    /** 2.0.0 [RVP-43] HQ-49: the card is a row of the 알림함's 안내 (not over the month), opened in place there. */
     private fun Screen.reachArrival() {
-        if (!shows("친구 초대로 오셨나요?")) tapText("알림 ", prefix = true, scrolls = 0)
+        openNotice("친구 초대")
         reveal("친구 초대로 오셨나요?")
     }
 
@@ -224,22 +241,31 @@ class AEScreenshotTest : ScreenshotBase() {
         assertEquals(0, asked)
     }
 
+    /** 2.0.0 [RVO-06] (검토 U11b-03) 받은 코드는 프로 화면 맨 아래 '코드를 받으셨나요?' 한 칸에: 8자리는 친구 초대인지 고르고 보내는 것 한 줄을 봐요. */
+    private fun Screen.typeEight(code: String) {
+        reveal(com.bamnat.app.ui.pro.CODE_INBOX_TITLE, exact = true)
+        tapText(com.bamnat.app.ui.pro.CODE_INBOX_TITLE, exact = true)
+        typeInto("받은 코드", code)
+        if (appears("어떤 코드인가요?")) tapText("친구 초대 코드", exact = true)
+    }
+
     @Test fun aCodeTypedByHand() = shoot("1048_ae_typed_code", FOLDED) {
         openPro()
-        tapText("초대 코드 넣기", exact = true)
-        typeInto("받은 초대 코드 (8자리)", "frnd-2345")
+        typeEight("frnd-2345")
         reveal("7일이 지난 뒤 앱을 다시 열면")
-        tapText("동의하고 보내기", exact = true)
+        tapText("동의하고 넣기", exact = true)
         assertEquals(listOf("FRND2345" to "typed"), api.uses)
         reveal("초대한 분께 알렸어요")
-        assertTrue("once only", gone("초대 코드 넣기", exact = true))
+        // 2.0.0 [RVO-13] 통합 2차 PC-112: said once, under 넣기, not again in the 친구 초대 card above it.
+        assertEquals(1, shownTimes("초대한 분께 알렸어요"))
+        assertFalse("once only", app.container.invites.mayType())
     }
 
     @Test fun aWrongCodeIsSaidPlainly() = shoot("1049_ae_typed_wrong", FOLDED) {
+        com.bamnat.app.ui.pro.ProCodeTries.reset()
         openPro()
-        tapText("초대 코드 넣기", exact = true)
-        typeInto("받은 초대 코드 (8자리)", "ZZZZ2345")
-        tapText("동의하고 보내기", exact = true)
+        typeEight("ZZZZ2345")
+        tapText("동의하고 넣기", exact = true)
         reveal("초대 코드가 맞지 않아요")
         assertNull(app.container.invites.store.current.reportedCode)
     }
@@ -247,8 +273,11 @@ class AEScreenshotTest : ScreenshotBase() {
     @Test fun afterSevenDaysThereIsNoCodeToType() = shoot("1050_ae_typed_late", FOLDED) {
         app.container.invites.installedAt = { Today.instant().minus(Duration.ofDays(8)) }
         openPro()
-        assertTrue(gone("초대 코드 넣기", exact = true))
         assertTrue(appears("초대 링크 만들기", exact = true))
+        typeEight("abcd-2345")
+        // Only 프로 나눔 is left for an 8-letter code, or nothing (then it says why); never the invite's line.
+        assertTrue(gone("어떤 코드인가요?"))
+        assertTrue(gone("동의하고 넣기", exact = true))
     }
 
     // ---- 427 [INVITE-07] ----
@@ -274,15 +303,20 @@ class AEScreenshotTest : ScreenshotBase() {
     @Test fun searchFindsIt() = shoot("1052_ae_search", FOLDED) {
         tab(SETTINGS_TAB, wide = false)
         typeInto("설정 찾기", "초대 코드")
-        reveal("초대 코드 넣기", exact = true)
+        reveal(com.bamnat.app.ui.pro.CODE_INBOX_TITLE, exact = true)
     }
 
     @Test fun helpAnswersIt() {
-        val topic = com.bamnat.app.ui.settings.HelpFaq.search("친구 초대 프로 한 달").first()
+        // 2.0.0 [RVO-13] PC-116: the numbers are the server's rules the card says (here the developer app's defaults), none before any were read.
+        val faq = com.bamnat.app.ui.settings.HelpFaq
+        val topic = faq.search("친구 초대 프로 한 달", faq.topics(invite = com.bamnat.core.tier.InviteTerms.DEFAULT)).first()
         assertEquals("invite", topic.id)
         assertTrue(topic.answer.contains("5명"))
         assertTrue(topic.answer.contains("7일"))
         assertTrue(topic.answer.contains("끄는 법"))
+        val unread = faq.search("친구 초대 프로 한 달").first()
+        assertEquals("invite", unread.id)
+        assertTrue(unread.answer, !unread.answer.contains("5명") && unread.answer.contains("카드에 지금 규칙 그대로"))
         assertNotNull(com.bamnat.core.guide.FeatureRegistry.get("pro.invite"))
     }
 
@@ -297,7 +331,7 @@ class AEScreenshotTest : ScreenshotBase() {
         api.viewAnswer = view(progress = 1, friends = 6, given = 1)
         runBlocking { app.container.invites.makeLink() }
         openPro(wide = true)
-        reveal("1/5명", across = 0.7f)
+        reveal("친구 4명이 더 7일 쓰면 프로 1개월 · 1명 셌어요", exact = true, across = 0.7f)
         assertTrue(appears("초대한 친구 6명 · 프로 1개월"))
     }
 
@@ -305,7 +339,7 @@ class AEScreenshotTest : ScreenshotBase() {
         api.viewAnswer = view(progress = 3, waiting = 2, friends = 3)
         runBlocking { app.container.invites.makeLink() }
         openPro()
-        reveal("3/5명 · 2명은 사용 기간 채우는 중")
+        reveal("3명 셌어요")
         reveal("초대 링크 보내기", exact = true)
         noCuts("huge")
     }
@@ -314,6 +348,9 @@ class AEScreenshotTest : ScreenshotBase() {
     @Test fun theServersRulesAreSaid() = shoot("1056_ae_rules_from_server", FOLDED) {
         api.rulesAnswer = InviteTerms(need = 3, days = 10, months = 2, capMonths = 6)
         openPro()
+        // 2.0.0 [RVO-27] (HQ-156): the card says the one-line promise, and how a friend counts is behind its ⓘ.
+        reveal("친구 3명이 10일 쓰면 프로 2개월 · 1년에 6개월까지.", exact = true)
+        tapText("설명 보기", exact = true)
         reveal("친구 3명이 각자 10일 이상 쓰면 나에게 프로 2개월")
         assertTrue(appears("10일이 지나 앱을 다시 열면"))
         assertTrue(appears("1년에 6개월까지"))

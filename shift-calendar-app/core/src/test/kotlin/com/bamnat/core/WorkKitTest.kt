@@ -9,6 +9,7 @@ import com.bamnat.core.money.MoneyCategories
 import com.bamnat.core.money.MoneyKind
 import com.bamnat.core.work.HourlyWeek
 import com.bamnat.core.work.NthWeekday
+import com.bamnat.core.work.ShopDay
 import com.bamnat.core.work.ShopDays
 import com.bamnat.core.work.ShopRules
 import com.bamnat.core.work.WorkStats
@@ -60,6 +61,39 @@ class WorkKitTest {
         )
         assertEquals("매주 일요일 · 매달 둘째·넷째 월요일 · 공휴일 휴무", ShopDays.describe(rules))
         assertEquals("정기휴무 없음", ShopDays.describe(ShopRules()))
+    }
+
+    /** [RVH-36] 검토 WORK-23·TYPE-23 검토 I02b-03 Short days past midnight, every weekday's own kind, and Sundays off every other week. */
+    @Test
+    fun shopWeekdaysShortHoursAndEveryOtherWeek() {
+        // 17:00~02:00 is nine hours: the short day is half of it, not the one hour a negative span gave.
+        assertEquals(java.time.LocalTime.of(17, 0) to java.time.LocalTime.of(21, 30), ShopRules(open = java.time.LocalTime.of(17, 0), close = java.time.LocalTime.of(2, 0)).shortHours)
+        // Open all day and night (00:00~00:00): twelve hours.
+        assertEquals(java.time.LocalTime.of(12, 0), ShopRules(open = java.time.LocalTime.MIDNIGHT, close = java.time.LocalTime.MIDNIGHT).shortHours.second)
+        assertEquals(java.time.LocalTime.of(10, 0) to java.time.LocalTime.of(16, 0), ShopRules().shortHours)
+        assertEquals(java.time.LocalTime.of(15, 0), ShopRules(shortClose = java.time.LocalTime.of(15, 0)).shortHours.second)
+
+        val today = LocalDate.of(2026, 11, 18) // a Wednesday
+        var rules = ShopRules().withDay(DayOfWeek.SATURDAY, ShopDay.SHORT, today).withDay(DayOfWeek.SUNDAY, ShopDay.EVERY_OTHER, today)
+        assertEquals(ShopDay.SHORT, rules.dayOf(DayOfWeek.SATURDAY))
+        assertEquals(ShopDay.EVERY_OTHER, rules.dayOf(DayOfWeek.SUNDAY))
+        assertEquals(ShopDay.OPEN, rules.dayOf(DayOfWeek.MONDAY))
+        assertEquals(today, rules.everyOtherFrom)
+        val sunday = LocalDate.of(2026, 11, 22)
+        assertTrue(rules.everyOtherClosed(sunday))
+        assertFalse(rules.everyOtherClosed(sunday.plusWeeks(1)))
+        assertTrue(rules.everyOtherClosed(sunday.plusWeeks(2)))
+        assertTrue(rules.everyOtherClosed(sunday.minusWeeks(2)))
+        assertFalse(rules.everyOtherClosed(sunday.minusDays(1)))
+        assertEquals(listOf(sunday, sunday.plusWeeks(2)), ShopDays.extraClosed(rules, today, sunday.plusWeeks(3).minusDays(1)) { false })
+        assertEquals("격주 일요일 휴무", ShopDays.describe(rules))
+        // A day has one kind: closing Saturday takes it out of the short days, and the last day off every other week forgets the week.
+        rules = rules.withDay(DayOfWeek.SATURDAY, ShopDay.CLOSED, today).withDay(DayOfWeek.SUNDAY, ShopDay.OPEN, today)
+        assertEquals(setOf(DayOfWeek.SATURDAY), rules.closedWeekdays)
+        assertTrue(rules.shortWeekdays.isEmpty())
+        assertEquals(null, rules.everyOtherFrom)
+        assertEquals(java.time.LocalTime.of(17, 0), ShopRules(breakStart = java.time.LocalTime.of(15, 0), breakMinutes = 120).breakEnd)
+        assertEquals(null, ShopRules(breakStart = java.time.LocalTime.of(15, 0)).breakEnd)
     }
 
     /** [TYPE-04] An open day that passed with nothing sold is closed after all, judged once. */
@@ -163,5 +197,57 @@ class WorkKitTest {
         // A calendar that is gone is never picked.
         assertEquals("main", CaptureRoute.pick(null, null, "x", places, mapOf("x" to "gone"), "gone"))
         assertEquals("KB국민", CaptureRoute.issuerKey("KB국민카드"))
+    }
+
+    /**
+     * 2.0.0 [RVG-35] 검토 HQ-64: a link's word comes from what it carries, the same for the sender's hint, the receiving app and
+     * the web page: 매출 → 영업일, 일감 or 일감 수입 → 일정, else 근무표 (a shop or an investor that sends only the days stays 근무표).
+     */
+    @Test
+    fun linkWordFromWhatTheLinkCarries() {
+        val sales = com.bamnat.core.work.MoneyShare.SALES
+        val jobs = com.bamnat.core.work.MoneyShare.JOBS
+        val pay = com.bamnat.core.work.MoneyShare.PAY
+        assertEquals("영업일", com.bamnat.core.work.linkWord(setOf("pay"), sales))
+        assertEquals("일정", com.bamnat.core.work.linkWord(setOf("jobs"), jobs))
+        assertEquals("일정", com.bamnat.core.work.linkWord(setOf("pay"), jobs))
+        assertEquals("일정", com.bamnat.core.work.linkWord(listOf("jobs", "pay"), jobs))
+        assertEquals("근무표", com.bamnat.core.work.linkWord(setOf("pay"), pay))
+        assertEquals("근무표", com.bamnat.core.work.linkWord(setOf("leaveKinds", "extras"), pay))
+        // A shop that ticks nothing to go with the days: the link cannot tell, so 근무표 (HQ-64 비고, B안 3.14 후보).
+        assertEquals("근무표", com.bamnat.core.work.linkWord(emptySet(), sales))
+        assertEquals("근무표", com.bamnat.core.work.linkWord(emptySet(), null))
+    }
+
+    /**
+     * 2.0.0 [RVG-38] 검토 HQ-64 B안 (D RVD-32, the share server's linkWord): from 처리방침 3.14 a link may say what the sender's app calls it,
+     * which names a link that carries no money or jobs (a shop's days only → 영업일, an investor's → 달력). What the link carries still
+     * comes first, and a link without the word, or with any other value, is named exactly as before.
+     */
+    @Test
+    fun linkWordTakesTheSendersWordAfterWhatTheLinkCarries() {
+        val sales = com.bamnat.core.work.MoneyShare.SALES
+        val jobs = com.bamnat.core.work.MoneyShare.JOBS
+        val pay = com.bamnat.core.work.MoneyShare.PAY
+        // The days only: the sender's word.
+        assertEquals("영업일", com.bamnat.core.work.linkWord(emptySet(), sales, "영업일"))
+        assertEquals("달력", com.bamnat.core.work.linkWord(emptySet(), pay, "달력"))
+        assertEquals("일정", com.bamnat.core.work.linkWord(setOf("memos"), null, "일정"))
+        assertEquals("근무표", com.bamnat.core.work.linkWord(setOf("leaveKinds"), pay, "근무표"))
+        // What the link carries comes first, as on the server.
+        assertEquals("영업일", com.bamnat.core.work.linkWord(setOf("pay"), sales, "달력"))
+        assertEquals("일정", com.bamnat.core.work.linkWord(setOf("jobs"), jobs, "근무표"))
+        assertEquals("일정", com.bamnat.core.work.linkWord(setOf("pay"), jobs, "영업일"))
+        // No word (an old link, an old server, before 3.14) or one not in the list: as before 2.0.0.
+        for (said in listOf(null, "", "월급", "Calendar", " 영업일")) {
+            assertEquals("$said", "근무표", com.bamnat.core.work.linkWord(emptySet(), sales, said))
+            assertEquals("$said", "영업일", com.bamnat.core.work.linkWord(setOf("pay"), sales, said))
+        }
+        // What such a link holds, said in its word (the receiving card's '…만 받았어요'), as the sender's own app says it (daysWord).
+        for (style in com.bamnat.core.work.WorkStyle.entries)
+            assertEquals("$style", com.bamnat.core.work.daysWord(style), com.bamnat.core.work.linkDaysWord(com.bamnat.core.work.scheduleWord(style)))
+        // The words a sender's app may say are exactly what scheduleWord gives for each kind of work.
+        assertEquals(com.bamnat.core.work.LINK_WORDS.toSet(),
+            (com.bamnat.core.work.WorkStyle.entries.map { com.bamnat.core.work.scheduleWord(it) } + com.bamnat.core.work.scheduleWord(null)).toSet())
     }
 }

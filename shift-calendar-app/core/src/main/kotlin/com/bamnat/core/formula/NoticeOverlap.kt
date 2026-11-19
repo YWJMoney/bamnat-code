@@ -16,7 +16,11 @@ object NoticeOverlap {
     /** The app's own notices a rule can repeat; [key] is the setting's name (as recipe pieces keep settings). */
     enum class BuiltIn(val key: String, val label: String, val does: String) {
         TODAY("todayShiftNotice", "잠금 화면 오늘 근무", "오늘·내일 근무를 잠금 화면과 알림창에 늘 보여 줘요"),
-        DAY_CLOSE("dayCloseNotice", "하루 마감", "근무가 끝나고 30분 뒤(쉬는 날 저녁 9시) 오늘 쓴 돈을 알려 줘요");
+        // 2.0.0 [RVO-22] 검토 SET-04-3: the name 설정 › 알림과 잠 gives it (가게의 '하루 마감'은 매출을 적는 다른 기능이에요).
+        DAY_CLOSE("dayCloseNotice", "퇴근 뒤 가계부 정리 알림", "근무가 끝나고 30분 뒤(쉬는 날 저녁 9시) 오늘 쓴 돈을 알려 줘요");
+
+        /** The notice in quotes, said once with 알림 (‘잠금 화면 오늘 근무’ 알림, ‘퇴근 뒤 가계부 정리 알림’). */
+        val quoted: String get() = if (label.endsWith("알림")) "‘$label’" else "‘$label’ 알림"
 
         companion object { fun of(key: String): BuiltIn? = entries.firstOrNull { it.key == key } }
     }
@@ -25,7 +29,7 @@ object NoticeOverlap {
     data class Hit(val rule: LogicRule, val builtIn: BuiltIn? = null, val other: LogicRule? = null) {
         /** "‘오늘 요약’은 켜 둔 ‘잠금 화면 오늘 근무’와 같은 말을 해요". */
         fun say(): String = "‘${rule.name}’" + com.bamnat.core.recipe.RecipeLint.topic(rule.name) + " " + when {
-            builtIn != null -> "켜 둔 ‘${builtIn.label}’ 알림과 같은 말을 해요"
+            builtIn != null -> "켜 둔 ${builtIn.quoted}과 같은 말을 해요"
             else -> "내 ‘${other?.name}’ 규칙과 같은 때 같은 것을 알려요"
         }
     }
@@ -113,6 +117,17 @@ object NoticeOverlap {
 
     /** [arg] without its parts (split at " · " or a line) that say today's shift: "오늘 {근무} {근무시작}~{근무끝} · 이달 쓴 돈 …" → "이달 쓴 돈 …". */
     fun withoutShift(arg: String): String = arg.split(SEP).filter { seg -> seg.isNotBlank() && names(seg).none { it in SHIFT } }.joinToString(" · ")
+
+    /**
+     * [RVM-03] PC-37: an 알림 that says how long I slept ("{지난시간(\"잠\")}시간 잤어요", "…밖에 못 잤어요"), which the app's own
+     * '몇 시간 잤어요' notice says too when the morning alarm ends a sleep: the two come as one.
+     */
+    fun saysSlept(arg: String): Boolean = "잤" in arg
+
+    private val SENTENCE = Regex("(?<=[.!?])\\s+|\\s*·\\s*|\n")
+
+    /** Worked-out words without their sentences that say how long I slept: "36분 잤어요. 오늘 주간이에요" → "오늘 주간이에요". */
+    fun withoutSlept(text: String): String = text.split(SENTENCE).map { it.trim() }.filter { it.isNotBlank() && "잤" !in it }.joinToString(" ")
 
     /**
      * Words once worked out, tidied: a "~" left between two empty times (a day off: "오늘 휴무 ~ · 이달 쓴 돈") goes, with the gaps and

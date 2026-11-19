@@ -26,6 +26,8 @@ object TradeCapture {
     /** Worth reading: a trading app's notification, or a chat app's 알림톡 that names a broker. */
     fun worthReading(pkg: String, text: String, fromMessenger: Boolean): Boolean = when {
         pkg in TradeAlertParser.COIN_APPS || pkg in TradeAlertParser.STOCK_APPS -> true
+        // 2.0.0 [RVK-50] (검토 MONEY-74): 토스·은행 앱의 결제·쇼핑 글은 가계부로 가요. 체결이나 'N주'가 있을 때만 투자예요.
+        pkg in TradeAlertParser.MIXED_APPS -> TradeAlertParser.tradeWords(text)
         fromMessenger -> BROKER_WORDS.containsMatchIn(text) && (text.contains("체결") || SHARES_IN_WORDS.containsMatchIn(text))
         else -> text.contains("체결") && (text.contains("매수") || text.contains("매도")) || SHARES_IN_WORDS.containsMatchIn(text)
     }
@@ -42,25 +44,46 @@ object TradeCapture {
         val repo = c.invest(calendarId)
         val pending = TradeAlerts.of(alert, app, postedAt)
         // [INVA-06] Written already (a capture put it in first, or the same notification came again): not twice.
-        if (TradeAlerts.writtenAlready(pending, repo.now().trades)) return true
-        if (!repo.addAlert(pending)) return true
+        // 2.0.0 [RVK-13] (검토 MONEY-62): and not without a word — kept in '자동으로 정리한 것' to put back as a fill of its own.
+        if (TradeAlerts.writtenAlready(pending, repo.now().trades)) {
+            leftOut(c, calendarId, pending, "이미 적은 체결과 같은 종목·수량·값이라 한 번만 적었어요")
+            return true
+        }
+        val toldTwice = repo.waitingAlready(pending)
+        if (!repo.addAlert(pending)) {
+            if (toldTwice) leftOut(c, calendarId, pending, "같은 체결이 다른 알림으로 한 번 더 와서 한 번만 받았어요")
+            return true
+        }
         // [INV-40] A price that does not agree with the notification's own amount waits for a look.
+        // 2.0.0 [RVK-53] (검토 MONEY-71): with 금액 가리기 on, the lock screen says only what and which way, not 수량 × 단가.
+        val hide = com.bamnat.app.invest.InvestNotices.hidden(c, repo.now()).settings.hideAmounts
         if (repo.alertAutoNow() && pending.price > 0 && pending.checked != false) {
             repo.confirmAlert(pending)
-            notice(c, calendarId, "${pending.title} ${pending.side.label} 적었어요", pending, "눌러서 고칠 수 있어요")
+            notice(c, calendarId, "${pending.title} ${pending.side.label} 적었어요", pending, "눌러서 고칠 수 있어요", hide)
         } else {
-            notice(c, calendarId, "${pending.title} ${pending.side.label} 체결을 찾았어요", pending, "투자 달력에서 확인하면 적어요")
+            notice(c, calendarId, "${pending.title} ${pending.side.label} 체결을 찾았어요", pending, "투자 달력에서 확인하면 적어요", hide)
         }
         return true
     }
 
-    private fun notice(c: AppContainer, calendarId: String, title: String, p: TradeAlerts.Pending, hint: String) {
+    /** [RVK-13] The way back '자동으로 정리한 것' uses for a fill left out. */
+    const val KIND_FILL = "invest.fill"
+
+    private suspend fun leftOut(c: AppContainer, calendarId: String, p: TradeAlerts.Pending, why: String) {
+        runCatching {
+            c.autoTidy.add(com.bamnat.app.data.AutoTidy.AREA_INVEST, calendarId,
+                "${p.title} ${p.side.label} ${Portfolio.quantityText(p.quantity)}${p.market.unit}" + (if (p.price > 0) " × ${Portfolio.quantityText(p.price)}" else ""),
+                why, KIND_FILL, org.json.JSONObject().put("fill", TradeAlerts.encode(listOf(p))).toString())
+        }
+    }
+
+    private fun notice(c: AppContainer, calendarId: String, title: String, p: TradeAlerts.Pending, hint: String, hide: Boolean = false) {
         val context = c.appContext
         runCatching {
             val n = NotificationCompat.Builder(context, Notifications.INVEST_CHANNEL_ID)
                 .setSmallIcon(R.drawable.ic_notification)
                 .setContentTitle(title)
-                .setContentText("${Portfolio.quantityText(p.quantity)}${p.market.unit}" +
+                .setContentText(if (hide) "${p.app} · $hint" else "${Portfolio.quantityText(p.quantity)}${p.market.unit}" +
                     (if (p.price > 0) " × ${Portfolio.quantityText(p.price)}" else "") + " · ${p.app} · $hint")
                 .setContentIntent(Notifications.open(context, NoticeLinks.Target.INVEST, REQUEST_OPEN, calendarId))
                 .setAutoCancel(true)

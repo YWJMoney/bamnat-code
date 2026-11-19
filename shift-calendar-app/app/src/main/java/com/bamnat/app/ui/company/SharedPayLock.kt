@@ -8,12 +8,16 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.PhotoCamera
 import androidx.compose.material3.ExperimentalMaterial3Api
 import com.bamnat.app.ui.components.FilterChip
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
+import com.bamnat.app.ui.components.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -43,11 +47,15 @@ object SharedPayWords {
     const val TITLE = "다른 사람이 공유한 급여체계를 사용하고 있어요!"
     const val ASK = "다르다면 의견을 제시해 보거나 직접 만드시겠어요?"
     const val HIDDEN = "계산 방식은 공유한 분의 것이라 볼 수도 고칠 수도 없어요. 기본급과 내 수당 금액은 내 명세서대로 넣어요."
+    /** 2.0.0 [RVN-18] 검토 T10a-03·COMP-19: [HIDDEN] with the user's own base: 시급·일당 workers read 시급·일당, not 기본급. */
+    fun hidden(type: com.bamnat.core.pay.WageType): String = HIDDEN.replace("기본급과", type.baseWord() + com.bamnat.core.text.Josa.gwawa(type.baseWord()))
     /** 1.39 발굴 3-2: the payslip check over a shared way. */
     const val CHECK_TITLE = "명세서와 맞는지 확인"
     const val CHECK_HINT = "명세서 숫자만 넣으면 맞는지 알려 드려요. 계산 방식은 보이지 않아요."
     /** [PAYP-04] Where only the 기본급 is asked over a shared way. */
     const val BASE_ONLY = "계산 방식은 공유한 분의 것 그대로예요. 기본급만 내 명세서대로 넣으면 예상 급여가 맞아요."
+    /** T10a-03 [BASE_ONLY] with the user's own base. */
+    fun baseOnly(type: com.bamnat.core.pay.WageType): String = BASE_ONLY.replace("기본급만", "${type.baseWord()}만")
     /** [PAYP-04] The 금액 창 after '이 급여 방식 쓰기': what comes with the way, grouped, never its numbers. */
     const val WAY_TITLE = "공유한 분의 계산 방식"
     const val WAY_TEXT = "통상시급 기준 시간, 연장·야간 가산, 회사가 정한 수당과 상여는 공유한 분의 방식대로 들어가요. 계산식은 보이지 않아요. 넣은 뒤 내 명세서와 다르면 급여 화면의 ‘의견 보내기’로 알려 주세요."
@@ -85,16 +93,18 @@ fun SharedPayLockSheet(
         Column(Modifier.padding(horizontal = 20.dp).padding(bottom = 24.dp).verticalScroll(rememberScrollState()),
             verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Text(SharedPayWords.TITLE, style = MaterialTheme.typography.titleLarge, modifier = Modifier.semantics { heading() })
-            Text("${SharedPayWords.from(way)}이에요. ${SharedPayWords.HIDDEN}", style = MaterialTheme.typography.bodyMedium,
+            Text("${SharedPayWords.from(way)}이에요. ${SharedPayWords.hidden(profile.wageType)}", style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant)
             Text(SharedPayWords.ASK, style = MaterialTheme.typography.bodyLarge)
             val known = BaseAsk.known(profile, month)
             Button(onClick = { base = true }, modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp)) {
-                Text(if (known == null) "기본급 넣기" else "기본급 고치기 (지금 ${com.bamnat.app.ui.pay.won(known)})")
+                // T10a-03 시급·일당 workers are asked their 시급·일당 (the field itself already said so).
+                val name = profile.wageType.baseWord()
+                Text(if (known == null) "$name 넣기" else "$name 고치기 (지금 ${com.bamnat.app.ui.pay.won(known)})")
             }
             if (vm.server) OutlinedButton(onClick = { fix = true }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text("의견 보내기") }
             OutlinedButton(onClick = { leave = true }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text("직접 만들기") }
-            TextButton(onClick = onDismiss, modifier = Modifier.fillMaxWidth()) { Text("닫기") }
+            // 2.0.0 [RVN-20] 총괄 사진 검토 (PC-142와 같은 규칙, 조건 3): the sheet's ✕ is its one 닫기; no second one at the bottom.
         }
     }
 }
@@ -141,7 +151,7 @@ fun FixRequestSheet(
         error = null
         vm.fix(picked, body) { e, done -> busy = false; if (e != null) error = e else sent = done }
     }
-    if (nudge) com.bamnat.app.ui.hub.NudgeDialog(onEdit = { nudge = false }, onSend = { nudge = false; go() })
+    if (nudge) com.bamnat.app.ui.hub.NudgeDialog(body, onEdit = { nudge = false }, onSend = { nudge = false; go() })
     com.bamnat.app.ui.components.AppSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
         Column(Modifier.padding(horizontal = 20.dp).padding(bottom = 24.dp).verticalScroll(rememberScrollState()),
             verticalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -166,7 +176,8 @@ fun FixRequestSheet(
                 enabled = !busy && picked.isNotEmpty() && (!open || body.trim().length >= 2),
                 modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp),
             ) { Text(if (open) "보내기" else "달라요 보내기") }
-            TextButton(onClick = onDismiss, modifier = Modifier.fillMaxWidth()) { Text(if (sent == null) "닫기" else "확인") }
+            // 2.0.0 [RVN-20] 총괄 사진 검토: the ✕ above closes; 확인 only once it was sent (the way out of the answer).
+            if (sent != null) TextButton(onClick = onDismiss, modifier = Modifier.fillMaxWidth()) { Text("확인") }
         }
     }
 }
@@ -226,11 +237,16 @@ fun SharedSlipCheckCard(month: com.bamnat.core.pay.MonthPay, modifier: Modifier 
 @Composable
 private fun SharedSlipCheckSheet(vm: PayWayViewModel, month: com.bamnat.core.pay.MonthPay, onDismiss: () -> Unit) {
     var total by rememberSaveable { mutableStateOf<Long?>(null) }
-    val parts = remember { androidx.compose.runtime.mutableStateMapOf<com.bamnat.core.pay.SlipGlance.Part, Long>() }
+    // 2.0.0 [RVN-20] 조건 10: the lines typed or read from the photo stay when the screen is made again (before: a plain remember).
+    val parts = rememberSaveable(saver = SLIP_PARTS_SAVER) { androidx.compose.runtime.mutableStateMapOf<com.bamnat.core.pay.SlipGlance.Part, Long>() }
     var result by remember { mutableStateOf<com.bamnat.core.pay.SlipGlance.Result?>(null) }
     var fixing by rememberSaveable { mutableStateOf(false) }
     var said by remember { mutableStateOf<String?>(null) }
     var busy by remember { mutableStateOf(false) }
+    // 2.0.0 [RVN-20] 검토 U10a-15 명세서 사진에서 읽어 채우기 (before, the total and each line were typed by hand): the photo is read on
+    // the phone as the pay screen reads it, nothing is sent; while it is open the form waits, so one filled button shows (조건 2).
+    var scanning by rememberSaveable { mutableStateOf(false) }
+    var readNote by rememberSaveable { mutableStateOf<String?>(null) }
     val r = result
     if (fixing && r != null) {
         FixRequestSheet(vm, onDismiss = { fixing = false; onDismiss() }, initial = r.fixFields,
@@ -243,6 +259,34 @@ private fun SharedSlipCheckSheet(vm: PayWayViewModel, month: com.bamnat.core.pay
             Text(SharedPayWords.CHECK_TITLE, style = MaterialTheme.typography.titleLarge, modifier = Modifier.semantics { heading() })
             Text("${month.month.monthValue}월 명세서의 숫자를 넣으면 이 방식과 맞는지만 알려 드려요. 계산 방식은 그대로 보이지 않아요.",
                 style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            if (scanning) {
+                Text("명세서 사진으로 채우기", style = MaterialTheme.typography.titleSmall, modifier = Modifier.semantics { heading() })
+                com.bamnat.app.ui.pay.ScanButtons(onText = { text ->
+                    val read = com.bamnat.core.pay.PayslipReader.read(text)
+                    val (g, ps) = com.bamnat.core.pay.SlipGlance.fromSlip(read)
+                    g?.let { total = it }
+                    if (ps.isNotEmpty()) { parts.clear(); parts.putAll(ps) }
+                    result = null
+                    scanning = false
+                    val readMonth = read.month
+                    readNote = when {
+                        g == null && ps.isEmpty() -> "사진에서 금액을 찾지 못했어요. 명세서의 숫자를 직접 적어 주세요."
+                        readMonth != null && readMonth != month.month ->
+                            "${readMonth.monthValue}월 명세서로 읽혔어요. ${month.month.monthValue}월 것이 맞는지 보고, 숫자가 다르면 고쳐 주세요."
+                        else -> "명세서에서 읽었어요. 숫자가 맞는지 보고 다르면 고쳐 주세요."
+                    }
+                }, onEmpty = { scanning = false; readNote = "사진에서 글자를 읽지 못했어요. 명세서의 숫자를 직접 적어 주세요." })
+                TextButton(onClick = { scanning = false }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text("직접 적을게요") }
+                return@Column
+            }
+            if (r == null) OutlinedButton(onClick = { scanning = true; readNote = null }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
+                // 2.0.0 [RVN-20] 총괄 사진 검토 (rvn_79·80): the common camera icon, not an emoji (조건 5).
+                androidx.compose.material3.Icon(Icons.Outlined.PhotoCamera, contentDescription = null,
+                    modifier = Modifier.size(18.dp))
+                androidx.compose.foundation.layout.Spacer(Modifier.width(8.dp))
+                Text("명세서 사진으로 채우기")
+            }
+            readNote?.let { com.bamnat.app.ui.components.ToneLine(it, tone = com.bamnat.app.ui.theme.Tone.Plain) }
             com.bamnat.app.ui.pay.MoneyField("지급 총액 (세전)", total, onChange = { total = it; result = null },
                 placeholder = "명세서의 ‘지급 합계’ 또는 ‘총 지급액’")
             Text("있으면 더 정확해요 (선택)", style = MaterialTheme.typography.titleSmall)
@@ -266,7 +310,26 @@ private fun SharedSlipCheckSheet(vm: PayWayViewModel, month: com.bamnat.core.pay
                     }
                 }
             }
-            TextButton(onClick = onDismiss, modifier = Modifier.fillMaxWidth()) { Text(if (said == null) "닫기" else "확인") }
+            // 2.0.0 [RVN-20] 총괄 사진 검토 (rvn_79·80, PC-142와 같은 규칙): the ✕ above closes; 확인 only once the answer went.
+            if (said != null) TextButton(onClick = onDismiss, modifier = Modifier.fillMaxWidth()) { Text("확인") }
         }
     }
 }
+
+/** 2.0.0 [RVN-18] 검토 T10a-03: what a 기본급 is called for this way of being paid (월급 기본급, 시급, 일당). */
+internal fun com.bamnat.core.pay.WageType.baseWord(): String = when (this) {
+    com.bamnat.core.pay.WageType.MONTHLY -> "기본급"
+    com.bamnat.core.pay.WageType.HOURLY -> "시급"
+    com.bamnat.core.pay.WageType.DAILY -> "일당"
+}
+
+/** The 명세서 lines of [SharedSlipCheckSheet] as a bundle can keep them: each part by its name. */
+private val SLIP_PARTS_SAVER = androidx.compose.runtime.saveable.Saver<
+    androidx.compose.runtime.snapshots.SnapshotStateMap<com.bamnat.core.pay.SlipGlance.Part, Long>, HashMap<String, Long>>(
+    save = { m -> HashMap(m.mapKeys { it.key.name }) },
+    restore = { saved ->
+        androidx.compose.runtime.mutableStateMapOf<com.bamnat.core.pay.SlipGlance.Part, Long>().apply {
+            saved.forEach { (k, v) -> com.bamnat.core.pay.SlipGlance.Part.entries.firstOrNull { it.name == k }?.let { put(it, v) } }
+        }
+    },
+)

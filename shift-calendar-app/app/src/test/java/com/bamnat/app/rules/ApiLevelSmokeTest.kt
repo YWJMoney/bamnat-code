@@ -1,5 +1,9 @@
 package com.bamnat.app.rules
 
+import com.bamnat.app.TestClock
+import com.bamnat.core.time.Today
+import org.junit.After
+import org.junit.Before
 import android.app.AlarmManager
 import android.app.NotificationManager
 import android.os.Build
@@ -40,10 +44,15 @@ import java.time.LocalTime
 // the database goes through Robolectric's legacy SQLite instead.
 @SQLiteMode(SQLiteMode.Mode.LEGACY)
 class ApiLevelSmokeTest {
+    // 2.0.0 [RVR-44] (총괄 HQ-123): the hour is set (10:00 today, ticking) so the result does not hang on when the run starts.
+    @Before fun hourOfDay() = TestClock.at(10)
+
+    @After fun clockBack() = Today.reset()
+
     private val app get() = ApplicationProvider.getApplicationContext<BamnatApp>()
     private val alarmManager get() = app.getSystemService(AlarmManager::class.java)
     private val day = ShiftType(1, "주간", "주", 0xFF1E88E5, LocalTime.of(7, 0), LocalTime.of(19, 0), alarmEnabled = true)
-    private val calendars = listOf(null to ScheduleSnapshot(listOf(day), WorkPattern.Rotation(LocalDate.now().minusDays(3), listOf(1L)), emptyList()))
+    private val calendars = listOf(com.bamnat.app.alarm.RingingCalendar(null, ScheduleSnapshot(listOf(day), WorkPattern.Rotation(Today.date().minusDays(3), listOf(1L)), emptyList())))
 
     private fun scheduler() = AlarmScheduler(app, app.container.telemetry)
 
@@ -68,7 +77,7 @@ class ApiLevelSmokeTest {
         // The user allowed 알람 및 리마인더 (Android 12+), as the first setup asks.
         ShadowAlarmManager.setCanScheduleExactAlarms(true)
         val s = scheduler()
-        s.reschedule(calendars, true, LocalDateTime.now())
+        s.reschedule(calendars, true, Today.dateTime())
         val next = shadowOf(alarmManager).nextScheduledAlarm
         assertNotNull("an alarm on API ${Build.VERSION.SDK_INT}", next)
         assertTrue("exact before Android 12, and with the permission after", s.canScheduleExact())
@@ -83,7 +92,7 @@ class ApiLevelSmokeTest {
         try {
             val s = scheduler()
             assertFalse(s.canScheduleExact())
-            s.reschedule(calendars, true, LocalDateTime.now())
+            s.reschedule(calendars, true, Today.dateTime())
             val next = shadowOf(alarmManager).nextScheduledAlarm
             assertNotNull("an inexact alarm still goes in", next)
             assertNull("not an alarm clock without the permission", next!!.alarmClockInfo)

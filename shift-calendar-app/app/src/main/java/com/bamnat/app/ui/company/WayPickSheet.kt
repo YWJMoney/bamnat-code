@@ -13,7 +13,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
+import com.bamnat.app.ui.components.OutlinedButton
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -55,6 +55,10 @@ object WayPickWords {
     const val PRIVATE = "계산 방식은 보이지 않고, 명세서 숫자는 휴대폰 밖으로 나가지 않아요."
     const val WHOLE_MONTH = "한 달을 다 일한 달의 명세서로 해 주세요. 그 달 잔업·특근을 달력에 넣지 않았으면 그만큼 차이가 나요."
     const val USE = "이 방식 넣기"
+    /** 2.0.0 [RVN-24] I10ac-01: the payslip, read whole, agrees on the total and every item: put it in and say 맞아요 at once. */
+    const val USE_AGREE = "이 방식 넣고 ‘맞아요’ 보내기"
+    const val USE_ONLY = "넣기만 할게요"
+    const val AGREE_NOTE = "명세서와 지급 총액·수당·가산이 모두 맞아서, 같은 회사 분들께 명세서로 확인한 ‘맞아요’도 같이 보내요. 금액은 보내지 않아요."
 }
 
 /**
@@ -79,6 +83,10 @@ internal fun WayPickCard(onOpen: () -> Unit, modifier: Modifier = Modifier) {
  * [PAYP-18] The payslip's numbers (typed, or read from a photo or text with [com.bamnat.app.ui.pay.PayslipFillDialog]), then the
  * company's versions tried against it, the closest picked. [onUse] puts the picked one in with the payslip's 기본급 and the
  * allowances it named; the ways' values are never shown.
+ *
+ * 2.0.0 [RVN-24] 검토 I10ac-01: a payslip read whole is also compared item by item (수당 이름·가산 꼴, [com.bamnat.core.pay.SlipShape]):
+ * "(항목 9/10)" and where it differs, and when everything agrees '맞아요' goes with putting it in ([onUse]'s agree). [initial] is
+ * a payslip read before the company was found (명세서로 찾기): it fills the sheet and the pick runs at once.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -86,8 +94,9 @@ internal fun WayPickSheet(
     c: AppContainer,
     company: com.bamnat.app.company.CompanyScope,
     way: PendingWay,
-    onUse: (WayPicker.Option, WayPick.Slip) -> Unit,
+    onUse: (WayPicker.Option, WayPick.Slip, Boolean) -> Unit,
     onDismiss: () -> Unit,
+    initial: com.bamnat.core.pay.PayslipRead? = null,
 ) {
     val scope = rememberCoroutineScope()
     var month by remember { mutableStateOf(Today.month().minusMonths(1)) }
@@ -95,25 +104,61 @@ internal fun WayPickSheet(
     var base by rememberSaveable { mutableStateOf<Long?>(null) }
     val parts = remember { mutableStateMapOf<SlipGlance.Part, Long>() }
     var allowances by remember { mutableStateOf<Map<String, Long>>(emptyMap()) }
+    // 2.0.0 [RVN-24] I10ac-01: the 가산's hours as printed, and whether the payslip was read whole (a photo or its text).
+    var minutes by remember { mutableStateOf<Map<SlipGlance.Part, Int>>(emptyMap()) }
+    var whole by remember { mutableStateOf(false) } // with parts·allowances: after the screen is made again all three start over
     var more by rememberSaveable { mutableStateOf(false) }
-    var reading by remember { mutableStateOf(false) }
+    var reading by rememberSaveable { mutableStateOf(false) } // 2.0.0 [RVJ-62] back after the screen is made again
     var busy by remember { mutableStateOf(false) }
     var result by remember { mutableStateOf<WayPicker.Result?>(null) }
     var chosen by remember { mutableStateOf<String?>(null) }
     val clear = { result = null; chosen = null }
+    fun slipNow() = WayPick.Slip(month, gross ?: 0, base, parts.toMap(), allowances, minutes, whole)
+    /** The payslip read into the boxes; false when it has no 지급 총액 to pick with. */
+    fun take(read: com.bamnat.core.pay.PayslipRead): Boolean {
+        val slip = read.payslip() ?: return false
+        read.month?.let { month = it }
+        gross = slip.gross
+        base = slip.base ?: base
+        val of = WayPick.Slip.of(month, slip)
+        parts.clear()
+        parts.putAll(of.parts)
+        allowances = slip.allowances
+        minutes = of.minutes
+        whole = true
+        more = parts.isNotEmpty()
+        clear()
+        return true
+    }
+    fun pick() {
+        val slip = WayPick.Slip(month, gross ?: return, base ?: return, parts.toMap(), allowances, minutes, whole)
+        busy = true
+        scope.launch {
+            result = try {
+                WayPicker(c, company).pick(way.companyId, way.dept, slip, mapOf(way.setup to way.text))
+            } catch (e: CompanyException) {
+                WayPicker.Result.Failed(companyProblem(e))
+            }
+            chosen = (result as? WayPicker.Result.Picked)?.options?.firstOrNull()?.tried?.id
+            busy = false
+        }
+    }
+    // 명세서로 찾기: the payslip read before the company was found fills the sheet and the pick runs (one tap fewer).
+    var started by rememberSaveable { mutableStateOf(false) }
+    androidx.compose.runtime.LaunchedEffect(initial) {
+        val read = initial ?: return@LaunchedEffect
+        // Made again (turned, or back from another app): the payslip fills the boxes again, and the pick waits for a tap.
+        val first = !started
+        started = true
+        if (take(read) && first) {
+            c.telemetry.event("pay_pick", "slip_found")
+            if ((base ?: 0) > 0) pick()
+        }
+    }
     if (reading) {
-        com.bamnat.app.ui.pay.PayslipFillDialog(title = "명세서 읽기", onDismiss = { reading = false }) { read ->
+        com.bamnat.app.ui.pay.PayslipFillDialog(title = "명세서 읽기", onDismiss = { reading = false }, keep = com.bamnat.app.ui.pay.PayslipWorks.WAY) { read ->
             reading = false
-            val slip = read.payslip() ?: return@PayslipFillDialog
-            read.month?.let { month = it }
-            gross = slip.gross
-            base = slip.base ?: base
-            parts.clear()
-            parts.putAll(WayPick.Slip.of(month, slip).parts)
-            allowances = slip.allowances
-            more = parts.isNotEmpty()
-            clear()
-            c.telemetry.event("pay_pick", "slip_read")
+            if (take(read)) c.telemetry.event("pay_pick", "slip_read")
         }
         return
     }
@@ -124,12 +169,17 @@ internal fun WayPickSheet(
             Text("‘${way.company}’ 급여 방식 가운데 ${month.monthValue}월 명세서와 가장 맞는 것을 골라요. ${WayPickWords.PRIVATE}",
                 style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
             MonthChips(month) { month = it; clear() }
-            OutlinedButton(onClick = { reading = true }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text("명세서 사진이나 글로 채우기") }
+            // 2.0.0 [RVJ-62] 검토 PAYU-42: a payslip read and fixed before '직접 문의하기' waits here.
+            val waiting = com.bamnat.app.ui.pay.PayslipWorks.waiting(com.bamnat.app.ui.pay.PayslipWorks.WAY)?.kept
+            OutlinedButton(onClick = { reading = true }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
+                Text(if (waiting != null) "넣던 명세서 이어서 · ${waiting}줄" else "명세서 사진이나 글로 채우기")
+            }
             MoneyField("지급 총액 (세전)", gross, onChange = { gross = it; clear() }, placeholder = "명세서의 ‘지급 합계’ 또는 ‘총 지급액’")
             MoneyField("기본급", base, onChange = { base = it; clear() }, placeholder = "명세서의 기본급 줄")
             if (allowances.isNotEmpty()) Text("명세서에서 읽은 수당 ${allowances.size}개도 같이 맞춰 봐요: ${allowances.keys.joinToString(", ")}",
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            if (!more) TextButton(onClick = { more = true }, modifier = Modifier.heightIn(min = 48.dp)) { Text("연장·야간·휴일 금액도 넣기 (더 정확해요)") }
+            // A payslip read whole already says which 가산 it pays; the extra boxes are for one typed by hand.
+            if (!more) { if (!whole) TextButton(onClick = { more = true }, modifier = Modifier.heightIn(min = 48.dp)) { Text("연장·야간·휴일 금액도 넣기 (더 정확해요)") } }
             else SlipGlance.Part.entries.filter { it != SlipGlance.Part.ALLOWANCE }.forEach { p ->
                 MoneyField(p.label, parts[p], onChange = { v -> if (v == null) parts.remove(p) else parts[p] = v; clear() },
                     placeholder = "명세서의 ${p.label} 줄, 모르면 비워 두세요")
@@ -137,26 +187,14 @@ internal fun WayPickSheet(
             Text(WayPickWords.WHOLE_MONTH, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             val r = result
             if (r == null) Button(
-                onClick = {
-                    val slip = WayPick.Slip(month, gross ?: return@Button, base ?: return@Button, parts.toMap(), allowances)
-                    busy = true
-                    scope.launch {
-                        result = try {
-                            WayPicker(c, company).pick(way.companyId, way.dept, slip, mapOf(way.setup to way.text))
-                        } catch (e: CompanyException) {
-                            WayPicker.Result.Failed(companyProblem(e))
-                        }
-                        chosen = (result as? WayPicker.Result.Picked)?.options?.firstOrNull()?.tried?.id
-                        busy = false
-                    }
-                },
+                onClick = { pick() },
                 enabled = !busy && (gross ?: 0) > 0 && (base ?: 0) > 0,
                 modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp),
             ) {
                 if (busy) CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp) else Text("가장 맞는 방식 찾기")
             }
-            else PickResult(r, WayPick.Slip(month, gross ?: 0, base, parts.toMap(), allowances), chosen, { chosen = it }) { o ->
-                onUse(o, WayPick.Slip(month, gross ?: 0, base, parts.toMap(), allowances))
+            else PickResult(r, slipNow(), chosen, { chosen = it }) { o, agree ->
+                onUse(o, slipNow(), agree)
             }
             TextButton(onClick = onDismiss, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text("닫기") }
         }
@@ -177,12 +215,12 @@ private fun MonthChips(month: YearMonth, onPick: (YearMonth) -> Unit) {
 }
 
 @Composable
-private fun PickResult(
+internal fun PickResult(
     r: WayPicker.Result,
     slip: WayPick.Slip,
     chosen: String?,
     onChoose: (String) -> Unit,
-    onUse: (WayPicker.Option) -> Unit,
+    onUse: (WayPicker.Option, Boolean) -> Unit,
 ) {
     when (r) {
         WayPicker.Result.None -> Text("이 회사에는 아직 맞춰 볼 급여 방식이 없어요.", style = MaterialTheme.typography.bodyLarge)
@@ -193,9 +231,14 @@ private fun PickResult(
             Text(WayPick.line(best.tried, r.options.size, slip) { won(it) }, style = MaterialTheme.typography.titleMedium,
                 color = if (far) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary,
                 modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite })
+            // 2.0.0 [RVN-24] I10ac-01: where the payslip and the closest way part, in the payslip's own words.
+            if (!far) WayPick.differ(best.tried, slip)?.let {
+                Text(it, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
             if (r.options.size > 1 || far) r.options.forEach { o ->
                 val gap = if (o.tried.gap == 0L) "차이 없음" else "${won(o.tried.gap)} 차이"
-                val where = o.tried.glance.differs.takeIf { it.isNotEmpty() }?.joinToString("·") { it.label }?.let { " · ${it}에서 차이" }.orEmpty()
+                val where = o.tried.glance.differs.takeIf { it.isNotEmpty() }?.joinToString("·") { it.label }?.let { " · ${it}에서 차이" }.orEmpty() +
+                    WayPick.items(o.tried, slip).trim().takeIf { it.isNotEmpty() }?.let { " · ${it.removePrefix("(").removeSuffix(")")}" }.orEmpty()
                 Row(
                     Modifier.fillMaxWidth().heightIn(min = 48.dp)
                         .selectable(selected = o.tried.id == chosen, role = Role.RadioButton, onClick = { onChoose(o.tried.id) }),
@@ -215,8 +258,15 @@ private fun PickResult(
             if (r.skipped > 0) Text("받지 못한 방식 ${r.skipped}개는 빼고 맞춰 봤어요.", style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant)
             if (far) Text("명세서 숫자를 다시 보거나, 기본급만 넣어 지금 방식으로 시작해도 돼요.", style = MaterialTheme.typography.bodyMedium)
-            if (far) OutlinedButton(onClick = { onUse(pick) }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text("그래도 이 방식 넣기") }
-            else Button(onClick = { onUse(pick) }, modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp)) { Text(WayPickWords.USE) }
+            if (far) OutlinedButton(onClick = { onUse(pick, false) }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text("그래도 이 방식 넣기") }
+            else {
+                // 2.0.0 [RVN-24] I10ac-01: everything agrees: put it in and say 맞아요 in one tap, or put it in alone.
+                // One filled button (condition 2): its words and what it sends change, the other way is a text button.
+                val sure = WayPick.sure(pick.tried, slip)
+                if (sure) Text(WayPickWords.AGREE_NOTE, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Button(onClick = { onUse(pick, sure) }, modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp)) { Text(if (sure) WayPickWords.USE_AGREE else WayPickWords.USE) }
+                if (sure) TextButton(onClick = { onUse(pick, false) }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text(WayPickWords.USE_ONLY) }
+            }
         }
     }
 }

@@ -88,7 +88,7 @@ class TaskWidget : GlanceAppWidget() {
                     when {
                         !shown.allowed -> TaskLocked(short)
                         short -> TaskLine(shown.rows, shown.now)
-                        else -> TaskContent(shown.rows, shown.today, shown.now)
+                        else -> TaskContent(shown.rows, shown.today, shown.now, shown.old)
                     }
                 }
             }
@@ -97,7 +97,8 @@ class TaskWidget : GlanceAppWidget() {
 
     /** The list for [today], or [allowed] false on a widget past the free one without 프로. */
     // [now] is when the list was read: a schedule's notice redraws the widget at its time, so 오늘 09:21 turns red then (PC 6차).
-    internal data class Shown(val rows: List<TaskList.Row>, val allowed: Boolean, val today: LocalDate, val now: java.time.LocalDateTime)
+    // 2.0.0 [RVI-80] [old]: how many to-dos are left from before the 늦음 week ([TaskList.old]), said in one line under the list.
+    internal data class Shown(val rows: List<TaskList.Row>, val allowed: Boolean, val today: LocalDate, val now: java.time.LocalDateTime, val old: List<com.bamnat.core.memo.Memo> = emptyList())
 
     companion object {
         private val STAMP = androidx.datastore.preferences.core.longPreferencesKey("task_stamp")
@@ -110,7 +111,7 @@ class TaskWidget : GlanceAppWidget() {
             if (!allowed) return@withContext Shown(emptyList(), false, today, Today.dateTime())
             val memos = c.memoRepository.memosFor(PersonalCalendar.MAIN).first()
             val shifts = c.memoRepository.shiftLookup(memos, PersonalCalendar.MAIN).first()
-            Shown(TaskList.of(memos, today, shifts), true, today, Today.dateTime())
+            Shown(TaskList.of(memos, today, shifts), true, today, Today.dateTime(), TaskList.old(memos, today))
         }
 
         /** The free one: the to-do widget placed first (the lowest id) on this phone. */
@@ -184,12 +185,19 @@ internal fun openMemo(context: Context, id: Long, day: LocalDate?) =
     actionStartActivity(NoticeLinks.intent(context, NoticeLinks.Target.MEMO_OPEN, payload = "$id|${day ?: ""}"))
 
 @Composable
-internal fun TaskContent(rows: List<TaskList.Row>, today: LocalDate, now: java.time.LocalDateTime = Today.dateTime()) {
+internal fun TaskContent(rows: List<TaskList.Row>, today: LocalDate, now: java.time.LocalDateTime = Today.dateTime(), old: List<com.bamnat.core.memo.Memo> = emptyList()) {
     val context = androidx.glance.LocalContext.current
     Column(GlanceModifier.fillMaxSize()) {
         // 1.39 [TASK-38] ＋ opens the 한 줄 window over the home screen, not the whole app.
         TaskHead(TaskList.headline(rows, now), actionStartActivity(com.bamnat.app.memo.QuickTaskActivity.intent(context)))
         Spacer(GlanceModifier.height(4.dp))
+        // 2.0.0 [RVI-80] (검토 U07a-09) What fell off the list after a week: one line that opens them in the memo tab to finish, move or
+        // put away at once (it dropped off without a word).
+        TaskList.oldLine(old)?.let { line ->
+            Text("$line · 정리하기", style = TextStyle(color = GlanceTheme.colors.onSurfaceVariant, fontSize = wsp(12)), maxLines = 1,
+                modifier = GlanceModifier.fillMaxWidth().padding(vertical = 4.dp)
+                    .clickable(actionStartActivity(NoticeLinks.intent(context, NoticeLinks.Target.MEMOS, payload = com.bamnat.app.ui.memo.OLD_TASKS))))
+        }
         if (rows.isEmpty()) {
             Text("오늘 할 일이 없어요. ＋를 눌러 써 보세요", style = TextStyle(color = GlanceTheme.colors.onSurfaceVariant, fontSize = wsp(12)), maxLines = 2,
                 modifier = GlanceModifier.clickable(actionStartActivity(com.bamnat.app.memo.QuickTaskActivity.intent(context))))
@@ -269,15 +277,16 @@ private fun TaskCircle(done: Boolean, color: ColorProvider, check: PartStyle) {
         modifier = GlanceModifier.widgetBox(check, 18).width(side.dp).height(side.dp))
 }
 
-/** The small line under a row: "늦음 · 11/5 10:00", "늦음 · 09:21" (today's, its time gone), "15:00 · 2/5", "고정", or nothing. */
+/**
+ * The small line under a row: "11/5 10:00 · 늦음", "09:21 · 늦음" (today's, its time gone), "15:00 · 2/5", "고정", or nothing.
+ * 2.0.0 [RVP-54] (검토 U13-23 '"늦음 · 18:03"과 "18:03 늦음"') When first and 늦음 after, as the one-line widget says it.
+ */
 internal fun note(row: TaskList.Row, late: Boolean): String? = listOfNotNull(
-    when (row.kind) {
-        TaskList.Kind.LATE -> "늦음 · ${row.day?.let { Fmt.shortDate(it) }.orEmpty()}"
-        TaskList.Kind.PINNED -> "고정"
-        TaskList.Kind.TODAY -> "늦음".takeIf { late }
-    },
+    row.day?.takeIf { row.kind == TaskList.Kind.LATE }?.let { Fmt.shortDate(it) },
+    if (row.kind == TaskList.Kind.PINNED) "고정" else null,
     row.time?.let { Fmt.time(it) },
     row.count,
+    "늦음".takeIf { row.kind == TaskList.Kind.LATE || (row.kind == TaskList.Kind.TODAY && late) },
 ).joinToString(" · ").ifEmpty { null }
 
 /**

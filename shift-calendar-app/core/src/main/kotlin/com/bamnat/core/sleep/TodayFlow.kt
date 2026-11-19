@@ -36,12 +36,24 @@ object TodayFlow {
         NEXT,
     }
 
-    enum class Action { ASLEEP, AWAKE, AWAKE_AT, ALARM_ON, /** 1.38 [SLEEP-23] 낮잠 자기: 잠들었어요 with a wake at [Card.napUntil]. */ NAP }
+    enum class Action {
+        ASLEEP, AWAKE, AWAKE_AT, ALARM_ON, /** 1.38 [SLEEP-23] 낮잠 자기: 잠들었어요 with a wake at [Card.napUntil]. */ NAP,
+        /** 2.0.0 [RVI-93] (검토 I03b-04, G5-M2) 쪽잠 20분 in a night's 휴게: a wake that only vibrates, on the phone and the watch. */
+        SHIFT_NAP,
+        /** 2.0.0 [RVI-93] The 쪽잠 is on: 일어났어요 ends it before its vibration. */
+        SHIFT_NAP_END,
+    }
 
     enum class Part { WORK, SLEEP, NAP }
 
     /** A piece of the strip, clipped to it. */
-    data class Segment(val part: Part, val from: LocalDateTime, val to: LocalDateTime, val name: String, val colorArgb: Long? = null)
+    data class Segment(
+        val part: Part, val from: LocalDateTime, val to: LocalDateTime, val name: String, val colorArgb: Long? = null,
+        /** 2.0.0 [RVIB-21] A part of work the day stops after (브레이크 타임·비는 시간), so its end is not 퇴근. */
+        val stopsAfter: Boolean = false,
+        /** [RVIB-21] A part of work after such a stop: it starts again, it is not 출근. */
+        val resumes: Boolean = false,
+    )
 
     data class Card(
         val state: State,
@@ -85,21 +97,34 @@ object TodayFlow {
         val next: String,
         val noNext: String,
         val done: String,
+        /**
+         * 2.0.0 [RVIB-21] (결정 19, 설계 4-2절 2번·7절 4번) What the stop between a day's two parts is called: 가게·알바 '브레이크 타임', 일근·교대·현장
+         * '비는 시간'. Never '쉬는 시간', which is the 휴게 inside a part (총괄 1-4).
+         */
+        val gap: String = "비는 시간",
     ) {
         companion object {
             val SHIFT = WorkTalk("근무 중", "출근까지", "퇴근까지", "퇴근하면", "퇴근 뒤", "다음 근무", "다음 근무가 아직 없어요", "오늘 근무는 끝났어요")
-            val SHOP = WorkTalk("영업 중", "영업 시작까지", "마감까지", "마감하면", "마감 뒤", "다음은", "다음 영업일이 아직 없어요", "오늘 영업은 끝났어요")
+            val SHOP = WorkTalk("영업 중", "영업 시작까지", "마감까지", "마감하면", "마감 뒤", "다음은", "다음 영업일이 아직 없어요", "오늘 영업은 끝났어요",
+                gap = "브레이크 타임")
             val FIELD = WorkTalk("일하는 중", "일 시작까지", "일 끝까지", "일 끝나면", "일 끝나고", "다음 일", "다음 일이 아직 없어요", "오늘 일은 끝났어요")
+            /** [RVIB-21] An 알바's words are a shift's, with the shop's 브레이크 타임. */
+            val PART = SHIFT.copy(gap = "브레이크 타임")
 
             fun of(style: com.bamnat.core.work.WorkStyle?): WorkTalk = when (style) {
                 com.bamnat.core.work.WorkStyle.BUSINESS -> SHOP
                 com.bamnat.core.work.WorkStyle.FIELD -> FIELD
+                com.bamnat.core.work.WorkStyle.HOURLY -> PART
                 else -> SHIFT
             }
         }
     }
 
     const val SPAN_HOURS = 24L
+    /** 2.0.0 [RVIB-21] A 낮잠 in the stop between two parts wakes this long before work starts again. */
+    const val GAP_NAP_WAKE_MINUTES = 30L
+    /** [RVIB-21] Shorter than this left for it, no 낮잠 is offered in the stop. */
+    const val GAP_NAP_MIN_MINUTES = 20L
     /** A bedtime or a nap takes over the card this long before it. */
     const val PROMPT_MINUTES = 60L
     /** How long after waking the card says how long the sleep was. */
@@ -110,6 +135,10 @@ object TodayFlow {
     const val MIN_LOGGED_MINUTES = 20L
     /** How far to look for the next work from a day off. */
     const val LOOKAHEAD_DAYS = 14L
+    /** 2.0.0 [RVI-93] A 쪽잠 in a night's 휴게, and how far into the night it is first offered and how near its end it stops. */
+    const val SHIFT_NAP_MINUTES = 20
+    const val SHIFT_NAP_AFTER_START_MINUTES = 2 * 60L
+    const val SHIFT_NAP_BEFORE_END_MINUTES = 60L
 
     private data class Pick(
         val state: State,
@@ -143,6 +172,8 @@ object TodayFlow {
          */
         since: LocalDate? = null,
         talk: WorkTalk = WorkTalk.SHIFT,
+        /** 2.0.0 [RVI-93] When the 쪽잠 now on vibrates; null with none. */
+        shiftNapUntil: LocalDateTime? = null,
     ): Card {
         val today = now.toLocalDate()
         val end = now.plusHours(SPAN_HOURS)
@@ -215,14 +246,40 @@ object TodayFlow {
                 return@run Pick(State.SLEEPING, "${t.hm(open.start)}부터 자는 중", detail, Action.AWAKE, line = "${t.hm(open.start)}부터 자는 중")
             }
             ongoing?.let { w ->
+                // 2.0.0 [RVIB-21] (결정 19) Between the day's two parts: not 근무 중, and no sleep is planned there (설계 4-2절 3번), a 낮잠
+                // only, waking a while before it starts again.
+                w.stopAt(now)?.let { g ->
+                    val back = g.endInclusive
+                    val napTo = back.minusMinutes(GAP_NAP_WAKE_MINUTES)
+                    val napNow = Duration.between(now, napTo).toMinutes() >= GAP_NAP_MIN_MINUTES
+                    val rest = w.parts.firstOrNull { !it.start.isBefore(back) }
+                    return@run Pick(State.ON_SHIFT, "${talk.gap} · ${t.hm(back)} 다시 시작",
+                        rest?.let { "다시 ${t.span(it.start, it.endInclusive)} · " }.orEmpty() + if (napNow) "낮잠은 ${t.hm(napTo)}까지" else "곧 다시 시작해요",
+                        if (napNow) Action.NAP else null, line = "${talk.gap} · ${t.hm(back)} 다시 시작", napUntil = if (napNow) napTo else null)
+                }
+                // 2.0.0 [RVI-93] A 쪽잠 is on: when it vibrates, and 일어났어요 to end it first.
+                shiftNapUntil?.takeIf { it.isAfter(now) }?.let { u ->
+                    return@run Pick(State.ON_SHIFT, "쪽잠 중 · ${t.hm(u)}에 진동", "진동만 울려요 · 옆 사람은 깨지 않아요",
+                        Action.SHIFT_NAP_END, line = "쪽잠 ${t.hm(u)}까지")
+                }
+                // 2.0.0 [RVI-93] (G5-M2) Deep in a night of work, outside a shop: 쪽잠 20분 for the 휴게.
+                // [RVIB-21] In the first of two parts: until the stop, and when it starts again (the 퇴근 lines wait for the last part).
+                w.parts.firstOrNull { !now.isBefore(it.start) && now.isBefore(it.endInclusive) }?.takeIf { it.endInclusive.isBefore(w.to) }?.let { p ->
+                    val again = w.parts.first { !it.start.isBefore(p.endInclusive) }
+                    return@run Pick(State.ON_SHIFT, "${talk.on} · ${t.hm(p.endInclusive)}까지",
+                        "${talk.gap} 뒤 ${t.span(again.start, again.endInclusive)} 다시", null, line = "${talk.gap} ${t.hm(p.endInclusive)}부터")
+                }
+                val napHere = w.overnight && (talk == WorkTalk.SHIFT || talk == WorkTalk.PART) &&
+                    !now.isBefore(w.from.plusMinutes(SHIFT_NAP_AFTER_START_MINUTES)) && now.isBefore(w.to.minusMinutes(SHIFT_NAP_BEFORE_END_MINUTES))
+                val nap = if (napHere) Action.SHIFT_NAP else null
                 val s = plan.sleepAfter(w)
                 if (s != null) {
                     val cut = s.from.minusHours(SleepPlan.CAFFEINE_GAP_HOURS)
                     return@run if (now.isBefore(cut)) {
-                        Pick(State.ON_SHIFT, "${t.hm(cut)}까지만 커피", "${t.hm(s.from)}에 잠들 수 있게요", line = "커피는 ${t.hm(cut)}까지")
+                        Pick(State.ON_SHIFT, "${t.hm(cut)}까지만 커피", "${t.hm(s.from)}에 잠들 수 있게요", nap, line = "커피는 ${t.hm(cut)}까지")
                     } else {
                         Pick(State.ON_SHIFT, "${talk.ifEnd} ${t.span(s.from, s.to)} 잘 시간",
-                            if (s.short) shortText(s) else "잠들기 ${SleepPlan.CAFFEINE_GAP_HOURS}시간 안이라 커피는 쉬어 가요", line = sleepLine(s), saysShort = s.short)
+                            if (s.short) shortText(s) else "잠들기 ${SleepPlan.CAFFEINE_GAP_HOURS}시간 안이라 커피는 쉬어 가요", nap, line = sleepLine(s), saysShort = s.short)
                     }
                 }
                 val after = next?.takeIf { !it.from.isBefore(w.to) }
@@ -232,7 +289,7 @@ object TodayFlow {
                     after != null -> "${talk.next} ${workLine(after)}"
                     else -> null
                 }
-                return@run Pick(State.ON_SHIFT, "${talk.on} · ${t.hm(w.to)}까지", detail, line = bed?.let(::sleepLine), saysShort = bed?.short == true)
+                return@run Pick(State.ON_SHIFT, "${talk.on} · ${t.hm(w.to)}까지", detail, nap, line = bed?.let(::sleepLine), saysShort = bed?.short == true)
             }
             work.lastOrNull { !it.to.isAfter(now) && it.overnight }?.let { w ->
                 val s = plan.sleepAfter(w) ?: return@let
@@ -315,7 +372,12 @@ object TodayFlow {
             return if (b.isAfter(a)) a to b else null
         }
         val segments = buildList {
-            for (w in work) clip(w.from, w.to)?.let { (a, b) -> add(Segment(Part.WORK, a, b, w.name, w.colorArgb)) }
+            // [RVIB-21] A day of two parts is two pieces of work on the strip, the stop between them empty.
+            for (w in work) w.parts.forEachIndexed { i, p ->
+                clip(p.start, p.endInclusive)?.let { (a, b) ->
+                    add(Segment(Part.WORK, a, b, w.name, w.colorArgb, stopsAfter = i < w.parts.lastIndex, resumes = i > 0))
+                }
+            }
             for (s in plan.sleeps) if (!slept(s.from, s.to)) clip(s.from, s.to)?.let { (a, b) -> add(Segment(Part.SLEEP, a, b, "잠")) }
             for (n in plan.naps) if (!slept(n.from, n.to)) clip(n.from, n.to)?.let { (a, b) -> add(Segment(Part.NAP, a, b, "낮잠")) }
             // Asleep outside the plan: the sleep still shows, up to the target or the next work.
@@ -326,7 +388,10 @@ object TodayFlow {
         }.sortedBy { it.from }
 
         val changesAt = buildList {
-            work.forEach { add(it.from); add(it.to) }
+            work.forEach { add(it.from); add(it.to); it.stops.forEach { g -> add(g.start); add(g.endInclusive); add(g.endInclusive.minusMinutes(GAP_NAP_WAKE_MINUTES)) } }
+            // 2.0.0 [RVI-93] 쪽잠 20분 comes and goes in a night of work, and the card ends with the 쪽잠.
+            work.filter { it.overnight }.forEach { add(it.from.plusMinutes(SHIFT_NAP_AFTER_START_MINUTES)); add(it.to.minusMinutes(SHIFT_NAP_BEFORE_END_MINUTES)) }
+            shiftNapUntil?.let { add(it) }
             plan.sleeps.forEach { add(it.from.minusMinutes(PROMPT_MINUTES)); add(it.from); add(it.to); add(it.from.minusHours(SleepPlan.CAFFEINE_GAP_HOURS)) }
             plan.naps.forEach { add(it.from.minusMinutes(PROMPT_MINUTES)); add(it.to) }
             plan.alarms.forEach { add(it.triggerAt) }
@@ -335,8 +400,10 @@ object TodayFlow {
             add(today.plusDays(1).atStartOfDay())
         }.filter { it.isAfter(now) }.minOrNull() ?: end
 
-        val caption = ongoing?.let { "지금 · ${it.name} ${t.span(it.from, it.to)}" }
-            ?: work.filter { it.date == today }.takeIf { it.isNotEmpty() }?.joinToString(" · ", prefix = "오늘 · ") { "${it.name} ${t.span(it.from, it.to)}" }
+        // [RVIB-21] Two parts read as both: "주간 11:00–15:00, 17:00–21:00".
+        fun spans(w: SleepSchedule.Work) = w.parts.joinToString(", ") { t.span(it.start, it.endInclusive) }
+        val caption = ongoing?.let { "지금 · ${it.name} ${spans(it)}" }
+            ?: work.filter { it.date == today }.takeIf { it.isNotEmpty() }?.joinToString(" · ", prefix = "오늘 · ") { "${it.name} ${spans(it)}" }
             ?: "오늘 · 쉬는 날"
 
         return Card(
@@ -382,9 +449,14 @@ object TodayFlow {
             State.SLEEPING -> card.alarms.firstOrNull()?.let { Countdown("알람까지", left(it)) }
             else -> {
                 val working = card.segments.firstOrNull { it.part == Part.WORK && !it.from.isAfter(now) && it.to.isBefore(card.to) }
-                if (working != null) Countdown(card.talk.untilEnd, left(working.to))
+                // [RVIB-21] A part the day stops after counts to the stop, and the one after it to 다시 시작.
+                if (working != null) Countdown(if (working.stopsAfter) "${card.talk.gap}까지" else card.talk.untilEnd, left(working.to))
                 else card.segments.firstOrNull { it.from.isAfter(now) }?.let { n ->
-                    Countdown(when (n.part) { Part.WORK -> card.talk.untilStart; Part.SLEEP -> "잘 시간까지"; Part.NAP -> "낮잠까지" }, left(n.from))
+                    Countdown(when (n.part) {
+                        Part.WORK -> if (n.resumes) "다시 시작까지" else card.talk.untilStart
+                        Part.SLEEP -> "잘 시간까지"
+                        Part.NAP -> "낮잠까지"
+                    }, left(n.from))
                 }
             }
         }?.takeIf { it.minutes >= 0 }

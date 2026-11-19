@@ -16,6 +16,7 @@ import com.bamnat.app.ui.pro.trialPrice
 import com.bamnat.core.tier.PlaySub
 import com.bamnat.core.tier.ProReason
 import com.bamnat.core.tier.TrialConsent
+import com.bamnat.core.time.Today
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -134,13 +135,18 @@ class TierAppTest {
     }
 
     @Test fun everyProFeatureIsOnTheProScreenAndTheServerCanOpenIt() {
-        // [PROV-08] Each 프로 feature under exactly one pillar, nothing promised for later, 리더 not shown.
-        val shown = com.bamnat.app.ui.pro.PRO_PILLARS.flatMap { it.features }
-        assertEquals(shown.size, shown.toSet().size)
-        assertEquals(Feature.entries.filter { it.minTier == Tier.PRO }.toSet(), shown.toSet())
-        assertTrue(com.bamnat.app.ui.pro.PRO_PILLARS.all { p -> p.lines.isNotEmpty() && p.lines.none { "곧" in it } })
-        assertTrue("점점 커지는 소리 stays free", com.bamnat.app.ui.pro.PRO_COMPARE.any { (what, free, _) -> free && "점점 커지는 소리" in what })
-        assertTrue(com.bamnat.app.ui.pro.PRO_PILLARS.flatMap { it.lines }.none { "점점 커지는 소리" in it })
+        // [PROV-08] Every 프로 feature is on the 프로 screen. 2.0.0 [RVO-05] (검토 PRO-12: 표에 프로 기능 넷이 빠졌어요) one list, made from
+        // ProCatalog, so none can be left out; with 광고 없음 it is all, as the screen says.
+        for (style in listOf(null) + com.bamnat.core.work.WorkStyle.entries) {
+            val (mine, others) = com.bamnat.app.ui.pro.proOrder(style)
+            val shown = (mine + others).mapNotNull { com.bamnat.app.ui.pro.proFeatureOf(it.id) }.toSet() + Feature.NO_ADS
+            assertEquals("$style", Feature.entries.filter { it.minTier == Tier.PRO }.toSet(), shown)
+            assertEquals("$style: 이 유형의 다섯이 맨 앞", com.bamnat.core.tier.ProPitch.first(style), mine.take(com.bamnat.app.ui.pro.PRO_FIRST).map { it.id })
+            assertTrue(com.bamnat.app.ui.pro.proAllSaid(mine.size + others.size).contains("${mine.size + others.size}개와 광고 없음이 전부"))
+            // 알람은 늘 무료라고 말해요(투자는 투자 알람으로).
+            val alarm = if (style == com.bamnat.core.work.WorkStyle.INVEST) "투자 알람" else "점점 커지는 소리"
+            assertTrue("$style: $alarm stays free", com.bamnat.core.tier.ProPitch.freeAlways(style).any { alarm in it })
+        }
         // The admin app's 모두에게 무료로 연 프로 기능 takes the names; each opens alone after the launch.
         Feature.entries.filter { it.minTier == Tier.PRO }.forEach { f ->
             val answer = JSONObject().put("billingLive", true).put("freeFeatures", org.json.JSONArray(listOf(f.name)))
@@ -155,7 +161,7 @@ class TierAppTest {
         val g = gate(LaunchConfig(billingLive = false))
         assertFalse(g.live)
         Feature.entries.forEach { assertTrue(it.name, g.allows(it)) }
-        assertEquals(ProReason.NOT_LAUNCHED, g.access.reason)
+        assertEquals(ProReason.ALL_OPEN, g.access.reason)
     }
 
     @Test fun afterTheLaunchFreeLocksProAndTheServerCanOpenOne() {
@@ -216,12 +222,14 @@ class TierAppTest {
         assertEquals(ProReason.NONE, gate(LaunchConfig(billingLive = true), edit = { dayPass(today.minusDays(1)) }).access.reason)
     }
 
-    @Test fun thePreviewCountsBeforeTheLaunchOrInDebugOnly() {
-        // S 1.32 [SECX-01] Before the launch only an admin phone the developer app approved counts it; a user's does not.
+    @Test fun thePreviewCountsInDebugBuildsOnly() {
+        // S 1.32 [SECX-01] A user's phone ignores a stored preview. 2.0.0 [RVO-01] (총괄 11-12) an approved admin phone in a release build
+        // too, before the launch as after it: no server row or admin link changes a release build's tier.
         assertFalse("사용자 휴대폰은 저장된 미리 보기를 무시해요", gate(LaunchConfig(billingLive = false), preview = Tier.FREE).preview)
         val admin = Passes(until = null, waitingMonths = 0, items = emptyList(), deferred = 0,
             admin = AdminState("approved", "관리자"), hasCode = false, checkedAt = now)
-        val before = gate(LaunchConfig(billingLive = false), edit = { setPasses(admin) }, preview = Tier.FREE)
+        assertFalse("출시 빌드의 관리자 휴대폰도", gate(LaunchConfig(billingLive = false), edit = { setPasses(admin) }, preview = Tier.FREE).preview)
+        val before = gate(LaunchConfig(billingLive = false), debug = true, preview = Tier.FREE)
         assertTrue(before.preview)
         assertTrue(before.locked(Feature.MONEY_STATS))
         assertEquals(ProReason.PREVIEW, before.access.reason)
@@ -262,7 +270,7 @@ class TierAppTest {
 
     @Test fun onlyAPhoneWithAReasonAsksForPassesAndABackupCodeIsClaimedOnce() = runBlocking {
         val c = ApplicationProvider.getApplicationContext<com.bamnat.app.BamnatApp>().container
-        val pass = Passes(null, 2, listOf(PassItem(2, now, "idea")), 0, null, true, Instant.now())
+        val pass = Passes(null, 2, listOf(PassItem(2, now, "idea")), 0, null, true, Today.instant())
         val api = FakeTierApi(passesAnswer = pass)
         c.tierApi = api
         c.syncPasses()
@@ -280,7 +288,7 @@ class TierAppTest {
     /** PC 확인 7525ccff: a new phone tied to an admin asks for its passes then, so the card shows the link and why it is approved. */
     @Test fun aNewPhoneJustLinkedAsksForItsPasses() = runBlocking {
         val c = ApplicationProvider.getApplicationContext<com.bamnat.app.BamnatApp>().container
-        val pass = Passes(null, 0, emptyList(), 0, AdminState("approved", "최고 관리자", owner = true), false, Instant.now())
+        val pass = Passes(null, 0, emptyList(), 0, AdminState("approved", "최고 관리자", owner = true), false, Today.instant())
         val api = FakeTierApi(passesAnswer = pass)
         c.tierApi = api
         c.syncPasses(force = true)
@@ -293,13 +301,32 @@ class TierAppTest {
         assertEquals("민지 관리자", com.bamnat.app.ui.pro.adminWhose("민지"))
     }
 
+    /**
+     * 2.0.0 [RVO-13] 통합 2차 PC-113: an inviter whose only tie to the server is its invite link. The admin paid the month its friends
+     * earned; opening 프로 asks for the passes, so 보상 이용권 lists it (before, nothing else had been sent and it never asked).
+     */
+    @Test fun anInviterAsksForThePassItsFriendsEarned() = runBlocking {
+        val c = ApplicationProvider.getApplicationContext<com.bamnat.app.BamnatApp>().container
+        val pass = Passes(null, 1, listOf(PassItem(1, now, "invite")), 0, null, false, com.bamnat.core.time.Today.instant())
+        val api = FakeTierApi(passesAnswer = pass)
+        c.tierApi = api
+        c.inviteApi = FakeInviteApi()
+        c.phoneMark = { "test-phone-mark" }
+        c.syncPasses(force = true)
+        assertEquals("초대 링크도 없으면 묻지 않아요", emptyList<String>(), api.calls)
+        c.invites.makeLink()
+        c.syncPasses(force = true)
+        assertEquals(listOf("passes"), api.calls)
+        assertEquals("invite", c.proStore.current.passes?.items?.single()?.why)
+    }
+
     // ---- The trial's answer waits until it reaches the server [SRV-07] ----
 
     @Test fun aTrialAnswerGivenOfflineWaitsAndGoesAtTheNextSync() = runBlocking {
         val c = ApplicationProvider.getApplicationContext<com.bamnat.app.BamnatApp>().container
         val api = FakeTierApi()
         c.tierApi = api
-        val tapped = Instant.now().minusSeconds(3_600)
+        val tapped = Today.instant().minusSeconds(3_600)
         val q = PendingConsent("keep", tapped, ProductIds.PRO, "4,990원", tapped.plusSeconds(86_400 * 3), "계속 쓸까요?")
         c.proStore.answer("keep", tapped, q)
         assertEquals("다시 열어도 남아 있어요", q, ProStore(context).current.pendingConsent)
@@ -317,11 +344,11 @@ class TierAppTest {
         assertEquals("답은 그대로 휴대폰에 있어요", tapped, c.proStore.current.consentAt)
 
         // A refusal of the answer itself is not sent again and again; an old one is let go.
-        c.proStore.answer("cancel", Instant.now(), q.copy(answer = "cancel", answeredAt = Instant.now()))
+        c.proStore.answer("cancel", Today.instant(), q.copy(answer = "cancel", answeredAt = Today.instant()))
         api.consentFails = "answer"
         assertFalse(c.sendConsent())
         assertNull(c.proStore.current.pendingConsent)
-        c.proStore.answer("keep", tapped, q.copy(answeredAt = Instant.now().minusSeconds(86_400L * 36)))
+        c.proStore.answer("keep", tapped, q.copy(answeredAt = Today.instant().minusSeconds(86_400L * 36)))
         assertTrue(c.sendConsent())
         assertNull(c.proStore.current.pendingConsent)
     }
@@ -357,11 +384,14 @@ class TierAppTest {
         val sub = trialSub(Instant.parse("2027-03-01T03:00:00Z"))
         val price = trialPrice(sub, listOf(yearly, monthly))
         assertEquals("월 4,990원", price)
-        assertEquals("월 요금", trialPrice(sub, emptyList()))
+        // 1.39.1 [R391-12] 검토 PRO-03: Play not read yet, there is no price to ask with, and it is not asked.
+        assertEquals(null, trialPrice(sub, emptyList()))
+        // A trial whose plan the phone never learned is the 연 요금제's (the only one with a trial), not the 월 요금.
+        assertEquals("연 39,000원", trialPrice(sub.copy(basePlan = null), listOf(monthly, yearly)))
         assertEquals(
             "1개월 무료 체험이 4월 1일에 끝나고, 그날부터 월 4,990원씩 자동으로 결제돼요. 계속 쓸까요?\n\n" +
                 "해지하려면 Play 스토어 › 결제 및 정기 결제에서 해요. 해지해도 4월 1일까지는 프로를 써요.",
-            trialConsentText(LocalDate.of(2027, 4, 1), price),
+            trialConsentText(LocalDate.of(2027, 4, 1), price!!),
         )
     }
 
@@ -377,6 +407,13 @@ class TierAppTest {
         assertTrue("청약철회와 그 제한", all.contains("7일 안에는 청약철회") && all.contains("전자상거래법 제17조 제2항"))
         assertTrue("약관 동의", all.contains("이용약관과 개인정보처리방침"))
         assertTrue("판매자", all.contains("통신판매업 신고 제2026-전남여수-0424호") && all.contains("사업자등록번호 327-25-02565"))
+        // 2.0.0 [RVO-07] (검토 PRO-05) 1년 이용권도, 결제 창 머리의 알림 날도 같은 말로.
+        val withPass = proDisclosures(listOf(monthly, yearly), LocalDate.of(2027, 3, 10), pass = "45,000원").joinToString("\n")
+        assertTrue(withPass, withPass.contains("1년 이용권(45,000원)은 한 번 결제하고 자동 결제가 없어요"))
+        assertEquals("오늘 0원 · 4월 10일부터 연 39,000원 · 끝나기 7일 전과 3일 전에 알려 드려요",
+            com.bamnat.app.ui.pro.trialHead(LocalDate.of(2027, 3, 10), "연 39,000원"))
+        assertEquals("구독은 같은 날 자동 결제 · 1년 이용권은 자동 결제 없음 · 해지는 Play에서 언제든 · 결제 7일 안 청약철회",
+            com.bamnat.app.ui.pro.payNoticeLine(listOf(monthly, yearly), "45,000원"))
         val noTrial = proDisclosures(listOf(monthly.copy(trial = false)), LocalDate.of(2027, 3, 10)).joinToString("\n")
         assertFalse("체험이 없으면 체험 문장도 없어요", noTrial.contains("무료 체험"))
         assertTrue(NoBilling().plans.value.isEmpty())

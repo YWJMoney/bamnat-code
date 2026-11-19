@@ -18,7 +18,8 @@ class FeatureGuideTest {
     @Test
     fun everyRouteLeadsSomewhere() {
         val rows = SettingsIndex.entries().mapNotNull { it.place as? SettingPlace.Row }
-        for (f in FeatureRegistry.all) {
+        // 2.0.0 [RVP-75] (검토 REST-19) Also the features behind a flag (사장님, 결제, 레시피): their way is checked before they are on.
+        for (f in FeatureRegistry.everything) {
             val place = f.route.place
             if (place.isSettings) {
                 val page = place.settingsPage()
@@ -27,9 +28,11 @@ class FeatureGuideTest {
             } else if (place == Place.PAY && f.route.focus != null) {
                 // U 1.32 [UX132-02] The pay screen opens on the tab (and value) a focus names.
                 assertNotNull("${f.id}: ${f.route.focus}", com.bamnat.app.ui.pay.PayFocus.of(f.route.focus))
+            } else if (place == Place.CALENDAR && f.route.focus == "month") {
+                // [RVP-75] A card over the month: the calendar tab, not today's sheet.
             } else if (f.route.focus != null) {
                 assertTrue("${f.id}: ${f.route.focus}", f.route.focus in TOOL_KEYS)
-                assertTrue(f.id, place == Place.STATS || place == Place.MONEY || place == Place.CALENDAR && f.route.focus == "customize")
+                assertTrue(f.id, place == Place.STATS || place == Place.MONEY || place == Place.CALENDAR && f.route.focus in setOf("customize", "typeMonth"))
             }
         }
         // 기능 켜고 끄기 is found and opened from settings too.
@@ -39,7 +42,8 @@ class FeatureGuideTest {
     /** [GUIDE-05] A switch that was there before has its own branch; no feature copies one. */
     @Test
     fun everySwitchHasAHome() {
-        val linked = FeatureRegistry.all.filter { it.off == Off.ELSEWHERE }.map { it.id }.toSet()
+        // Every feature, also one behind a flag that is off here ([FeatureRegistry.everything]): its switch row is there all the same.
+        val linked = FeatureRegistry.everything.filter { it.off == Off.ELSEWHERE }.map { it.id }.toSet()
         assertEquals(linked, FeatureSwitches.LINKED)
         // Each kind of work has something to turn off, and the guide itself can always be turned off.
         for (style in listOf(WorkStyle.SHIFT, WorkStyle.DAY, WorkStyle.HOURLY, WorkStyle.FIELD, WorkStyle.BUSINESS, WorkStyle.INVEST)) {
@@ -67,6 +71,26 @@ class FeatureGuideTest {
         val idea = FeatureSearch.ideaText(" 주식 계좌 ", WorkStyle.HOURLY)
         assertTrue(idea, idea.contains("찾던 기능: 주식 계좌") && idea.contains(WorkStyle.HOURLY.label))
     }
+    /**
+     * 2.0.0 [RVJ-88] 검토 BOSS-68: a 사장님's words find the boss's own tools in 급여 대장, ahead of the 알바's 근로계약서 보관 and 대타,
+     * and an 알바 still finds their own first.
+     */
+    @Test
+    fun aBossFindsTheBossTools() {
+        fun first(q: String, style: WorkStyle) = FeatureSearch.search(q, style, features = FeatureRegistry.everything).firstOrNull()?.id
+        assertEquals("boss.contract", first("근로계약서", WorkStyle.BUSINESS))
+        assertEquals("boss.cover", first("대타", WorkStyle.BUSINESS))
+        assertEquals("boss.filings", first("원천세 신고", WorkStyle.BUSINESS))
+        assertEquals("boss.filings", first("4대보험 신고", WorkStyle.BUSINESS))
+        assertEquals("boss.clock", first("출퇴근 기록", WorkStyle.BUSINESS))
+        assertEquals("hourly.contract", first("근로계약서", WorkStyle.HOURLY))
+        for (id in listOf("boss.contract", "boss.cover", "boss.filings", "boss.clock")) {
+            val f = FeatureRegistry.get(id)!!
+            assertEquals(id, "boss.payroll", f.flag)
+            assertEquals(id, com.bamnat.core.guide.FeatureRoute(Place.STATS, "payroll"), f.route)
+        }
+    }
+
     /** 1.39 8차 PC: '잠' in 설정 찾기 (기능 3개) finds 수면 기록 first for every kind of work, before its parts that start with 잠. */
     @Test
     fun sleepFindsTheSleepLogFirst() {

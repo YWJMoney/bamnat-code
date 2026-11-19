@@ -47,7 +47,8 @@ fun CommunityCareBar(c: AppContainer) {
     if (!c.companyApi.enabled || agreed <= 0) return
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
-    var standing by remember { mutableStateOf(CareStanding()) }
+    // 2.0.0 [RVN-22] I10bc-01: what was read last (the day's digest or the last visit) shows at once; asked again when older.
+    var standing by remember { mutableStateOf(com.bamnat.app.company.CareKept.of(c.companyApi) ?: CareStanding()) }
     var looks by remember { mutableIntStateOf(0) }
     // 이번에 연 동안 한 번만: 닫아도 다음에 마을을 열면 '확인했어요' 전까지 다시 보여요.
     var warningShown by rememberSaveable { mutableStateOf<String?>(null) }
@@ -56,7 +57,9 @@ fun CommunityCareBar(c: AppContainer) {
     var said by remember { mutableStateOf<String?>(null) }
     androidx.lifecycle.compose.LifecycleEventEffect(androidx.lifecycle.Lifecycle.Event.ON_RESUME) { looks++ }
     androidx.compose.runtime.LaunchedEffect(looks) {
-        standing = try { c.companyApi.careStanding(c.companyStore.device) } catch (e: kotlinx.coroutines.CancellationException) { throw e }
+        if (com.bamnat.app.company.CareKept.fresh(c.companyApi)) { standing = com.bamnat.app.company.CareKept.of(c.companyApi) ?: standing; return@LaunchedEffect }
+        standing = try { c.companyApi.careStanding(c.companyStore.device).also { com.bamnat.app.company.CareKept.keep(c.companyApi, it) } }
+            catch (e: kotlinx.coroutines.CancellationException) { throw e }
             catch (e: Exception) { if (com.bamnat.app.BuildConfig.DEBUG) android.util.Log.i("BamnatCare", "standing failed: $e"); return@LaunchedEffect }
         if (com.bamnat.app.BuildConfig.DEBUG) android.util.Log.i("BamnatCare", "standing=$standing")
     }
@@ -71,7 +74,7 @@ fun CommunityCareBar(c: AppContainer) {
                     warningShown = warning.id
                     scope.launch {
                         runCatching { c.companyApi.careSeen(c.companyStore.device, warning.id) }
-                        standing = standing.copy(warning = null)
+                        standing = standing.copy(warning = null).also { com.bamnat.app.company.CareKept.keep(c.companyApi, it) }
                     }
                 }) { Text("확인했어요") }
             },
@@ -139,6 +142,7 @@ fun AppealDialog(c: AppContainer, target: String, answerHours: Int = CommunityCa
     var text by rememberSaveable(target) { mutableStateOf("") }
     var busy by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
+    var cut by remember { mutableStateOf(false) }
     val repost = target.startsWith("post:")
     AlertDialog(
         onDismissRequest = { if (!busy) onDone(null) },
@@ -148,9 +152,13 @@ fun AppealDialog(c: AppContainer, target: String, answerHours: Int = CommunityCa
                 Text(if (repost) "가려진 글을 왜 다시 보여 주면 좋을지 적어 주세요. 운영자가 다시 읽고 ${answerHours}시간 안에 내 문의로 답해요."
                     else "어떤 뜻이었는지, 무엇을 잘못 보았는지 적어 주세요. 운영자가 읽고 ${answerHours}시간 안에 내 문의로 답해요. 받아들이면 바로 풀려요.",
                     style = MaterialTheme.typography.bodyMedium)
-                OutlinedTextField(value = text, onValueChange = { if (it.length <= CommunityCare.APPEAL_MAX) text = it; error = null },
+                // 2.0.0 [RVO-31] PRO-23·U11b-19: a paste longer than the box is cut at the limit and says so, not dropped without a word.
+                OutlinedTextField(value = text, onValueChange = {
+                    CommunityCare.fitAppeal(it).let { (fit, wasCut) -> text = fit; cut = wasCut }
+                    error = null
+                },
                     minLines = 3, maxLines = 8, modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
-                    supportingText = { Text(error ?: "${text.trim().length}/${CommunityCare.APPEAL_MAX} · 이름·연락처는 쓰지 않아요") },
+                    supportingText = { Text(error ?: (if (cut) "붙여 넣은 글이 길어서 ${CommunityCare.APPEAL_MAX}자까지만 넣었어요 · " else "") + "${text.trim().length}/${CommunityCare.APPEAL_MAX} · 이름·연락처는 쓰지 않아요") },
                     isError = error != null)
             }
         },
@@ -170,14 +178,18 @@ fun AppealDialog(c: AppContainer, target: String, answerHours: Int = CommunityCa
     )
 }
 
-/** 1.39 조사 ⑦ 쓰기 전 한마디(다정하게, 막지 않아요). */
+/**
+ * 1.39 조사 ⑦ 쓰기 전 한마디(다정하게, 막지 않아요). 2.0.0 [RVN-13] U10b-07: it says the word it saw in [text], and 그대로 보내기 comes
+ * first (the word may be an everyday one the check still takes), 고치기 beside it.
+ */
 @Composable
-fun NudgeDialog(onEdit: () -> Unit, onSend: () -> Unit) {
+fun NudgeDialog(text: String, onEdit: () -> Unit, onSend: () -> Unit) {
+    val word = androidx.compose.runtime.remember(text) { com.bamnat.core.plaza.PostNudge.found(text) }
     AlertDialog(
         onDismissRequest = onEdit,
         title = { Text(com.bamnat.core.plaza.PostNudge.TITLE) },
-        text = { Text(com.bamnat.core.plaza.PostNudge.TEXT) },
-        confirmButton = { TextButton(onClick = onEdit) { Text(com.bamnat.core.plaza.PostNudge.EDIT) } },
-        dismissButton = { TextButton(onClick = onSend) { Text(com.bamnat.core.plaza.PostNudge.SEND) } },
+        text = { Text(com.bamnat.core.plaza.PostNudge.text(word)) },
+        confirmButton = { TextButton(onClick = onSend) { Text(com.bamnat.core.plaza.PostNudge.SEND) } },
+        dismissButton = { TextButton(onClick = onEdit) { Text(com.bamnat.core.plaza.PostNudge.EDIT) } },
     )
 }

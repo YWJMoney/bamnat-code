@@ -33,8 +33,10 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         WorkplaceEntity::class, StaffEntity::class, StaffWorkEntity::class, StaffPunchEntity::class, PayrollMonthEntity::class, PayrollLineEntity::class,
         // 1.38 [SLEEP-03][SLEEP-07] Version 31: 아침 한 장과 밤 소리.
         SleepCheckEntity::class, SleepEventEntity::class,
+        // 2.0.0 [RVK-46] Version 36: 일감 받은 기록.
+        JobPaymentEntity::class,
     ],
-    version = 33,
+    version = 37,
     exportSchema = true,
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -57,10 +59,15 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun payrollDao(): PayrollDao
 
     companion object {
-        /** [MCAL-01] Each added calendar is a database of its own with the same tables; only its schedule ones are used. */
-        fun create(context: Context, name: String = "bamnat.db"): AppDatabase =
+        /**
+         * [MCAL-01] Each added calendar is a database of its own with the same tables; only its schedule ones are used.
+         * 2.0.0 [RVH-54] [openHelper]: how an added calendar's database reaches its file (CalendarFileDoor in the app), so a removed
+         * calendar's file is never opened again; null for the main database.
+         */
+        fun create(context: Context, name: String = "bamnat.db", openHelper: androidx.sqlite.db.SupportSQLiteOpenHelper.Factory? = null): AppDatabase =
             Room.databaseBuilder(context.applicationContext, AppDatabase::class.java, name)
                 .addMigrations(*MIGRATIONS)
+                .apply { if (openHelper != null) openHelperFactory(openHelper) }
                 .build()
 
         /**
@@ -74,7 +81,8 @@ abstract class AppDatabase : RoomDatabase() {
                 MIGRATION_16_17, MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21,
                 MIGRATION_21_22, MIGRATION_22_23, MIGRATION_23_24, MIGRATION_24_25,
                 MIGRATION_25_26, MIGRATION_26_27, MIGRATION_27_28, MIGRATION_28_29, MIGRATION_29_30,
-                MIGRATION_30_31, MIGRATION_31_32, MIGRATION_32_33,
+                MIGRATION_30_31, MIGRATION_31_32, MIGRATION_32_33, MIGRATION_33_34, MIGRATION_34_35, MIGRATION_35_36,
+                MIGRATION_36_37,
             )
 
         /**
@@ -486,6 +494,81 @@ abstract class AppDatabase : RoomDatabase() {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL("ALTER TABLE `memos` ADD COLUMN `doneAt` INTEGER DEFAULT NULL")
                 db.execSQL("ALTER TABLE `memos` ADD COLUMN `doneDays` TEXT NOT NULL DEFAULT ''")
+            }
+        }
+
+        /**
+         * Version 34 (2.0.0, 총괄이 준 판 하나에 갈래들이 줄을 보태요; 2.0.0의 DB 변경은 모두 이 하나). [RVH-33] 검토 WORK-19 갈래 H: a kind of
+         * day's times before a change made '오늘부터만' ([com.bamnat.core.model.ShiftType.timeHistory]). Every kind of day of version 33 has
+         * none: its times are every day's, as they were. [RVH-44] 하루 두 구간: a kind of day's gap between its parts and a day's own;
+         * [RVH-45] 시간 단위 연차: a day's leave in minutes and where in the day. Only columns added, every row of 33 keeps its meaning
+         * (one part, leave in quarters).
+         */
+        val MIGRATION_33_34 = object : Migration(33, 34) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE `shift_types` ADD COLUMN `timeHistory` TEXT NOT NULL DEFAULT ''")
+                db.execSQL("ALTER TABLE `shift_types` ADD COLUMN `gapStartMinute` INTEGER DEFAULT NULL")
+                db.execSQL("ALTER TABLE `shift_types` ADD COLUMN `gapMinutes` INTEGER NOT NULL DEFAULT 0")
+                db.execSQL("ALTER TABLE `shift_types` ADD COLUMN `gapAlarm` INTEGER NOT NULL DEFAULT 0")
+                db.execSQL("ALTER TABLE `day_entries` ADD COLUMN `customGapStartMinute` INTEGER DEFAULT NULL")
+                db.execSQL("ALTER TABLE `day_entries` ADD COLUMN `customGapMinutes` INTEGER DEFAULT NULL")
+                db.execSQL("ALTER TABLE `day_entries` ADD COLUMN `leaveMinutes` INTEGER DEFAULT NULL")
+                db.execSQL("ALTER TABLE `day_entries` ADD COLUMN `leaveAt` INTEGER DEFAULT NULL")
+            }
+        }
+
+        /**
+         * Version 35 (2.0.0 [RVIB-04] 검토 I07ac-01, 총괄이 준 번호): a memo's schedule may be told by the work ('출근 1시간 전',
+         * '퇴근 30분 뒤'), kept as [com.bamnat.core.memo.WorkAnchor.code]. Only a column added: every memo of 34 keeps its clock time.
+         */
+        val MIGRATION_34_35 = object : Migration(34, 35) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE `memos` ADD COLUMN `remindWork` TEXT DEFAULT NULL")
+            }
+        }
+
+        /**
+         * Version 36 (2.0.0 갈래 K, 총괄이 준 번호) [RVK-46]: 가계부의 판 하나.
+         * - 검토 MONEY-07: a repeating 이체's '어디로' ([FixedCostEntity.toAccountId]); every repeating line of 35 goes nowhere set, as it did.
+         * - 검토 I06aa-05: a budget for one month only ([MoneyBudgetEntity.month], part of the key now). The table is made again, as SQLite
+         *   cannot change a key; every budget of 35 comes over as every month's (0).
+         * - 검토 U06a-15·I06aa-09: a category's icon and color; every category of 35 keeps the usual look.
+         * - 검토 T06a-05·I06ab-03: 줄 돈 ([ReceivableEntity.direction]); every receivable of 35 is money owed to the user (0), as it was.
+         * - 검토 MONEY-29·T06a-01·I06ab-04: a job's payments besides 선금·잔금 (new table `job_payments`); every job of 35 has none.
+         */
+        val MIGRATION_35_36 = object : Migration(35, 36) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE `fixed_costs` ADD COLUMN `toAccountId` INTEGER DEFAULT NULL")
+                db.execSQL("CREATE TABLE IF NOT EXISTS `money_budgets_36` (`category` TEXT NOT NULL, `amount` INTEGER NOT NULL, " +
+                    "`month` INTEGER NOT NULL DEFAULT 0, PRIMARY KEY(`category`, `month`))")
+                db.execSQL("INSERT INTO `money_budgets_36` (`category`, `amount`, `month`) SELECT `category`, `amount`, 0 FROM `money_budgets`")
+                db.execSQL("DROP TABLE `money_budgets`")
+                db.execSQL("ALTER TABLE `money_budgets_36` RENAME TO `money_budgets`")
+                db.execSQL("ALTER TABLE `money_categories` ADD COLUMN `icon` TEXT NOT NULL DEFAULT ''")
+                db.execSQL("ALTER TABLE `money_categories` ADD COLUMN `color` INTEGER NOT NULL DEFAULT 0")
+                db.execSQL("ALTER TABLE `receivables` ADD COLUMN `direction` INTEGER NOT NULL DEFAULT 0")
+                db.execSQL("CREATE TABLE IF NOT EXISTS `job_payments` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `jobId` INTEGER NOT NULL, " +
+                    "`epochDay` INTEGER NOT NULL, `amount` INTEGER NOT NULL, `label` TEXT NOT NULL, `note` TEXT NOT NULL)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_job_payments_jobId` ON `job_payments` (`jobId`)")
+            }
+        }
+
+        /**
+         * Version 37 (2.0.0 갈래 K, 총괄이 준 번호) [RVK-60] 검토 I06ab-01: 분류를 고정 id로. A category keeps a fixed id (`uid`, with what the
+         * sums read it as, 집·일 and its 표준 묶음), and every line, split part and repeating line points at it (`categoryId`, `partIds`); the
+         * names stay as they were, now only what is shown. Every row of 36 gets the id its name stands for ([CategoryIdFill]), so nothing
+         * moves: a built-in name gets its built-in id, any other the id of its name.
+         */
+        val MIGRATION_36_37 = object : Migration(36, 37) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE `money_entries` ADD COLUMN `categoryId` TEXT NOT NULL DEFAULT ''")
+                db.execSQL("ALTER TABLE `money_entries` ADD COLUMN `partIds` TEXT NOT NULL DEFAULT ''")
+                db.execSQL("ALTER TABLE `fixed_costs` ADD COLUMN `categoryId` TEXT NOT NULL DEFAULT ''")
+                db.execSQL("ALTER TABLE `money_categories` ADD COLUMN `uid` TEXT NOT NULL DEFAULT ''")
+                db.execSQL("ALTER TABLE `money_categories` ADD COLUMN `role` TEXT NOT NULL DEFAULT ''")
+                db.execSQL("ALTER TABLE `money_categories` ADD COLUMN `scope` INTEGER NOT NULL DEFAULT 0")
+                db.execSQL("ALTER TABLE `money_categories` ADD COLUMN `std` TEXT NOT NULL DEFAULT ''")
+                CategoryIdFill.fill(db)
             }
         }
 

@@ -147,6 +147,20 @@ class PageCache(
         save()
     }
 
+    /**
+     * 2.0.0 [RVN-09] COMP-43 After 모두 지우기: the company pages read as a member (with their pay ways), the boards and talks
+     * with this phone's own posts in them, and 내 활동 go from the phone too; the next look reads them afresh.
+     */
+    fun forgetMine() {
+        synchronized(lock) {
+            bundles.map.clear()
+            boards.map.clear()
+            talks.map.clear()
+            activities.map.clear()
+        }
+        save()
+    }
+
     /** Whether [k] is newer than [ms]. */
     fun fresh(k: Kept<*>?, ms: Long): Boolean = k != null && now() - k.at in 0 until ms
 
@@ -299,17 +313,22 @@ internal fun Talk.toJson(): JSONObject = JSONObject()
             .put("author", p.author ?: JSONObject.NULL).put("review", p.review).put("answer", p.answer ?: JSONObject.NULL)
             .put("attach", p.attach?.let { (code, title) -> JSONObject().put("code", code).put("title", title)
                 .apply { p.attachLook?.let { l -> runCatching { put("look", JSONObject(l)) } } } } ?: JSONObject.NULL)
-            .put("poll", p.poll?.let { v -> JSONObject().put("options", JSONArray(v.options)).put("counts", JSONArray(v.counts)).put("mine", v.mine ?: JSONObject.NULL) } ?: JSONObject.NULL)
+            .put("poll", p.poll?.let { v -> JSONObject().put("options", JSONArray(v.options)).put("counts", JSONArray(v.counts)).put("mine", v.mine ?: JSONObject.NULL)
+                // 2.0.0 [RVN-22] 검토 COMP-57·U10b-10: what the server's page has is kept too, so the first picture is the same.
+                .put("byForm", JSONArray(v.byForm.map { g -> JSONObject().put("f", g.form?.name ?: JSONObject.NULL).put("counts", JSONArray(g.counts)) })) } ?: JSONObject.NULL)
+            .put("maker", p.maker ?: JSONObject.NULL)
             .put("tag", p.tag?.let { t -> JSONObject(t.fields()).apply { t.months?.let { put("m", it) } } } ?: JSONObject.NULL)
             .put("card", p.card?.let { JSONObject(it.fields()) } ?: JSONObject.NULL)
             .put("first", p.first).put("helped", p.helped).put("mark", p.mark?.key ?: JSONObject.NULL)
     }))
     .put("mutedUntil", mutedUntil?.toString() ?: JSONObject.NULL).put("past", past).put("hiddenByYou", hiddenByYou)
     .apply { leftPosts?.let { put("left", JSONObject().put("posts", it)) } }
-    .apply { limit?.let { put("limit", JSONObject().put("until", it.until.toString()).put("perDay", it.perDay)) } }
+    .apply { limit?.let { put("limit", JSONObject().put("until", it.until.toString()).put("perDay", it.perDay).put("by", it.by ?: "").put("n", it.n)
+        .put("kinds", JSONArray(it.kinds))) } }
     .apply { topic?.let { put("topic", it) } }
-    .put("more", more)
-    .apply { pulse?.let { put("pulse", JSONObject().put("today", it.today).put("waiting", it.waiting).put("working", it.working)) } }
+    .put("more", more).put("older", older)
+    .apply { pulse?.let { put("pulse", JSONObject().put("today", it.today).put("waiting", it.waiting).put("working", it.working)
+        .apply { it.checkin?.let { k -> put("checkin", JSONObject().put("counts", JSONObject(k.counts)).put("mine", k.mine ?: "")) } }) } }
 
 internal fun Board.toJson(): JSONObject = JSONObject().put("next", next ?: JSONObject.NULL)
     .put("items", JSONArray(items.map { i ->

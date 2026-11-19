@@ -1,5 +1,10 @@
 package com.bamnat.app.ui.studio
 
+import com.bamnat.core.recipe.widgetDraws
+import com.bamnat.app.ui.components.scrollEdges
+import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.foundation.shape.ZeroCornerSize
+
 import com.bamnat.app.ui.decor.nextPinned
 import com.bamnat.app.ui.decor.decor
 import androidx.compose.animation.animateContentSize
@@ -49,7 +54,7 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
+import com.bamnat.app.ui.components.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarDuration
@@ -59,7 +64,7 @@ import androidx.compose.material3.SnackbarResult
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.TopAppBar
+import com.bamnat.app.ui.components.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.collectAsState
@@ -72,6 +77,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.graphics.asAndroidBitmap
@@ -87,6 +93,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.isSpecified
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.bamnat.app.appContainer
@@ -143,6 +150,7 @@ import com.bamnat.app.ui.calendar.withPartShown
 import com.bamnat.core.recipe.BlueprintParts
 import androidx.compose.foundation.layout.BoxWithConstraints
 import kotlinx.coroutines.launch
+import androidx.compose.ui.semantics.Role
 
 /** [STU-11] The parts of the app the studio changes, each with the example tab it shows and the tools it has. */
 private enum class Area(val label: String, val target: FreeTarget?, val tab: String) {
@@ -166,7 +174,7 @@ private enum class Area(val label: String, val target: FreeTarget?, val tab: Str
     WIDGET("위젯", null, TabOrder.SETTINGS),
     ALARM("알람 화면", FreeTarget.ALARM, TabOrder.SETTINGS),
     /** 1.38 팀·가게 관리 (리더·사장님): 카드 순서·숨김, 색·배경은 설정 화면과 함께. 기능이 켜진 휴대폰에서만 보여요. */
-    MANAGE("팀·가게 관리", FreeTarget.SETTINGS, TabOrder.SETTINGS),
+    MANAGE(com.bamnat.app.ui.work.MANAGE_NAME, FreeTarget.SETTINGS, TabOrder.SETTINGS),
     // 사용자 2026-11-01 ("스튜디오에 결제 처리방침이 왜 있어"): 결제·처리방침·동의 화면은 꾸미지 않아요 — 늘 앱 기본 모양 ([ScreenSkin]).
     ALL("앱 전체", FreeTarget.ALL, TabOrder.CALENDAR),
     ;
@@ -228,7 +236,7 @@ private enum class Area(val label: String, val target: FreeTarget?, val tab: Str
 
 private enum class Tool(val label: String) {
     CELL("칸 디자인"), PATTERN("패턴"), VIEW("칸 높이·줄"), DAYS("오늘·주말 색"), PHOTO("그림"), COLORS("색·배경"), CARDS("카드 배치"),
-    MEMO_LOOK("메모장 모양"), MONEY_LOOK("가계부 모양"), PAY_LOOK("급여 모양"), TABS("아래 탭"), CORNERS("모서리"), WIDGET("위젯 모양"),
+    MEMO_LOOK("메모장 모양"), MONEY_LOOK("가계부 모양"), PAY_LOOK("급여 모양"), TABS("아래 메뉴"), CORNERS("모서리"), WIDGET("위젯 모양"),
     BOX("보관함"), FEATURE("켜고 고치기"), SEED("한 색"), SHIFT("근무에 따라"),
     /** [BLU-06] 1.36 부품 하나하나 꾸미기. */
     PARTS("부품"),
@@ -395,6 +403,11 @@ fun StudioScreen(vm: StudioViewModel, onBack: () -> Unit, onOpen: (String) -> Un
     val studioFacts = com.bamnat.app.logic.rememberAppDayFacts()
     // PC D10: rules put in from the market (or switched in 설정) while the studio was behind show here too.
     androidx.lifecycle.compose.LifecycleEventEffect(androidx.lifecycle.Lifecycle.Event.ON_RESUME) { vm.syncLogic() }
+    // 2.0.0 [RVS-13] 검토 U09a-13: kept at once when the studio goes behind (홈·화면 끄기·다른 앱), and the draft open is remembered
+    // with the screen, so if Android closes the app meanwhile it opens again by itself instead of only being offered.
+    androidx.lifecycle.compose.LifecycleEventEffect(androidx.lifecycle.Lifecycle.Event.ON_STOP) { vm.keepNow() }
+    var openDraft by rememberSaveable { mutableStateOf(0L) }
+    LaunchedEffect(s.draftId) { if (!vm.cameBack(openDraft)) openDraft = s.draftId }
     val scope = androidx.compose.runtime.rememberCoroutineScope()
     // 1.38 PC 19차 LOW (다시 열면 화면 고르기가 늘 '앱 전체'): with nothing asked for, the studio opens on the screen picked last.
     val studioPrefsEarly = LocalContext.current.let { ctx -> remember { ctx.getSharedPreferences("studio_ui", android.content.Context.MODE_PRIVATE) } }
@@ -417,6 +430,10 @@ fun StudioScreen(vm: StudioViewModel, onBack: () -> Unit, onOpen: (String) -> Un
     var selWhen by rememberSaveable { mutableStateOf<String?>(null) }
     var quick by remember { mutableStateOf<StudioEdit.Quick?>(null) }
     var panel by rememberSaveable { mutableStateOf(false) }
+    // 2.0.0 [RVS-17] HQ-84: with big text (over 130%) the part bar's quick tool and 자세히 are one at a time, so the example keeps its room:
+    // opening 자세히 folds the bar to its one line, and opening a quick tool closes 자세히.
+    val bigText = androidx.compose.ui.platform.LocalDensity.current.fontScale > 1.3f
+    androidx.compose.runtime.LaunchedEffect(panel, bigText) { if (panel && bigText) quick = null }
     var panelMode by rememberSaveable { mutableStateOf(PanelMode.TOOL) }
     // PC 확인 1.37 A18 MED-1: the 판's size is kept across restarts (with the folded rows, a device-only choice).
     val (panelBig, setPanelBig) = com.bamnat.app.ui.components.rememberFold("studio.panel.big")
@@ -455,7 +472,7 @@ fun StudioScreen(vm: StudioViewModel, onBack: () -> Unit, onOpen: (String) -> Un
     var inkAsk by remember { mutableStateOf<(() -> Unit)?>(null) }
     // 1.36 [GRW-01] 원하는 꾸미기가 없을 때 스튜디오를 떠나지 않고 그 자리에서 부탁해요.
     var wish by remember { mutableStateOf(false) }
-    val snack = remember { SnackbarHostState() }
+    val snack = com.bamnat.app.ui.components.AppSnack.rememberLane()
     val resumable by vm.resumable.collectAsStateWithLifecycle()
     var resumeShut by rememberSaveable { mutableStateOf(false) }
     var feelOpen by remember { mutableStateOf(false) }
@@ -485,6 +502,7 @@ fun StudioScreen(vm: StudioViewModel, onBack: () -> Unit, onOpen: (String) -> Un
     var seeDark by rememberSaveable { mutableStateOf(false) }
     var seeBig by rememberSaveable { mutableStateOf(false) }
     var seeCvd by rememberSaveable { mutableStateOf(false) }
+    var seeWide by rememberSaveable { mutableStateOf(false) }
 
     val d = s.draft
     val looks = remember(d.screenLooks) { ScreenLooks.decode(d.screenLooks) }
@@ -563,7 +581,9 @@ fun StudioScreen(vm: StudioViewModel, onBack: () -> Unit, onOpen: (String) -> Un
     // Ask first when the draft has things the phone does not.
     fun guarded(then: () -> Unit) { if (s.changed) startAsk = then else then() }
     // [STU-12] 조합 자동 점검 before it goes anywhere.
-    fun checked(then: () -> Unit) { if (vm.hardToRead().isNotEmpty()) inkAsk = then else then() }
+    // 2.0.0 [RVS-06] STU-11: read on the screen as it is now (a dark phone, or the example turned dark), as the screen skin draws it.
+    val inkDark = seeDark || MaterialTheme.colorScheme.background.luminance() < 0.5f
+    fun checked(then: () -> Unit) { if (vm.hardToRead(inkDark).isNotEmpty()) inkAsk = then else then() }
 
     LaunchedEffect(s.said) {
         val said = s.said ?: return@LaunchedEffect
@@ -585,28 +605,57 @@ fun StudioScreen(vm: StudioViewModel, onBack: () -> Unit, onOpen: (String) -> Un
     // 1.36 U3: saved or sent since the last change, it leaves without asking.
     androidx.activity.compose.BackHandler(enabled = s.changed && !s.kept) { leaving = true }
 
+    // 2.0.0 [RVS-18] 검토 SI-04: 작품 크기·호환, said on the bar's first line (스튜디오 · 크기 3% · 모든 판) and in the chip.
+    val fit = rememberWorkFit(vm, s)
+    var fitOpen by rememberSaveable { mutableStateOf(false) }
+    if (fitOpen) WorkFitDialog(fit) { fitOpen = false }
     // [STU-40] 내 색 모음 lives in the settings (kept across studios and in the backup).
     val pinned by vm.myColors.collectAsStateWithLifecycle()
     CompositionLocalProvider(LocalColorMemory provides ColorMemory(s.recent, vm::usedColor, pinned, vm::pinColor)) {
         val foldHost = remember { com.bamnat.app.ui.components.FoldHost() }
         CompositionLocalProvider(com.bamnat.app.ui.components.LocalFoldHost provides foldHost) {
         Scaffold(
-            snackbarHost = { SnackbarHost(snack) },
+            snackbarHost = { com.bamnat.app.ui.components.AppSnackHost() },
             topBar = {
+                // PC 확인 W7 1.36: nothing changed (되돌리기 to the end), or back on the start's own 느낌, and it goes.
+                val feelLine = vm.feelNow?.takeIf { it.first == s.origin.title && s.changed &&
+                    vm.feelStart?.takeIf { f -> f.first == s.origin.title }?.second?.label != it.second }
+                // 2.0.0 [RVS-16] (총괄 #495 사진, 조건 12: 글자 200%에서 제목 ‘지금 …’의 아래가 잘렸어요) The bar is as tall as its lines at this
+                // text size (스튜디오 · the start's name · 지금: …): the app's one top bar grows to its title ([RVP-85] HQ-53).
                 TopAppBar(
                     navigationIcon = { IconButton(onClick = { if (s.changed && !s.kept) leaving = true else onBack() }) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "뒤로") } },
                     title = {
                         var menu by remember { mutableStateOf(false) }
                         Column(Modifier.clickable(onClickLabel = "시작할 모양 바꾸기") { menu = true }) {
-                            Text("스튜디오", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
                             Row(verticalAlignment = Alignment.CenterVertically) {
-                                Text(s.origin.title, style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                                Text("스튜디오", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
+                                // 2.0.0 [RVS-18] SI-04: what a maker should know before 올리기, in a few words beside 스튜디오: the oldest app that
+                                // opens the work when that is not every app, and 크기 when it nears the limit. Nothing while all is well (조건 4);
+                                // the chip on the top line says it always.
+                                // Where the bar is too narrow for all of it (글자 200%, 접은 폭) it stays off rather than cut; the chip has it.
+                                val width = androidx.compose.ui.platform.LocalConfiguration.current.screenWidthDp
+                                val scale = androidx.compose.ui.platform.LocalDensity.current.fontScale
+                                var fitRoom by remember(width, scale) { mutableStateOf(true) }
+                                val fitWords = fit?.let { (z, need) ->
+                                    listOfNotNull(need.chip.takeIf { !need.everyApp }, "크기 ${z.percent}%".takeIf { z.near || z.over })
+                                        .takeIf { it.isNotEmpty() }?.joinToString(" · ")
+                                }
+                                fitWords?.takeIf { fitRoom }?.let { words ->
+                                    Text(" · $words", style = MaterialTheme.typography.labelMedium,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, softWrap = false,
+                                        onTextLayout = { if (it.hasVisualOverflow) fitRoom = false },
+                                        modifier = Modifier.weight(1f, fill = false))
+                                }
+                            }
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                // 2.0.0 [RVS-21] (총괄 #520 사진, 조건 12: 글자 200%·접은 폭에서 '지금 …'으로 잘림) With big text the name takes two
+                                // lines (the bar grows to them, RVS-16) rather than two letters and '…'.
+                                val bigText = androidx.compose.ui.platform.LocalDensity.current.fontScale >= 1.5f
+                                Text(s.origin.title, style = MaterialTheme.typography.titleMedium, maxLines = if (bigText) 2 else 1, overflow = TextOverflow.Ellipsis,
                                     modifier = Modifier.weight(1f, fill = false))
                                 Icon(Icons.Filled.ArrowDropDown, null)
                             }
-                            // PC 확인 W7 1.36: nothing changed (되돌리기 to the end), or back on the start's own 느낌, and it goes.
-                            vm.feelNow?.takeIf { it.first == s.origin.title && s.changed &&
-                                vm.feelStart?.takeIf { f -> f.first == s.origin.title }?.second?.label != it.second }?.let {
+                            feelLine?.let {
                                 Text("지금: ${it.second}", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                             }
                         }
@@ -654,20 +703,51 @@ fun StudioScreen(vm: StudioViewModel, onBack: () -> Unit, onOpen: (String) -> Un
                 Surface(tonalElevation = 3.dp) {
                     Column(Modifier.fillMaxWidth().navigationBarsPadding().imePadding().padding(horizontal = 12.dp, vertical = 8.dp),
                         verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                        Row(Modifier.fillMaxWidth().clickable(enabled = diff > 0 || s.extras.isNotEmpty(), onClickLabel = "바꾼 곳 보기") { changes = true },
+                        // 2.0.0 [RVS-07] 작품 크기 (검토 SD-04 ①③·SN-08·SI-04): from 80% of what 올리기 takes it says so, and past it which pieces
+                        // to take out first, before 올리기 fails; nothing while it is small. Worked out off the main thread (STU-28).
+                        val size by androidx.compose.runtime.produceState<Pair<com.bamnat.core.recipe.WorkSize.Of, String?>?>(null, s.pieces, s.extras) {
+                            value = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) {
+                                val z = vm.size(s)
+                                z to (if (z.over) com.bamnat.core.recipe.WorkSize.takeOutLine(vm.takeOut(s)) else null)
+                            }
+                        }
+                        size?.takeIf { it.first.near || it.first.over }?.let { (z, out) ->
+                            com.bamnat.app.ui.components.ToneLine(
+                                if (z.over) listOfNotNull(z.overLine, out).joinToString(" · ")
+                                else "작품 크기 ${z.line} · 장터에 올릴 수 있는 만큼에 가까워요",
+                                style = MaterialTheme.typography.labelMedium)
+                        }
+                        // 2.0.0 [RVS-14] 첫 줄 먼저 (총괄 HQ-56, 조건 1): a 달력 머리·요일 줄 that pushes the month's first row down past what the app
+                        // keeps says so here, beside 작품 크기, and that it is drawn smaller; tapping it opens 달력 머리 in 부품.
+                        val push by androidx.compose.runtime.produceState(0, d.parts) {
+                            value = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) {
+                                runCatching { com.bamnat.core.recipe.Blueprint.decode(d.parts).abovePush() }.getOrDefault(0)
+                            }
+                        }
+                        // 2.0.0 [RVS-17] HQ-84: with big text and 자세히 open, this bar keeps to its buttons (the status in one line only when it
+                        // has a button of its own), so the example is not squeezed between the panel and the bar; 자세히 says the same inside.
+                        val roomy = !(bigText && panel)
+                        if (roomy && push > com.bamnat.core.recipe.PartFloor.ABOVE_DP) com.bamnat.app.ui.components.ToneLine(
+                            "달력 머리·요일 줄이 첫 줄을 ${push}dp 내려요 · 달력이 먼저 보이게 ${com.bamnat.core.recipe.PartFloor.ABOVE_DP}dp까지만 줄여 그려요",
+                            style = MaterialTheme.typography.labelMedium, tone = com.bamnat.app.ui.theme.Tone.Plain, onClick = { selectPart("cal.head"); openPanel(PanelMode.PART) })
+                        if (roomy || s.layered.isNotEmpty() || s.keptWear) Row(Modifier.fillMaxWidth().clickable(enabled = diff > 0 || s.extras.isNotEmpty(), onClickLabel = "바꾼 곳 보기") { changes = true },
                             verticalAlignment = Alignment.CenterVertically) {
                             Text(when {
                                 s.wornNow && diff == 0 -> "✓ 지금 내 앱에 입힌 모양이에요. 더 고치면 다시 입혀요"
                                 // 마을 PC 제안 1.36 (처음 모양으로 열려도 무엇을 하는 곳인지 말이 없음): a start in this kind of work's words.
                                 diff == 0 && s.origin is StudioViewModel.Origin.Plain && s.extras.isEmpty() ->
-                                    "${vm.style?.let { com.bamnat.core.recipe.RecipeDescribe.short(it) + " " }.orEmpty()}첫 작품을 만들어요 · ‘한 색’에서 색 하나부터 골라 보세요"
+                                    // 2.0.0 [RVS-06] 검토 SX-01: the promise the floors keep, said where a maker starts (조건 16).
+                                    "${vm.style?.let { com.bamnat.core.recipe.RecipeDescribe.short(it) + " " }.orEmpty()}첫 작품을 만들어요 · 마음껏 꾸며도 글자는 읽히고 누르는 곳은 그대로예요"
                                 diff == 0 -> "바꾼 곳 없음 · 입히기 전까지 내 앱은 그대로예요"
                                 else -> "바꾼 곳 ${maxOf(changedCount, 1)}곳 · 입히기 전까지 내 앱은 그대로예요"
                             } + (if (s.extras.isNotEmpty()) " · 기능 ${s.extras.size}개" else "") + (s.sources.values.distinct().takeIf { it.isNotEmpty() }?.let { v -> " · " + v.joinToString("·") { "‘$it’" } + " 조각 사용" } ?: ""),
-                                style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.weight(1f))
+                                style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.weight(1f),
+                                maxLines = if (roomy) Int.MAX_VALUE else 1, overflow = TextOverflow.Ellipsis)
                             if (diff > 0 || s.extras.isNotEmpty()) Text("보기 ›", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
                             // PC 13차 사용성 제안 (얹은 뒤 '…조각 사용'만 있고 빼는 곳이 안 보임): the last one laid on, taken off right here.
                             s.layered.lastOrNull()?.let { k -> TextButton(onClick = { vm.unlayer(k) }, modifier = Modifier.heightIn(min = 48.dp)) { Text("얹은 것 빼기") } }
+                            // [RVM-17] PC-57: the calendar's band went after a moment; going back to the look from before stays here.
+                            if (s.keptWear && s.layered.isEmpty()) TextButton(onClick = { vm.undoWear() }, modifier = Modifier.heightIn(min = 48.dp)) { Text("입히기 전으로") }
                             if (plainStart && !(area == Area.ALL && tool == Tool.SEED)) TextButton(onClick = { openSeed() }) { Text("한 색 열기") }
                         }
                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -712,7 +792,7 @@ fun StudioScreen(vm: StudioViewModel, onBack: () -> Unit, onOpen: (String) -> Un
                 val cardPick = StudioEdit.card(sel)
                 if (sel != null && cardPick == null) PartBar(sel!!, d.parts, selOn, selWhen,
                     onSel = { selectPart(it) }, onOn = { o, w -> selOn = o; selWhen = w },
-                    quick = quick, onQuick = { quick = it },
+                    quick = quick, onQuick = { quick = it; if (it != null && bigText) panel = false },
                     set = { label, kv -> setPart(label, kv) },
                     onMore = { openPanel(PanelMode.PART) },
                     onCondition = { condFirst = true; condAsk++; openPanel(PanelMode.PART) })
@@ -731,7 +811,7 @@ fun StudioScreen(vm: StudioViewModel, onBack: () -> Unit, onOpen: (String) -> Un
                         Box {
                             var open by remember { mutableStateOf(false) }
                             val hold = com.bamnat.app.ui.components.LocalFoldHold.current
-                            FilterChip(selected = true, onClick = { hold(); open = true }, label = { Text("화면: ${area.labelFor(vm.style)} ▾") })
+                            FilterChip(selected = true, onClick = { hold(); open = true }, label = { Text("화면: ${area.labelFor(vm.style)}\u00A0▾") })
                             DropdownMenu(open, { open = false }) {
                                 // PC 확인 8d0cddf6 (투자 스튜디오에 '급여' 칩): 급여 has no place for 자영업·투자, as on their bottom tabs.
                                 val manageOn = com.bamnat.app.ui.work.rememberManageOn()
@@ -746,6 +826,8 @@ fun StudioScreen(vm: StudioViewModel, onBack: () -> Unit, onOpen: (String) -> Un
                             }
                         }
                         FilterChip(selected = detail, onClick = { if (!area.detailOnly) detail = !detail }, label = { Text("자세히") })
+                        // 2.0.0 [RVS-18] 검토 SI-04: 작품 크기·호환 in one chip, while the work is made.
+                        WorkFitChip(fit) { fitOpen = true }
                         // PC 확인 L2·L4: the locked screens; a tap shows that screen and says where to unlock it.
                         vm.locked.forEach { tab ->
                             androidx.compose.material3.AssistChip(onClick = { pick(Area.of(tab)); detail = true
@@ -759,7 +841,7 @@ fun StudioScreen(vm: StudioViewModel, onBack: () -> Unit, onOpen: (String) -> Un
                         }
                         Box(Modifier.size(1.dp, 24.dp).background(MaterialTheme.colorScheme.outlineVariant))
                         // [STU-36] 어두운 화면·큰 글자·색약 눈으로 보기.
-                        ConditionChips(seeDark, seeBig, seeCvd, { seeDark = it }, { seeBig = it }, { seeCvd = it })
+                        ConditionChips(seeDark, seeBig, seeCvd, { seeDark = it }, { seeBig = it }, { seeCvd = it }, seeWide, { seeWide = it })
                     }
                     com.bamnat.app.ui.components.FoldRow("studio.tools", what = "도구 줄", over = true) {
                         // [CNV-07] 숨긴 카드 다시 넣기 (빈 판에서 카드 넣기도 여기서).
@@ -778,7 +860,7 @@ fun StudioScreen(vm: StudioViewModel, onBack: () -> Unit, onOpen: (String) -> Un
                         if (area != Area.ALL) Box {
                             var open by remember { mutableStateOf(false) }
                             val hold = com.bamnat.app.ui.components.LocalFoldHold.current
-                            FilterChip(selected = false, onClick = { hold(); open = true }, label = { Text("앱 전체 ▾") })
+                            FilterChip(selected = false, onClick = { hold(); open = true }, label = { Text("앱 전체\u00A0▾") })
                             DropdownMenu(open, { open = false }) {
                                 Area.ALL.tools.filter { it != Tool.SHIFT || shiftModes(vm.style).isNotEmpty() }.forEach { t ->
                                     DropdownMenuItem({ Text(t.label) }, onClick = { open = false; openTool(Area.ALL, t) })
@@ -796,8 +878,13 @@ fun StudioScreen(vm: StudioViewModel, onBack: () -> Unit, onOpen: (String) -> Un
                 BoxWithConstraints(Modifier.fillMaxWidth().weight(1f)) {
                 val featurePanel = panel && panelMode == PanelMode.TOOL && tool == Tool.FEATURE
                 val big = if (featurePanel) !featureSmall else panelBig
+                // 2.0.0 [RVS-17] 총괄 HQ-84 (접은 폭 200%에서 부품 막대와 '자세히'가 함께 열리면 예시가 화면의 6%): the example keeps at least
+                // a third of the phone's screen above the panel (over 30% with the bar's edge) at big text, and the panel scrolls inside;
+                // '크게' is still the person's choice to give the panel the room.
+                val screenH = androidx.compose.ui.platform.LocalConfiguration.current.screenHeightDp.dp
+                val keep = if (bigText && !big) maxOf(96.dp, screenH * 0.35f) else 96.dp
                 val panelH = (if (featurePanel && big) maxHeight - 96.dp else totalH * (if (big) 0.66f else 0.42f))
-                    .coerceAtMost(maxHeight - 96.dp).coerceAtLeast(160.dp)
+                    .coerceAtMost(maxHeight - keep).coerceAtLeast(160.dp)
                 val coverPx = with(androidx.compose.ui.platform.LocalDensity.current) { if (panel) panelH.toPx() else 0f }
                 androidx.compose.runtime.SideEffect { zoom.cover = coverPx }
                 // [CNV-04] A part picked while the 판 is open (or the 판 opened over one) is brought into the part left in view.
@@ -806,14 +893,15 @@ fun StudioScreen(vm: StudioViewModel, onBack: () -> Unit, onOpen: (String) -> Un
                 LaunchedEffect(quick) { if (quick != null) { kotlinx.coroutines.delay(180); sel?.let { id -> spots.boxes(id).firstOrNull()?.let { zoom.reveal(it) } } } }
                 Column(Modifier.fillMaxSize()) {
                 Box(Modifier.fillMaxWidth().weight(1f).background(MaterialTheme.colorScheme.surfaceContainerLowest)) {
-                    ZoomCanvas(zoom, Modifier.fillMaxSize(), picking = Modifier
+                    ZoomCanvas(zoom, Modifier.fillMaxSize(), width = if (seeWide) WIDE_W else CANVAS_W, picking = Modifier
                         .holdToPeek(enabled = s.prevPieces != null) { peeking = it; if (!it) peekMarks = 0 }
                         .partPicking(if (spotsOn) spots else null, sel) { id -> selectPart(id) }, onEmptyTap = { if (sel != null) selectPart(null) }) {
                         Box(Modifier.fillMaxSize()
                             // [STU-41] What the example shows is kept as a picture, for 올리기's 표지.
                             .drawWithContent { shotLayer.record { this@drawWithContent.drawContent() }; drawLayer(shotLayer) }) {
                         CompositionLocalProvider(com.bamnat.app.ui.recipe.LocalMockPick provides ::picked,
-                            com.bamnat.app.ui.parts.LocalPartSpots provides (if (spotsOn) spots else null), LocalRealLook provides !shotExample) {
+                            com.bamnat.app.ui.parts.LocalPartSpots provides (if (spotsOn) spots else null), LocalRealLook provides !shotExample,
+                            com.bamnat.app.ui.recipe.LocalMockWide provides seeWide) {
                         Conditioned(seeDark, seeBig, seeCvd, c.settingsRepository.current.accentColor) {
                         if (!detail && !area.detailOnly) {
                             // [TRY-04] 누르고 있으면 전 모양 too: in the draft's places, so only the looks change under the finger.
@@ -827,8 +915,8 @@ fun StudioScreen(vm: StudioViewModel, onBack: () -> Unit, onOpen: (String) -> Un
                             else ScaledPhone(shown, vm.style, area.tab, { pick(Area.of(it)) }, 1f, onPick = { picked("colors") })
                         } else {
                             val sl = if (comparing) remember(s.base.screenLooks) { ScreenLooks.decode(s.base.screenLooks) } else looks
-                            Box(Modifier.fillMaxSize().clip(RoundedCornerShape(12.dp)).background(MaterialTheme.colorScheme.surface)
-                                .border(1.dp, MaterialTheme.colorScheme.outlineVariant, RoundedCornerShape(12.dp)).verticalScroll(rememberScrollState())) {
+                            Box(Modifier.fillMaxSize().clip(MaterialTheme.shapes.medium).background(MaterialTheme.colorScheme.surface)
+                                .border(1.dp, MaterialTheme.colorScheme.outlineVariant, MaterialTheme.shapes.medium).verticalScroll(rememberScrollState())) {
                                 CompositionLocalProvider(
                                     LocalScreenLooks provides sl,
                                     com.bamnat.app.ui.calendar.LocalCalendarView provides view,
@@ -836,8 +924,11 @@ fun StudioScreen(vm: StudioViewModel, onBack: () -> Unit, onOpen: (String) -> Un
                                     LocalMoneyLook provides moneyLook,
                                     com.bamnat.app.ui.theme.LocalPayLooks provides payLooks,
                                     // [BLU-06] the draft's parts in 자세히 too.
-                                    com.bamnat.app.ui.parts.LocalBlueprint provides (MaterialTheme.colorScheme.background.luminance() < 0.5f).let { dark ->
-                                        remember(d.parts, dark) { com.bamnat.core.recipe.Blueprint.decode(d.parts).forDark(dark) } },
+                                    // 2.0.0 [RVS-06] SD-02: with the floors the phone keeps, as the example above.
+                                    com.bamnat.app.ui.parts.LocalBlueprint provides MaterialTheme.colorScheme.background.let { ground ->
+                                        val dark = ground.luminance() < 0.5f
+                                        val screen = ground.toArgb().toLong() and 0xFFFFFFFFL
+                                        remember(d.parts, dark, screen) { com.bamnat.core.recipe.Blueprint.decode(d.parts).forDark(dark).floored(screen) } },
                                     com.bamnat.app.ui.decor.LocalDecor provides decor,
                                     com.bamnat.app.ui.parts.LocalBlueprintRaw provides remember(d.parts) { com.bamnat.core.recipe.Blueprint.decode(d.parts) },
                                     // [RUL-02] the phone's own days, so 조건부 꾸미기 shows on the weeks below.
@@ -873,10 +964,14 @@ fun StudioScreen(vm: StudioViewModel, onBack: () -> Unit, onOpen: (String) -> Un
                         }
                     }
                     // PC 확인 1.37 A18: over a 판 opened big the hint would hide the strip of example left.
-                    if (sel == null && !hintSeen && !(panel && big)) PickHint(Modifier.align(Alignment.TopCenter).padding(top = 8.dp))
+                    // 2.0.0 HQ-139 (총괄 #520 사진, 조건 9·12): the hint keeps clear of the 배율 chip folded beside it at the top (its end was
+                    // under '🔍 105%'); it wraps onto a second line where the two do not fit side by side.
+                    var zoomChipW by remember { mutableStateOf(0) }
+                    val zoomRoom = with(androidx.compose.ui.platform.LocalDensity.current) { if (zoom.controlsOpen) 0.dp else zoomChipW.toDp() + 8.dp }
+                    if (sel == null && !hintSeen && !(panel && big)) PickHint(Modifier.align(Alignment.TopStart).padding(top = 8.dp, start = 8.dp, end = 4.dp + zoomRoom))
                     ZoomControls(zoom, onFocus = sel?.let { id -> { spots.boxes(id).firstOrNull()?.let { zoom.focus(it) }; Unit } },
                         modifier = (if (zoom.controlsOpen) Modifier.align(Alignment.BottomEnd).padding(end = 8.dp, bottom = 8.dp + if (panel) panelH else 0.dp)
-                            else Modifier.align(Alignment.TopEnd).padding(top = 4.dp, end = 4.dp)))
+                            else Modifier.align(Alignment.TopEnd).padding(top = 4.dp, end = 4.dp).onSizeChanged { zoomChipW = it.width }))
                 }
                 // Lines about the example, under it.
                 Column(Modifier.fillMaxWidth().padding(horizontal = 12.dp).animateContentSize()) {
@@ -896,11 +991,11 @@ fun StudioScreen(vm: StudioViewModel, onBack: () -> Unit, onOpen: (String) -> Un
                             if (!(panel && area == Area.ALL && tool == Tool.SEED)) TextButton(onClick = { openSeed() }) { Text("한 색 열기") }
                         }
                     // [STU-36] With a condition on, what does not read is said under the example.
-                    if (seeDark || seeBig || seeCvd) vm.hardToRead().takeIf { it.isNotEmpty() }?.let { bad ->
+                    if (seeDark || seeBig || seeCvd) vm.hardToRead(inkDark).takeIf { it.isNotEmpty() }?.let { bad ->
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Text("글자가 잘 안 보일 수 있는 화면 ${bad.size}곳", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.error,
                                 modifier = Modifier.weight(1f))
-                            TextButton(onClick = { vm.fixInk() }) { Text("글자색 고치기") }
+                            TextButton(onClick = { vm.fixInk(inkDark) }) { Text("글자색 고치기") }
                         }
                     }
                     if (comparing) Text("고치기 전 모양이에요", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary,
@@ -915,7 +1010,7 @@ fun StudioScreen(vm: StudioViewModel, onBack: () -> Unit, onOpen: (String) -> Un
                 // PC 확인 1.37 A10 (첫 색을 고르는 순간 띠가 사라져 예시가 커지고 다음 누름이 엉뚱한 색으로): the band goes when a part or a 판 is picked,
                 // before the first change, so nothing moves between picks.
                 resumable?.takeIf { !resumeShut && vm.startArea == null && it.updatedAt != shutAt && s.past.isEmpty() && s.draftId == 0L && sel == null && !panel }?.let { r ->
-                    Surface(color = MaterialTheme.colorScheme.secondaryContainer, shape = RoundedCornerShape(12.dp),
+                    Surface(color = MaterialTheme.colorScheme.secondaryContainer, shape = MaterialTheme.shapes.medium,
                         modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp)) {
                         Row(Modifier.padding(start = 12.dp), verticalAlignment = Alignment.CenterVertically) {
                             Text(draftName(r.body).let { n -> "만들던 ‘$n’${com.bamnat.app.ui.Fmt.iga("$n’")} 남아 있어요" } + " · ${ago(r.updatedAt)}",
@@ -928,7 +1023,7 @@ fun StudioScreen(vm: StudioViewModel, onBack: () -> Unit, onOpen: (String) -> Un
                 }
                 }
                 // [CNV-04] 더 보기 판 (PC 확인 1.37 A1: 크게 열면 캔버스가 줄었어요): over the canvas, which keeps its size; the picked part is moved into the part left in view.
-                if (panel) Surface(tonalElevation = 2.dp, shadowElevation = 6.dp, shape = RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp),
+                if (panel) Surface(tonalElevation = 2.dp, shadowElevation = 6.dp, shape = MaterialTheme.shapes.large.copy(bottomStart = ZeroCornerSize, bottomEnd = ZeroCornerSize),
                     modifier = Modifier.fillMaxWidth().height(panelH).align(Alignment.BottomCenter)) {
                     Column(Modifier.fillMaxSize()) {
                         val t = if (tool in area.tools) tool else area.tools.first()
@@ -944,7 +1039,9 @@ fun StudioScreen(vm: StudioViewModel, onBack: () -> Unit, onOpen: (String) -> Un
                             TextButton(onClick = { panel = false }, modifier = Modifier.heightIn(min = 48.dp)) { Text("닫기") }
                         }
                         HorizontalDivider()
-                        Column(Modifier.fillMaxWidth().weight(1f).verticalScroll(rememberScrollState()).padding(horizontal = 16.dp, vertical = 10.dp),
+                        // 2.0.0 [RVS-17] 총괄 #520 사진(200% 접은 폭, 맨 아래 줄이 판 끝에서 반쯤 잘림): the shared 'more below' line while it scrolls on.
+                        val panelScroll = rememberScrollState()
+                        Column(Modifier.fillMaxWidth().weight(1f).scrollEdges(panelScroll).verticalScroll(panelScroll).padding(horizontal = 16.dp, vertical = 10.dp),
                             verticalArrangement = Arrangement.spacedBy(10.dp)) {
                             when (panelMode) {
                                 PanelMode.CARDS -> {
@@ -978,7 +1075,7 @@ fun StudioScreen(vm: StudioViewModel, onBack: () -> Unit, onOpen: (String) -> Un
                                     OutlinedTextField(frameName, { frameName = it.take(24) }, label = { Text("틀 이름") }, singleLine = true,
                                         placeholder = { Text("내 틀") }, modifier = Modifier.fillMaxWidth())
                                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                        androidx.compose.material3.Button(onClick = { vm.keepFrame(frameName) }, modifier = Modifier.heightIn(min = 48.dp)) { Text("내 틀로 담기") }
+                                        com.bamnat.app.ui.components.Button(onClick = { vm.keepFrame(frameName) }, modifier = Modifier.heightIn(min = 48.dp)) { Text("내 틀로 담기") }
                                         if (onMarket != null) OutlinedButton(onClick = {
                                             val body = vm.frameBody(frameName)
                                             if (body == null) openedLine = "아직 옮기거나 숨긴 카드가 없어 올릴 틀이 없어요"
@@ -993,7 +1090,7 @@ fun StudioScreen(vm: StudioViewModel, onBack: () -> Unit, onOpen: (String) -> Un
                                     val bp = remember(d.parts) { com.bamnat.core.recipe.Blueprint.decode(d.parts) }
                                     Text("이름을 누르면 화면에서 그 부품을 골라요. ●는 꾸민 부품이에요", style = MaterialTheme.typography.bodySmall,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant)
-                                    LayerTree(treeRows(partIds, bp, decor, if (Tool.DECOR in area.tools) area.decorPlaces else emptyList()),
+                                    LayerTree(treeRows(partIds, bp, decor, if (Tool.DECOR in area.tools) area.decorPlaces else emptyList(), vm.style),
                                         onPart = { p -> selectPart(p) },
                                         onDecor = { i -> decorFocus = i; openTool(area.takeIf { Tool.DECOR in it.tools } ?: Area.CALENDAR, Tool.DECOR) })
                                 }
@@ -1012,7 +1109,7 @@ fun StudioScreen(vm: StudioViewModel, onBack: () -> Unit, onOpen: (String) -> Un
                                     fun saveView(v: CalendarView) = vm.change { with(CalendarViewSettings) { it.withView(v) } }
                                     when (t) {
                                         Tool.CELL -> CellDesigner(view, lookIndex, { lookIndex = it }, ::saveView)
-                                        Tool.PATTERN -> PatternEditor(view, ::saveView)
+                                        Tool.PATTERN -> PatternEditor(view, calendarRoles(), ::saveView)
                                         Tool.VIEW -> com.bamnat.app.ui.calendar.CalendarViewEditor(view, ::saveView, sample = {})
                                         Tool.DAYS -> com.bamnat.app.ui.settings.CalendarThemeRows(d.calTheme) { v -> vm.change { it.copy(calTheme = v) } }
                                         Tool.PHOTO -> com.bamnat.app.ui.settings.PhotoLookRows(d.photoLook) { v -> vm.change { it.copy(photoLook = v) } }
@@ -1108,15 +1205,17 @@ fun StudioScreen(vm: StudioViewModel, onBack: () -> Unit, onOpen: (String) -> Un
 
     if (wish) StudioWish(where = "${area.label} › ${tool.label}", style = vm.style, onDismiss = { wish = false }) { sent ->
         wish = false
+        // 2.0.0 [RVQ-29] 검토 SVC-17·T22-07: 'N명' counts different people (one internet connection is one), and once enough have
+        // asked the operator words it shortly before it goes up to 장터 '만들어 주세요' (it no longer goes up by itself).
         val gathered = sent?.takeIf { it.studioGoal > 0 }?.let { q ->
-            if (q.studioAskers >= q.studioGoal) "같은 부탁이 ${q.studioAskers}명 모였어요. 장터 '만들어 주세요'에 올라가요"
-            else "같은 부탁 ${q.studioAskers}/${q.studioGoal}명 모였어요. ${q.studioGoal}명이 되면 장터 '만들어 주세요'에 올라가고, 모이지 않아도 운영자가 함께 봐요"
+            if (q.studioAskers >= q.studioGoal) "같은 부탁이 ${q.studioAskers}명 모였어요. 운영자가 짧게 다듬어 장터 '만들어 주세요'에 올려요"
+            else "같은 부탁 ${q.studioAskers}/${q.studioGoal}명 모였어요. ${q.studioGoal}명이 되면 운영자가 다듬어 장터 '만들어 주세요'에 올리고, 모이지 않아도 운영자가 함께 봐요"
         }
         scope.launch {
             snack.showSnackbar(when {
-                sent == null -> "보내지 못했어요. 인터넷을 확인하고 다시 눌러 주세요"
+                sent == null -> "보내지 못했어요. " + com.bamnat.app.ui.components.NetWords.BUSY
                 gathered != null -> "보냈어요. $gathered. 풀리면 알림과 '내 문의'로 알려 드려요"
-                else -> "보냈어요. 같은 부탁이 모이면 장터 '만들어 주세요'에 올라가고, 풀리면 알려 드려요"
+                else -> "보냈어요. 같은 부탁이 모이면 운영자가 다듬어 장터 '만들어 주세요'에 올리고, 풀리면 알려 드려요"
             })
         }
     }
@@ -1132,7 +1231,7 @@ fun StudioScreen(vm: StudioViewModel, onBack: () -> Unit, onOpen: (String) -> Un
                     Text("내 앱에 입히고 나가기")
                 }
                 TextButton(onClick = { leaving = false; saving = true }, modifier = Modifier.heightIn(min = 48.dp)) { Text("내 테마로 저장하고 나가기") }
-                TextButton(onClick = { leaving = false; onBack() }, modifier = Modifier.heightIn(min = 48.dp)) { Text("내 앱엔 안 입히고 나가기") }
+                TextButton(onClick = { leaving = false; vm.keepNow(); onBack() }, modifier = Modifier.heightIn(min = 48.dp)) { Text("내 앱엔 안 입히고 나가기") }
                 TextButton(onClick = { leaving = false }, modifier = Modifier.heightIn(min = 48.dp)) { Text("계속 꾸미기") }
             }
         },
@@ -1146,12 +1245,12 @@ fun StudioScreen(vm: StudioViewModel, onBack: () -> Unit, onOpen: (String) -> Un
         )
     }
     inkAsk?.let { go ->
-        val bad = vm.hardToRead().map { k -> Area.entries.firstOrNull { it.target?.keyFor(payStyle) == k }?.label ?: if (k.startsWith("pay.")) "급여" else k }
+        val bad = vm.hardToRead(inkDark).map { k -> Area.entries.firstOrNull { it.target?.keyFor(payStyle) == k }?.label ?: if (k.startsWith("pay.")) "급여" else k }
         AlertDialog(
             onDismissRequest = { inkAsk = null },
             title = { Text("글자가 잘 안 보일 수 있어요") },
             text = { Text("${bad.joinToString(", ")} 화면의 글자색이 바탕과 비슷해요. 고치면 그 화면 글자는 바탕에 맞춰 검정이나 흰색으로 보여요") },
-            confirmButton = { TextButton(onClick = { inkAsk = null; vm.fixInk(); go() }) { Text("글자색 고치고 계속") } },
+            confirmButton = { TextButton(onClick = { inkAsk = null; vm.fixInk(inkDark); go() }) { Text("글자색 고치고 계속") } },
             dismissButton = { TextButton(onClick = { inkAsk = null; go() }) { Text("그대로 계속") } },
         )
     }
@@ -1176,7 +1275,7 @@ fun StudioScreen(vm: StudioViewModel, onBack: () -> Unit, onOpen: (String) -> Un
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                     (tabs + listOfNotNull(featuresOnly.takeIf { s.extras.isNotEmpty() }) + listOf<String?>(null)).forEach { v ->
-                        Row(Modifier.fillMaxWidth().heightIn(min = 48.dp).clickable { choice = v }, verticalAlignment = Alignment.CenterVertically) {
+                        Row(Modifier.fillMaxWidth().heightIn(min = 48.dp).clickable(role = Role.Button) { choice = v }, verticalAlignment = Alignment.CenterVertically) {
                             RadioButton(selected = choice == v, onClick = { choice = v })
                             Column {
                                 Text(when (v) { null -> "테마 전체"; featuresOnly -> "기능만 (" + s.extras.keys.sortedBy { it.ordinal }.joinToString(", ") { it.label } + ")"
@@ -1277,7 +1376,7 @@ private fun StudioWish(where: String, style: WorkStyle?, onDismiss: () -> Unit, 
         title = { Text("원하는 꾸미기 부탁하기") },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text("[$where]에서 무엇을 하고 싶은지 적어 주세요. 같은 부탁이 모이면 다른 분이 만들어 주거나 기본 도구가 돼요",
+                Text("[$where]에서 무엇을 하고 싶은지 적어 주세요. 같은 부탁이 모이면 다른 분이 만들어 주거나 기본 도구가 돼요. 적은 글은 운영자만 봐요",
                     style = MaterialTheme.typography.bodySmall)
                 OutlinedTextField(value = text, onValueChange = { text = it.take(500) }, minLines = 3, modifier = Modifier.fillMaxWidth(),
                     placeholder = { Text("예: 야간 근무 칸에 달 모양을 넣고 싶어요") })
@@ -1371,8 +1470,8 @@ private fun CardsTool(area: Area, style: WorkStyle?, d: com.bamnat.app.data.AppS
         }
         Area.STATS -> PartsEditor("통계 카드", StatsPart.entries.filter { fitsHere(FitSurface.STATS_PARTS, it.id, style) }.map { Triple(it.id, it.label, it.movable) },
             d.statsLayout.ifEmpty { null }) { line -> change { it.copy(statsLayout = line.orEmpty()) } }
-        Area.MANAGE -> PartsEditor("팀·가게 관리 카드", com.bamnat.app.ui.work.ManagePart.editable.map { Triple(it.id, it.label, true) }, d.manageLayout.ifEmpty { null },
-            note = "할 일은 늘 맨 위에 있어요. 이 순서는 이 휴대폰에만 남고 테마·레시피에는 들어가지 않아요") { line -> change { it.copy(manageLayout = line.orEmpty()) } }
+        Area.MANAGE -> PartsEditor("${com.bamnat.app.ui.work.MANAGE_NAME} 카드", com.bamnat.app.ui.work.ManagePart.editable.map { Triple(it.id, it.label, true) }, d.manageLayout.ifEmpty { null },
+            note = "할 일은 늘 맨 위에 있어요. 이 순서는 이 휴대폰에만 남고 테마·작품에는 들어가지 않아요") { line -> change { it.copy(manageLayout = line.orEmpty()) } }
         else -> Unit
     }
 }
@@ -1450,7 +1549,9 @@ private fun WidgetTool(w: WidgetLook, onChange: (WidgetLook) -> Unit) {
 @Composable
 internal fun WidgetSample(w: WidgetLook, style: WorkStyle? = null) {
     val bp = com.bamnat.app.ui.parts.LocalBlueprint.current
-    val whole = if (bp.touches("widget")) bp.style("widget") else com.bamnat.core.recipe.PartStyle.NONE
+    // 2.0.0 [RVS-19] SN-09: each 위젯 part as the launcher draws it (core WidgetDraws, the widget's own reduction): no 선·그림자·움직임,
+    // a 무늬 as its one colour, the launcher's fonts only. The 부품 도구 says what is left out.
+    val whole = if (bp.touches("widget")) bp.style("widget").widgetDraws() else com.bamnat.core.recipe.PartStyle.NONE
     val bg = whole.fill?.let { it or 0xFF000000L } ?: w.bg
     val dark = bg?.let { com.bamnat.core.recipe.Palette.luminance(it) < 0.18 }
         ?: when (w.theme) { "dark" -> true; "light" -> false; else -> androidx.compose.foundation.isSystemInDarkTheme() }
@@ -1466,20 +1567,20 @@ internal fun WidgetSample(w: WidgetLook, style: WorkStyle? = null) {
     fun holiday(d: java.time.LocalDate) = com.bamnat.core.holiday.KoreanHolidays.isHoliday(d)
     @Composable
     fun Head(text: String) {
-        val head = bp.style("widget.head", setOfNotNull("holiday".takeIf { holiday(day0) }))
+        val head = bp.style("widget.head", setOfNotNull("holiday".takeIf { holiday(day0) })).widgetDraws()
         if (head.hide != true) com.bamnat.app.ui.parts.PartText(text, face.over(head),
             MaterialTheme.typography.labelMedium.copy(color = ink.copy(alpha = 0.8f), fontSize = (12 * scale).sp),
-            Modifier.then(com.bamnat.app.ui.parts.partSpotModifier("widget.head")).then(com.bamnat.app.ui.parts.PartMods.box(head.copy(ink = null), RoundedCornerShape(6.dp))))
+            Modifier.then(com.bamnat.app.ui.parts.partSpotModifier("widget.head")).then(com.bamnat.app.ui.parts.PartMods.box(head.copy(ink = null), MaterialTheme.shapes.extraSmall)))
     }
     @Composable
     fun Cell(text: String, d: java.time.LocalDate, inMonth: Boolean, big: Boolean, size: Int, modifier: Modifier, center: Boolean = false) {
-        val cell = bp.style("widget.cell", com.bamnat.app.ui.parts.dayStates(null, d.dayOfWeek, holiday(d), inMonth, d == day0, false))
+        val cell = bp.style("widget.cell", com.bamnat.app.ui.parts.dayStates(null, d.dayOfWeek, holiday(d), inMonth, d == day0, false)).widgetDraws()
         if (cell.hide == true) { Box(modifier); return }
         val base = (if (big) MaterialTheme.typography.titleMedium else MaterialTheme.typography.bodyMedium)
         com.bamnat.app.ui.parts.PartText(text, face.over(cell.copy(size = cell.size?.let { if (big) it * 1.3 else it })),
             base.copy(color = if (big || d == day0) ink else ink.copy(alpha = if (inMonth) 0.75f else 0.4f), fontSize = (size * scale).sp,
                 textAlign = if (center) androidx.compose.ui.text.style.TextAlign.Center else androidx.compose.ui.text.style.TextAlign.Unspecified),
-            modifier.then(com.bamnat.app.ui.parts.partSpotModifier("widget.cell")).then(com.bamnat.app.ui.parts.PartMods.box(cell.copy(ink = null), RoundedCornerShape(6.dp))))
+            modifier.then(com.bamnat.app.ui.parts.partSpotModifier("widget.cell")).then(com.bamnat.app.ui.parts.PartMods.box(cell.copy(ink = null), MaterialTheme.shapes.extraSmall)))
     }
     Column(Modifier.fillMaxWidth()) {
         com.bamnat.app.ui.components.FoldRow("studio.widgetkind", Modifier.padding(horizontal = 12.dp, vertical = 4.dp), what = "위젯 종류") {
@@ -1509,12 +1610,12 @@ internal fun WidgetSample(w: WidgetLook, style: WorkStyle? = null) {
                         Cell(tomorrow, day0.plusDays(1), true, false, 14, Modifier.fillMaxWidth())
                     }
                     WidgetKind.WEEK -> {
-                        Head("이번 주 근무")
+                        Head(com.bamnat.core.work.TypeWords.say(style, "이번 주 근무"))
                         val mon = day0.minusDays((day0.dayOfWeek.value - 1).toLong())
                         Row(horizontalArrangement = Arrangement.spacedBy(3.dp)) {
                             (0 until 7).forEach { i ->
                                 val d = mon.plusDays(i.toLong())
-                                Cell("${"월화수목금토일"[i]}\n${d.dayOfMonth}\n${WEEK_SAMPLE[i]}", d, true, false, 11, Modifier.weight(1f), center = true)
+                                Cell("${"월화수목금토일"[i]}\n${d.dayOfMonth}\n${weekSample(style)[i]}", d, true, false, 11, Modifier.weight(1f), center = true)
                             }
                         }
                     }
@@ -1539,8 +1640,8 @@ internal fun WidgetSample(w: WidgetLook, style: WorkStyle? = null) {
                             val plus = bp.style("widget.task.add")
                             if (plus.hide != true) com.bamnat.app.ui.parts.PartText("＋", face.over(plus),
                                 MaterialTheme.typography.titleMedium.copy(color = MaterialTheme.colorScheme.onPrimaryContainer, fontSize = (16 * scale).sp),
-                                Modifier.then(com.bamnat.app.ui.parts.partSpotModifier("widget.task.add")).clip(RoundedCornerShape(16.dp))
-                                    .background(MaterialTheme.colorScheme.primaryContainer).then(com.bamnat.app.ui.parts.PartMods.box(plus.copy(ink = null), RoundedCornerShape(16.dp)))
+                                Modifier.then(com.bamnat.app.ui.parts.partSpotModifier("widget.task.add")).clip(MaterialTheme.shapes.large)
+                                    .background(MaterialTheme.colorScheme.primaryContainer).then(com.bamnat.app.ui.parts.PartMods.box(plus.copy(ink = null), MaterialTheme.shapes.large))
                                     .padding(horizontal = 12.dp, vertical = 2.dp))
                         }
                         TASK_SAMPLE.forEach { (words, late, done) ->
@@ -1548,14 +1649,14 @@ internal fun WidgetSample(w: WidgetLook, style: WorkStyle? = null) {
                             val line = bp.style("widget.task", states)
                             if (line.hide == true) return@forEach
                             val check = bp.style("widget.task.check", states - "today")
-                            Row(Modifier.fillMaxWidth().then(com.bamnat.app.ui.parts.partSpotModifier("widget.task")).then(com.bamnat.app.ui.parts.PartMods.box(line.copy(ink = null), RoundedCornerShape(6.dp))),
+                            Row(Modifier.fillMaxWidth().then(com.bamnat.app.ui.parts.partSpotModifier("widget.task")).then(com.bamnat.app.ui.parts.PartMods.box(line.copy(ink = null), MaterialTheme.shapes.extraSmall)),
                                 verticalAlignment = Alignment.CenterVertically) {
                                 // The same picture the home widget draws (a launcher draws the "○" letter as a dot), in the part's colour and size.
                                 val circle = com.bamnat.app.ui.parts.PartMods.text(face.over(check), MaterialTheme.typography.titleMedium.copy(
                                     color = when { done -> MaterialTheme.colorScheme.primary; late -> MaterialTheme.colorScheme.error
                                         else -> ink.copy(alpha = 0.7f) }, fontSize = (18 * scale).sp))
                                 Box(Modifier.padding(horizontal = 8.dp).then(com.bamnat.app.ui.parts.partSpotModifier("widget.task.check"))
-                                    .then(com.bamnat.app.ui.parts.PartMods.box(check.copy(ink = null), RoundedCornerShape(18.dp)))) {
+                                    .then(com.bamnat.app.ui.parts.PartMods.box(check.copy(ink = null), MaterialTheme.shapes.large))) {
                                     androidx.compose.material3.Icon(
                                         androidx.compose.ui.res.painterResource(if (done) com.bamnat.app.R.drawable.ic_task_done else com.bamnat.app.R.drawable.ic_task_open),
                                         contentDescription = null, tint = circle.color,
@@ -1582,7 +1683,15 @@ private enum class WidgetKind(val label: String) { TODAY("오늘 위젯"), WEEK(
 /** 1.39 [TASK-07] The 할 일 widget's example rows: the words, and whether each is late, finished or neither. */
 private val TASK_SAMPLE = listOf(Triple("서류 내기", true, false), Triple("택배 받기", false, false), Triple("약 먹기", false, true))
 
-private val WEEK_SAMPLE = listOf("주간", "주간", "야간", "야간", "휴무", "휴무", "주간")
+/** 2.0.0 [RVS-10] 검토 STU-27: the week widget's example days, in the words of the studio's own kind of work (월~일). */
+private fun weekSample(style: WorkStyle?): List<String> = when (style) {
+    WorkStyle.DAY -> listOf("출근", "출근", "출근", "출근", "출근", "휴무", "휴무")
+    WorkStyle.HOURLY -> listOf("출근", "휴무", "출근", "출근", "휴무", "출근", "출근")
+    WorkStyle.FIELD -> listOf("현장", "현장", "빈 날", "현장", "현장", "빈 날", "빈 날")
+    WorkStyle.BUSINESS -> listOf("휴무", "영업", "영업", "영업", "영업", "영업", "영업")
+    WorkStyle.INVEST -> listOf("장중", "장중", "장중", "장중", "장중", "휴장", "휴장")
+    else -> listOf("주간", "주간", "야간", "야간", "휴무", "휴무", "주간")
+}
 
 /** "오늘 · 야간 19:00" and "내일 · 휴무" from my own calendar, or null while nothing is set for either day. */
 @Composable
@@ -1841,7 +1950,32 @@ internal fun ago(millis: Long, now: Long = com.bamnat.core.time.Today.millis()):
     return when { m < 1 -> "방금"; m < 60 -> "${m}분 전"; m < 60 * 24 -> "${m / 60}시간 전"; else -> "${m / (60 * 24)}일 전" }
 }
 
-/** [STU-41] 1.36 장터 표지 자동: the studio's example as a picture when 올리기 opened, offered as the 표지 there. */
+/**
+ * [STU-41] 1.36 장터 표지 자동: the studio's example as a picture when 올리기 opened, offered as the 표지 there.
+ * 2.0.0 [RVS-15] (총괄 11-19, M RVM-57 같은 꼴): a picture 올리기 never used stayed in memory, so a later 만들기 of another work offered
+ * an old studio's example as its 표지. It is good for [FRESH_MS] after it was taken, and gone once it is made the 표지.
+ */
 object StudioShot {
-    @Volatile var last: android.graphics.Bitmap? = null
+    const val FRESH_MS = 10 * 60_000L
+    @Volatile private var shot: android.graphics.Bitmap? = null
+    @Volatile private var at = 0L
+    var last: android.graphics.Bitmap?
+        get() = shot?.takeIf { com.bamnat.core.time.Today.millis() - at in 0..FRESH_MS }
+        set(v) { shot = v; at = com.bamnat.core.time.Today.millis() }
+}
+
+/**
+ * 2.0.0 [RVP-66] (검토 REST-07·T14-09) The roles of the main calendar's kinds of day, by the same guess the 근무 꾸미기 piece matches
+ * with, so 칸 디자인 › 패턴 › 근무별 offers only the lines this calendar has; null until the calendar is read.
+ */
+@Composable
+private fun calendarRoles(): Set<String>? {
+    val c = LocalContext.current.appContainer
+    val snapFlow = remember(c) { c.scopeOf(com.bamnat.app.data.PersonalCalendar.MAIN).schedule.snapshot }
+    val snap by snapFlow.collectAsStateWithLifecycle(null)
+    return remember(snap) {
+        snap?.shiftTypes?.map { t ->
+            com.bamnat.core.recipe.ShiftRole.guess(t.name, t.isOff, t.start?.hour, if (t.isOff) 0 else t.durationMinutes).key
+        }?.toSet()
+    }
 }

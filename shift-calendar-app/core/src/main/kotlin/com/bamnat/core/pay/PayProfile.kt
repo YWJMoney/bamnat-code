@@ -203,6 +203,8 @@ data class PayPeriod(
     val payNextMonth: Boolean = false,
     /** 1.32 [CALX-06] 주급: the weekday the week's pay arrives (the week starts on the 주휴 week's first day); null = 월급. */
     val payWeekday: java.time.DayOfWeek? = null,
+    /** 2.0.0 [RVK-38] (검토 MONEY-79) When the pay day is a weekend or 공휴일: the working day before (most payrolls), after, or the day. */
+    val payDayOff: PayDayOff = PayDayOff.BEFORE,
 ) {
     private fun endIn(m: YearMonth): LocalDate = m.atDay(minOf(endDay ?: 31, m.lengthOfMonth()))
 
@@ -221,6 +223,19 @@ data class PayPeriod(
         val pm = if (payNextMonth) m.plusMonths(1) else m
         pm.atDay(minOf(d, pm.lengthOfMonth()))
     }
+
+    /**
+     * 2.0.0 [RVJ-52] 검토 PC-120: a pay day picked well before the period ends (말일 마감에 10일) is paid the month after (다음 달
+     * 10일), so it turns [payNextMonth] on; one near the end (말일 마감에 25일) is often paid in the month itself (당월 지급) and is left
+     * as it was. Only when the day moves into that early range, so a 'this month' chosen by hand is not turned back on while stepping.
+     */
+    fun withPayDay(d: Int?): PayPeriod {
+        fun early(x: Int?) = x != null && x <= (endDay ?: 31) - 10
+        return copy(payDay = d, payNextMonth = if (early(d) && !early(payDay)) true else payNextMonth)
+    }
+
+    /** 2.0.0 [RVK-38] (검토 MONEY-79) The day [m]'s pay is planned on: [payDate] moved off a weekend or 공휴일 as [payDayOff] says. */
+    fun payDateWorkday(m: YearMonth): LocalDate? = payDate(m)?.let(payDayOff::move)
 
     val isCalendarMonth: Boolean get() = endDay == null || endDay >= 31
 
@@ -335,7 +350,23 @@ data class PayProfile(
      * 고용보험). The user picks them (the app has no 생년월일); [TakeHome] leaves them out of 예상 실수령 and says why.
      */
     val insuranceOff: Set<InsuranceLine> = emptySet(),
+    /**
+     * 2.0.0 [RVJ-77] 검토 PAYU-46·T05b-05·I05ba-01: the 호봉표 last put in (단계별 기본급·승급 달·그때 호봉), so opening it again starts
+     * from it and a year's raise is one line instead of 20~30 typed again. The [base] it made is what is calculated; this is the table.
+     */
+    val payScale: PayScale? = null,
+    /**
+     * 2.0.0 [RVJ-81] 결정 5 (처리방침 3.14 7일 줄): 생년 (선택). Only the year, kept in this pay setup on the phone and in backups the
+     * user makes; never sent. [InsuranceAge] reads it for 만 60세 국민연금 (국민연금법 제6조·제12조 ①) and 65세 이후 고용의 고용보험
+     * (고용보험법 제10조 ②, 보험료징수법 제13조 ③), so [insuranceOff] no longer has to be picked by hand for those.
+     */
+    val birthYear: Int? = null,
+    /** 2.0.0 [RVJ-81] Lines [InsuranceAge] would leave out that are still taken ('그래도 내요': 임의계속가입, 65세 전부터 같은 곳). */
+    val insuranceKeep: Set<InsuranceLine> = emptySet(),
 ) {
+    /** 2.0.0 [RVJ-81] The 4대보험 lines left out of [month]'s 실수령: picked by hand ([insuranceOff]) and by age ([InsuranceAge]). */
+    fun insuranceOffOn(month: java.time.YearMonth): Set<InsuranceLine> = insuranceOff + InsuranceAge.off(this, month)
+
     /** [HRLY-07] The weekday 주휴 weeks start on. */
     val holidayWeekFrom: DayOfWeek get() = holidayWeekStart ?: weekStart
 
@@ -384,3 +415,20 @@ enum class HourlySource(val label: String) {
 
 /** [J133-01] Whether 세후 can be said: a tax way the user picked, or one set before 1.33 asked (anything but NONE). */
 val PayProfile.taxKnown: Boolean get() = taxChosen || taxMode != TaxMode.NONE
+
+/**
+ * 2.0.0 [RVK-38] (검토 MONEY-79) Where pay goes when its day is a weekend or 공휴일. Most payrolls pay the working day before (근로기준법
+ * 제43조 제2항은 '매월 1회 이상 일정한 날짜'만 정해 두어 회사마다 달라요), so that is the default; the user can say after or on the day.
+ */
+enum class PayDayOff(val label: String) {
+    BEFORE("앞당겨 받아요"), AFTER("미뤄 받아요"), SAME("그날 그대로");
+
+    fun move(d: LocalDate): LocalDate {
+        if (this == SAME) return d
+        val step = if (this == BEFORE) -1L else 1L
+        var x = d
+        while (x.dayOfWeek == java.time.DayOfWeek.SATURDAY || x.dayOfWeek == java.time.DayOfWeek.SUNDAY ||
+            com.bamnat.core.holiday.KoreanHolidays.isHoliday(x)) x = x.plusDays(step)
+        return x
+    }
+}

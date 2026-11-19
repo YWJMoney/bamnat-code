@@ -14,7 +14,32 @@ export const MATERIAL_SCHEMA = [
     ord INTEGER NOT NULL DEFAULT 0, thumb TEXT, w INTEGER NOT NULL, h INTEGER NOT NULL, light REAL, free INTEGER NOT NULL DEFAULT 1,
     state TEXT NOT NULL DEFAULT 'waiting', min_app INTEGER, at INTEGER NOT NULL)`,
   "CREATE INDEX IF NOT EXISTS studio_materials_list ON studio_materials (state, kind, pack, ord)",
+  // 2.0.0 [RVN-24] 검토 U22c-05: 묶음의 공개·숨김과 무료·광고 잠금을 바꾼 기록(누가·언제·무엇을)과 되돌릴 앞 모습(재료마다의 상태나 무료).
+  `CREATE TABLE IF NOT EXISTS studio_material_log (id INTEGER PRIMARY KEY AUTOINCREMENT, pack TEXT NOT NULL, kind TEXT NOT NULL, what TEXT NOT NULL,
+    prev TEXT NOT NULL, by TEXT NOT NULL DEFAULT '', at INTEGER NOT NULL, undone_by TEXT, undone_at INTEGER)`,
+  "CREATE INDEX IF NOT EXISTS studio_material_log_pack ON studio_material_log (pack, id)",
 ];
+
+const STATE_WORDS = { waiting: "출시 대기", ok: "공개", hidden: "숨김" };
+
+/**
+ * 2.0.0 [RVN-24] 검토 U22c-05: 바꾸기 전의 재료 모습을 묶음마다 한 줄로 적어요. [before]는 바꾸기 전 줄({id, pack, v}), [kind]는 state·free,
+ * 바뀌지 않은 재료는 적지 않아요(되돌리기가 그 재료를 건드리지 않게). 묶음마다 새 기록 번호를 돌려줘요.
+ */
+async function smLog(d, env, now, kind, what, before, after) {
+  const by = env.actor?.name ?? "";
+  const packs = new Map();
+  for (const r of before) {
+    if (after(r) === r.v) continue;
+    if (!packs.has(r.pack)) packs.set(r.pack, {});
+    packs.get(r.pack)[r.id] = r.v;
+  }
+  if (!packs.size) return {};
+  await d.batch(env, [...packs].map(([pack, prev]) => d.stmt(env,
+    "INSERT INTO studio_material_log (pack, kind, what, prev, by, at) VALUES (?, ?, ?, ?, ?, ?)", pack, kind, what(pack, Object.keys(prev).length), JSON.stringify(prev), by, now)));
+  const rows = await d.all(env, `SELECT id, pack FROM studio_material_log WHERE at = ? AND pack IN (${[...packs.keys()].map(() => "?").join(",")}) ORDER BY id`, now, ...packs.keys());
+  return Object.fromEntries(rows.map((r) => [r.pack, r.id]));
+}
 
 const SM_ID = /^[0-9a-f]{16}$/;
 
@@ -74,13 +99,17 @@ export async function materialAdmin(d, request, env, path, url, now) {
     const rows = await d.all(env, "SELECT id, kind, pack, name, ord, thumb, w, h, light, free, state, min_app, at FROM studio_materials ORDER BY kind, pack, ord, id");
     const counts = {};
     for (const r of rows) counts[r.state] = (counts[r.state] ?? 0) + 1;
-    return d.json({ items: rows.map((r) => ({ ...r, free: r.free === 1 })), counts });
+    // U22c-05: 묶음마다 마지막으로 바꾼 한 줄(누가·언제·무엇을, 되돌렸는지).
+    const logs = await d.all(env, "SELECT * FROM studio_material_log WHERE id IN (SELECT MAX(id) FROM studio_material_log GROUP BY pack)").catch(() => []);
+    const last = Object.fromEntries(logs.map((l) => [l.pack, { id: l.id, what: l.what, by: l.by, at: l.at, undoneBy: l.undone_by ?? null, undoneAt: l.undone_at ?? null }]));
+    return d.json({ items: rows.map((r) => ({ ...r, free: r.free === 1 })), counts, last });
   }
   if (path === "/recipes/materials" && method === "POST") {
     const body = await d.readJson(request, 6 * 1024 * 1024);
     const items = Array.isArray(body?.items) ? body.items : null;
     if (!items || items.length === 0 || items.length > MATERIAL_LIMITS.batch) return d.json({ error: "items" }, 400);
-    const done = [];
+    // 2.0.0 [RVN-15] 검토 SVC-99: 모두 검사한 뒤 한 번에 넣어요(중간에 틀린 줄이 있으면 앞 줄만 들어가 묶음이 반쪽이 되던 것).
+    const rows = [];
     for (const [i, it] of items.entries()) {
       const kind = MATERIAL_KINDS.includes(it?.kind) ? it.kind : null;
       const pack = smText(it?.pack, MATERIAL_LIMITS.pack);
@@ -98,14 +127,16 @@ export async function materialAdmin(d, request, env, path, url, now) {
       const minApp = Number.isInteger(it.minApp) && it.minApp > 0 ? it.minApp : null;
       const ord = Number.isInteger(it.ord) ? it.ord : 0;
       // 같은 그림을 다시 넣으면 이름·묶음·순서만 바뀌고 공개 상태는 그대로예요.
-      await d.run(env, `INSERT INTO studio_materials (id, kind, pack, name, ord, thumb, w, h, light, free, state, min_app, at)
+      rows.push({ pack, stmt: d.stmt(env, `INSERT INTO studio_materials (id, kind, pack, name, ord, thumb, w, h, light, free, state, min_app, at)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'waiting', ?, ?)
         ON CONFLICT(id) DO UPDATE SET kind = excluded.kind, pack = excluded.pack, name = excluded.name, ord = excluded.ord,
           thumb = excluded.thumb, light = excluded.light, free = excluded.free, min_app = excluded.min_app`,
-        img.id, kind, pack, name, ord, thumb, img.w, img.h, light, it.free === false ? 0 : 1, minApp, now);
-      done.push(img.id);
+        img.id, kind, pack, name, ord, thumb, img.w, img.h, light, it.free === false ? 0 : 1, minApp, now), id: img.id });
     }
-    return d.json({ ids: done }, 201);
+    await d.batch(env, rows.map((r) => r.stmt));
+    const packs = [...new Set(rows.map((r) => r.pack))];
+    await d.audit?.(env, now, "material_add", packs.join(", ").slice(0, 80), `${rows.length}개 · 출시 대기`);
+    return d.json({ ids: rows.map((r) => r.id) }, 201);
   }
   // 1.38 [STM-10] 무료·광고 나누기: 묶음마다 all(모두 무료)·none(모두 광고·프로)·third(앞쪽 3분의 1만 무료, 나머지 광고·프로).
   if (path === "/recipes/materials/free" && method === "POST") {
@@ -113,24 +144,72 @@ export async function materialAdmin(d, request, env, path, url, now) {
     const pack = smText(body?.pack, MATERIAL_LIMITS.pack);
     const mode = ["all", "none", "third"].includes(body?.mode) ? body.mode : null;
     if (!pack || !mode) return d.json({ error: "which" }, 400);
-    const rows = await d.all(env, "SELECT id FROM studio_materials WHERE pack = ? ORDER BY ord, id", pack.trim());
+    const rows = await d.all(env, "SELECT id, pack, free FROM studio_materials WHERE pack = ? ORDER BY ord, id", pack.trim());
     const cut = mode === "all" ? rows.length : mode === "none" ? 0 : Math.ceil(rows.length / 3);
+    const want = new Map(rows.map((r, i) => [r.id, i < cut ? 1 : 0]));
+    const log = await smLog(d, env, now, "free", () => `무료 ${cut} · 광고·프로 ${rows.length - cut}`, rows.map((r) => ({ id: r.id, pack: r.pack, v: r.free })), (r) => want.get(r.id));
     if (rows.length) {
       await d.batch(env, rows.map((r, i) => d.stmt(env, "UPDATE studio_materials SET free = ? WHERE id = ?", i < cut ? 1 : 0, r.id)));
     }
-    return d.json({ pack: pack.trim(), free: cut, paid: rows.length - cut });
+    await d.audit?.(env, now, "material_free", pack.trim(), `무료 ${cut} · 광고·프로 ${rows.length - cut}`);
+    return d.json({ pack: pack.trim(), free: cut, paid: rows.length - cut, log: log[pack.trim()] ?? null });
   }
   if (path === "/recipes/materials/state" && method === "POST") {
     const body = await d.readJson(request, 64 * 1024);
     const state = MATERIAL_STATES.includes(body?.state) ? body.state : null;
     if (!state) return d.json({ error: "state" }, 400);
     let res;
-    if (body.all === true) res = await d.run(env, "UPDATE studio_materials SET state = ?", state);
-    else if (smText(body.pack, MATERIAL_LIMITS.pack)) res = await d.run(env, "UPDATE studio_materials SET state = ? WHERE pack = ?", state, body.pack.trim());
-    else if (Array.isArray(body.ids) && body.ids.length > 0 && body.ids.length <= 300 && body.ids.every((x) => SM_ID.test(x))) {
+    let which = "";
+    let before = [];
+    const pick = "SELECT id, pack, state AS v FROM studio_materials";
+    // 2.0.0 [RVN-15] 검토 SVC-99: '모두'는 출시 대기 → 공개만이에요(숨긴 것까지 되살리거나 모두 숨기던 것). 숨기기는 묶음·번호로.
+    if (body.all === true) {
+      if (state !== "ok") return d.json({ error: "which" }, 400);
+      before = await d.all(env, `${pick} WHERE state = 'waiting'`);
+      res = await d.run(env, "UPDATE studio_materials SET state = 'ok' WHERE state = 'waiting'");
+      which = "출시 대기 모두";
+    }
+    else if (smText(body.pack, MATERIAL_LIMITS.pack)) {
+      before = await d.all(env, `${pick} WHERE pack = ?`, body.pack.trim());
+      res = await d.run(env, "UPDATE studio_materials SET state = ? WHERE pack = ?", state, body.pack.trim());
+      which = body.pack.trim();
+    } else if (Array.isArray(body.ids) && body.ids.length > 0 && body.ids.length <= 300 && body.ids.every((x) => SM_ID.test(x))) {
+      before = await d.all(env, `${pick} WHERE id IN (${body.ids.map(() => "?").join(",")})`, ...body.ids);
       res = await d.run(env, `UPDATE studio_materials SET state = ? WHERE id IN (${body.ids.map(() => "?").join(",")})`, state, ...body.ids);
+      which = `재료 ${body.ids.length}개`;
     } else return d.json({ error: "which" }, 400);
-    return d.json({ state, changed: res?.meta?.changes ?? null });
+    const changed = res?.meta?.changes ?? null;
+    // U22c-05: 묶음마다 '누가 언제 무엇을'과 앞 모습을 적어 두어, 15초가 지나도 그 묶음 줄에서 이 바꿈만 되돌릴 수 있어요.
+    const log = await smLog(d, env, now, "state", (pack, n) => `${STATE_WORDS[state]} ${n}개`, before, () => state);
+    await d.audit?.(env, now, "material_state", which.slice(0, 80), `${STATE_WORDS[state]}${changed === null ? "" : ` · ${changed}개`}`);
+    return d.json({ state, changed, log: body.pack ? log[body.pack.trim()] ?? null : null, logs: log });
+  }
+  // U22c-05 POST /recipes/materials/undo {log}: 그 묶음의 마지막 바꿈을 되돌려요. 바꾼 재료만 앞 모습으로(그 뒤 새로 넣은 재료는 그대로),
+  // 그 뒤에 또 바꾼 기록이 있으면(마지막이 아니면) 되돌리지 않아요.
+  if (path === "/recipes/materials/undo" && method === "POST") {
+    const body = await d.readJson(request, 1024);
+    const id = Number.isInteger(body?.log) ? body.log : null;
+    const l = id ? await d.one(env, "SELECT * FROM studio_material_log WHERE id = ?", id) : null;
+    if (!l) return d.json({ error: "not_found" }, 404);
+    if (l.undone_at) return d.json({ error: "already" }, 409);
+    const newer = await d.one(env, "SELECT id FROM studio_material_log WHERE pack = ? AND id > ? AND undone_at IS NULL LIMIT 1", l.pack, l.id);
+    if (newer) return d.json({ error: "newer", field: "log" }, 409);
+    let prev = {};
+    try {
+      prev = JSON.parse(l.prev) ?? {};
+    } catch {
+      prev = {};
+    }
+    const col = l.kind === "free" ? "free" : "state";
+    const ok = (v) => (col === "free" ? v === 0 || v === 1 : MATERIAL_STATES.includes(v));
+    const back = Object.entries(prev).filter(([mid, v]) => SM_ID.test(mid) && ok(v));
+    const by = env.actor?.name ?? "";
+    await d.batch(env, [
+      ...back.map(([mid, v]) => d.stmt(env, `UPDATE studio_materials SET ${col} = ? WHERE id = ? AND pack = ?`, v, mid, l.pack)),
+      d.stmt(env, "UPDATE studio_material_log SET undone_by = ?, undone_at = ? WHERE id = ?", by, now, l.id),
+    ]);
+    await d.audit?.(env, now, "material_undo", l.pack.slice(0, 80), `되돌림 · ${l.what}`);
+    return d.json({ pack: l.pack, back: back.length });
   }
   return null;
 }

@@ -1,5 +1,6 @@
 package com.bamnat.app.ui.components
 
+import com.bamnat.app.ui.theme.bamnat
 import com.bamnat.core.model.ShiftIcon
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -27,7 +28,6 @@ import androidx.compose.material.icons.filled.Remove
 import androidx.compose.material.icons.filled.WarningAmber
 import com.bamnat.app.ui.components.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FilledTonalIconButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -58,13 +58,16 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.em
 import androidx.compose.ui.unit.sp
-import com.bamnat.app.ui.theme.LocalCalendarColors
+import com.bamnat.app.ui.theme.Tone
+import com.bamnat.app.ui.theme.color
+import com.bamnat.app.ui.theme.container
 import com.bamnat.app.ui.theme.MemoPaletteDark
 import com.bamnat.app.ui.theme.MemoPaletteLight
 import com.bamnat.app.ui.theme.NumberStyle
 import com.bamnat.core.hours.HoursFormat
 import com.bamnat.core.model.ShiftType
 import java.time.LocalTime
+import androidx.compose.ui.semantics.Role
 
 fun Long.asColor(): Color = Color(this.toInt())
 
@@ -165,7 +168,7 @@ fun ShiftBadge(
             val density = androidx.compose.ui.platform.LocalDensity.current
             // [RCX-30] 1.35 그림 꾸미기: the kind of day's own picture goes first.
             val pictured = showIcon && (text == null || text == type?.label) &&
-                type?.id?.let { com.bamnat.app.ui.theme.LocalPhotoLook.current.icons[it] } != null
+                type?.id?.let { com.bamnat.app.ui.theme.LocalShiftIcons.current[it] } != null
             if (pictured && com.bamnat.app.ui.theme.ShiftPicture(type?.id, size * 0.62f)) {
                 Spacer(Modifier.width(2.dp))
             } else if (icon != null) {
@@ -206,8 +209,11 @@ fun SectionCard(
     title: String?,
     modifier: Modifier = Modifier,
     trailing: (@Composable () -> Unit)? = null,
+    /** 2.0.0 [RVK-57] (HQ-147) A title that never breaks (a day: '10월 12일 (월)'): what does not fit beside it goes under it. */
+    keepTitle: Boolean = false,
     content: @Composable ColumnScope.() -> Unit,
 ) {
+    val titleRoom = if (keepTitle) 1000.dp else 80.dp
     // [GUIDE-06] A card of a feature that can be off carries ⋮ › 이 기능 끄기; cards inside it do not.
     val feature = com.bamnat.app.ui.guide.LocalCardFeature.current
     if (feature != null) {
@@ -215,7 +221,7 @@ fun SectionCard(
             SectionCard(title, modifier, trailing = {
                 trailing?.invoke()
                 com.bamnat.app.ui.guide.FeatureMenuButton(feature)
-            }, content = content)
+            }, keepTitle = keepTitle, content = content)
         }
         return
     }
@@ -223,7 +229,7 @@ fun SectionCard(
         Column(modifier.fillMaxWidth().padding(vertical = 4.dp)) {
             if (title != null || trailing != null) {
                 // [BIGTXT-01] 1.39 A big font puts the button under the title instead of squeezing the title.
-                SideOrBelow(Modifier.fillMaxWidth(), minStart = 80.dp, start = {
+                SideOrBelow(Modifier.fillMaxWidth(), minStart = titleRoom, start = {
                     Text(title.orEmpty(), style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurface)
                 }, end = { trailing?.invoke() })
                 Spacer(Modifier.padding(top = 4.dp))
@@ -244,7 +250,7 @@ fun SectionCard(
         Column(Modifier.padding(horizontal = 16.dp, vertical = com.bamnat.app.ui.theme.LocalSpacing.current.inner)) {
             if (title != null || trailing != null) {
                 // [BIGTXT-01] 1.39 A big font puts the button under the title instead of squeezing the title.
-                SideOrBelow(Modifier.fillMaxWidth(), minStart = 80.dp, start = {
+                SideOrBelow(Modifier.fillMaxWidth(), minStart = titleRoom, start = {
                     if (title != null) Text(
                         title,
                         style = MaterialTheme.typography.titleSmall,
@@ -259,6 +265,30 @@ fun SectionCard(
     }
 }
 
+/**
+ * 2.0.0 [RVK-57] (총괄 HQ-147, 조건 12) The lower row of a record line at a big font: [start] (수량 × 단가, 분류 · 카드) and the [end]
+ * (the amount) beside it when both fit, else the amount on its own row at the right. Nothing is cut to '74,20…' or stood up.
+ */
+@Composable
+fun TextThenAmount(modifier: Modifier = Modifier, start: @Composable () -> Unit, end: @Composable () -> Unit) =
+    // The start keeps all of itself (a minStart wider than any line), so a long caption sends the amount under it, at the end.
+    SideOrBelow(modifier.fillMaxWidth(), minStart = 1000.dp, belowAlign = Alignment.End, start = start, end = end)
+
+/**
+ * 2.0.0 [RVK-55] (총괄 HQ-120, 조건 12) [StatTile]s side by side, and at a big font (150% and up) one under another: two half-width
+ * tiles at 200% broke '1,234,567원' in the middle of the number. Below 150% it is the same Row as before.
+ */
+@OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
+@Composable
+fun StatTiles(modifier: Modifier = Modifier, content: @Composable androidx.compose.foundation.layout.RowScope.() -> Unit) {
+    if (androidx.compose.ui.platform.LocalDensity.current.fontScale >= 1.5f) {
+        androidx.compose.foundation.layout.FlowRow(modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp), maxItemsInEachRow = 1) { content() }
+    } else {
+        Row(modifier, horizontalArrangement = Arrangement.spacedBy(8.dp)) { content() }
+    }
+}
+
 /** Number tile for hour totals. */
 @Composable
 fun StatTile(
@@ -268,29 +298,37 @@ fun StatTile(
     caption: String? = null,
     warning: Boolean = false,
     onClick: (() -> Unit)? = null,
+    // 2.0.0 [RVK-25] (검토 MONEY-69, 조건 6) A caption that asks for care ('9일 전 가격') is written in the caution colour while
+    // the tile and its number keep their own colours.
+    captionTone: Tone = Tone.Plain,
+    // 2.0.0 [RVK-45] (조건 6) A tile that asks for care (약속일 지남, 아직 받을 돈, 남은 돈이 모자람, 현금 부족) in the caution colour,
+    // the same shape as [warning]; [warning] stays for danger.
+    caution: Boolean = false,
 ) {
-    val cal = LocalCalendarColors.current
-    val bg = if (warning) cal.warningContainer else MaterialTheme.colorScheme.surfaceContainerLowest
+    // 2.0.0 [RVP-13] (HQ-54, 조건 6) 위험 is the app's danger colour, not the calendar's Sunday red under another name.
+    val careInk = Tone.Caution.color()
+    val ink = when { warning -> Tone.Danger.color(); caution -> careInk; else -> null }
+    val bg = when { warning -> Tone.Danger.container(); caution -> careInk.copy(alpha = 0.12f); else -> MaterialTheme.colorScheme.surfaceContainerLowest }
     Surface(
-        modifier = modifier.then(if (onClick != null) Modifier.clip(MaterialTheme.shapes.medium).clickable(onClick = onClick) else Modifier),
+        modifier = modifier.then(if (onClick != null) Modifier.clip(MaterialTheme.shapes.medium).clickable(role = Role.Button, onClick = onClick) else Modifier),
         shape = MaterialTheme.shapes.medium,
-        color = bg,
+        color = MaterialTheme.colorScheme.surfaceContainerLowest,
         border = androidx.compose.foundation.BorderStroke(
             1.dp,
-            if (warning) cal.warning.copy(alpha = 0.5f) else MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f),
+            ink?.copy(alpha = 0.5f) ?: MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f),
         ),
     ) {
         Column(Modifier.padding(horizontal = 12.dp, vertical = 10.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                if (warning) {
-                    Icon(Icons.Filled.WarningAmber, null, tint = cal.warning, modifier = Modifier.size(14.dp))
+                if (ink != null) {
+                    Icon(Icons.Filled.WarningAmber, if (warning) "위험" else "주의", tint = ink, modifier = Modifier.size(14.dp))
                     Spacer(Modifier.width(4.dp))
                 }
                 // Three tiles share the narrow folded screen, so text shrinks instead of being cut off.
                 BasicText(
                     label,
                     style = MaterialTheme.typography.labelMedium.copy(
-                        color = if (warning) cal.warning else MaterialTheme.colorScheme.onSurfaceVariant,
+                        color = ink ?: MaterialTheme.colorScheme.onSurfaceVariant,
                     ),
                     maxLines = 2,
                     autoSize = TextAutoSize.StepBased(minFontSize = 10.sp, maxFontSize = 12.sp),
@@ -302,7 +340,7 @@ fun StatTile(
             BasicText(
                 value,
                 style = MaterialTheme.typography.titleLarge.merge(NumberStyle).copy(
-                    color = if (warning) cal.warning else MaterialTheme.colorScheme.onSurface,
+                    color = ink ?: MaterialTheme.colorScheme.onSurface,
                 ),
                 maxLines = if (big) 2 else 1,
                 autoSize = TextAutoSize.StepBased(minFontSize = if (big) 16.sp else 12.sp, maxFontSize = 22.sp),
@@ -310,16 +348,25 @@ fun StatTile(
             if (caption != null) {
                 BasicText(
                     caption,
-                    style = MaterialTheme.typography.labelSmall.copy(color = MaterialTheme.colorScheme.onSurfaceVariant),
+                    style = MaterialTheme.typography.labelSmall.copy(
+                        color = if (captionTone == Tone.Plain) MaterialTheme.colorScheme.onSurfaceVariant else captionTone.color(),
+                    ),
                     // [VIS-05] Three lines at a big font: a half-width tile on a 320dp phone cut a caption's last line.
-                    maxLines = if (big) 3 else 1,
-                    autoSize = TextAutoSize.StepBased(minFontSize = if (big) 11.sp else 9.sp, maxFontSize = 11.sp),
+                    // 2.0.0 [RVP-11] (조건 4·12) The caption no longer shrinks to 9sp to stay on one line ('22~06시에 걸침 · 대근 2번
+                    // 포함' on a 393dp phone): from 10sp down it takes a second line.
+                    maxLines = if (big) 3 else 2,
+                    autoSize = TextAutoSize.StepBased(minFontSize = if (big) 11.sp else 10.sp, maxFontSize = 11.sp),
                 )
             }
         }
     }
 }
 
+/**
+ * A thing on this screen that needs the user: the one notice-card shape ([NudgeCard], 조건 3) with its mark in [tone]'s colour.
+ * 2.0.0 [RVP-13] (검토 HQ-54): [Tone.Caution] for a thing to set or check (권한, 알림, 시세 없음); [Tone.Danger] only when something
+ * has gone wrong (상한 넘김, 법 위반, 울리지 않을 알람).
+ */
 @Composable
 fun WarningBanner(
     title: String,
@@ -328,24 +375,9 @@ fun WarningBanner(
     /** [SLP-15] One button that fixes it, at the end of the banner. */
     action: String? = null,
     onAction: () -> Unit = {},
+    tone: Tone = Tone.Caution,
 ) {
-    val cal = LocalCalendarColors.current
-    Row(
-        modifier
-            .fillMaxWidth()
-            .clip(MaterialTheme.shapes.medium)
-            .background(cal.warningContainer)
-            .padding(start = 14.dp, end = if (action != null) 4.dp else 14.dp, top = 12.dp, bottom = 12.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Icon(Icons.Filled.WarningAmber, contentDescription = null, tint = cal.warning)
-        Spacer(Modifier.width(10.dp))
-        Column(Modifier.weight(1f)) {
-            Text(title, style = MaterialTheme.typography.titleSmall, color = cal.warning)
-            Text(message, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurface)
-        }
-        if (action != null) TextButton(onClick = onAction) { Text(action) }
-    }
+    NudgeCard(title, modifier, tone = tone, detail = message, action = action, onAction = onAction)
 }
 
 /**

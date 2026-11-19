@@ -66,6 +66,13 @@ object KoreanHolidays {
 
     @Volatile private var remote: HolidayFile? = null
 
+    /**
+     * 2.0.0 [RVH-14] 검토 CAL-19: goes up each time a newer file changes the days, so what was worked out from the old table (the
+     * month on screen, the alarms of a calendar that rests on 공휴일) can be worked out again. The app follows it as a flow.
+     */
+    @Volatile var revision: Int = 0
+        private set
+
     /** The table's version as shown on 급여 reports: a newer file's, else [VERSION]. */
     val version: String get() = remote?.version ?: VERSION
 
@@ -77,9 +84,14 @@ object KoreanHolidays {
      * stay for the years it does not cover); null goes back to the built-in table.
      */
     fun use(file: com.bamnat.core.remote.RemoteFile?) {
-        remote = null
-        if (file == null || file.version <= BUILT_IN_FILE_VERSION) return
-        remote = read(file)
+        val was = remote
+        try {
+            remote = null
+            if (file != null && file.version > BUILT_IN_FILE_VERSION) remote = read(file)
+        } finally {
+            val now = remote
+            if (was?.version != now?.version || was?.days != now?.days || was?.years != now?.years) revision++
+        }
     }
 
     fun read(f: com.bamnat.core.remote.RemoteFile): HolidayFile {

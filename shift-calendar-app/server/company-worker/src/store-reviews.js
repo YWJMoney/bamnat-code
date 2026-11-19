@@ -1,6 +1,7 @@
 import { all, audit, json, notifyAdmins, one, readJson, refuse, run } from "./index.js";
 import { playReady, playToken } from "./money.js";
 import { DAY } from "./units.js";
+import { replyRiskOf } from "./ask-check.js";
 
 // ---- 1.38 [ADM3-18] 스토어 리뷰 받은함 ----
 //
@@ -87,7 +88,9 @@ export async function reviewList(env, now = Date.now(), status = "open") {
   return {
     ready: Boolean(playReady(env)),
     items: rows.map((r) => ({ id: r.id, stars: r.stars, text: r.text, app: r.app, lang: r.lang, at: r.at, reply: r.reply, replyAt: r.reply_at, repliedBy: r.replied_by,
-      draft: r.draft, draftBy: r.draft_by, status: r.status })),
+      draft: r.draft, draftBy: r.draft_by, status: r.status,
+      // 2.0.0 [RVQ-55] 검토 SVC-38: 초안에 AI·자동 답 표현이나 보안 정보가 있으면 그 까닭(문의 답과 같은 검사).
+      ...(r.draft && replyRiskOf(r.draft) ? { draftRisk: replyRiskOf(r.draft) } : {}) })),
     month: { total, avg: total ? Math.round((stats.reduce((n, s) => n + s.stars * s.n, 0) / total) * 10) / 10 : null,
       byStars: Object.fromEntries([1, 2, 3, 4, 5].map((s) => [s, stats.find((x) => x.stars === s)?.n ?? 0])) },
     waiting: (await one(env, "SELECT COUNT(*) AS n FROM store_reviews WHERE status <> 'replied'"))?.n ?? 0,
@@ -95,13 +98,17 @@ export async function reviewList(env, now = Date.now(), status = "open") {
   };
 }
 
-async function reply(env, id, text, now) {
+async function reply(env, id, text, now, confirm = false) {
   const account = playReady(env);
   if (!account) refuse("play", "play");
   const r = await one(env, "SELECT id FROM store_reviews WHERE id = ?", id);
   if (!r) return json({ error: "not_found" }, 404);
   const body = reviewClean(text, REVIEWS.replyMax + 1);
   if (!body || body.length > REVIEWS.replyMax) refuse("text", "text");
+  // 2.0.0 [RVQ-55] 검토 SVC-38: 스토어 답은 누구나 보는 공개 글이라, 문의 답과 같은 검사(AI·자동 답 표현, 보안 정보)를 지나요.
+  // 걸리면 보내지 않고 까닭을 돌려줘요. 최고 관리자가 읽고 그래도 보내기(confirm)를 눌러야 가고, 그 사실을 기록에 남겨요.
+  const risk = replyRiskOf(body);
+  if (risk && confirm !== true) return json({ error: "reply_risk", risk }, 409);
   const pkg = env.PLAY_PACKAGE || "com.bamnat.app";
   const token = await playToken(env, account, now, REVIEWS.scope);
   const res = await fetch(`${REVIEWS.api}/${encodeURIComponent(pkg)}/reviews/${encodeURIComponent(id)}:reply`, {
@@ -110,7 +117,7 @@ async function reply(env, id, text, now) {
   });
   if (!res.ok) return json({ error: "play", status: res.status }, 502);
   await run(env, "UPDATE store_reviews SET reply = ?, reply_at = ?, replied_by = ?, status = 'replied', draft = '' WHERE id = ?", body, now, env.actor?.name ?? "관리자", id);
-  await audit(env, now, "review_reply", id.slice(0, 40), body.slice(0, 80));
+  await audit(env, now, "review_reply", id.slice(0, 40), `${risk ? `[확인하고 보냄: ${risk}] ` : ""}${body.slice(0, 80)}`);
   return json({ ok: true });
 }
 
@@ -125,19 +132,31 @@ export async function reviewRoute(request, env, url, path, method, now) {
       return json({ error: String(e?.message ?? e).startsWith("play_denied") ? "play_denied" : "play" }, 502);
     }
   }
-  const m = path.match(/^\/reviews\/([A-Za-z0-9_:.-]{4,120})\/(draft|reply|seen)$/);
-  if (!m || method !== "POST") return null;
+  const m0 = path.match(/^\/reviews\/([^/]{4,200})\/(draft|reply|seen)$/);
+  if (!m0 || method !== "POST") return null;
+  // 2.0.0 [RVQ-55] Play 리뷰 번호는 'gp:…'처럼 콜론이 들어 관리자 앱이 주소에 %3A로 적어 보내요. 풀어서 같은 모양만 받아요
+  // (전에는 풀지 않아 실제 리뷰의 초안 저장·보내기·봤어요가 '없음'으로 막혔어요).
+  let rid;
+  try {
+    rid = decodeURIComponent(m0[1]);
+  } catch {
+    return null;
+  }
+  if (!/^[A-Za-z0-9_:.-]{4,120}$/.test(rid)) return null;
+  const m = [m0[0], rid, m0[2]];
   const body = await readJson(request, 4096);
   if (m[2] === "reply") {
     if (!env.actor?.owner) return json({ error: "no_permission", area: "owner" }, 403);
-    return reply(env, m[1], body?.text, now);
+    return reply(env, m[1], body?.text, now, body?.confirm === true);
   }
   if (m[2] === "draft") {
     const text = reviewClean(body?.text, REVIEWS.replyMax);
     const r = await run(env, "UPDATE store_reviews SET draft = ?, draft_by = ? WHERE id = ?", text, env.actor?.name ?? "관리자", m[1]);
     if (!r?.meta?.changes) return json({ error: "not_found" }, 404);
     await audit(env, now, "review_draft", m[1].slice(0, 40), text.slice(0, 80));
-    return json({ ok: true });
+    // 2.0.0 [RVQ-55]: 초안은 남기되 걸린 까닭을 함께 알려요(열쇠로 적는 Claude 초안도 같은 검사).
+    const risk = text ? replyRiskOf(text) : null;
+    return json({ ok: true, ...(risk ? { risk } : {}) });
   }
   const r = await run(env, "UPDATE store_reviews SET status = 'seen' WHERE id = ? AND status = 'new'", m[1]);
   return json({ ok: Boolean(r?.meta?.changes) });

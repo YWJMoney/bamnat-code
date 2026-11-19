@@ -46,6 +46,16 @@ object QuietHold {
         true
     }
 
+    /**
+     * 2.0.0 [RVN-24] 검토 I10ac-03: whether a notice about now would be held for sleep at [now] (the 잠 시간 on, the calendar's planned
+     * sleep or a logged one); such a notice is better not sent at all. Work does not count here.
+     */
+    suspend fun asleepNow(context: Context, now: LocalDateTime): Boolean = lock.withLock {
+        val c = context.appContainer
+        val settings = c.settingsRepository.current
+        settings.quietWhileAsleep && runCatching { holdUntil(c, settings, now, now, Source.MONEY) != null }.getOrDefault(false)
+    }
+
     /** Sends what may come now and sets an alarm for the rest: when the hold alarm rings, and when the user wakes. */
     suspend fun release(context: Context) = lock.withLock {
         val c = context.appContainer
@@ -89,7 +99,7 @@ object QuietHold {
     private suspend fun holdUntil(c: AppContainer, settings: AppSettings, at: LocalDateTime, now: LocalDateTime, source: Source): LocalDateTime? {
         val log = c.sleepRepository.recent(days = 2).first()
         // The plan's sleep counts only for those who use the sleep times; a logged sleep counts for everyone.
-        val plan = if (!settings.sleepTips || settings.workStyle?.usesPayEngine == false) null else {
+        val plan = if (!planCounts(settings, source)) null else {
             val snapshot = c.scheduleRepository.snapshot.first()
             SleepSchedule.of(snapshot.resolver, at.toLocalDate().minusDays(1), at.toLocalDate(), settings.alarmsEnabled,
                 settings.sleepTargetMinutes, settings.commuteMinutes)
@@ -102,9 +112,18 @@ object QuietHold {
             SleepSchedule.of(snapshot.resolver, at.toLocalDate().minusDays(1), at.toLocalDate(), settings.alarmsEnabled,
                 settings.sleepTargetMinutes, settings.commuteMinutes).work
         }.getOrDefault(emptyList())
-        val atWork = QuietHours.workHoldUntil(at, now, work.map { it.from to it.to })
+        // 2.0.0 [RVIB-21] (결정 19) Each part on its own: news that comes in the 브레이크 타임 is not held to the end of the day.
+        val atWork = QuietHours.workHoldUntil(at, now, work.flatMap { w -> w.parts.map { it.start to it.endInclusive } })
         return listOfNotNull(asleep, atWork).maxOrNull()
     }
+
+    /**
+     * Whether the calendar's planned sleep holds a notice from [source]. 2.0.0 [RVK-43] (검토 T06b-09·U06b-12) Money (카드값·고정비
+     * 09:00, 받을 돈 10:00) waits for the sleep after a 야간 for everyone on a shift calendar, not only for those who turned the sleep
+     * times on: it rang while they slept. Planned sleep on other days is at night, before those hours, so nothing else moves.
+     */
+    internal fun planCounts(settings: AppSettings, source: Source): Boolean =
+        settings.workStyle?.usesPayEngine != false && (settings.sleepTips || source == Source.MONEY)
 
     private fun parse(entry: String): Pair<Source, LocalDateTime>? {
         val (name, time) = entry.split('|').takeIf { it.size == 2 } ?: return null

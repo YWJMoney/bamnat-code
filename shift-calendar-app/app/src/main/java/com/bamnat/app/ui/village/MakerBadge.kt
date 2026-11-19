@@ -47,6 +47,8 @@ fun MakerName(
     onProfile: (() -> Unit)?,
     style: TextStyle = MaterialTheme.typography.labelLarge,
     modifier: Modifier = Modifier,
+    /** 2.0.0 [RVN-06] COMP-08 One line with … where the head is tight (광장 카드), so the ⋮ beside it stays. */
+    maxLines: Int = Int.MAX_VALUE,
 ) {
     val speech = listOfNotNull(name, mark?.words, if (onProfile != null) "프로필 보기" else null).joinToString(", ")
     Row(verticalAlignment = Alignment.CenterVertically,
@@ -54,7 +56,8 @@ fun MakerName(
             .clearAndSetSemantics { contentDescription = speech }) {
         Text(name + if (onProfile != null) " ›" else "", style = style, color = if (mark != null) markColor(mark)
             else if (onProfile != null) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
-            fontWeight = if (mark != null) FontWeight.Bold else null)
+            fontWeight = if (mark != null) FontWeight.Bold else null, maxLines = maxLines,
+            overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
         mark?.let { Spacer(Modifier.width(3.dp)); Text(it.badge, style = style) }
     }
 }

@@ -5,7 +5,7 @@ import assert from "node:assert/strict";
 import { generateKeyPairSync } from "node:crypto";
 import worker from "../src/index.js";
 import { server, device, signIn, from, ORIGIN } from "./helpers.mjs";
-import { impact, laterWords, nextTrain, releaseName } from "../src/loop.js";
+import { impact, laterWords, LOOP, nextTrain, releaseName, trainFor } from "../src/loop.js";
 import { keyAllows } from "../src/desk.js";
 import { waitingNote } from "../src/inquiries.js";
 
@@ -15,6 +15,8 @@ const DAY = 24 * HOUR;
 const kst = (ms) => new Date(ms + 9 * HOUR).toISOString().slice(0, 10);
 /** [LOOP-32] 이 판으로 쓰는 휴대폰(어제 하루). */
 const phones = (env, app, n) => env.DB.db.prepare("INSERT OR REPLACE INTO usage_days (day, app, phones) VALUES (?, ?, ?)").run(kst(Date.now() - DAY), app, n);
+// 2.0.0 [RVQ-34] 검토 SVC-19: 트랙 100%를 본 날부터 늘어난 휴대폰만 세요(그 전 날은 테스트 트랙 사람).
+const phonesToday = (env, app, n) => env.DB.db.prepare("INSERT OR REPLACE INTO usage_days (day, app, phones) VALUES (?, ?, ?)").run(kst(Date.now()), app, n);
 
 const ask = (call, n, text, kind = "bug", app = "1.38.0 (52)") =>
   call("POST", "/api/inquiries", { v: 1, device: device(n), kind, text, info: { app } }).then((r) => r.data.id);
@@ -28,10 +30,13 @@ async function item(call, admin, title, inquiries) {
   return id;
 }
 
+// 2.0.0 [RVQ-12] 매시 작업은 17분과 47분 두 번(Play 읽기·출시 안내는 47분).
 async function hourly(env, now = Date.now()) {
-  const waits = [];
-  await worker.scheduled({ cron: "17 * * * *", scheduledTime: now }, env, { waitUntil: (p) => waits.push(p) });
-  await Promise.all(waits);
+  for (const cron of ["17 * * * *", "47 * * * *"]) {
+    const waits = [];
+    await worker.scheduled({ cron, scheduledTime: now }, env, { waitUntil: (p) => waits.push(p) });
+    await Promise.all(waits);
+  }
 }
 async function fiveMinutes(env, now = Date.now()) {
   const waits = [];
@@ -70,6 +75,12 @@ test("[LOOP] 판 이름·다음 정기 출발일·영향도 점수·출시 전 �
   // 출시 전 답에는 늘 '업데이트에 들어가요'가 들어가요: 판이 나가면 이 답을 받은 문의에 다시 알려요(desk.js shipTargets).
   assert.match(laterWords("1.39.1", "app", "2026-12-04"), /1\.39\.1 버전으로 12월 4일 정기 업데이트에 들어가요/);
   assert.match(laterWords("1.39.2", "hotfix", null), /곧 나올 1\.39\.2 긴급 업데이트에 들어가요/);
+  // 2.0.0 [HQ-78] 끝나는 즉시 나가는 판(정기 열차 밖)은 날짜 없이.
+  assert.equal(trainFor({ ...train, outside: ["2.0.0"] }, "2.0.0", Date.parse("2026-11-21T01:00:00Z")), null);
+  assert.equal(trainFor({ ...train, outside: ["2.0.0"] }, "2.0.1", Date.parse("2026-11-21T01:00:00Z")), "2026-12-04");
+  assert.deepEqual(LOOP.outsideTrain, ["2.0.0"]);
+  assert.match(laterWords("2.0.0", "app", null), /곧 나올 2\.0\.0 업데이트에 들어가요/);
+  assert.doesNotMatch(laterWords("2.0.0", "app", null), /정기|월 \d+일/);
   // 동기화 열쇠는 /dev/sync 하나만, 운영 열쇠는 그 길을 못 써요.
   assert.equal(keyAllows("/dev/sync", "POST", "sync"), true);
   assert.equal(keyAllows("/desk", "GET", "sync"), false);
@@ -99,13 +110,14 @@ test("[LOOP-01][LOOP-02] Play가 100% 나간 판을 보면 1시간 보류 뒤 �
 
   // [LOOP-32] 트랙 100%: Play는 검토 중인 판도 completed로 보여 줘요(1.39 실서버 11-08, 1.38.0 검토 중). 그래서 '검토 중일 수 있음'으로만 적고 아무것도 보내지 않아요.
   track.releases = [{ name: "53 (1.39.0)", versionCodes: ["53"], status: "completed" }];
-  phones(env, "1.39.0", 12); // 테스트 트랙 사람 정도
+  phones(env, "1.39.0", 12); // 테스트 트랙 사람 정도(100% 전날)
   await hourly(env);
   loop = (await call("GET", "/api/admin/loop", undefined, admin)).data;
   assert.equal(loop.ships[0].version, "1.39.0");
   assert.equal(loop.ships[0].status, "review");
-  assert.deepEqual(loop.play.seen, { phones: 12, need: 30, live: false });
-  assert.match((await call("GET", "/api/admin/loop/check", undefined, admin)).data.lines.find((x) => x.key === "play").text, /검토 중이거나 아직 안 나갔을 수 있어요\(이 판 휴대폰 12\/30대\)/);
+  assert.deepEqual(loop.play.seen, { phones: 0, before: 12, need: 30, testers: 12, live: false });
+  assert.match((await call("GET", "/api/admin/loop/check", undefined, admin)).data.lines.find((x) => x.key === "play").text,
+    /검토 중이거나 아직 안 나갔을 수 있어요\(100% 뒤 늘어난 휴대폰 0\/30대 · 테스터 12대보다 많아야 해요\)/);
   t.mock.timers.tick(3 * HOUR);
   await fiveMinutes(env);
   await hourly(env);
@@ -115,7 +127,11 @@ test("[LOOP-01][LOOP-02] Play가 100% 나간 판을 보면 1시간 보류 뒤 �
   assert.equal((await call("POST", "/api/admin/loop/ship/1.39.0/now", {}, admin)).status, 404);
 
   // 이 판으로 쓰는 휴대폰이 기준을 넘으면 그때 1시간 보류 안내가 서요. 그 안에는 답이 가지 않아요.
-  phones(env, "1.39.0", 30);
+  // 2.0.0 [RVQ-34] 늘어난 수만 세요: 41대는 29대 는 것이라 아직이고, 42대(30대 늘어남)면 서요.
+  phonesToday(env, "1.39.0", 41);
+  await hourly(env);
+  assert.equal((await call("GET", "/api/admin/loop", undefined, admin)).data.ships[0].status, "review");
+  phonesToday(env, "1.39.0", 42);
   await hourly(env);
   loop = (await call("GET", "/api/admin/loop", undefined, admin)).data;
   assert.equal(loop.ships[0].status, "waiting");
@@ -169,10 +185,10 @@ test("[LOOP-32] 검토 중 판: 사람이 '게시됨 확인'을 누르면 1시�
   await call("POST", `/api/admin/dev/${d}`, { status: "done", releasedIn: "1.39.0", news: "잠금 화면에서도 알람 소리가 나요" }, admin);
   // 앞 판 휴대폰이 1000대면 기준은 50대(5%): 40대로는 아직이에요.
   phones(env, "1.38.0", 1000);
-  phones(env, "1.39.0", 40);
+  phonesToday(env, "1.39.0", 40);
   await hourly(env);
   let loop = (await call("GET", "/api/admin/loop", undefined, admin)).data;
-  assert.deepEqual(loop.play.seen, { phones: 40, need: 50, live: false });
+  assert.deepEqual(loop.play.seen, { phones: 40, before: 0, need: 50, testers: 12, live: false });
   assert.equal(loop.ships[0].status, "review");
   // 열쇠는 못 누르고, 사람이 Play Console에서 보고 누르면 1시간 보류가 시작돼요.
   const made = (await call("POST", "/api/admin/keys", { label: "Claude" }, admin)).data;
@@ -195,7 +211,7 @@ test("[LOOP-32] 검토 중 판: 사람이 '게시됨 확인'을 누르면 1시�
 });
 
 // [LOOP-33] 사용자 2026-11-08 '30대가 떠야지 인지하는 거야?': 통계 동의 휴대폰이 적어도 Play 보고서(동의와 상관없이 Play가 세는 판별 설치)로 나간 것을 봐요.
-test("[LOOP-33] 통계 동의 폰이 0대여도 트랙 100%를 본 뒤 그 판 번호로 새로 깔거나 올린 기기가 3대면 나간 것으로 보고 1시간 보류해요; 그 전 날(테스트 트랙)은 세지 않아요", async (t) => {
+test("[LOOP-33] 통계 동의 폰이 0대여도 트랙 100%를 본 뒤 그 판 번호로 새로 깔거나 올린 기기가 테스터보다 많으면(13대) 나간 것으로 보고 1시간 보류해요; 그 전 날(테스트 트랙)은 세지 않아요", async (t) => {
   t.mock.timers.enable({ apis: ["Date"], now: NOW });
   const track = { releases: [{ name: "53 (1.39.0)", versionCodes: ["53"], status: "completed" }] };
   const play = fakePlay(t, track);
@@ -209,15 +225,20 @@ test("[LOOP-33] 통계 동의 폰이 0대여도 트랙 100%를 본 뒤 그 판 �
   await hourly(env);
   let loop = (await call("GET", "/api/admin/loop", undefined, admin)).data;
   assert.equal(loop.ships[0].status, "review");
-  assert.deepEqual(loop.play.seen, { phones: 0, need: 30, live: false, play: 0, playNeed: 3 });
-  // 그날부터 2대 + 다음 날 1대 = 3대: 나간 것으로 봐요.
+  assert.deepEqual(loop.play.seen, { phones: 0, before: 0, need: 30, testers: 12, live: false, play: 0, playNeed: 13 });
+  // 2.0.0 [RVQ-34] 검토 SVC-19: 그날부터 2대 + 다음 날 1대 = 3대는 테스터(12)보다 적어 아직이에요.
   reports([[kst(Date.now() - DAY), 53, 5], [kst(Date.now()), 53, 2], [kst(Date.now() + DAY), 53, 1]]);
+  t.mock.timers.tick(HOUR);
+  await hourly(env);
+  assert.equal((await call("GET", "/api/admin/loop", undefined, admin)).data.ships[0].status, "review");
+  // 그날부터 8대 + 다음 날 5대 = 13대: 나간 것으로 봐요.
+  reports([[kst(Date.now() - DAY), 53, 5], [kst(Date.now()), 53, 8], [kst(Date.now() + DAY), 53, 5]]);
   t.mock.timers.tick(HOUR);
   await hourly(env);
   loop = (await call("GET", "/api/admin/loop", undefined, admin)).data;
   assert.equal(loop.ships[0].status, "waiting");
   const seen = env.DB.db.prepare("SELECT detail FROM audit WHERE action = 'loop_ship_seen'").get();
-  assert.match(seen.detail, /Play 보고서: 이 판을 새로 깔거나 올린 기기 3대/);
+  assert.match(seen.detail, /Play 보고서: 100% 뒤 이 판을 새로 깔거나 올린 기기 13대/);
 });
 
 test("[LOOP-05] 저장소 동기화: 좁은 열쇠로 dev-status 줄을 받아 개발사항을 만들고, 고친 판·다음 정기 출발일을 답해요; 요금은 못 정해요", async (t) => {
@@ -262,6 +283,47 @@ test("[LOOP-05] 저장소 동기화: 좁은 열쇠로 dev-status 줄을 받아 �
   // 동기화를 끄면 409.
   await call("POST", "/api/admin/loop/switches", { sync: false }, owner);
   assert.equal((await call("POST", "/api/admin/dev/sync", { items: [] }, key)).data.error, "sync_off");
+});
+
+test("[HQ-78] 동기화: 2.0.0(열차 밖)은 날짜 없이 답하고, 상태·고친 판은 뒤로 가지 않으며, 한 번에 200줄·DB 부르는 수를 지켜요", async (t) => {
+  t.mock.timers.enable({ apis: ["Date"], now: NOW });
+  const { call, env } = server();
+  const owner = await signIn(call);
+  await call("POST", "/api/admin/desk/ship", { version: "1.39.0" }, owner);
+  const sync = (await call("POST", "/api/admin/keys", { scope: "sync" }, owner)).data;
+  const key = { authorization: `Bearer ${sync.key}`, "x-admin": "1" };
+  const send = (version, items) => call("POST", "/api/admin/dev/sync", { sha: "abc1234def", version, items }, key).then((r) => r.data);
+  // ① 판 번호와 함께 온 done: 2.0.0은 정기 열차 밖이라 '11월 23일 정기'가 아니라 '곧 나올 2.0.0'.
+  const q1 = await ask(call, 1, "주간 근무 알람이 30분 늦게 울려요");
+  const d1 = await item(call, owner, "주간 알람 늦음", [q1]);
+  assert.equal((await send("2.0.0", [{ id: d1, track: "LOOP-92", status: "done", size: "fix", route: "app" }])).told, 1);
+  t.mock.timers.tick(11 * 60e3);
+  await fiveMinutes(env);
+  const said = (await thread(call, q1, 1)).messages.at(-1).text;
+  assert.match(said, /곧 나올 2\.0\.0 업데이트에 들어가요/);
+  assert.doesNotMatch(said, /정기/);
+  // 열차 밖의 판은 최고 관리자가 바꿔요(보내지 않으면 그대로).
+  assert.deepEqual((await call("POST", "/api/admin/loop/train", { start: "2026-11-23", days: 7 }, owner)).data.outside, ["2.0.0"]);
+  assert.deepEqual((await call("POST", "/api/admin/loop/train", { start: "2026-11-23", days: 7, outside: ["2.0.0", "2.1.0"] }, owner)).data.outside, ["2.0.0", "2.1.0"]);
+  assert.equal((await call("POST", "/api/admin/loop/train", { start: "2026-11-23", days: 7, outside: ["two"] }, owner)).data.error, "outside");
+  // ② 뒤처진 main의 파일: done이 doing으로, 2.0.0이 1.39.0으로 돌아가지 않아요. 정말 다시 연 줄(reopen)만 돌아가요.
+  const back = await send("1.39.0", [{ id: d1, track: "LOOP-92", status: "doing", size: "fix", route: "app" }]);
+  assert.deepEqual([back.kept, back.results[0].kept], [1, "done"]);
+  await send("1.39.0", [{ id: d1, track: "LOOP-92", status: "done", size: "fix", route: "app" }]);
+  let dev = (await call("GET", `/api/admin/dev/${d1}`, undefined, owner)).data;
+  assert.deepEqual([dev.item?.status ?? dev.status, dev.item?.releasedIn ?? dev.releasedIn], ["done", "2.0.0"]);
+  await send("", [{ id: d1, track: "LOOP-92", status: "doing", size: "fix", route: "app", reopen: true }]);
+  dev = (await call("GET", `/api/admin/dev/${d1}`, undefined, owner)).data;
+  assert.equal(dev.item?.status ?? dev.status, "doing");
+  // ③ 한 번에 200줄까지, 50줄(2.0.0 동기화 한 덩어리)에 DB를 부르는 수는 새 줄마다 12번 안.
+  assert.equal((await send("", Array.from({ length: 201 }, (_, i) => ({ track: `SYNC-${i + 1}`, status: "todo" })))).error, "items");
+  const prepare = env.DB.prepare.bind(env.DB);
+  let calls = 0;
+  env.DB.prepare = (...a) => { calls++; return prepare(...a); };
+  const many = await send("", Array.from({ length: 50 }, (_, i) => ({ track: `SYNC-${i + 1}`, title: `동기화 줄 ${i + 1}`, status: "doing", size: "fix", route: "server" })));
+  env.DB.prepare = prepare;
+  assert.deepEqual([many.made, many.errors], [50, 0]);
+  assert.ok(calls > 50 && calls <= 50 * 12, `50줄에 DB ${calls}번`);
 });
 
 test("[LOOP-06][LOOP-15][LOOP-16] 고친 판으로 연 폰에만 바로 안내하고 해결됐나요를 물어요; 아직이에요면 다시 열려요", async (t) => {
@@ -548,11 +610,12 @@ test("[LOOP-12] 믿을수록 더 맡기기: 종류마다 그대로 나간 수를
   // 최고 관리자가 '자주 쓰는 답'을 바로 보내기로 켜면 열쇠 답이 바로 가요.
   assert.deepEqual((await call("POST", "/api/admin/loop/switches", { instant: ["faq", "new"] }, owner)).data.instant, ["faq"]);
   const q2 = await ask(call, 2, "위젯은 어디서 켜나요", "question");
-  await call("POST", `/api/admin/inquiries/${q2}/reply`, { text: "홈 화면을 길게 눌러 위젯에서 밤낮을 골라요.", pile: "faq" }, key);
+  // 2.0.0 [RVQ-34] 검토 I22a-02: 바로 가려면 Claude 판정 꼬리표 check가 'none'이어야 해요.
+  await call("POST", `/api/admin/inquiries/${q2}/reply`, { text: "홈 화면을 길게 눌러 위젯에서 밤낮을 골라요.", pile: "faq", check: "none" }, key);
   assert.equal((await thread(call, q2, 2)).messages.length, 2);
   // 결제·환불 말이 있으면 켜 두어도 보류해요.
   const q3 = await ask(call, 3, "구독 환불은 어떻게 하나요", "question");
-  await call("POST", `/api/admin/inquiries/${q3}/reply`, { text: "Play 스토어 › 결제 및 구독에서 환불을 요청해요.", pile: "faq" }, key);
+  await call("POST", `/api/admin/inquiries/${q3}/reply`, { text: "Play 스토어 › 결제 및 구독에서 환불을 요청해요.", pile: "faq", check: "none" }, key);
   assert.equal((await thread(call, q3, 3)).messages.length, 1);
   // 사람이 취소한 답은 연속을 끊어요.
   const held = (await call("GET", `/api/admin/inquiries/${q3}`, undefined, owner)).data.held;
@@ -774,14 +837,19 @@ test("[LOOP-37][LOOP-38] 사람이 봐야 할 문의·보안·AI 질문은 자�
 
 test("[LOOP-39] 출시 2주 뒤 숫자로 효과를 스스로 적어요: 이벤트 비율, 없으면 다시 온 문의", async () => {
   const { effectVerdict, effectTick, reachedAt } = await import("../src/loop.js");
-  assert.equal(effectVerdict({ events: "a", before: 30, after: 60, beforeDays: 300, afterDays: 300 }).effect, "better");
-  assert.equal(effectVerdict({ events: "a", before: 60, after: 30, beforeDays: 300, afterDays: 300 }).effect, "worse");
-  assert.equal(effectVerdict({ events: "a", before: 60, after: 62, beforeDays: 300, afterDays: 300 }).effect, "same");
-  assert.equal(effectVerdict({ events: "a", before: 30, after: 60, beforeDays: 300, afterDays: 300, back: 2, yes: 1 }).effect, "same");
+  // 2.0.0 [RVQ-34] 검토 SVC-20: 좋은 방향(good)을 알아야 좋아짐·나빠짐이에요.
+  assert.equal(effectVerdict({ events: "a", good: "up", before: 30, after: 60, beforeDays: 300, afterDays: 300 }).effect, "better");
+  assert.equal(effectVerdict({ events: "a", good: "up", before: 60, after: 30, beforeDays: 300, afterDays: 300 }).effect, "worse");
+  assert.equal(effectVerdict({ events: "a", good: "down", before: 60, after: 30, beforeDays: 300, afterDays: 300 }).effect, "better");
+  // 그대로는 구간이 ±10% 안에 들 만큼 표본이 클 때만이에요.
+  assert.equal(effectVerdict({ events: "a", good: "up", before: 1200, after: 1210, beforeDays: 6000, afterDays: 6000 }).effect, "same");
+  assert.equal(effectVerdict({ events: "a", good: "up", before: 60, after: 62, beforeDays: 300, afterDays: 300 }).effect, "unknown");
+  assert.equal(effectVerdict({ events: "a", good: "up", before: 30, after: 60, beforeDays: 300, afterDays: 300, back: 2, yes: 1 }).effect, "same");
   assert.equal(effectVerdict({ events: "", asks: 3, yes: 2 }).effect, "better");
   assert.equal(effectVerdict({ events: "", asks: 3, back: 1 }).effect, "same");
   assert.equal(effectVerdict({ events: "", asks: 0 }).effect, "none");
   assert.equal(effectVerdict({ events: "a", before: 1, after: 2, beforeDays: 5, afterDays: 5 }).pct, null);
+  assert.equal(effectVerdict({ events: "a", before: 1, after: 2, beforeDays: 5, afterDays: 5 }).effect, "unknown");
   // 앱 판은 그 판 이상이 나간 날, 서버는 실제로 닿은 날.
   assert.equal(reachedAt({ route: "", released_in: "1.39.0" }, [{ v: "1.38.0", at: 1 }, { v: "1.39.1", at: 5 }]), 5);
   assert.equal(reachedAt({ route: "server", live_at: 9, released_in: "" }, []), 9);
@@ -793,7 +861,7 @@ test("[LOOP-39] 출시 2주 뒤 숫자로 효과를 스스로 적어요: 이벤�
   const id = (await call("POST", "/api/admin/dev", { title: "위젯 글씨 크기" }, owner)).data.id;
   await call("POST", `/api/admin/dev/${id}`, { status: "done" }, owner);
   const db = env.DB.db;
-  db.prepare("UPDATE dev_items SET route = 'server', live_at = ?, events = 'widget_size' WHERE id = ?").run(at, id);
+  db.prepare("UPDATE dev_items SET route = 'server', live_at = ?, events = 'widget_size', good = 'up' WHERE id = ?").run(at, id);
   for (let i = 1; i <= 14; i++) {
     for (const [day, used] of [[kst(at - i * DAY), 2], [kst(at + (i - 1) * DAY), 6]]) {
       db.prepare("INSERT OR REPLACE INTO usage_days (day, app, phones) VALUES (?, '1.39.0 (53)', 10)").run(day);
@@ -807,7 +875,7 @@ test("[LOOP-39] 출시 2주 뒤 숫자로 효과를 스스로 적어요: 이벤�
   assert.equal(await effectTick(env, now), 1);
   const d = (await call("GET", `/api/admin/dev/${id}`, undefined, owner)).data;
   assert.equal(d.effect.key, "better");
-  assert.match(d.effect.why, /widget_size 쓰는 비율 \+200%/);
+  assert.match(d.effect.why, /widget_size 쓰는 비율 \+200%\(늘면 좋아요\)/);
   assert.equal((await call("GET", `/api/admin/dev/${young}`, undefined, owner)).data.effect.key, "");
   assert.equal(await effectTick(env, now), 0);
   // 오늘 화면: 효과 판정이 '저절로 끝난 일'에, 나빠진 것은 주의 필요에.
@@ -835,4 +903,75 @@ test("[LOOP-40] 오늘 화면은 밤사이 저절로 끝난 일과 사람이 보
   const a = t.alerts.find((x) => x.key.startsWith("person-held:"));
   assert.equal(a.tone, "bad");
   assert.equal(a.to, `#/inquiries/${hard}`);
+});
+
+test("[RVA-73] 요금 대기 줄을 Claude 제안대로 한 번에: 최고 관리자 세션만, 제안 없는·더 논의·이미 정한·반려 줄은 그대로, 기록과 감사가 남아요", async (t) => {
+  t.mock.timers.enable({ apis: ["Date"], now: NOW });
+  const { call } = server();
+  const owner = await signIn(call);
+  const sync = (await call("POST", "/api/admin/keys", { scope: "sync" }, owner)).data;
+  const syncH = { authorization: `Bearer ${sync.key}`, "x-admin": "1" };
+  // 지어낸 개발사항 여섯: 제안 무료·프로·더 논의·없음, 이미 정한 것, 반려한 것.
+  const mk = async (title, n, row) => {
+    const q = await ask(call, n, `${title} 해 주세요`, "idea");
+    const id = await item(call, owner, title, [q]);
+    await call("POST", "/api/admin/dev/sync", { items: [{ id, status: "doing", size: "feature", route: "flag", ...row }] }, owner);
+    return id;
+  };
+  const free = await mk("돈 통계 열기", 1, { flag: "free.MONEY_STATS", tierAsk: "free", tierWhy: "돈 관리는 기본" });
+  const pro = await mk("월말 보고서 만들기", 2, { tierAsk: "pro", tierWhy: "무겁게 계산해요" });
+  const later = await mk("근무 소리 바꾸기", 3, { tierAsk: "later" });
+  const none = await mk("달력 글꼴 고르기", 4, {});
+  const decided = await mk("메모 색 고르기", 5, { tierAsk: "pro" });
+  assert.equal((await call("POST", `/api/admin/loop/tier/${decided}`, { tier: "free", note: "사용자 결정" }, owner)).status, 200);
+  const rejected = await mk("알람 모양 바꾸기", 6, { tierAsk: "pro" });
+  assert.equal((await call("POST", `/api/admin/dev/${rejected}`, { status: "rejected", reason: "안 해요" }, owner)).status, 200);
+  const all = [free, pro, later, none, decided, rejected];
+
+  // 열쇠(동기화·Claude)와 문의 권한만 있는 관리자는 못 해요(403), 아무것도 바뀌지 않아요.
+  const k = (await call("POST", "/api/admin/keys", { label: "Claude" }, owner)).data;
+  assert.equal((await call("POST", "/api/admin/loop/tiers/apply", { ids: all }, { authorization: `Bearer ${k.key}`, "x-admin": "1" })).status, 403);
+  assert.equal((await call("POST", "/api/admin/loop/tiers/apply", { ids: all }, syncH)).status, 403);
+  const APP = { "x-admin": "1", origin: ORIGIN };
+  const perms = { review: "edit", inquiries: "edit", dev: "edit", devStatus: "edit", companies: "view", rewards: "none", settings: "none", community: "none", takedown: "none", ops: "none", metrics: "edit", shares: "none", audit: "none", flags: "none" };
+  const inv = await call("POST", "/api/admin/invites", { email: "ops2@example.com", perms }, owner);
+  await call("POST", "/api/admin/join", { token: inv.data.link.split("#")[1], name: "운영", password: "ops-member-2026" }, { ...APP, ...from(42) });
+  const aid = (await call("GET", "/api/admin/admins", undefined, owner)).data.admins.find((a) => a.email === "ops2@example.com").id;
+  await call("POST", `/api/admin/admins/${aid}`, { status: "active" }, owner);
+  const res = await call("POST", "/api/admin/login", { email: "ops2@example.com", password: "ops-member-2026" }, { ...APP, ...from(42) });
+  const other = { cookie: res.headers.get("set-cookie").split(";")[0], ...APP };
+  assert.equal((await call("POST", "/api/admin/loop/tiers/apply", { ids: all }, other)).status, 403);
+  const pending = async () => (await call("GET", "/api/admin/loop/tiers", undefined, owner)).data.items.map((x) => x.id).sort();
+  assert.deepEqual(await pending(), [free, pro, later, none].sort(), "아직 아무것도 정해지지 않았어요");
+
+  // 잘못된 모양은 400.
+  assert.equal((await call("POST", "/api/admin/loop/tiers/apply", { ids: [] }, owner)).status, 400);
+  assert.equal((await call("POST", "/api/admin/loop/tiers/apply", { ids: ["x"] }, owner)).status, 400);
+
+  // 최고 관리자 세션: 제안이 무료·프로인 두 줄만 정해지고 나머지 넷은 건너뛰어요.
+  const done = await call("POST", "/api/admin/loop/tiers/apply", { ids: all }, owner);
+  assert.equal(done.status, 200);
+  assert.equal(done.data.decided, 2);
+  assert.equal(done.data.skipped, 4);
+  assert.deepEqual(done.data.items.sort((a, b) => a.tier.localeCompare(b.tier)), [{ id: free, tier: "free" }, { id: pro, tier: "pro" }].sort((a, b) => a.tier.localeCompare(b.tier)));
+  const rows = (await call("GET", "/api/admin/loop/tiers?view=all", undefined, owner)).data.items;
+  const at = (id) => rows.find((x) => x.id === id);
+  assert.equal(at(free).tier, "free");
+  assert.equal(at(pro).tier, "pro");
+  assert.equal(at(free).tierNote, "제안대로 한 번에");
+  assert.equal(at(free).tierBy, "최고 관리자");
+  assert.equal(at(later).tier, null, "'더 논의' 제안은 그대로");
+  assert.equal(at(none).tier, null, "제안 없는 줄은 그대로");
+  assert.equal(at(decided).tier, "free", "이미 정한 줄은 그대로");
+  assert.equal(at(rejected)?.tier ?? null, null, "반려한 줄은 그대로");
+  assert.deepEqual(await pending(), [later, none].sort());
+  // 줄마다 기록과 감사.
+  const hist = (await call("GET", `/api/admin/dev/${free}`, undefined, owner)).data.history;
+  assert.ok(hist.some((h) => h.action === "tier" && h.detail.tier?.[1] === "free" && h.detail.note === "제안대로 한 번에"));
+  const audit = (await call("GET", "/api/admin/audit", undefined, owner)).data.entries.filter((a) => a.action === "loop_tier" && /제안대로 한 번에/.test(a.detail ?? a.note ?? ""));
+  assert.equal(audit.length, 2);
+  // 한 번 더 눌러도 이미 정한 줄은 다시 바뀌지 않아요.
+  const again = await call("POST", "/api/admin/loop/tiers/apply", { ids: [free, pro] }, owner);
+  assert.equal(again.data.decided, 0);
+  assert.equal(again.data.skipped, 2);
 });

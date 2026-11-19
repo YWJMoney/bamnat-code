@@ -147,6 +147,8 @@ fun NewConsentPrompt(container: AppContainer) {
     }
     val calendar = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { }
     val ask = items?.takeIf { it.isNotEmpty() } ?: return
+    // 2.0.0 [RVP-22] (검토 UIX-43) It came over the update notice; now it takes its turn, first (OpenAsk).
+    if (!com.bamnat.app.ui.components.AskTurn.turn(com.bamnat.core.guide.OpenAsk.NEW_CONSENT)) return
     val done = { container.consentStore.markSeen(ask) }
     AlertDialog(
         onDismissRequest = done,

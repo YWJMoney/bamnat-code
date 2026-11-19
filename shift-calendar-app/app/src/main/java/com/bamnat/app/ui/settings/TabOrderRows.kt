@@ -45,6 +45,8 @@ import androidx.compose.ui.semantics.CustomAccessibilityAction
 import androidx.compose.ui.semantics.customActions
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import com.bamnat.app.data.AppSettings
@@ -53,6 +55,7 @@ import com.bamnat.app.ui.TabPicks
 import com.bamnat.app.ui.components.AlertDialog
 import com.bamnat.core.layout.TabSlots
 import com.bamnat.core.work.WorkStyle
+import androidx.compose.ui.semantics.Role
 
 /** [NAV-07] 1.26 AD, [NAV2-03] 1.39: the row's name, which settings search and help open. */
 const val TAB_ORDER_ROW = "아래 메뉴 채우기·순서"
@@ -102,7 +105,11 @@ internal fun BarSlotsDialog(
     var picking by remember { mutableStateOf<PickFor?>(null) }
     // The 묶음 being named, by a screen in it (its place can move as a screen leaves another place).
     var renaming by rememberSaveable { mutableStateOf<String?>(null) }
+    // 2.0.0 [RVO-21] 검토 U11a-16 ('처음대로'가 묻지 않고 바로 돼요): the bar before 처음대로, to put back with 되돌리기 in the same
+    // place until something else is changed. In the dialog itself, as a snackbar would sit behind it.
+    var beforeReset by remember { mutableStateOf<List<TabSlots.Slot>?>(null) }
     val change: (List<TabSlots.Slot>) -> Unit = { made ->
+        beforeReset = null
         if (made != slots) {
             haptics.performHapticFeedback(HapticFeedbackType.SegmentTick)
             onChange(made)
@@ -124,7 +131,7 @@ internal fun BarSlotsDialog(
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
                 if (!more) Text("자세히", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.clip(MaterialTheme.shapes.small).clickable { more = true }.padding(vertical = 6.dp))
+                    modifier = Modifier.clip(MaterialTheme.shapes.small).clickable(role = Role.Button) { more = true }.padding(vertical = 6.dp))
                 Spacer(Modifier.height(8.dp))
                 slots.forEachIndexed { i, slot ->
                     // 1.39 [NAV2-07] The places past five show only beside the rail of an unfolded phone; folded, they wait by 나.
@@ -152,7 +159,13 @@ internal fun BarSlotsDialog(
                     }
                 }
                 // 1.39 PC NAV2 (150%·200%에서 '처음대로'가 창 밖으로 잘림): in the list, not beside 완료.
-                TextButton(onClick = onReset, enabled = settings.tabSlots.isNotEmpty() || settings.tabOrder.isNotEmpty()) { Text("처음대로 (다섯 탭)") }
+                val undo = beforeReset
+                if (undo != null) Row(Modifier.fillMaxWidth().semantics { liveRegion = LiveRegionMode.Polite }, verticalAlignment = Alignment.CenterVertically) {
+                    Text("다섯 탭으로 돌렸어요", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f).padding(start = 12.dp))
+                    TextButton(onClick = { beforeReset = null; onChange(undo) }) { Text("되돌리기") }
+                }
+                else TextButton(onClick = { beforeReset = slots; onReset() },
+                    enabled = settings.tabSlots.isNotEmpty() || settings.tabOrder.isNotEmpty()) { Text("처음대로 (다섯 탭)") }
             }
         },
         confirmButton = { TextButton(onClick = onDismiss) { Text("완료") } },
@@ -239,7 +252,7 @@ private fun SlotLine(
             Text("${index + 1}", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary, modifier = Modifier.width(24.dp))
             Icon(picks.firstOrNull()?.icon ?: TabPicks.groupIcon, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(20.dp))
             Spacer(Modifier.width(8.dp))
-            Column(Modifier.weight(1f).clip(MaterialTheme.shapes.small).clickable(onClick = onReplace)) {
+            Column(Modifier.weight(1f).clip(MaterialTheme.shapes.small).clickable(role = Role.Button, onClick = onReplace)) {
                 Text(name, style = MaterialTheme.typography.bodyLarge)
                 androidx.compose.foundation.layout.FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                     if (slot is TabSlots.Group) Tag("묶음 ${slot.members.size}개", MaterialTheme.colorScheme.secondaryContainer, MaterialTheme.colorScheme.onSecondaryContainer)
@@ -328,7 +341,7 @@ private fun PickHeading(text: String) {
 @Composable
 private fun PickLine(p: TabPick, where: String?, onPick: (String) -> Unit) {
     Row(
-        Modifier.fillMaxWidth().heightIn(min = 48.dp).clip(MaterialTheme.shapes.small).clickable { onPick(p.key) }.padding(horizontal = 4.dp),
+        Modifier.fillMaxWidth().heightIn(min = 48.dp).clip(MaterialTheme.shapes.small).clickable(role = Role.Button) { onPick(p.key) }.padding(horizontal = 4.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Icon(p.icon, null, Modifier.size(20.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -341,6 +354,7 @@ private fun PickLine(p: TabPick, where: String?, onPick: (String) -> Unit) {
 }
 
 @Composable
+@OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 private fun GroupNameDialog(start: String, onDone: (String) -> Unit, onDismiss: () -> Unit) {
     var name by rememberSaveable { mutableStateOf(start) }
     val ok = TabSlots.cleanName(name).isNotEmpty()
@@ -349,7 +363,7 @@ private fun GroupNameDialog(start: String, onDone: (String) -> Unit, onDismiss: 
         title = { Text("묶음 이름") },
         text = {
             Column {
-                Text("아래 막대에 이 이름으로 보여요(${TabSlots.NAME_MAX}자까지).", style = MaterialTheme.typography.bodyMedium,
+                Text("아래 메뉴에 이 이름으로 보여요(${TabSlots.NAME_MAX}자까지).", style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(bottom = 8.dp))
                 OutlinedTextField(
                     value = name,
@@ -358,7 +372,8 @@ private fun GroupNameDialog(start: String, onDone: (String) -> Unit, onDismiss: 
                     keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
                     keyboardActions = androidx.compose.foundation.text.KeyboardActions(onDone = { if (ok) onDone(name) }),
                 )
-                Row(Modifier.padding(top = 8.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                // 2.0.0 [RVO-21] 검토 SET-17: wraps at 200% 글자 instead of running out of the window.
+                androidx.compose.foundation.layout.FlowRow(Modifier.padding(top = 8.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     // Names that come up most, one tap each.
                     listOf("돈", "잠·쉼", "일", "함께").forEach { s ->
                         androidx.compose.material3.SuggestionChip(onClick = { name = s }, label = { Text(s) })

@@ -65,6 +65,60 @@ class TeamGridImportTest {
         assertEquals("팀 순서 뒤에", 1, made.single().sort)
     }
 
+    // ---- 2.0.0 [RVJ-27] 검토 PAYU-57·T05b-13 ----
+
+    /** 사진이 한 글자 틀리게 읽은 이름은 새 팀원이 아니라 그 팀원을 먼저 골라 둬요(리더가 확인). */
+    @Test fun aNameOneLetterOffIsOfferedAsThatMember() {
+        val team = listOf(TeamMember("m1", "t", "김민서"), TeamMember("m2", "t", "이준호"), TeamMember("m3", "t", "박하은"), TeamMember("m4", "t", "서연"))
+        val rows = listOf(Row("김민셔", null, emptyMap()), Row("이준호", null, emptyMap()), Row("박하", null, emptyMap()), Row("서언", null, emptyMap()), Row("최다인", null, emptyMap()))
+        val matched = TeamGridImport.matchNames(rows, team)
+        assertEquals(listOf(null, "m2", null, null, null), matched)
+        assertEquals("셔·서, 빠진 글자, 두 글자 이름의 한 획", listOf("m1", null, "m3", "m4", null), TeamGridImport.closeNames(rows, team, matched))
+    }
+
+    /** 다른 사람일 수 있으면 고르지 않아요: 같은 이름이 이미 가져간 팀원, 비슷한 팀원이 둘, 비슷한 줄이 둘, 성만 같은 짧은 이름. */
+    @Test fun aCloseNameIsNotOfferedWhenItCouldBeSomeoneElse() {
+        val team = listOf(TeamMember("m1", "t", "김민서"), TeamMember("m2", "t", "김민지"), TeamMember("m3", "t", "이수"), TeamMember("m4", "t", "박준"), TeamMember("m5", "t", "정하늘", active = false))
+        // 김민셔: 김민서 is free and one stroke off, but 김민지 is one letter off too.
+        assertEquals(listOf<String?>(null), TeamGridImport.closeNames(listOf(Row("김민셔", null, emptyMap())), team))
+        // 김민지 has its own row: 김민셔 can only be 김민서.
+        assertEquals(listOf(null, "m1"), TeamGridImport.closeNames(listOf(Row("김민지", null, emptyMap()), Row("김민셔", null, emptyMap())), team))
+        // Two rows a letter off the same member: neither is chosen.
+        assertEquals(listOf<String?>(null, null), TeamGridImport.closeNames(listOf(Row("이수진", null, emptyMap()), Row("이수민", null, emptyMap())), listOf(team[2])))
+        // 박준 and 박현 share a family name and no more (현 is two strokes from 준); 쉬는 팀원은 고르지 않아요.
+        assertEquals(listOf<String?>(null, null), TeamGridImport.closeNames(listOf(Row("박현", null, emptyMap()), Row("정하눌", null, emptyMap())), team))
+        assertFalse(TeamGridImport.closeName("김민지", "김수현"))
+        assertFalse("같은 이름은 '비슷한 이름'이 아니에요", TeamGridImport.closeName("김민지", "김민지"))
+    }
+
+    /** 리더가 넣기 전에 고친 이름으로 새 팀원이 생겨요. */
+    @Test fun aNewMemberTakesTheNameAsFixed() {
+        val rows = listOf(Row("김민셔 책임", null, emptyMap()), Row("정우", null, emptyMap()))
+        assertEquals("김민셔", TeamGridImport.newName(rows[0]))
+        var n = 0
+        val (made, _) = TeamGridImport.newMembers(rows, listOf(null, null), skipped = emptySet(), teamId = "t", members = members, names = mapOf(0 to " 김민서 ", 1 to " ")) { "new${n++}" }
+        assertEquals(listOf("김민서", "정우"), made.map { it.name })
+        assertEquals("직급은 읽은 대로", com.bamnat.core.team.Skill.CHARGE, made[0].skill)
+    }
+
+    /** 한글 약자를 쓰는 팀: 파일의 D·E·N이 팀의 데·이·나(또는 주간·야간)에, 파일의 데·이·나·오가 팀의 D·E·N·O에 짝지어져요. */
+    @Test fun koreanShortCodesPairBothWays() {
+        val korean = listOf(TeamShift(1, "데", "데이", 0, false), TeamShift(2, "이", "이브닝", 0, false), TeamShift(3, "나", "나이트", 0, false), TeamShift(4, "오", "오프", 0, true))
+        val g = TeamGridImport.guessCodes(listOf("D", "E", "N", "O", "OFF", "주간", "야"), korean)
+        assertEquals(listOf(1L, 2L, 3L, 4L, 4L, 1L, 3L), listOf("D", "E", "N", "O", "OFF", "주간", "야").map { g[it] })
+        val h = TeamGridImport.guessCodes(listOf("데", "이", "나", "오", "오전", "야근"), shifts)
+        assertEquals(listOf(1L, 2L, 3L, 4L, 1L, 3L), listOf("데", "이", "나", "오", "오전", "야근").map { h[it] })
+        val dayNight = listOf(TeamShift(1, "주", "주간", 0, false), TeamShift(2, "야", "야간", 0, false), TeamShift(3, "휴", "휴무", 0, true))
+        val k = TeamGridImport.guessCodes(listOf("D", "N", "E", "비"), dayNight)
+        assertEquals(1L, k["D"]); assertEquals(2L, k["N"]); assertEquals(3L, k["비"])
+        assertNull("그 팀에 없는 근무는 짝짓지 않아요", k["E"])
+    }
+
+    /** 팀의 약자·이름과 같은 코드는 그대로, 낱말로 짐작한 코드만 '짐작' 표시를 받아요. */
+    @Test fun onlyCodesPairedByWordsAreMarkedAsGuessed() {
+        assertEquals(setOf("A", "연", "나이트", "휴"), TeamGridImport.looselyGuessed(listOf("D", "주간", "A", "연", "나이트", "휴", "N1", "O"), shifts))
+    }
+
     @Test fun theBigCodesAreListedFirst() {
         val rows = listOf(Row("a", null, mapOf(d(1) to "D", d(2) to "D", d(3) to "N1")), Row("b", null, mapOf(d(1) to "D", d(2) to "", d(3) to "N1", d(4) to "O")))
         assertEquals(listOf("D" to 3, "N1" to 2, "O" to 1), TeamGridImport.codeCounts(rows))

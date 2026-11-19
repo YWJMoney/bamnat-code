@@ -1,11 +1,8 @@
 package com.bamnat.app.ui.settings
 
-import android.app.ActivityManager
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
-import android.os.Build
-import android.provider.Settings
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -51,6 +48,7 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.Role
@@ -148,6 +146,9 @@ import kotlinx.coroutines.withContext
 import java.time.LocalDate
 import java.time.ZoneId
 import com.bamnat.core.time.Today
+import com.bamnat.app.ui.theme.Tone
+import com.bamnat.app.ui.theme.color
+import com.bamnat.app.ui.theme.container
 
 /**
  * [SET-01] The settings in groups, in the order people look for them, under the alarm's state.
@@ -172,23 +173,12 @@ enum class SettingsPage(
  * [J133-77] 1.33 (유형별 점검: 가게·현장 달력에서도 설정이 '급여와 연차'·'근무 3가지'로 나와요): a group's name in the words of the
  * calendar on screen. 교대·일근 keep the names they always had.
  */
-internal fun SettingsPage.titleFor(style: com.bamnat.core.work.WorkStyle?): String = when (this) {
-    SettingsPage.WORK -> when (style) {
-        com.bamnat.core.work.WorkStyle.FIELD -> "내 일정"
-        com.bamnat.core.work.WorkStyle.BUSINESS -> "내 가게"
-        com.bamnat.core.work.WorkStyle.INVEST -> "내 투자"
-        else -> title
-    }
-    SettingsPage.PAY -> when (style) {
-        com.bamnat.core.work.WorkStyle.HOURLY -> "시급과 주휴수당"
-        com.bamnat.core.work.WorkStyle.FIELD, com.bamnat.core.work.WorkStyle.BUSINESS, com.bamnat.core.work.WorkStyle.INVEST -> style.words().income
-        else -> title
-    }
-    else -> title
-}
+// 2.0.0 [RVH-41] One list with 기능 찾기's ways (core FeatureRegistry.settingsPage), so a way read there is this page's name.
+internal fun SettingsPage.titleFor(style: com.bamnat.core.work.WorkStyle?): String = com.bamnat.core.guide.FeatureRegistry.settingsPage(title, style)
 
 /** A result to show once; [undo] offers to take an import back. */
-data class SettingsMessage(val text: String, val undo: Boolean = false)
+/** [undo] offers 되돌리기, which runs [onUndo] (2.0.0 [RVL-76]) or else takes back the last 불러오기. */
+data class SettingsMessage(val text: String, val undo: Boolean = false, val onUndo: (() -> Unit)? = null)
 
 class SettingsViewModel(private val container: AppContainer) : ViewModel() {
     val settings: StateFlow<AppSettings> = container.settingsRepository.settings
@@ -205,10 +195,11 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
     fun showAdPrivacy(activity: android.app.Activity) = container.ads.showPrivacyOptions(activity)
 
     /** 1.36 [INQ-07] 이 휴대폰이 보낸 정보 모두 지우기, where the privacy policy says it is. */
-    fun forgetEverythingSent(done: (String) -> Unit) {
+    /** 2.0.0 [RVO-16] [done] with whether the server answered, and what it deleted in words. */
+    fun forgetEverythingSent(done: (Boolean, String) -> Unit) {
         viewModelScope.launch {
             val counts = com.bamnat.app.ui.company.forgetEverythingSent(container)
-            done(counts?.words() ?: "인터넷에 연결한 뒤 다시 해 주세요")
+            done(counts != null, counts?.words() ?: "인터넷에 연결한 뒤 다시 해 주세요")
         }
     }
 
@@ -218,10 +209,37 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
 
     /** [UNDO-01][UNDO-02][UNDO-03] 최근 지운 기록, newest first. */
     val recentlyCleared: StateFlow<List<com.bamnat.app.data.RecordsTrash.Entry>> = container.recordsTrash.entries
+    /** 2.0.0 [RVL-76] 날짜별 되돌리기 went back; 되돌리기 on its message goes back to how it was just before. */
+    fun timeMachineDone(text: String, before: com.bamnat.app.data.TimeMachine.Point?) {
+        _message.value = SettingsMessage(text, undo = before != null, onUndo = before?.let { p ->
+            {
+                container.appScope.launch {
+                    val ok = runCatching { container.timeMachine.restore(p) }.isSuccess
+                    _message.value = SettingsMessage(if (ok) "되돌리기 전 모습으로 돌아왔어요" else "되돌리지 못했어요. 지금 기록은 그대로예요")
+                }
+            }
+        })
+    }
+
     fun restoreCleared(entry: com.bamnat.app.data.RecordsTrash.Entry) {
         container.appScope.launch {
             val ok = container.recordsTrash.restore(entry.id)
-            _message.value = SettingsMessage(if (ok) "‘${entry.name}’ 기록을 되돌렸어요" else "되돌리지 못했어요. 7일이 지났거나 파일을 읽지 못했어요")
+            _message.value = SettingsMessage(if (ok) "‘${entry.name}’ 기록을 되돌렸어요" else "되돌리지 못했어요. 보관 기간이 지났거나 파일을 읽지 못했어요")
+        }
+    }
+    /**
+     * 2.0.0 [RVS-15] 검토 SN-04·SD-05: my own settings (밝기·글자 크기·누르기·시계…) that works put on before changed and that are still as
+     * the work left them, for 화면과 글자's '작품이 바꾼 내 설정 되돌리기' (7일이 지나도).
+     */
+    private val _feelBack = MutableStateFlow<List<com.bamnat.app.recipe.RecipeRepository.FeelBack>>(emptyList())
+    val feelBack: StateFlow<List<com.bamnat.app.recipe.RecipeRepository.FeelBack>> = _feelBack.asStateFlow()
+    fun loadFeelBack() { viewModelScope.launch { _feelBack.value = runCatching { container.recipes.feelChanged() }.getOrDefault(emptyList()) } }
+    fun putFeelBack() {
+        val list = _feelBack.value
+        viewModelScope.launch {
+            val n = runCatching { container.recipes.putFeelBack(list) }.getOrDefault(0)
+            _message.value = SettingsMessage(if (n > 0) "작품을 넣기 전 설정 ${n}개로 되돌렸어요" else "되돌릴 설정이 없어요. 그 사이 직접 바꾸셨어요")
+            loadFeelBack()
         }
     }
     /** [CALS-02] 내 근무 and 급여 follow the calendar picked at their top (the one on the calendar tab). */
@@ -267,7 +285,12 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
     }.flowOn(kotlinx.coroutines.Dispatchers.Default).stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     fun cancelSnooze() = container.alarmScheduler.cancelSnooze()
-    fun update(transform: (AppSettings) -> AppSettings) = container.settingsRepository.update(transform)
+    /** 2.0.0 [RVO-21] 검토 I11aa-03: a change made on the settings screens is noted for 방금 바꾼 것 (one place, before and after). */
+    fun update(transform: (AppSettings) -> AppSettings) = container.settingsRepository.update { s -> transform(s).also { RecentSettings.note(container.settingsRepository, s, it) } }
+    /** 2.0.0 [RVO-21] 되돌리기 on 방금 바꾼 것: puts that one setting back, and the list forgets it. */
+    internal fun undo(c: RecentSettings.Change) = update { RecentSettings.undo(c, it) }
+    /** Whose changes 방금 바꾼 것 shows. */
+    val recentOwner: Any get() = container.settingsRepository
     fun canScheduleExact() = container.alarmScheduler.canScheduleExact()
 
     private val _missed = MutableStateFlow(0)
@@ -292,22 +315,30 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
     /** [SET-05] Moves every shift's alarms [minutes] earlier (later when negative); the alarms are set again from the saved shifts. */
     fun moveAllAlarms(minutes: Int) {
         viewModelScope.launch {
-            val types = container.scheduleRepository.shiftTypes.first()
-            com.bamnat.core.model.AlarmShift.moveAll(types, minutes).forEach { container.scheduleRepository.saveShiftType(it) }
+            val repo = shownRepository()
+            val types = repo.shiftTypes.first()
+            com.bamnat.core.model.AlarmShift.moveAll(types, minutes).forEach { repo.saveShiftType(it) }
         }
     }
 
     /** [J133-21] One shift's earliest alarm at [minutes] before it starts, from the 알람 page's chips. */
     fun setFirstAlarm(typeId: Long, minutes: Int) {
         viewModelScope.launch {
-            val t = container.scheduleRepository.shiftTypes.first().firstOrNull { it.id == typeId } ?: return@launch
+            val repo = shownRepository()
+            val t = repo.shiftTypes.first().firstOrNull { it.id == typeId } ?: return@launch
             val on = t.alarms.filter { it.enabled }
             val first = on.maxByOrNull { it.offsetMinutes }
             val alarms = if (first == null) t.alarms + com.bamnat.core.model.AlarmSpec(minutes)
                 else t.alarms.map { if (it === first) it.copy(offsetMinutes = minutes) else it }.distinctBy { it.offsetMinutes to it.enabled }
-            container.scheduleRepository.saveShiftType(t.copy(alarms = alarms))
+            repo.saveShiftType(t.copy(alarms = alarms))
         }
     }
+
+    /**
+     * 1.39.1 [R391-05] (검토 SET-01) The 알람 page lists the shifts of the calendar picked ([snapshot]); its chips change that
+     * calendar's shifts, not 내 달력's shift with the same number (each calendar has its own database, so ids repeat).
+     */
+    private fun shownRepository() = container.calendars.repository(container.calendars.active.value)
 
     fun setAlarmsEnabled(on: Boolean) {
         update { it.copy(alarmsEnabled = on) }
@@ -340,6 +371,16 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
     private val _pendingRestore = MutableStateFlow<Pair<String, BackupSummary>?>(null)
     val pendingRestore: StateFlow<Pair<String, BackupSummary>?> = _pendingRestore.asStateFlow()
 
+    /** 2.0.0 [RVL-50] (검토 U12-04) The app's own counts beside a waiting restore, so its window says first what gets fewer. */
+    private val _restoreNow = MutableStateFlow<BackupSummary?>(null)
+    val restoreNow: StateFlow<BackupSummary?> = _restoreNow.asStateFlow()
+
+    /** Counted before the window opens, so its lines do not come in after it. */
+    private suspend fun waitRestore(p: Pair<String, BackupSummary>) {
+        _restoreNow.value = runCatching { container.backupManager.currentSummary() }.getOrNull()
+        _pendingRestore.value = p
+    }
+
     /** [FEAT-08] Password for the next export, chosen before the file picker opens; never stored. */
     private var exportPassword: CharArray? = null
 
@@ -359,7 +400,12 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
             return
         }
         viewModelScope.launch {
-            _message.value = SettingsMessage(runCatching {
+            // 2.0.0 [RVM-53] 검토 RCP-21 ②: a work only being tried (기능까지 써 보기) went into a backup saved by hand, and came back as if
+            // put in when it was opened. It ends first, as for the auto backup and a real 넣기; what I wrote while trying stays.
+            val tried = endTrial()
+            // 2.0.0 [RVL-13] (검토 DATA-13) What a file without a password left out, said after saving too.
+            val gaps = if (password == null) runCatching { container.backupManager.plainLeavesOut() }.getOrNull() else null
+            _message.value = SettingsMessage(tried + runCatching {
                 // [REL-15] A file of format 3: the photos stream from their files, sealed as they go when there is a password.
                 withContext(Dispatchers.IO) {
                     context.contentResolver.openOutputStream(uri, "wt")!!.use { container.backupManager.exportFile(it, password) }
@@ -369,9 +415,12 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
                     context.contentResolver.openInputStream(uri)!!.use { container.backupManager.verifyFile(it, password) }
                 }.isSuccess
                 container.telemetry.event(DiagEvents.BACKUP_EXPORT)
+                com.bamnat.app.data.GuideStore.get(context).used("data.backup") // 1.40 [DISC-03] 써 봄, also without the guide
                 if (opens) container.backupNudge.saved() // 1.32 [STAB-08]
                 when {
                     !opens -> "저장한 백업을 다시 열어 보니 손상돼 있어요. 다른 위치에 한 번 더 저장해 주세요"
+                    password == null && gaps != null && !gaps.isEmpty ->
+                        "백업 파일을 저장하고 확인했어요. 암호 없이 저장해 ${gaps.words}${com.bamnat.app.data.PlainLeavesOut.topic(gaps.words)} 빠졌어요"
                     password == null -> "백업 파일을 저장하고, 다시 열어 확인했어요"
                     else -> "암호 건 백업을 저장하고 확인했어요. 암호를 잊으면 열 수 없어요"
                 }
@@ -379,6 +428,44 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
             password?.fill(' ')
         }
     }
+
+    /**
+     * 2.0.0 [RVL-49] (검토 U12-02) 새 휴대폰으로 옮기기 in one go: the backup made in the app's share folder, opened again to check it, then
+     * handed to Android's 보내기 (카톡 나에게 보내기, 메일, 드라이브) by [sending]. The new phone opens the file it got and starts with it
+     * ("이 백업으로 시작할까요?"). [password] is cleared here; the copy in the cache goes the next time something is shared from it.
+     */
+    fun sendBackup(context: Context, password: CharArray?) {
+        val cache = context.applicationContext.cacheDir
+        viewModelScope.launch {
+            val gaps = if (password == null) runCatching { container.backupManager.plainLeavesOut() }.getOrNull() else null
+            val file = runCatching {
+                withContext(Dispatchers.IO) {
+                    val dir = java.io.File(cache, "share").apply { mkdirs(); listFiles()?.forEach { it.delete() } }
+                    val f = java.io.File(dir, "밤낮-백업-${Today.date()}.${BackupManager.EXTENSION}")
+                    java.io.BufferedOutputStream(java.io.FileOutputStream(f)).use { container.backupManager.exportFile(it, password) }
+                    // Opened again before it goes, as 백업 저장 does: what the new phone gets will open.
+                    f.inputStream().use { container.backupManager.verifyFile(it, password) }
+                    f
+                }
+            }.getOrNull()
+            password?.fill(' ')
+            if (file == null) {
+                _message.value = SettingsMessage("백업을 만들지 못했어요. 저장 공간을 확인하고 다시 해 주세요")
+                return@launch
+            }
+            container.telemetry.event(DiagEvents.BACKUP_EXPORT)
+            container.backupNudge.saved()
+            _sending.value = file
+            if (gaps != null && !gaps.isEmpty) {
+                _message.value = SettingsMessage("암호 없이 만들어 ${gaps.words}${com.bamnat.app.data.PlainLeavesOut.topic(gaps.words)} 빠졌어요")
+            }
+        }
+    }
+
+    /** 2.0.0 [RVL-49] A checked backup waiting for Android's 보내기, opened by the screen. */
+    private val _sending = MutableStateFlow<java.io.File?>(null)
+    val sending: StateFlow<java.io.File?> = _sending.asStateFlow()
+    fun sent() { _sending.value = null }
 
     /** [PROV-03] 매일 자동 백업 as it stands. */
     val autoBackup: StateFlow<com.bamnat.app.backup.AutoBackup.State> get() = container.autoBackup.state
@@ -391,18 +478,19 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
         autoBackupPassword = password
     }
 
-    /** [PROV-03] Turns 자동 백업 on with the file just made, and makes the first backup there. */
-    fun startAutoBackup(context: Context, uri: Uri) {
+    /** [PROV-03] Turns 자동 백업 on with the file just made (or 2.0.0 [RVL-52] the folder just picked), and makes the first backup there. */
+    fun startAutoBackup(context: Context, uri: Uri, folder: Boolean = false) {
         val password = autoBackupPassword
         autoBackupPassword = null
         if (password == null) {
-            // The app was closed while the picker was open and the password went with it.
-            runCatching { android.provider.DocumentsContract.deleteDocument(context.contentResolver, uri) }
+            // The app was closed while the picker was open and the password went with it. The empty file just made goes; a folder
+            // the user picked is theirs and stays.
+            if (!folder) runCatching { android.provider.DocumentsContract.deleteDocument(context.contentResolver, uri) }
             _message.value = SettingsMessage("암호가 지워져 켜지 않았어요. 다시 켜 주세요")
             return
         }
         viewModelScope.launch {
-            _message.value = SettingsMessage(when (val r = container.autoBackup.turnOn(uri, password)) {
+            _message.value = SettingsMessage(when (val r = container.autoBackup.turnOn(uri, password, folder)) {
                 is com.bamnat.app.backup.AutoBackup.Result.Ok -> "자동 백업을 켰어요. 첫 백업을 저장했어요"
                 is com.bamnat.app.backup.AutoBackup.Result.Failed -> if (container.autoBackup.on) "켰지만 첫 백업을 저장하지 못했어요. ${r.why}" else r.why
                 else -> "자동 백업을 켰어요"
@@ -410,9 +498,9 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
         }
     }
 
-    fun moveAutoBackup(uri: Uri) {
+    fun moveAutoBackup(uri: Uri, folder: Boolean = false) {
         viewModelScope.launch {
-            _message.value = SettingsMessage(when (val r = container.autoBackup.moveTo(uri)) {
+            _message.value = SettingsMessage(when (val r = container.autoBackup.moveTo(uri, folder)) {
                 is com.bamnat.app.backup.AutoBackup.Result.Ok -> "새 위치에 백업했어요"
                 is com.bamnat.app.backup.AutoBackup.Result.Failed -> r.why
                 else -> "위치를 바꿨어요"
@@ -420,10 +508,12 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
         }
     }
 
+    /** 2.0.0 [RVL-51] (검토 U12-05) Also while 프로 has ended, as 지금 한 번 저장: a backup by hand is everyone's. */
     fun backupNow() {
+        val open = gate.value.allows(com.bamnat.app.tier.Feature.AUTO_BACKUP)
         viewModelScope.launch {
-            _message.value = SettingsMessage(when (val r = container.autoBackup.runNow()) {
-                is com.bamnat.app.backup.AutoBackup.Result.Ok -> "백업했어요"
+            _message.value = SettingsMessage(when (val r = container.autoBackup.saveOnce()) {
+                is com.bamnat.app.backup.AutoBackup.Result.Ok -> if (open) "백업했어요" else "저장했어요. 매일 저장은 프로를 다시 쓰면 이어져요"
                 is com.bamnat.app.backup.AutoBackup.Result.Failed -> r.why
                 com.bamnat.app.backup.AutoBackup.Result.Locked -> "자동 백업은 프로에서 돼요"
                 com.bamnat.app.backup.AutoBackup.Result.Off -> "자동 백업이 꺼져 있어요"
@@ -448,8 +538,8 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
                 val json = withContext(Dispatchers.Default) { container.backupManager.unseal(current.text, password) }
                 json to container.backupManager.summarize(json)
             }.onSuccess {
+                waitRestore(it)
                 _locked.value = null
-                _pendingRestore.value = it
             }.onFailure { e ->
                 _locked.value = current.copy(working = false, error = (e as? BackupException)?.message ?: "백업 파일을 읽을 수 없어요")
             }
@@ -536,11 +626,15 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
         }
     }
 
-    /** Writes work days from three months ago to a year ahead as a calendar file [REL-04]. */
+    /** 2.0.0 [RVO-17] 검토 SET-11 '내 달력만 내보내기': the calendar picked for the next [exportIcs] (내 달력 unless another was). */
+    var icsCalendar: String = com.bamnat.app.data.PersonalCalendar.MAIN
+
+    /** Writes work days from three months ago to a year ahead as a calendar file [REL-04], of [icsCalendar]. */
     fun exportIcs(context: Context, uri: Uri) {
+        val calendar = icsCalendar.also { icsCalendar = com.bamnat.app.data.PersonalCalendar.MAIN }
         viewModelScope.launch {
             _message.value = SettingsMessage(runCatching {
-                val snapshot = container.scheduleRepository.snapshot.first()
+                val snapshot = container.calendars.repository(calendar).snapshot.first()
                 val (from, to) = IcsWriter.defaultRange(Today.date())
                 val ics = withContext(Dispatchers.Default) {
                     IcsWriter.write(snapshot.resolver.resolveRange(from, to), Today.zone())
@@ -566,11 +660,18 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
                     return@runCatching
                 }
                 if (container.backupManager.isSealed(json)) _locked.value = LockedBackup(json)
-                else _pendingRestore.value = json to container.backupManager.summarize(json)
+                else waitRestore(json to container.backupManager.summarize(json))
             }.onFailure { e ->
                 _message.value = SettingsMessage((e as? BackupException)?.message ?: "파일을 읽을 수 없어요")
             }
         }
+    }
+
+    /** [RVM-53] Ends a 기능까지 써 보기 still on and says so in front of what follows ("" with none). */
+    private suspend fun endTrial(): String {
+        if (!com.bamnat.app.recipe.FunctionTrial.busy(container.appContext)) return ""
+        val e = com.bamnat.app.ui.recipe.LiveTryOn.settled(container, snack = false) ?: return ""
+        return "‘${e.title}’ 써 보기는 끝냈어요 · "
     }
 
     fun cancelRestore() {
@@ -583,15 +684,20 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
         val json = _pendingRestore.value?.first ?: return
         _pendingRestore.value = null
         container.appScope.launch {
+            // 2.0.0 [RVM-53] 검토 RCP-21 ②: a trial on would put its 'before' back over what the backup brings, and the copy kept for
+            // 되돌리기 would hold the tried work. It ends first.
+            val tried = endTrial()
             _message.value = runCatching {
                 // [SET-01] Kept first: without the copy nothing is replaced.
                 container.importUndo.save()
                 container.backupManager.restore(json)
                 container.telemetry.event(DiagEvents.BACKUP_RESTORE)
+                // 1.40 [DISC-03] The 써 봄 marks stay on the old phone: '안 써 본 기능' cards rest a while.
+                com.bamnat.app.data.DiscoverStore.get(container.appContext).restored()
                 // [J133-87] 1.33 빌드 6 (복원 뒤 완료 알림이 안 보여요): the restored settings (12시간 보기, 글자 크기) draw the app's root
                 // again, and a message shown at once went with the old one. Said once the new screen is up.
                 kotlinx.coroutines.delay(RESTORED_SAY_MS)
-                SettingsMessage("백업을 불러왔어요", undo = true)
+                SettingsMessage(tried + "백업을 불러왔어요", undo = true)
             }.getOrElse { e -> SettingsMessage((e as? BackupException)?.message ?: "백업을 불러오지 못했어요. 지금 데이터는 그대로예요") }
         }
     }
@@ -696,7 +802,7 @@ fun SettingsScreen(
         val result = snackbar.showSnackbar(m.text, actionLabel = if (m.undo) "되돌리기" else null,
             duration = if (m.undo) SnackbarDuration.Long else SnackbarDuration.Short)
         vm.consumeMessage(m)
-        if (result == SnackbarResult.ActionPerformed) vm.undoImport()
+        if (result == SnackbarResult.ActionPerformed) m.onUndo?.invoke() ?: vm.undoImport()
     }
 
     val pageContent: @Composable ColumnScope.(SettingsPage) -> Unit = { p ->
@@ -714,10 +820,14 @@ fun SettingsScreen(
     }
 
     if (wide) {
+        // 2.0.0 [RVO-10] (검토 U11a-17: 폴드를 편 폭에서는 검색어를 넣은 채 뒤로 가면 설정을 나갔어요): back clears a search first, as on a phone.
+        BackHandler(enabled = query.isNotEmpty()) { query = "" }
         val shown = page ?: SettingsPage.WORK
         BoxWithConstraints(Modifier.fillMaxSize()) {
-        // The list takes two fifths: its lines are short, the group's explanations are long.
-        val hubWidth = (maxWidth * 0.4f).coerceIn(HUB_MIN_WIDTH, HUB_MAX_WIDTH)
+        // The list takes two fifths: its lines are short, the group's explanations are long. 2.0.0 [RVO-02] (HQ-01) With big letters it
+        // takes up to half, so its cards keep whole words on a line.
+        val big = androidx.compose.ui.platform.LocalDensity.current.fontScale >= 1.5f
+        val hubWidth = if (big) (maxWidth * 0.5f).coerceIn(HUB_MIN_WIDTH, HUB_MAX_WIDTH_BIG) else (maxWidth * 0.4f).coerceIn(HUB_MIN_WIDTH, HUB_MAX_WIDTH)
         Row(Modifier.fillMaxSize()) {
             hub(Modifier.width(hubWidth).fillMaxHeight(), shown)
             VerticalDivider()
@@ -754,12 +864,14 @@ fun SettingsScreen(
 private const val PAGE_MILLIS = 250
 private val HUB_MIN_WIDTH = 260.dp
 private val HUB_MAX_WIDTH = 360.dp
+private val HUB_MAX_WIDTH_BIG = 440.dp
 
 /** A group's page: its title (with back when folded), then its sections, scrolling. */
 @Composable
 private fun PageColumn(page: SettingsPage, onBack: (() -> Unit)?, content: @Composable ColumnScope.() -> Unit) {
     // [J133-77] The group's name in the words of the calendar on screen.
-    val title = page.titleFor(com.bamnat.app.ui.flags.rememberScreenStyle())
+    val style = com.bamnat.app.ui.flags.rememberScreenStyle()
+    val title = page.titleFor(style)
     Column(
         Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 16.dp, vertical = 12.dp),
         verticalArrangement = Arrangement.spacedBy(com.bamnat.app.ui.theme.LocalSpacing.current.card),
@@ -771,7 +883,8 @@ private fun PageColumn(page: SettingsPage, onBack: (() -> Unit)?, content: @Comp
             }
             Text(title, style = MaterialTheme.typography.headlineSmall, modifier = Modifier.semantics { heading() })
         }
-        content()
+        // 2.0.0 [RVH-41] Its rows in the same words ([said]).
+        androidx.compose.runtime.CompositionLocalProvider(LocalSettingsStyle provides style) { content() }
         // [UX-05] Every group ends with where to ask, with the group named so the answers start there.
         TextButton(
             onClick = { InquiryLinks.ask(InquiryStart(about = "설정 > ${page.title}", help = true)) },
@@ -819,24 +932,18 @@ private fun SettingsHub(
     val keyboard = androidx.compose.ui.platform.LocalSoftwareKeyboardController.current
     val hideOnDrag = com.bamnat.app.ui.components.rememberHideKeyboardOnDrag()
     val pick: (SettingEntry) -> Unit = { keyboard?.hide(); onFound(it) }
-    Column(modifier.nestedScroll(hideOnDrag).verticalScroll(scroll).padding(horizontal = 12.dp, vertical = 12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+    // 2.0.0 [RVO-09] (PC-82 '수면 기록' 바로 가기가 안 열림): the app draws under the keyboard (edge to edge), so the found features at the
+    // foot of the results stayed under it and a tap on their 바로 가기 went to the keyboard. The list ends above the keyboard.
+    Column(modifier.imePadding().nestedScroll(hideOnDrag).verticalScroll(scroll).padding(horizontal = 12.dp, vertical = 12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
         Text("설정", style = MaterialTheme.typography.headlineSmall,
             modifier = Modifier.padding(start = 4.dp, bottom = 8.dp).semantics { heading() })
         val work by vm.workSettings.collectAsStateWithLifecycle()
         SettingsSearchField(query, onQuery, searchFocus)
         Spacer(Modifier.size(4.dp))
         if (query.isNotBlank()) {
-            // [J133-71] 1.33: what the calendar's kind of work has, so 알바 finds no 회사 찾기.
-            val companyWork = context.appContainer.companyFits(com.bamnat.app.ui.company.companyCalendarOf(context.appContainer, null))
-            val style = work.workStyle
             val searchCalendar by vm.activeCalendar.collectAsStateWithLifecycle()
-            val flowAdded = com.bamnat.core.guide.FitTable.visible(com.bamnat.core.guide.FitSurface.CALENDAR_PARTS, "todayFlow", style,
-                com.bamnat.app.ui.guide.rememberFitAdded(searchCalendar))
-            val entries = remember(onOpenBoard != null, companyWork, style, flowAdded) { SettingsIndex.entries(board = onOpenBoard != null, share = vm.shareOn, company = companyWork, style = style,
-                flowAdded = flowAdded,
-                sleepAuto = runCatching { context.appContainer.flags.on(com.bamnat.core.flags.FlagCatalog.SLEEP_AUTO) }.getOrDefault(false),
-                sleepSound = runCatching { context.appContainer.flags.on(com.bamnat.core.flags.FlagCatalog.SLEEP_SOUND) }.getOrDefault(false)) }
-            SearchResults(query, remember(query, entries) { SettingsIndex.search(query, entries) }, vm.shareOn, pick)
+            val entries = rememberSettingsEntries(board = onOpenBoard != null, share = vm.shareOn, style = work.workStyle, calendar = searchCalendar)
+            SearchResults(query, remember(query, entries) { SettingsIndex.found(query, entries) }, vm.shareOn, pick, settings) { f -> vm.update(f) }
             return@Column
         }
         // [UX-05] A new answer is said at the top, not only on the row at the end of the list.
@@ -853,10 +960,15 @@ private fun SettingsHub(
         val activeCal by vm.activeCalendar.collectAsStateWithLifecycle()
         val folded = androidx.compose.ui.platform.LocalContext.current.appContainer.foldedTypes.state.collectAsStateWithLifecycle().value[activeCal].orEmpty()
         for (p in SettingsPage.entries) {
+            // 2.0.0 [RVO-03] (SET-05·T11a-14) One rule: a calendar's pages (내 근무, 알람, 급여) by the calendar on screen, the phone's
+            // pages (알림과 잠, 화면과 글자, 데이터, 개인정보) by 내 달력 — the summary reads like the page it opens.
+            val ofCalendar = p in CALENDAR_PAGES
             GroupRow(p.icon, p.titleFor(work.workStyle), if (p == SettingsPage.WORK && mineCal != null) mineCal.mineLine(short = true)
-                else summary(p, if (p == SettingsPage.WORK) work else settings, snapshot, profile != null, notificationsOk, work.workStyle, folded), selected == p,
+                else summary(p, if (ofCalendar) work else settings, snapshot, profile != null, notificationsOk, if (ofCalendar) work.workStyle else settings.workStyle, folded), selected == p,
                 tone = com.bamnat.app.ui.theme.settingsTones().of(p.kind)) { onOpen(p) }
         }
+        // 2.0.0 [RVO-21] 검토 I11aa-03: what was just changed, to put back in one tap (shown only after a change).
+        RecentChangesCard(vm.recentOwner, onUndo = { c -> vm.undo(c) }, modifier = Modifier.padding(top = 8.dp))
         // [J133-69] 1.33 (중간 빌드 확인: 설정을 열면 맨 위가 친구 초대·알려 주기 카드와 '모르는 것 3개' 부탁이라 설정 목록은 넘겨야
         // 보였어요): the groups come first; 내 정보 and 함께 만들어요 under them.
         Spacer(Modifier.size(8.dp))
@@ -873,16 +985,13 @@ private fun SettingsHub(
         val gate by vm.gate.collectAsStateWithLifecycle()
         GroupRow(Icons.Outlined.WorkspacePremium, "프로", proSummary(gate), false) { SettingsLinks.go(SettingsGo.PRO) }
         // 1.38 관리 화면: 리더·사장님 일은 개인 화면과 따로 한곳에.
-        val flagRows by context.appContainer.flags.byKey.collectAsStateWithLifecycle()
-        val leaderOn = flagRows[com.bamnat.core.flags.FlagCatalog.TEAM_LEADER]?.on == true
-        val bossOn = flagRows[com.bamnat.core.flags.FlagCatalog.BOSS_PAYROLL]?.on == true
-        if (leaderOn || bossOn) GroupRow(Icons.Outlined.Groups, "팀·가게 관리",
-            listOfNotNull("팀 근무표".takeIf { leaderOn }, "급여 대장·명세서·직원".takeIf { bossOn }, "할 일").joinToString(" · "), false) { SettingsLinks.go(SettingsGo.MANAGE) }
+        val manage = rememberManageRow()
+        if (manage != null) GroupRow(Icons.Outlined.Groups, manage.title, manage.summary, false) { SettingsLinks.go(SettingsGo.MANAGE) }
         // [INVITE-02] AE 1.26: 친구 초대 is on the 프로 screen; this row says it is there. AG 1.27 [INVITE-09]: the rules as meant.
         // [J133-77] 1.33 (유형별 점검: '친구 초대'가 설정에 두 번): not while the 함께 만들어요 card above says it.
         if (LocalContext.current.appContainer.inviteApi.enabled && !com.bamnat.app.ui.grow.rememberGrowCardShown()) {
             val inviteRules by LocalContext.current.appContainer.invites.store.state.collectAsStateWithLifecycle()
-            GroupRow(Icons.Outlined.PersonAdd, "친구 초대", "${inviteRules.rules.short()}, ${inviteRules.rules.need}명 더 채울 때마다 또 · 초대 코드 넣기", false) {
+            GroupRow(Icons.Outlined.PersonAdd, "친구 초대", "${com.bamnat.core.tier.InviteRules.promise(inviteRules.rules)} · 받은 코드 넣기", false) {
                 SettingsLinks.go(SettingsGo.PRO)
             }
         }
@@ -893,7 +1002,7 @@ private fun SettingsHub(
             GroupRow(Icons.Outlined.Forum, boardTitle, boardLine, false, onClick = onOpenBoard)
         }
         // [RCP-38] 1.34 나눔 판: on and off, recipes put on (되돌리기), mine, and those being made.
-        GroupRow(Icons.Outlined.Forum, "장터·내 레시피", "받은 레시피 되돌리기 · 내가 올린 레시피 · 만들던 레시피 · 켜고 끄기", false) {
+        GroupRow(Icons.Outlined.Forum, "장터·내 작품", "받은 작품 되돌리기 · 내가 올린 작품 · 만들던 작품 · 켜고 끄기", false) {
             SettingsLinks.go(SettingsGo.RECIPES)
         }
         // [GUIDE-05] Every feature that can be off, and where to turn it back on.
@@ -953,6 +1062,28 @@ private fun SettingsSearchField(query: String, onQuery: (String) -> Unit, focusR
     )
 }
 
+/** 2.0.0 [RVJ-93] 설정 › 더 보기's 관리 row as it is drawn: its name and summary line; null while it is not there. */
+internal data class ManageRow(val title: String, val summary: String)
+
+/**
+ * 1.38 관리 화면, with 2.0.0 [RVO-19] 검토 T11a-15·SET-06 (TYPE-20): named for what is on and the work's words ('팀 관리', '사업장 관리',
+ * 가게는 '가게 관리', [RVH-78]), never a shop to someone with none; an investor sees it only once leading a team or a 사업장 made on
+ * this phone. 2.0.0 [RVJ-93] 검토 BOSS-68: the same row is what 설정 찾기 finds for '관리'·'사장님'·'리더' ([SettingsIndex.entries]).
+ */
+@Composable
+internal fun rememberManageRow(): ManageRow? {
+    val context = LocalContext.current
+    val flagRows by context.appContainer.flags.byKey.collectAsStateWithLifecycle()
+    val leaderOn = flagRows[com.bamnat.core.flags.FlagCatalog.TEAM_LEADER]?.on == true
+    val bossOn = flagRows[com.bamnat.core.flags.FlagCatalog.BOSS_PAYROLL]?.on == true
+    val screenStyle = com.bamnat.app.ui.flags.rememberScreenStyle()
+    val leads by remember(context) { context.appContainer.phaseThree.teamList.map { it.isNotEmpty() } }.collectAsStateWithLifecycle(false)
+    val hasPlace by remember(context) { context.appContainer.phaseThree.workplaces.map { it.isNotEmpty() } }.collectAsStateWithLifecycle(false)
+    if (!(leaderOn || bossOn) || (screenStyle == com.bamnat.core.work.WorkStyle.INVEST && !leads && !hasPlace)) return null
+    return ManageRow(com.bamnat.app.ui.work.manageTitle(leaderOn, bossOn, screenStyle),
+        listOfNotNull("팀 근무표".takeIf { leaderOn }, "급여 대장·명세서·직원".takeIf { bossOn }, "할 일").joinToString(" · "))
+}
+
 /** [UX-04] What the search found: the setting, and where it lives, so the way there is learned too. */
 /** [J133-79] A result's place in the words its page is called by for this kind of work ("급여와 연차" is 가게's "매출과 경비"). */
 internal fun whereFor(where: String, style: com.bamnat.core.work.WorkStyle?): String {
@@ -960,29 +1091,71 @@ internal fun whereFor(where: String, style: com.bamnat.core.work.WorkStyle?): St
     return page.titleFor(style) + where.removePrefix(page.title)
 }
 
+/**
+ * 2.0.0 [RVO-10] (검토 T11a-06: 도움말 › 설정에서 찾기가 유형을 전혀 거르지 않았어요): what settings can find for the calendar on screen,
+ * the same for 설정 찾기 and 도움말. [J133-71] 회사 things only where the work has a company; the kind of work's rows and words; 오늘의
+ * 흐름 only when it is on that calendar; the sleep switches only when their flags are open.
+ */
 @Composable
-private fun SearchResults(query: String, results: List<SettingEntry>, share: Boolean, onFound: (SettingEntry) -> Unit) {
+internal fun rememberSettingsEntries(board: Boolean, share: Boolean, style: com.bamnat.core.work.WorkStyle?, calendar: String): List<SettingEntry> {
+    val c = LocalContext.current.appContainer
+    val company = c.companyFits(com.bamnat.app.ui.company.companyCalendarOf(c, calendar))
+    val flowAdded = com.bamnat.core.guide.FitTable.visible(com.bamnat.core.guide.FitSurface.CALENDAR_PARTS, "todayFlow", style,
+        com.bamnat.app.ui.guide.rememberFitAdded(calendar))
+    val sleepAuto = runCatching { c.flags.on(com.bamnat.core.flags.FlagCatalog.SLEEP_AUTO) }.getOrDefault(false)
+    val sleepSound = runCatching { c.flags.on(com.bamnat.core.flags.FlagCatalog.SLEEP_SOUND) }.getOrDefault(false)
+    val manage = rememberManageRow()?.title
+    val ledger = rememberLedgerOn()
+    // 2.0.0 [RVIB-21] 둘째 구간 알림 is found where the page draws it: with a 근무 종류 of two parts.
+    val gap = rememberHasGap()
+    return remember(board, share, company, style, flowAdded, sleepAuto, sleepSound, manage, ledger, gap) {
+        SettingsIndex.entries(board = board, share = share, company = company, style = style, flowAdded = flowAdded, sleepAuto = sleepAuto,
+            sleepSound = sleepSound, manage = manage, ledger = ledger, gap = gap)
+    }
+}
+
+@Composable
+private fun SearchResults(query: String, found: SearchText.Split<SettingEntry>, share: Boolean, onFound: (SettingEntry) -> Unit,
+                          settings: AppSettings? = null, onChange: ((AppSettings) -> AppSettings) -> Unit = {}) {
     val screenStyle = com.bamnat.app.ui.flags.rememberScreenStyle()
-    Text(if (results.isEmpty()) "‘$query’에 맞는 설정이 없어요" else "찾은 설정 ${results.size}개",
-        style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant,
+    val results = found.all
+    // 2.0.0 [RVJ-93] 검토 BOSS-70·U05c-10: what fits is counted; what only looks like it waits under its own small heading, three at most.
+    Text(when {
+        found.isEmpty() -> "‘$query’에 맞는 설정이 없어요"
+        found.sure.isEmpty() -> "‘$query’에 꼭 맞는 설정은 없어요"
+        else -> "찾은 설정 ${found.sure.size}개"
+    }, style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant,
         modifier = Modifier.padding(start = 4.dp, top = 8.dp, bottom = 4.dp).semantics { liveRegion = LiveRegionMode.Polite })
     for (e in results) {
+        if (e == found.near.firstOrNull()) Text("비슷한 설정", style = MaterialTheme.typography.labelMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(start = 4.dp, top = if (found.sure.isEmpty()) 0.dp else 8.dp, bottom = 2.dp))
+        // 2.0.0 [RVO-21] 검토 U11a-03·I11aa-02: a found switch is turned here, without going in (the row still opens its page).
+        val quick = (e.place as? SettingPlace.Row)?.let { WatchedSettings.switchOf(it.row) }?.takeIf { settings != null }
+        val title = com.bamnat.core.work.TypeWords.say(screenStyle, e.title)
         Row(
             Modifier.fillMaxWidth().heightIn(min = 56.dp).clip(MaterialTheme.shapes.medium)
                 .clickable(role = Role.Button) { onFound(e) }.padding(horizontal = 12.dp, vertical = 8.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Column(Modifier.weight(1f)) {
-                Text(e.title, style = MaterialTheme.typography.bodyLarge)
+                Text(title, style = MaterialTheme.typography.bodyLarge)
                 Text(settingsPath(whereFor(e.where, screenStyle)), style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
-            Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, null, tint = MaterialTheme.colorScheme.outline)
+            if (quick != null && settings != null) {
+                val on = quick.read(settings) as Boolean
+                androidx.compose.material3.Switch(on, onCheckedChange = { v -> onChange { quick.on!!(it, v) } },
+                    modifier = Modifier.padding(start = 8.dp).semantics { contentDescription = title })
+            } else Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, null, tint = MaterialTheme.colorScheme.outline)
         }
     }
     // [UX-05] The same words find the help answers too: "알람이 안 울려요" is a question more than a setting.
     val hiddenKinds = com.bamnat.app.ui.flags.rememberHiddenKinds()
-    val answers = remember(query, share, hiddenKinds, screenStyle) { HelpFaq.search(query, HelpFaq.topics(share).withoutKinds(hiddenKinds).forStyle(screenStyle), limit = 3) }
+    val inviteTerms = rememberInviteTerms()
+    val helpExtras = rememberHelpExtras()
+    val answers = remember(query, share, hiddenKinds, screenStyle, inviteTerms, helpExtras) {
+        HelpFaq.search(query, HelpFaq.topics(share, inviteTerms, helpExtras).withoutKinds(hiddenKinds).forStyle(screenStyle), limit = 3)
+    }
     if (answers.isNotEmpty()) {
         Text("도움말의 답 ${answers.size}개", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.padding(start = 4.dp, top = 12.dp, bottom = 4.dp))
@@ -1091,6 +1264,9 @@ internal fun shortcutLabel(title: String, style: com.bamnat.core.work.WorkStyle?
     }
 }
 
+/** 2.0.0 [RVO-03] The settings pages that belong to one calendar (the others belong to the phone and go by 내 달력). */
+internal val CALENDAR_PAGES = setOf(SettingsPage.WORK, SettingsPage.ALARM, SettingsPage.PAY)
+
 /** [UX-04] The search result that opens the help answers rather than the question form. */
 internal const val HELP_TITLE = "자주 묻는 질문"
 
@@ -1111,7 +1287,7 @@ private fun summary(page: SettingsPage, s: AppSettings, snapshot: ScheduleSnapsh
     // [SET-02] Notices first (or that they are off), then sleep, in one line.
     SettingsPage.NOTICES -> (
         (if (!notificationsOk) listOf("알림이 꺼져 있어요") else listOfNotNull(
-            // [J133-79] The calendar on screen's kind of work, as the rest of the hub: no 연차 for a shop, no 퇴근길 for trades.
+            // [J133-79] The kind of work's words: no 연차 for a shop, no 퇴근길 for trades. 2.0.0 [RVO-03] 내 달력's, as the page.
             "브리핑".takeIf { s.briefing },
             (if (style == com.bamnat.core.work.WorkStyle.BUSINESS) "마감 뒤" else "퇴근길").takeIf { s.commuteNotice && style != com.bamnat.core.work.WorkStyle.INVEST },
             "잘 준비".takeIf { s.bedtimeNotice },
@@ -1126,14 +1302,12 @@ private fun summary(page: SettingsPage, s: AppSettings, snapshot: ScheduleSnapsh
         else -> style.words().incomeHint
     }
     SettingsPage.CALENDAR -> listOf(
-        when (s.themeMode) { ThemeMode.SYSTEM -> "휴대폰 테마"; ThemeMode.LIGHT -> "밝게"; ThemeMode.DARK -> "어둡게"; ThemeMode.NIGHT_SHIFT -> "야간 근무 중 어둡게" },
+        // 2.0.0 [RVO-19] 검토 SET-06: as the page says it (DisplayWords).
+        when (s.themeMode) { ThemeMode.SYSTEM -> "휴대폰 테마"; ThemeMode.LIGHT -> "밝게"; ThemeMode.DARK -> "어둡게"; ThemeMode.NIGHT_SHIFT -> DisplayWords.nightTheme(style) },
         "날짜 칸 아래 " + when {
             s.showLunar -> "음력"
             // [J133-79] The hours under a day in the work's own word.
-            s.showHoursInCells -> when (style) {
-                com.bamnat.core.work.WorkStyle.BUSINESS -> "영업시간"; com.bamnat.core.work.WorkStyle.FIELD -> "일정 시간"
-                com.bamnat.core.work.WorkStyle.INVEST -> "비움"; else -> "근무시간"
-            }
+            s.showHoursInCells -> DisplayWords.hours(style) ?: "비움"
             else -> "비움"
         },
         "위젯",
@@ -1148,14 +1322,26 @@ internal fun boardRow(style: com.bamnat.core.work.WorkStyle?): Pair<String, Stri
     com.bamnat.core.work.WorkStyle.FIELD -> "현장 광장" to "지역·직종 일당 시세 · 일정·단가 협상 팁"
     com.bamnat.core.work.WorkStyle.BUSINESS -> "가게 광장" to "영업·매출 팁 나누기"
     com.bamnat.core.work.WorkStyle.INVEST -> "투자 이야기" to "기록하는 방법·공부한 것 나누기"
-    else -> "회사 규칙 광장" to "회사별 근무표·급여 규칙 찾기 · 맞았어요·달라요 · 토론"
+    else -> "회사 규칙 광장" to "회사별 근무표·급여 규칙 찾기 · 맞아요·달라요 · 토론"
 }
 
-/** [MON-04] The 프로 row's words: before the 정식 출시, with 프로, and without it. */
+/** [MON-04] The 프로 row's words: while 결제 is not open, with 프로, and without it. */
 internal fun proSummary(gate: com.bamnat.app.tier.Gate): String = when {
-    !gate.live -> "지금은 모든 기능 무료 · 출시 소식은 앱에서 알려 드려요" // [J133-43] 순번 723
-    gate.access.pro -> gate.access.reason.words
+    // 2.0.0 [RVO-12] (HQ-46) 3.1 보류 중인 휴대폰은 그 끝나는 날을, 나머지(개발용 빌드·결제를 잠시 끈 때)는 '출시' 말 없이. [J133-43] 순번 723
+    !gate.live && gate.access.reason == com.bamnat.core.tier.ProReason.HELD -> gate.access.say(com.bamnat.core.time.Today.zone())
+    !gate.live -> "지금은 모든 기능 무료 · 결제가 열리면 앱에서 알려 드려요"
+    gate.access.pro -> gate.access.say(com.bamnat.core.time.Today.zone())
     else -> "광고 없애기 · 명세서 대조 · 돈 통계 · 1개월 무료 체험"
+}
+
+/**
+ * 2.0.0 [RVO-02] (T11a-07: 가게·투자·현장의 알람 카드 단추가 늘 '근무 종류'): the button that opens where the alarms are turned on, in the
+ * work's own word.
+ */
+internal fun alarmKindsButton(style: com.bamnat.core.work.WorkStyle?): String = when (style) {
+    null, com.bamnat.core.work.WorkStyle.SHIFT -> "근무 종류"
+    com.bamnat.core.work.WorkStyle.INVEST -> "투자 알람"
+    else -> style.words().types
 }
 
 /** "7시간", "6시간 반". */
@@ -1172,7 +1358,7 @@ private fun VersionLine(onOpenDiagnostics: (Boolean) -> Unit) {
         textAlign = TextAlign.Center,
         modifier = Modifier
             .fillMaxWidth()
-            .clickable {
+            .clickable(role = Role.Button) {
                 taps++
                 if (taps >= 7) {
                     taps = 0
@@ -1180,6 +1366,22 @@ private fun VersionLine(onOpenDiagnostics: (Boolean) -> Unit) {
                 }
             }
             .padding(top = 16.dp, bottom = 24.dp),
+    )
+}
+
+/**
+ * 2.0.0 [RVI-65] (디자인 품질 12) A line of the alarm card with its button. Beside each other while the line keeps room to read;
+ * at 200% or in the narrow list pane of an unfolded phone the button goes under it (the line stood a word per row beside it).
+ */
+@Composable
+private fun LineWithButton(text: String, label: String, onClick: () -> Unit, color: androidx.compose.ui.graphics.Color = androidx.compose.ui.graphics.Color.Unspecified) {
+    // The shared part, as the card's head (갈래 O RVO-02): side by side while the words keep room, else the button goes under them.
+    com.bamnat.app.ui.components.SideOrBelow(
+        modifier = Modifier.fillMaxWidth().padding(start = 36.dp),
+        minStart = 160.dp,
+        belowAlign = Alignment.Start,
+        start = { Text(text, style = MaterialTheme.typography.bodyMedium, color = color) },
+        end = { TextButton(onClick = onClick) { Text(label, maxLines = 1) } },
     )
 }
 
@@ -1202,25 +1404,31 @@ private fun AlarmReadyCard(
     val snoozeAt by vm.snoozeAt.collectAsStateWithLifecycle()
     val missed by vm.missed.collectAsStateWithLifecycle()
     LaunchedEffect(refresh) { vm.recheckMissed() }
-    val fixes = remember(refresh, settings.alarmsEnabled, missed) { alarmFixes(context, vm, settings, missed, askNotifications, onOpenDiagnostics) }
+    // 2.0.0 [RVO-16] 검토 SET-02·U11a-02: the same verdict as 설정 › 알람 and 알람 점검 (it said '준비 완료' while 설정 › 알람 said '고칠 것 1').
+    val verdict = remember(refresh, settings.alarmsEnabled, missed) {
+        runCatching { com.bamnat.app.ui.diag.alarmVerdict(com.bamnat.app.ui.diag.alarmChecks(context.appContainer, context)) }.getOrNull()
+    }
+    val fixes = remember(verdict, missed) { alarmFixes(context, settings, verdict, missed, askNotifications, onOpenDiagnostics) }
     val cal = LocalCalendarColors.current
     val next = upcoming
     val (icon, headline, tint) = when {
         !settings.alarmsEnabled -> Triple(Icons.Filled.AlarmOff, "알람이 모두 꺼져 있어요", MaterialTheme.colorScheme.error)
-        fixes.isNotEmpty() -> Triple(Icons.Filled.WarningAmber, "알람 확인이 필요해요", cal.warning)
+        fixes.isNotEmpty() -> Triple(Icons.Filled.WarningAmber, "알람 확인이 필요해요", Tone.Danger.color()) // 2.0.0 [RVP-13] (HQ-54) 울리지 않을 수 있는 알람: 위험
         next == null -> Triple(Icons.Outlined.Alarm, "울릴 알람이 없어요", MaterialTheme.colorScheme.onSurfaceVariant)
         else -> Triple(Icons.Filled.CheckCircle, "알람 준비 완료", MaterialTheme.colorScheme.secondary)
     }
     Surface(
         shape = MaterialTheme.shapes.large,
-        color = if (fixes.isNotEmpty() || !settings.alarmsEnabled) cal.warningContainer else MaterialTheme.colorScheme.surfaceContainerLow,
+        color = if (fixes.isNotEmpty() || !settings.alarmsEnabled) Tone.Danger.container() else MaterialTheme.colorScheme.surfaceContainerLow,
         modifier = Modifier.fillMaxWidth(),
     ) {
-        Column(Modifier.padding(start = 16.dp, end = 8.dp, top = 14.dp, bottom = 10.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
+        Column(Modifier.padding(start = 16.dp, end = 8.dp, top = 12.dp, bottom = 8.dp)) {
+            // 2.0.0 [RVO-02] (HQ-01: 편 폭·글자 200%에서 설정 왼쪽 목록이 좁아 이 카드 글이 한 낱말씩 세로로 쌓였어요): 글과 단추는
+            // SideOrBelow로, 글이 좁아지면 단추가 그 아래로 내려가요(조건 12).
+            com.bamnat.app.ui.components.SideOrBelow(minStart = 160.dp, start = { Row(verticalAlignment = Alignment.CenterVertically) {
                 Icon(icon, null, tint = tint)
                 Spacer(Modifier.width(12.dp))
-                Column(Modifier.weight(1f)) {
+                Column {
                     Text(headline, style = MaterialTheme.typography.titleMedium)
                     // [J133-77] 1.33 (유형별 점검: 가게 달력의 설정에 '다음 알람 … 저녁 알바'): the alarms are 내 달력's; with
                     // another calendar on screen the line says whose they are.
@@ -1250,25 +1458,30 @@ private fun AlarmReadyCard(
                             }
                         }.getOrNull()
                     }
-                    nudge?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = cal.warning) }
+                    nudge?.let { com.bamnat.app.ui.components.ToneLine(it) } // 쉬는 시간은 주의
                 }
+            } }, end = {
                 when {
                     !settings.alarmsEnabled -> TextButton(onClick = { vm.setAlarmsEnabled(true) }) { Text("켜기") }
-                    next == null && fixes.isEmpty() -> TextButton(onClick = onOpenShiftTypes) { Text("근무 종류") }
+                    next == null && fixes.isEmpty() -> TextButton(onClick = onOpenShiftTypes) { Text(alarmKindsButton(settings.workStyle)) }
                 }
-            }
+            })
             snoozeAt?.let { at ->
-                Row(Modifier.padding(start = 36.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Text("${Fmt.time(AlarmScheduler.millisToLocal(at).toLocalTime())}에 다시 울려요",
-                        style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
-                    TextButton(onClick = vm::cancelSnooze) { Text("지금 끄기") }
-                }
+                LineWithButton("${Fmt.time(AlarmScheduler.millisToLocal(at).toLocalTime())}에 다시 울려요", "지금 끄기", vm::cancelSnooze)
             }
-            for (fix in fixes) {
-                Row(Modifier.padding(start = 36.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Text(fix.text, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
-                    TextButton(onClick = fix.onFix) { Text(fix.label) }
-                }
+            // 2.0.0 [RVI-38] (디자인 품질 2: 글자 단추는 2개까지) The most serious one with its button; the rest are counted, all in 알람 점검.
+            fixes.firstOrNull()?.let { fix -> LineWithButton(fix.text, fix.label, fix.onFix) }
+            if (fixes.size > 1) {
+                LineWithButton("고칠 것이 ${fixes.size - 1}가지 더 있어요", "모두 보기", { onOpenDiagnostics(false) },
+                    color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+            // 2.0.0 [RVO-16] U11a-02 '꼭 고칠 것 0 · 권장 1': ready, and what would make it surer, one line and its place.
+            val better = verdict?.better.orEmpty()
+            if (settings.alarmsEnabled && fixes.isEmpty() && better.isNotEmpty()) {
+                com.bamnat.app.ui.components.SideOrBelow(Modifier.padding(start = 36.dp), minStart = 120.dp, start = {
+                    Text("하면 더 좋은 것 ${better.size}가지 · ${better.joinToString(", ") { it.title }}", style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }, end = { TextButton(onClick = { onOpenDiagnostics(false) }) { Text("보기") } })
             }
         }
     }
@@ -1276,37 +1489,51 @@ private fun AlarmReadyCard(
 
 private class AlarmFix(val text: String, val label: String, val onFix: () -> Unit)
 
-/** What keeps the alarm from working, most serious first. Nothing while every alarm is off on purpose. */
+/** 2.0.0 [RVI-38] The checks that fail, as 설정 › 알람 counts them ('고칠 것 N가지'); 알람 사용 is the card's own headline. */
+internal fun alarmReadyProblems(checks: List<com.bamnat.app.ui.diag.AlarmCheck>): List<com.bamnat.app.ui.diag.AlarmCheck> =
+    checks.filter { it.ok == false && it.title != "알람 사용" }
+
+/** The check's first sentence, so the card stays one line a problem; the rest is in 설정 › 알람. */
+internal fun alarmFixLine(check: com.bamnat.app.ui.diag.AlarmCheck): String =
+    check.why.substringBefore(". ").removeSuffix(".").trim()
+
+/** A short button: the check's own when it is short, 고치기 otherwise. */
+internal fun alarmFixButton(check: com.bamnat.app.ui.diag.AlarmCheck): String = when {
+    check.title == "알림 허용" -> "허용"
+    check.fixLabel.length <= 6 -> check.fixLabel
+    else -> "고치기"
+}
+
+/**
+ * What keeps the alarm from ringing or showing, most serious first, said in a line each with its one button. Nothing while every
+ * alarm is off on purpose. 2.0.0 [RVO-16] 검토 SET-02 · [RVI-38] 검토 PC-16: from the one verdict of the same checks as 설정 › 알람 and
+ * 알람 점검 ([com.bamnat.app.ui.diag.alarmVerdict]), so the places never disagree; what is only 'better' is the card's softer line.
+ */
 private fun alarmFixes(
     context: Context,
-    vm: SettingsViewModel,
     settings: AppSettings,
+    verdict: com.bamnat.app.ui.diag.AlarmVerdict?,
     missed: Int,
     askNotifications: () -> Unit,
     onOpenDiagnostics: (Boolean) -> Unit,
 ): List<AlarmFix> {
     if (!settings.alarmsEnabled) return emptyList()
-    val pkg = Uri.parse("package:${context.packageName}")
-    val canPost = Notifications.canPost(context)
+    val c = context.appContainer
+    fun fix(check: com.bamnat.app.ui.diag.AlarmCheck): () -> Unit = { com.bamnat.app.ui.diag.applyAlarmFix(c, context, check.fix, "settings top") }
     return buildList {
-        if (!canPost) add(AlarmFix("알림이 꺼져 있어 알람이 울려도 화면이 뜨지 않고 소리만 나요", "허용", askNotifications))
-        else if (!Notifications.channelOn(context, Notifications.ALARM_CHANNEL_ID)) {
-            add(AlarmFix("휴대폰 설정에서 근무 알람 알림이 꺼져 있어요", "켜기") { SystemSettings.channel(context, Notifications.ALARM_CHANNEL_ID) })
-        }
-        if (canPost && !Notifications.canUseFullScreen(context) && Build.VERSION.SDK_INT >= 34) {
-            add(AlarmFix("잠금 화면에 알람 화면이 뜨지 않아요", "허용") {
-                SystemSettings.open(context, Intent(Settings.ACTION_MANAGE_APP_USE_FULL_SCREEN_INTENT, pkg))
-            })
-        }
-        if (!vm.canScheduleExact() && Build.VERSION.SDK_INT >= 31) {
-            add(AlarmFix("알람이 몇 분 늦게 울릴 수 있어요", "허용") {
-                SystemSettings.open(context, Intent(Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM, pkg))
-            })
-        }
-        if (Build.VERSION.SDK_INT >= 28 && context.getSystemService(ActivityManager::class.java)?.isBackgroundRestricted == true) {
-            add(AlarmFix("배터리 설정이 밤낮을 막고 있어 알람이 늦을 수 있어요", "풀기") {
-                SystemSettings.open(context, Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, pkg))
-            })
+        for (check in alarmReadyProblems(verdict?.must.orEmpty())) {
+            when (check.title) {
+                "알림 허용" -> add(AlarmFix("알림이 꺼져 있어 알람이 울려도 화면이 뜨지 않고 소리만 나요", "허용", askNotifications))
+                "알람 알림 켜짐" -> add(AlarmFix("휴대폰 설정에서 근무 알람 알림이 꺼져 있어요", "켜기") { SystemSettings.channel(context, Notifications.ALARM_CHANNEL_ID) })
+                "잠금 화면 알람" -> add(AlarmFix("잠금 화면에 알람 화면이 뜨지 않아요", "허용", fix(check)))
+                "잠금 화면에 알람 보이기" -> add(AlarmFix("알람 알림이 조용히·숨김으로 바뀌어 알람 화면이 뜨지 않아요", "바꾸기", fix(check)))
+                "정확한 알람" -> add(AlarmFix("알람이 몇 분 늦게 울릴 수 있어요", "허용", fix(check)))
+                "알람 소리 크기" -> add(AlarmFix("알람 소리가 0이라 울려도 들리지 않아요", "올리기", fix(check)))
+                "방해 금지" -> add(AlarmFix("‘완전히 무음’ 방해 금지라 알람도 울리지 않아요", "열기", fix(check)))
+                "백그라운드 제한 없음" -> add(AlarmFix("배터리 설정이 밤낮을 막고 있어 알람이 늦을 수 있어요", "풀기", fix(check)))
+                "다음 알람 등록" -> add(AlarmFix("휴대폰이 다음 알람을 잃어버렸어요", "다시 걸기", fix(check)))
+                else -> add(AlarmFix(alarmFixLine(check), alarmFixButton(check), fix(check)))
+            }
         }
         if (missed > 0) add(AlarmFix("지난 7일에 울리지 않았을 수 있는 알람이 ${missed}번 있어요", "보기") { onOpenDiagnostics(false) })
     }
@@ -1315,6 +1542,8 @@ private fun alarmFixes(
 /** The file pickers and the dialogs around backups and company files, kept while the user moves between groups. */
 internal class SettingsFiles(
     val saveBackup: () -> Unit,
+    /** 2.0.0 [RVL-49] A password, then Android's 보내기 with the checked file. */
+    val sendBackup: () -> Unit,
     val openFile: () -> Unit,
     val exportIcs: () -> Unit,
     val shareCompany: () -> Unit,
@@ -1366,6 +1595,22 @@ internal object BackupPlace {
     fun last(context: Context): Uri? =
         runCatching { context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getString(KEY, null)?.let(Uri::parse) }.getOrNull()
 
+    /**
+     * 2.0.0 [RVO-17] 검토 SET-11·U11a-09: whether the file is still there, asked of its folder's app (the name only, nothing read or
+     * downloaded). Off the main thread.
+     */
+    fun exists(context: Context, uri: Uri): Boolean = runCatching {
+        context.contentResolver.query(uri, arrayOf(android.provider.OpenableColumns.DISPLAY_NAME), null, null, null)?.use { it.moveToFirst() } == true
+    }.getOrDefault(false)
+
+    /** 2.0.0 [RVO-17] 검토 U11a-09 '목록에서 빼기': a backup that is gone leaves the list, and its grant goes back. */
+    fun forget(context: Context, uri: Uri) {
+        runCatching { context.contentResolver.releasePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION) }
+        val json = org.json.JSONArray()
+        stored(context).filter { it.uri != uri }.forEach { r -> json.put(org.json.JSONObject().put("u", r.uri.toString()).put("n", r.name).put("t", r.at.toString())) }
+        runCatching { context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putString(RECENT, json.toString()).apply() }
+    }
+
     class Open : ActivityResultContracts.OpenDocument() {
         override fun createIntent(context: Context, input: Array<String>): Intent =
             super.createIntent(context, input).apply { last(context)?.let { putExtra(android.provider.DocumentsContract.EXTRA_INITIAL_URI, it) } }
@@ -1393,6 +1638,29 @@ private fun rememberSettingsFiles(vm: SettingsViewModel): SettingsFiles {
     // [CAL-47] A file opened from a messenger after the setup: read here, as 파일 불러오기 does.
     val incoming by com.bamnat.app.IncomingFiles.file.collectAsStateWithLifecycle()
     LaunchedEffect(incoming) { com.bamnat.app.IncomingFiles.take()?.let { vm.readFile(context, it) } }
+    // 2.0.0 [RVL-49] 새 휴대폰으로 옮기기's 만들고 보내기: the same password window, then 보내기 with the file it made and checked.
+    var askingToSend by remember { mutableStateOf(false) }
+    if (askingToSend) {
+        ExportPasswordDialog(
+            onDismiss = { askingToSend = false },
+            onExport = { password -> askingToSend = false; vm.sendBackup(context, password) },
+            action = "보내기",
+        )
+    }
+    val sending by vm.sending.collectAsStateWithLifecycle()
+    LaunchedEffect(sending) {
+        val file = sending ?: return@LaunchedEffect
+        vm.sent()
+        val uri = androidx.core.content.FileProvider.getUriForFile(context, "${context.packageName}.share", file)
+        val send = Intent(Intent.ACTION_SEND).apply {
+            type = BackupManager.FILE_MIME
+            putExtra(Intent.EXTRA_STREAM, uri)
+            putExtra(Intent.EXTRA_TEXT, SEND_NOTE)
+            clipData = android.content.ClipData.newRawUri(file.name, uri)
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        }
+        runCatching { context.startActivity(Intent.createChooser(send, "백업 보내기")) }
+    }
     var askingPassword by remember { mutableStateOf(false) }
     if (askingPassword) {
         ExportPasswordDialog(
@@ -1449,10 +1717,13 @@ private fun rememberSettingsFiles(vm: SettingsViewModel): SettingsFiles {
             onDismiss = { recentBackups = emptyList() })
     }
     val pendingRestore by vm.pendingRestore.collectAsStateWithLifecycle()
+    val restoreNow by vm.restoreNow.collectAsStateWithLifecycle()
     pendingRestore?.let { (_, summary) ->
-        ConfirmDialog(
+        // 2.0.0 [RVL-50] How old the file is and what gets fewer, first.
+        RestoreDialog(
+            file = summary,
+            now = restoreNow,
             title = "백업을 불러올까요?",
-            message = restoreMessage(summary),
             confirmLabel = "불러오기",
             destructive = true,
             onDismiss = vm::cancelRestore,
@@ -1462,6 +1733,7 @@ private fun rememberSettingsFiles(vm: SettingsViewModel): SettingsFiles {
     return remember(exportLauncher, icsLauncher, openLauncher, context) {
         SettingsFiles(
             saveBackup = { askingPassword = true },
+            sendBackup = { askingToSend = true },
             // 1.38 PC 확인(c00dc792) 제안: the backups saved here come first; the picker is one tap further.
             openFile = { BackupPlace.recent(context).let { if (it.isEmpty()) pickAny() else recentBackups = it } },
             exportIcs = { icsLauncher.launch("밤낮-근무-${Today.date()}.ics") },
@@ -1472,19 +1744,40 @@ private fun rememberSettingsFiles(vm: SettingsViewModel): SettingsFiles {
 
 /** 1.38: 파일 불러오기 with the backups this phone saved (newest first) and 다른 파일 고르기 for anything else. */
 @Composable
-private fun RecentBackupsDialog(list: List<BackupPlace.Recent>, onPick: (BackupPlace.Recent) -> Unit, onOther: () -> Unit, onDismiss: () -> Unit) {
-    val at = java.time.format.DateTimeFormatter.ofPattern("M월 d일 a h:mm", java.util.Locale.KOREAN)
+internal fun RecentBackupsDialog(list: List<BackupPlace.Recent>, onPick: (BackupPlace.Recent) -> Unit, onOther: () -> Unit, onDismiss: () -> Unit) {
+    val context = LocalContext.current
+    // 2.0.0 [RVO-17] 검토 SET-11·U11a-09: a file deleted or moved since is said so, quiet and not opened, with '목록에서 빼기'.
+    var shown by remember { mutableStateOf(list) }
+    val gone by androidx.compose.runtime.produceState(emptySet<Uri>(), list) {
+        value = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { list.filterNot { BackupPlace.exists(context, it.uri) }.map { it.uri }.toSet() }
+    }
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("어떤 파일을 불러올까요?") },
         text = {
             Column {
                 Text("이 휴대폰에서 만든 백업이에요.", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                list.forEach { r ->
-                    Column(Modifier.fillMaxWidth().clip(MaterialTheme.shapes.small).clickable { onPick(r) }.padding(vertical = 10.dp)) {
-                        Text(r.at.format(at) + " 백업", style = MaterialTheme.typography.bodyLarge)
-                        Text(r.name, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                shown.forEach { r ->
+                    val missing = r.uri in gone
+                    // 2.0.0 [RVO-17] 검토 SET-12: the time as 설정 › 화면과 글자 says (오전/오후 or 24시).
+                    val title = "${Fmt.monthDay(r.at.toLocalDate())} ${Fmt.time(r.at.toLocalTime())} 백업"
+                    val words: @Composable () -> Unit = {
+                        Column(Modifier.fillMaxWidth().clip(MaterialTheme.shapes.small).clickable(enabled = !missing, role = Role.Button) { onPick(r) }
+                            .heightIn(min = 48.dp).padding(vertical = 8.dp)) {
+                            Text(title, style = MaterialTheme.typography.bodyLarge,
+                                color = if (missing) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onSurface)
+                            Text(if (missing) "지워졌거나 옮겨졌어요 · ${r.name}" else r.name, style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
                     }
+                    // At 200% or folded the button goes under the words (조건 12).
+                    if (!missing) words() else com.bamnat.app.ui.components.SideOrBelow(Modifier.fillMaxWidth(), minStart = 160.dp, start = words, end = {
+                        TextButton(onClick = {
+                            BackupPlace.forget(context, r.uri)
+                            shown = shown - r
+                            if (shown.isEmpty()) onOther()
+                        }) { Text("목록에서 빼기") }
+                    })
                 }
             }
         },
@@ -1493,8 +1786,14 @@ private fun RecentBackupsDialog(list: List<BackupPlace.Recent>, onPick: (BackupP
     )
 }
 
-/** [SET-01] Everything a restore replaces, and that the data before it is kept. */
-internal fun restoreMessage(s: BackupSummary): String {
+/** 2.0.0 [RVL-49] What goes with the file to the new phone, for the person who gets it (often the same person). */
+internal const val SEND_NOTE = "새 휴대폰에서 이 파일을 누르면 밤낮이 열리고, 이 백업으로 바로 시작할 수 있어요."
+
+/** [SET-01] The undo line under every restore ([RestoreDialog]): the data before it is kept. */
+internal val RESTORE_UNDO get() = "지금 앱의 데이터가 이 백업으로 바뀌어요. 바뀌기 전 데이터는 남겨 두어 ${com.bamnat.app.data.ImportUndo.KEEP_DAYS}일 안에 되돌릴 수 있어요."
+
+/** "들어 있는 것: 근무 종류 4개, 바꾼 날짜 30일, …". */
+internal fun restoreContents(s: BackupSummary): String {
     val parts = buildList {
         add("근무 종류 ${s.shiftTypes}개")
         add("바꾼 날짜 ${s.days}일")
@@ -1509,7 +1808,5 @@ internal fun restoreMessage(s: BackupSummary): String {
         if (s.teams > 0) add("팀 근무표 ${s.teams}개(팀원 ${s.teamMembers}명)")
         if (s.places > 0) add("사업장 ${s.places}곳(직원 ${s.staff}명)")
     }
-    val saved = if (s.exportedAtMillis > 0) " (${Fmt.dayTitle(AlarmScheduler.millisToLocal(s.exportedAtMillis).toLocalDate())} 저장)" else ""
-    return "들어 있는 것: ${parts.joinToString(", ")}$saved.\n" +
-        "지금 앱의 데이터가 이 백업으로 바뀌어요. 바뀌기 전 데이터는 남겨 두어 ${com.bamnat.app.data.ImportUndo.KEEP_DAYS}일 안에 되돌릴 수 있어요."
+    return "들어 있는 것: ${parts.joinToString(", ")}"
 }

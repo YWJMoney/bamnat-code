@@ -12,6 +12,7 @@ import com.bamnat.core.time.Today
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.launch
 import org.json.JSONObject
 import com.bamnat.core.recipe.keepMyCellContent
 
@@ -47,6 +48,39 @@ class ThemeWardrobe(private val c: AppContainer, context: Context) {
         }.onFailure { android.util.Log.w(TAG, "cell content", it) }
     }
 
+    /**
+     * 2.0.0 [RVM-26] RCP-08 (서랍 30개 한도가 '내 테마로 저장'한 것까지 말없이 밀어냄): [list] kept to [ThemeLease.HISTORY] themes of
+     * others, mine never pushed out ([ThemeLease.capped]); what the limit let go is kept in 자동으로 정리한 것 to put back.
+     */
+    private fun cap(list: List<ThemeLease.Wear>, keep: String?): List<ThemeLease.Wear> {
+        val (kept, out) = ThemeLease.capped(list, keep)
+        tidy(out)
+        return kept
+    }
+
+    /** [RVM-26] Themes let go of by the limit, each kept 30 days in 자동으로 정리한 것 (내 서랍 아래 한 줄) with its way back. */
+    private fun tidy(out: List<ThemeLease.Wear>) {
+        if (out.isEmpty()) return
+        c.appScope.launch {
+            out.forEach { w ->
+                runCatching {
+                    c.autoTidy.add(com.bamnat.app.data.AutoTidy.AREA_RECIPE, com.bamnat.app.data.PersonalCalendar.MAIN, w.title,
+                        "입었던 테마가 ${ThemeLease.HISTORY}개를 넘어 가장 오래 전에 입은 것을 서랍에서 뺐어요", KIND_PUSHED,
+                        ThemeLease.encode(ThemeLease(history = listOf(w))))
+                }
+            }
+        }
+    }
+
+    /** [RVM-26] A theme the limit let go ([payload] from [tidy]) back in 입었던 테마, newest; true when it is there. */
+    fun putBack(payload: String): Boolean {
+        val w = ThemeLease.decode(payload).history.firstOrNull() ?: return false
+        val l = _lease.value
+        if (l.history.any { it.key == w.key }) return true
+        save(l.copy(history = cap(listOf(w) + l.history, l.worn?.key)))
+        return _lease.value.history.any { it.key == w.key }
+    }
+
     private fun save(l: ThemeLease) {
         prefs.edit().putString(K_LEASE, ThemeLease.encode(l)).apply()
         _lease.value = l
@@ -78,12 +112,27 @@ class ThemeWardrobe(private val c: AppContainer, context: Context) {
         val w = l.worn?.takeIf { isMix(it.title) && !it.own } ?: return l
         val from = l.history.firstOrNull { it.key == w.key }?.title ?: w.title.removePrefix(MIX)
         val mine = ThemeLease.Wear(w.title, "", w.body, w.from, w.until, own = true, mixedFrom = from.take(30), mixedCodes = w.code)
-        return l.copy(history = (listOf(mine) + l.history.filter { it.key != mine.key }).take(ThemeLease.HISTORY))
+        return l.copy(history = cap(listOf(mine) + l.history.filter { it.key != mine.key }, l.worn?.key))
     }
 
     /** Whether ads may run (the `ads` switch) and the user is on 프로; before launch the gate says 프로, so nothing runs. */
-    fun adsOn(): Boolean = c.flags.on(com.bamnat.core.flags.FlagCatalog.ADS)
-    fun pro(): Boolean = c.featureGate.allows(com.bamnat.app.tier.Feature.THEME_WARDROBE)
+    fun adsOn(): Boolean = adsSeen?.on ?: c.flags.on(com.bamnat.core.flags.FlagCatalog.ADS)
+    fun pro(): Boolean = adsSeen?.pro ?: c.featureGate.allows(com.bamnat.app.tier.Feature.THEME_WARDROBE)
+
+    /** Tests only: the ads switch, 프로 and when the app was put on, instead of this phone's. */
+    data class AdsSeen(val on: Boolean, val pro: Boolean, val installedAt: java.time.Instant?)
+    @androidx.annotation.VisibleForTesting internal var adsSeen: AdsSeen? = null
+
+    /**
+     * 2.0.0 [RVM-60] 검토 RCP-14·U09b-05: the first days after install ([com.bamnat.core.tier.AdRules.quiet], the server's
+     * adQuietDays) the ads SDK never starts, so no theme asks for an ad: it goes on at once ('바로 입기') instead of '광고를 준비하는
+     * 중…' for 15 seconds and then going on anyway. The free count runs as before, so nothing is given or taken that the wait did not.
+     */
+    fun adsQuiet(): Boolean = com.bamnat.core.tier.AdRules.quiet(adsOn(), pro(), adsSeen?.installedAt ?: c.installedAt, Today.instant(),
+        c.remoteConfig.current.adQuietDays)
+
+    /** How many days after install go without ads (the line under 바로 입기). */
+    fun quietDays(): Int = c.remoteConfig.current.adQuietDays
 
     fun state(): ThemeLease.State = _lease.value.state(Today.date().toEpochDay(), adsOn(), pro())
     fun ask(): Boolean {
@@ -94,10 +143,14 @@ class ThemeWardrobe(private val c: AppContainer, context: Context) {
         return _lease.value.ask(Today.date().toEpochDay(), adsOn(), p)
     }
     /** [THM-01] Whether putting a theme on asks for an ad; [shared] is one of mine in 장터 (never asks). */
-    fun needsAd(shared: Boolean): Boolean = _lease.value.needsAd(shared, adsOn(), pro())
+    fun needsAd(shared: Boolean): Boolean = _lease.value.needsAd(shared, adsOn(), pro()) && !adsQuiet()
 
     /** The theme kept under [code] (or mine named [title]) and whether it asks for an ad now. */
     fun needsAdFor(code: String, title: String): Boolean = needsAd(kept(code, title)?.free == true)
+
+    /** [RVM-60] It would ask for an ad but goes on at once for the quiet days: the button says why in one line. */
+    fun quietFor(code: String, title: String): Boolean = quietFor(kept(code, title)?.free == true)
+    fun quietFor(shared: Boolean): Boolean = _lease.value.needsAd(shared, adsOn(), pro()) && adsQuiet()
 
     fun kept(code: String, title: String): ThemeLease.Wear? = code.ifEmpty { "own:$title" }.let { k -> _lease.value.history.firstOrNull { it.key == k } }
 
@@ -124,6 +177,9 @@ class ThemeWardrobe(private val c: AppContainer, context: Context) {
         val looks = r.copy(pieces = r.pieces.filter { it.kind in BuiltInThemes.LOOK_KINDS }).let { if (own) it else it.keepMyCellContent() }
         if (looks.pieces.isEmpty()) return false
         beforeWear()
+        // 2.0.0 [RVM-52] 검토 STU-05: the studio's day-long '입히기 전 모양으로' (calendar band and studio) is for the look it put on; a
+        // theme worn after it takes its place, so that 되돌리기 never jumps back past this theme.
+        com.bamnat.app.data.LookUndo.clear(c.appContext)
         val picks = looks.pieces.map { RecipeRepository.Pick(it.kind, RecipePieces.Mode.REPLACE) }
         // A mix made in the studio is mine to look at: no 받은 레시피 row under the code its parts came from (no 새 판 알림 for it).
         lastApplied = c.recipes.apply(looks, code.takeIf { !it.startsWith("builtin:") && !isMix(r.title) }.orEmpty(), ver, PersonalCalendar.MAIN, picks, emptyMap())
@@ -153,11 +209,13 @@ class ThemeWardrobe(private val c: AppContainer, context: Context) {
         val next = l.wear(ThemeLease.Wear(looks.title, code, RecipeCodec.write(only), 0, 0, own, shared, if (ver > 0) ver else was?.ver ?: 0, was?.bare == true,
             mixedFrom = was?.mixedFrom?.takeIf { own }.orEmpty(), mixedCodes = was?.mixedCodes?.takeIf { own }.orEmpty()),
             Today.date().toEpochDay(), free)
+        // [RVM-26] RCP-08: what the 입었던 테마 limit let go is kept in 자동으로 정리한 것.
+        tidy(l.pushedOut(next))
         save(when {
             whole != null -> keepWhole(l, next, whole)
             // 1.37 PC (스튜디오에서 입힌 섞은 모양이 서랍에서 그 테마 자리를 차지해요): the theme its parts came from stays in 입었던 테마.
-            isMix(looks.title) && !own -> next.copy(history = (l.history.filter { it.key == next.worn?.key && !isMix(it.title) } + next.history.filter { it.key != next.worn?.key && !(isMix(it.title) && !it.own) })
-                .take(ThemeLease.HISTORY))
+            isMix(looks.title) && !own -> next.copy(history = cap(l.history.filter { it.key == next.worn?.key && !isMix(it.title) } +
+                next.history.filter { it.key != next.worn?.key && !(isMix(it.title) && !it.own) }, next.worn?.key))
             else -> next
         })
         next.worn?.let { stamp(it.key) }
@@ -174,7 +232,7 @@ class ThemeWardrobe(private val c: AppContainer, context: Context) {
         val w = now.copy(title = whole.title.take(30), body = RecipeCodec.write(looks))
         val before = prev.history.firstOrNull { it.key == w.key }
         val keep = before?.copy(from = now.from, until = now.until) ?: w
-        return l.copy(history = (listOf(keep) + l.history.filter { it.key != w.key && it.key != now.key }).take(ThemeLease.HISTORY))
+        return l.copy(history = cap(listOf(keep) + l.history.filter { it.key != w.key && it.key != now.key }, now.key))
     }
 
     /**
@@ -183,18 +241,43 @@ class ThemeWardrobe(private val c: AppContainer, context: Context) {
      */
     suspend fun takeOff() {
         val worn = _lease.value.worn ?: return
+        com.bamnat.app.data.LookUndo.clear(c.appContext) // [RVM-52] STU-05, as in [wear]
         val now = c.recipes.pieces.lookSnapshot()
         val after = readMap(K_WORN_LOOK)
         var l = keepMix(_lease.value)
         if (after != null && after != now) {
             val mine = myLookRecipe("내가 고친 ${worn.title}".take(30))
-            l = l.wear(ThemeLease.Wear(mine.title, "", RecipeCodec.write(mine), 0, 0, own = true), Today.date().toEpochDay(), free = false)
+            val worn2 = l.wear(ThemeLease.Wear(mine.title, "", RecipeCodec.write(mine), 0, 0, own = true), Today.date().toEpochDay(), free = false)
+            tidy(l.pushedOut(worn2))
+            l = worn2
         }
         readMap(K_MINE)?.let { c.recipes.pieces.restoreLook(it) }
-        prefs.edit().remove(K_MINE).remove(K_WORN_LOOK).remove(K_PREV).apply()
+        // 2.0.0 [RVS-15] 검토 SN-04 (사용자 2026-11-12 '무엇을 켰든 테마를 벗으면 모두 원래대로'): the 강조색·밝기·글자 크기… the
+        // theme's work changed come back too, each one still as the work left it (one the user changed since stays theirs).
+        feelWorn().takeIf { it.isNotEmpty() }?.let { c.recipes.pieces.putFeelBack(it) }
+        prefs.edit().remove(K_MINE).remove(K_WORN_LOOK).remove(K_PREV).remove(K_FEEL).apply()
         save(l.takeOff())
         refreshWidgets()
     }
+
+    /**
+     * 2.0.0 [RVS-15] 검토 SN-04: the 앱 동작 settings a work worn as this theme changed ([before, after]), so 벗기 puts them back. A second
+     * work worn over it keeps the first one's [before] (what the user had), the last one's after.
+     */
+    fun feelChanged(changed: Map<String, Pair<String, String>>) {
+        if (changed.isEmpty() || _lease.value.worn == null) return
+        val o = prefs.getString(K_FEEL, null)?.let { runCatching { JSONObject(it) }.getOrNull() } ?: JSONObject()
+        changed.forEach { (k, ba) ->
+            val first = o.optJSONArray(k)?.optString(0) ?: ba.first
+            o.put(k, org.json.JSONArray().put(first).put(ba.second))
+        }
+        prefs.edit().putString(K_FEEL, o.toString()).apply()
+    }
+
+    /** What [feelChanged] kept for the theme worn now. */
+    fun feelWorn(): Map<String, Pair<String, String>> = prefs.getString(K_FEEL, null)?.let { s ->
+        runCatching { JSONObject(s).let { o -> o.keys().asSequence().associateWith { k -> o.getJSONArray(k).let { it.getString(0) to it.getString(1) } } } }.getOrNull()
+    }.orEmpty()
 
     /** A whole ad was watched: 30 more days. */
     fun extend() = save(_lease.value.extend(Today.date().toEpochDay()))
@@ -208,7 +291,8 @@ class ThemeWardrobe(private val c: AppContainer, context: Context) {
     /** [FREE-10] The day's count of a free theme by why, in 사용 통계 (only when the user turned it on; never who). */
     private fun tell(reason: String) {
         val key = "theme_free_" + (reason.takeIf { it in listOf("no_fill", "timeout", "show_failed", "not_ready") } ?: "other")
-        if (reason != "flag_off" && reason != "offline") runCatching { c.telemetry.event(key) }
+        // [RVM-60] The quiet days ask for no ad at all, so nothing failed and nothing is sent.
+        if (reason != "flag_off" && reason != "offline" && reason != QUIET) runCatching { c.telemetry.event(key) }
     }
 
     /** A theme put on with no ad able to come: counted only. */
@@ -253,7 +337,7 @@ class ThemeWardrobe(private val c: AppContainer, context: Context) {
         if (r.pieces.isEmpty()) return false
         val l = _lease.value
         val w = ThemeLease.Wear(r.title, "", RecipeCodec.write(r), Today.date().toEpochDay(), Today.date().toEpochDay(), own = true)
-        save(l.copy(history = (listOf(w) + l.history.filter { it.key != w.key }).take(ThemeLease.HISTORY)))
+        save(l.copy(history = cap(listOf(w) + l.history.filter { it.key != w.key }, l.worn?.key)))
         stamp(w.key)
         return true
     }
@@ -466,7 +550,7 @@ class ThemeWardrobe(private val c: AppContainer, context: Context) {
         val w = ThemeLease.Wear(name.ifBlank { "내 테마 ${mine + 1}" }, "", RecipeCodec.write(only), keep?.from ?: Today.date().toEpochDay(),
             keep?.until ?: Today.date().toEpochDay(), own = true, shared = keep?.shared.orEmpty(), ver = keep?.ver ?: 0, bare = keep?.bare == true,
             mixedFrom = mixedFrom, mixedCodes = mixedCodes)
-        save(l.copy(history = (listOf(w) + l.history.filter { it.key != w.key }).take(ThemeLease.HISTORY)))
+        save(l.copy(history = cap(listOf(w) + l.history.filter { it.key != w.key }, l.worn?.key)))
         stamp(w.key)
         return true
     }
@@ -658,6 +742,9 @@ class ThemeWardrobe(private val c: AppContainer, context: Context) {
     }
 
     companion object {
+        /** [RVM-60] The reason a theme or bundle went on without an ad in the quiet days (no ad was asked for). */
+        const val QUIET = "quiet"
+
         /**
          * 1.37 [SHR-31] The code of a theme that came in a 근무표 링크 (+ the link's id). It starts with `builtin:` so every place that
          * leaves 장터 out for a built-in theme (쓰는 분 세기, 새 판 찾기, 고쳐 만들기의 원작) leaves it out too; its days and ad follow
@@ -667,6 +754,8 @@ class ThemeWardrobe(private val c: AppContainer, context: Context) {
         /** The name the studio gives a look made of other themes' parts ("조합 · <내 모양>"). */
         const val MIX = "조합 · "
         fun isMix(title: String) = title.startsWith(MIX)
+        /** [RVM-26] RCP-08 자동으로 정리한 것: a theme 입었던 테마's limit let go. */
+        const val KIND_PUSHED = "recipe.wardrobe"
         const val FREE_OUTFITS = 1
         const val PRO_OUTFITS = 10
         /** [TRY-03] 조각 보관함: free 20, 프로 200. */
@@ -688,6 +777,8 @@ class ThemeWardrobe(private val c: AppContainer, context: Context) {
         private const val K_PLACED = "placed"
         /** [CELL-02] 1.39 [keepMyCellContentOnce] has run. */
         private const val K_CELL_CONTENT = "cell_content_139"
+        /** 2.0.0 [RVS-15] The 앱 동작 settings the worn theme's work changed, setting → [before, after]. */
+        private const val K_FEEL = "feel_worn"
         private const val TAG = "BamnatDrawer"
         private const val UNDO_ROW_MS = 4_000L
         const val FOLDER_NAME = 12

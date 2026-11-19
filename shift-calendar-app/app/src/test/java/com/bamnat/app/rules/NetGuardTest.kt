@@ -1,0 +1,118 @@
+package com.bamnat.app.rules
+
+import androidx.test.ext.junit.runners.AndroidJUnit4
+import android.app.Application
+import androidx.test.core.app.ApplicationProvider
+import com.bamnat.app.BuildConfig
+import com.bamnat.app.company.NetEngine
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
+import org.junit.Assert.fail
+import org.junit.Test
+import org.junit.runner.RunWith
+import java.io.File
+import java.net.ConnectException
+import java.net.HttpURLConnection
+import java.net.InetSocketAddress
+import java.net.ProxySelector
+import java.net.ServerSocket
+import java.net.Socket
+import java.net.URL
+import kotlin.concurrent.thread
+
+/**
+ * 2.0.0 [RVR-42] (총괄 HQ-116): the app's tests never reach a server outside this computer.
+ *
+ * The debug build's addresses are the live ones (gradle.properties, [com.bamnat.app.share.ShareServerTest] reads them), so the
+ * guard in tools/net-guard (a Java agent in every test JVM, app/build.gradle.kts) must refuse them before a connection is
+ * made. Runs in Robolectric like the tests that build the app's container: java.net is the same JVM's there.
+ * If this fails, the agent is not loaded and every test that starts the app talks to api.bamnat.app again.
+ */
+@RunWith(AndroidJUnit4::class)
+class NetGuardTest {
+    @Test fun theGuardIsTheJvmsProxyChoice() {
+        assertEquals("bamnat.netguard.NetGuard", ProxySelector.getDefault()?.javaClass?.name)
+    }
+
+    @Test fun theLiveServersAreRefusedBeforeAnyConnection() {
+        val live = listOf(BuildConfig.COMPANY_BASE_URL, BuildConfig.SHARE_BASE_URL, BuildConfig.COMPANY_FALLBACK_URL,
+            BuildConfig.SHARE_FALLBACK_URL, BuildConfig.REMOTE_BASE_URL, "https://bamnat.app/", "https://example.com/")
+            .filter { it.isNotBlank() }
+        assertTrue("the debug build has its servers", live.size >= 4)
+        for (base in live) {
+            val conn = URL(base.trimEnd('/') + "/api/hello").openConnection() as HttpURLConnection
+            conn.connectTimeout = 2_000
+            try {
+                conn.responseCode
+                fail("$base was reached from a test")
+            } catch (e: ConnectException) {
+                assertTrue("$base: ${e.message}", e.message.orEmpty().startsWith("bamnat net guard"))
+            }
+        }
+    }
+
+    @Test fun aPlainSocketOutsideIsRefusedToo() {
+        try {
+            Socket().use { it.connect(InetSocketAddress("api.bamnat.app", 443), 2_000) }
+            fail("a socket to api.bamnat.app opened from a test")
+        } catch (e: ConnectException) {
+            assertTrue(e.message, e.message.orEmpty().startsWith("bamnat net guard"))
+        }
+    }
+
+    /**
+     * Robolectric downloads the Android jars a test asks for (sdk=35's android-all-instrumented on a fresh GitHub runner)
+     * from Maven Central, which sends it on to a mirror (gcp.mirrors.maven.org): those stay open, or every screenshot test fails.
+     */
+    @Test fun robolectricStillGetsItsAndroidJars() {
+        for (host in listOf("repo1.maven.org", "gcp.mirrors.maven.org", "repo.maven.apache.org", "maven.google.com", "dl.google.com")) {
+            ProxySelector.getDefault().select(java.net.URI("https://$host/maven2/org/robolectric/"))
+        }
+        try {
+            ProxySelector.getDefault().select(java.net.URI("https://maven.org.example.com/"))
+            fail("a look-alike of maven.org was let through")
+        } catch (e: ConnectException) {
+            assertTrue(e.message, e.message.orEmpty().startsWith("bamnat net guard"))
+        }
+    }
+
+    /** The server tests (tools/server_app_tests.py) run a server on this computer: that stays open. */
+    @Test fun aServerOnThisComputerStillAnswers() {
+        ServerSocket(0, 1, java.net.InetAddress.getLoopbackAddress()).use { server ->
+            val answer = thread {
+                server.accept().use { s ->
+                    s.getInputStream().bufferedReader().let { r -> while (r.readLine().orEmpty().isNotEmpty()) Unit }
+                    s.getOutputStream().write("HTTP/1.1 204 No Content\r\nContent-Length: 0\r\nConnection: close\r\n\r\n".toByteArray())
+                }
+            }
+            val conn = URL("http://127.0.0.1:${server.localPort}/api/hello").openConnection() as HttpURLConnection
+            conn.connectTimeout = 2_000
+            conn.readTimeout = 2_000
+            assertEquals(204, conn.responseCode)
+            answer.join(2_000)
+        }
+    }
+
+    /**
+     * The guard is a [ProxySelector], so only [HttpURLConnection] and [Socket] ask it. A path past it (java.nio's SocketChannel,
+     * java.net.http.HttpClient, a raw DatagramSocket, OkHttp with Proxy.NO_PROXY) would reach the live servers unseen, so the
+     * app's code has none; Cronet (NetEngine, its own native stack) is never started in a test.
+     */
+    @Test fun theAppHasNoNetworkPathAroundTheGuard() {
+        val around = Regex("""\bjava\.net\.http\b|\bHttpClient\b|\b(?:Server)?SocketChannel\b|\bAsynchronous(?:Server)?SocketChannel\b|""" +
+            """\bDatagram(?:Socket|Channel)\b|\bokhttp3\b|\bio\.ktor\b|Proxy\.NO_PROXY""")
+        val found = listOf("src/main", "../core/src/main", "../database/src/main").map(::File).flatMap { root ->
+            assertTrue("$root is missing", root.isDirectory)
+            root.walkTopDown().filter { it.isFile && (it.extension == "kt" || it.extension == "java") }.flatMap { f ->
+                f.readLines().withIndex().filter { (_, l) -> around.containsMatchIn(l) && !l.trimStart().startsWith("*") }
+                    .map { (i, l) -> "${f.path}:${i + 1}: ${l.trim()}" }
+            }.toList()
+        }
+        assertEquals("open connections with HttpURLConnection (NetEngine.open) so the tests' guard sees them", emptyList<String>(), found)
+
+        NetEngine.start(ApplicationProvider.getApplicationContext<Application>())
+        Thread.sleep(200)
+        assertFalse("Cronet started in a test: its native stack does not ask the guard", NetEngine.fast)
+    }
+}

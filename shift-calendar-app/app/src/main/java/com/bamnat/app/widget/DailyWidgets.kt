@@ -58,9 +58,11 @@ import com.bamnat.core.time.Today
  */
 
 class TeamsWidget : GlanceAppWidget() {
+    override val stateDefinition = androidx.glance.state.PreferencesGlanceStateDefinition
+
     override suspend fun provideGlance(context: Context, id: GlanceId) {
-        val data = WidgetData.load(context)
-        provideContent { WidgetLookTheme { WidgetBox { TeamsContent(data) } } }
+        val first = WidgetData.load(context)
+        provideContent { val data = widgetData(context, first); WidgetLookTheme { WidgetBox { TeamsContent(data) } } }
     }
 }
 
@@ -82,11 +84,15 @@ internal fun TeamsContent(data: WidgetData) {
             style = TextStyle(color = GlanceTheme.colors.onSurfaceVariant, fontSize = wsp(12)), maxLines = 1)
         Spacer(GlanceModifier.height(6.dp))
         if (teams.isNullOrEmpty()) {
-            Text("주주야야비휴처럼 돌아가는 근무 주기를 정하면 조마다 오늘 근무가 보여요",
+            // [RVG-13] Only a 교대 calendar has 조.
+            Text(if (data.style != null && data.style != com.bamnat.core.work.WorkStyle.SHIFT) "조가 있는 교대 근무표에서 써요"
+                else "주주야야비휴처럼 돌아가는 근무 주기를 정하면 조마다 오늘 근무가 보여요",
                 style = TextStyle(color = GlanceTheme.colors.onSurfaceVariant, fontSize = wsp(12)))
             return@Column
         }
-        for (t in teams) {
+        // 2.0.0 [RVIB-03] Up to 8 조 (TeamRoster.MAX_TEAMS) in a column of their own: beside the head and the cover line they made 12 and
+        // Glance drew 10, so 7조·8조 lost '들어올 수 있는 조'.
+        Column(GlanceModifier.fillMaxWidth()) { for (t in teams) {
             Row(GlanceModifier.fillMaxWidth().padding(vertical = 2.dp), verticalAlignment = Alignment.CenterVertically) {
                 Text(
                     t.name + if (t.mine) " (내 조)" else "",
@@ -101,15 +107,16 @@ internal fun TeamsContent(data: WidgetData) {
                 Spacer(GlanceModifier.width(3.dp))
                 ShiftSquare(t.tomorrow, 18)
             }
-        }
+        } }
         // [WIDG-05] I 리뷰 N6(b): on a working day, who could take my shift, as 대근 찾기 says.
         data.coverTeams?.let { names ->
-            Spacer(GlanceModifier.height(4.dp))
-            Text(
-                if (names.isEmpty()) "오늘 내 근무에 들어올 수 있는 조가 없어요" else "들어올 수 있는 조: ${names.joinToString(", ")}",
-                style = TextStyle(color = GlanceTheme.colors.onSurfaceVariant, fontSize = wsp(12)),
-                maxLines = 1,
-            )
+            Gapped(4.dp) {
+                Text(
+                    if (names.isEmpty()) "오늘 내 근무에 들어올 수 있는 조가 없어요" else "들어올 수 있는 조: ${names.joinToString(", ")}",
+                    style = TextStyle(color = GlanceTheme.colors.onSurfaceVariant, fontSize = wsp(12)),
+                    maxLines = 1,
+                )
+            }
         }
     }
 }
@@ -195,6 +202,21 @@ internal fun HourlyClockButton(out: Boolean, yesterday: Boolean) {
 internal val WIDGET_BUTTON_HEIGHT = 40.dp
 
 /**
+ * 2.0.0 [RVI-07] (검토 ALM-19) Every small button a widget has (+1건, 오늘 1공, 지금 퇴근): 40dp to the finger like 출근·퇴근, its word
+ * following 위젯 글자 크기. They were about 28dp with a fixed 13sp.
+ */
+@Composable
+internal fun WidgetPillButton(label: String, action: androidx.glance.action.Action) {
+    Box(
+        GlanceModifier.height(WIDGET_BUTTON_HEIGHT).background(GlanceTheme.colors.primaryContainer).cornerRadius(20.dp)
+            .padding(horizontal = 14.dp).clickable(action),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(label, style = TextStyle(color = GlanceTheme.colors.onPrimaryContainer, fontSize = wsp(14), fontWeight = FontWeight.Medium), maxLines = 1)
+    }
+}
+
+/**
  * [WIDG-05] I 리뷰 N6(a): "다음 근무까지" on its own small widget. Glance has no ticking clock, so [WidgetRefresher]
  * redraws it every 15 minutes while one is placed, and at each start and end. Also offered on the lock screen
  * where the phone allows widgets there.
@@ -202,10 +224,12 @@ internal val WIDGET_BUTTON_HEIGHT = 40.dp
 class CountdownWidget : GlanceAppWidget() {
     // [J133-32] 순번 712: at 2×1 the lines are one each, not cut in the middle.
     override val sizeMode: androidx.glance.appwidget.SizeMode = androidx.glance.appwidget.SizeMode.Exact
+    override val stateDefinition = androidx.glance.state.PreferencesGlanceStateDefinition
 
     override suspend fun provideGlance(context: Context, id: GlanceId) {
-        val data = WidgetData.load(context)
+        val first = WidgetData.load(context)
         provideContent {
+            val data = widgetData(context, first)
             WidgetLookTheme {
                 Box(
                     GlanceModifier.fillMaxSize().background(widgetBg()).cornerRadius(widgetCorner()).padding(12.dp)
@@ -226,13 +250,22 @@ internal fun CountdownContent(data: WidgetData) {
     // [J133-32] 순번 712 (1.32 실사용 테스트: 2×1에서 두 줄 다 말줄임이 됐어요): one cell high, no label and smaller lines.
     val short = androidx.glance.LocalSize.current.height < 90.dp
     Column(GlanceModifier.fillMaxWidth()) {
-        if (!short) Text("다음 근무", style = TextStyle(color = GlanceTheme.colors.onSurfaceVariant, fontSize = wsp(12)), maxLines = 1)
+        // 2.0.0 [RVG-13] 검토 TYPE-12: '다음 영업' for a shop, and an investor's or a field worker's empty week does not say 근무.
+        val word = countdownWord(data.style)
+        if (!short) Text("다음 $word", style = TextStyle(color = GlanceTheme.colors.onSurfaceVariant, fontSize = wsp(12)), maxLines = 1)
         Text(
-            data.countdown ?: "7일 안에 근무가 없어요",
+            data.countdown ?: "7일 안에 ${word}${com.bamnat.app.ui.Fmt.iga(word)} 없어요",
             style = TextStyle(color = GlanceTheme.colors.onSurface, fontSize = if (short) wsp(14) else wsp(16), fontWeight = FontWeight.Bold),
             maxLines = if (short) 1 else 2,
         )
         // G 1.32 [WTYP-05] 607 다음 오프까지, one line under.
         data.nextOff?.let { Text(it, style = TextStyle(color = GlanceTheme.colors.primary, fontSize = if (short) wsp(11) else wsp(12)), maxLines = 1) }
     }
+}
+
+/** [RVG-13] The countdown widget's word for the calendar's kind of work. */
+internal fun countdownWord(style: com.bamnat.core.work.WorkStyle?): String = when (style) {
+    com.bamnat.core.work.WorkStyle.BUSINESS -> "영업"
+    com.bamnat.core.work.WorkStyle.FIELD, com.bamnat.core.work.WorkStyle.INVEST -> "일정"
+    else -> "근무"
 }

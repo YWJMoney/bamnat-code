@@ -1,7 +1,6 @@
 package com.bamnat.app.ui.work
 
 import android.Manifest
-import android.annotation.SuppressLint
 import android.content.Intent
 import android.net.Uri
 import android.os.Build
@@ -29,13 +28,14 @@ import com.bamnat.app.ui.components.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
+import com.bamnat.app.ui.components.OutlinedButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.TopAppBar
+import com.bamnat.app.ui.components.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -57,13 +57,9 @@ import com.bamnat.app.data.PersonalCalendar
 import com.bamnat.app.ui.Fmt
 import com.bamnat.app.ui.components.SectionCard
 import com.bamnat.app.ui.components.WarningBanner
-import com.google.android.gms.location.LocationServices
-import com.google.android.gms.location.Priority
-import com.google.android.gms.tasks.CancellationTokenSource
+import com.bamnat.app.ui.theme.bamnat
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.suspendCancellableCoroutine
-import kotlin.coroutines.resume
 
 /**
  * [DAYW-07] 출퇴근 자동 기록: off by default. Turning it on first says plainly what the location is used for
@@ -81,22 +77,12 @@ class CommuteViewModel(private val container: AppContainer) : ViewModel() {
     val error: StateFlow<String?> = _error
 
     /** Where the phone is now becomes the workplace; true when it was found. */
-    @SuppressLint("MissingPermission")
     fun useHere(then: () -> Unit = {}) {
         if (!CommuteRecorder.hasForeground(container.appContext)) return
         _locating.value = true
         _error.value = null
         viewModelScope.launch {
-            val loc = runCatching {
-                val client = LocationServices.getFusedLocationProviderClient(container.appContext)
-                val token = CancellationTokenSource()
-                suspendCancellableCoroutine { cont ->
-                    client.getCurrentLocation(Priority.PRIORITY_HIGH_ACCURACY, token.token)
-                        .addOnSuccessListener { cont.resume(it) }
-                        .addOnFailureListener { cont.resume(null) }
-                    cont.invokeOnCancellation { token.cancel() }
-                }
-            }.getOrNull()
+            val loc = CommuteRecorder.here(container.appContext)
             _locating.value = false
             if (loc == null) {
                 _error.value = "지금 위치를 찾지 못했어요. 위치(GPS)가 켜져 있는지 보고, 회사 안에서 다시 눌러 주세요."
@@ -107,6 +93,9 @@ class CommuteViewModel(private val container: AppContainer) : ViewModel() {
             then()
         }
     }
+
+    /** [RVH-35] 검토 U02-09 On without a place yet: it is taken a while after the next shift starts. */
+    fun turnOnLater() { prefs.setPlaceNext(true); turnOn() }
 
     fun turnOn() {
         if (prefs.current.calendarId.let { container.calendars.get(it) } == null || !prefs.current.enabled) {
@@ -120,6 +109,8 @@ class CommuteViewModel(private val container: AppContainer) : ViewModel() {
 
     fun setRadius(m: Int) { prefs.setRadius(m); CommuteRecorder.sync(container.appContext) }
     fun setAuto(auto: Boolean) = prefs.setAuto(auto)
+    fun setOvertimeSlack(minutes: Int) = prefs.setOvertimeSlack(minutes)
+    fun setOvertime(way: com.bamnat.core.work.Commute.OvertimeWay) = prefs.setOvertime(way)
     fun setCalendar(id: String) = prefs.setCalendar(id)
     fun resync() = CommuteRecorder.sync(container.appContext)
 }
@@ -135,6 +126,20 @@ fun CommuteScreen(vm: CommuteViewModel, onBack: () -> Unit) {
     var fine by remember { mutableStateOf(CommuteRecorder.hasForeground(context)) }
     var background by remember { mutableStateOf(CommuteRecorder.hasBackground(context)) }
     var disclosure by remember { mutableStateOf(false) }
+    // [RVH-35] 검토 U02-09 Turning it on away from work: the place is taken at the next shift.
+    var later by rememberSaveable { mutableStateOf(false) }
+    var placeAt by remember { mutableStateOf<java.time.LocalDateTime?>(null) }
+    var away by remember { mutableStateOf<String?>(null) }
+    LaunchedEffect(s.enabled, s.hasPlace, s.placeNext, s.calendarId) {
+        placeAt = if (s.enabled && !s.hasPlace && s.placeNext) CommuteRecorder.placeTime(context) else null
+    }
+    LaunchedEffect(s.lat, s.lng, s.radius, fine) {
+        away = if (s.hasPlace && fine) CommuteRecorder.lastHere(context)?.let { here ->
+            val d = FloatArray(1)
+            android.location.Location.distanceBetween(here.latitude, here.longitude, s.lat!!, s.lng!!, d)
+            com.bamnat.core.work.Commute.distanceWords(d[0].toDouble(), s.radius)
+        } else null
+    }
     var askAlways by remember { mutableStateOf(false) }
     var refused by remember { mutableIntStateOf(0) }
     var canNotify by remember { mutableStateOf(Notifications.canPost(context)) }
@@ -149,19 +154,27 @@ fun CommuteScreen(vm: CommuteViewModel, onBack: () -> Unit) {
     fun askNotices(auto: Boolean = vm.state.value.auto) {
         if (!auto && !Notifications.canPost(context) && Build.VERSION.SDK_INT >= 33) notifications.launch(Manifest.permission.POST_NOTIFICATIONS)
     }
-    fun turnOn() { vm.turnOn(); askNotices() }
+    fun turnOn() {
+        // 검토 U02-09 The place notice is a notice: asked for even with 바로 적기.
+        if (later && !s.hasPlace) { vm.turnOnLater(); askNotices(auto = false) } else { vm.turnOn(); askNotices() }
+    }
     val backgroundAsk = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { ok ->
         background = ok || CommuteRecorder.hasBackground(context)
         if (background) turnOn() else refused++
     }
     val foregroundAsk = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { result ->
         fine = result[Manifest.permission.ACCESS_FINE_LOCATION] == true || CommuteRecorder.hasForeground(context)
-        if (fine) vm.useHere { if (CommuteRecorder.hasBackground(context)) turnOn() else askAlways = true } else refused++
+        when {
+            !fine -> refused++
+            later -> if (CommuteRecorder.hasBackground(context)) turnOn() else askAlways = true
+            else -> vm.useHere { if (CommuteRecorder.hasBackground(context)) turnOn() else askAlways = true }
+        }
     }
 
     fun start() {
         when {
             !fine -> foregroundAsk.launch(arrayOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION))
+            later && !s.hasPlace -> if (background) turnOn() else askAlways = true
             !s.hasPlace -> vm.useHere { if (CommuteRecorder.hasBackground(context)) turnOn() else askAlways = true }
             !background -> askAlways = true
             else -> turnOn()
@@ -178,8 +191,9 @@ fun CommuteScreen(vm: CommuteViewModel, onBack: () -> Unit) {
             SectionCard(title = "회사에 도착하면 출근, 나오면 퇴근") {
                 Text(DISCLOSURE, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
-            error?.let { Text(it, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.error) }
-            if (refused > 0 && (!fine || !background)) {
+            // 2.0.0 [RVJ-66] (HQ-103): 위치를 못 찾음은 다시 눌러 볼 일(주의). 빨강은 기록이 안 되는 권한 띠 하나만.
+            error?.let { Text(it, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.bamnat.caution) }
+            if (refused > 0 && !s.enabled && (!fine || !background)) {
                 WarningBanner("위치 권한이 없어서 켜지 못했어요",
                     "휴대폰 설정 > 애플리케이션 > 밤낮 > 권한 > 위치에서 ‘항상 허용’과 ‘정확한 위치’를 켜 주세요.")
                 OutlinedButton(onClick = {
@@ -187,26 +201,41 @@ fun CommuteScreen(vm: CommuteViewModel, onBack: () -> Unit) {
                 }, modifier = Modifier.fillMaxWidth()) { Text("권한 설정 열기") }
             }
             if (!s.enabled) {
-                Button(onClick = { disclosure = true }, enabled = !locating, modifier = Modifier.fillMaxWidth()) {
+                Button(onClick = { later = false; disclosure = true }, enabled = !locating, modifier = Modifier.fillMaxWidth()) {
                     Text(if (locating) "지금 위치를 찾는 중…" else "켜기 (회사에서 눌러 주세요)")
                 }
-                Text("지금 있는 곳을 회사 위치로 저장해요. 회사 안에서 켜 주세요.", style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant)
+                // [RVH-35] 검토 WORK-16·U02-09 Away from work now: the place is taken at the next shift instead.
+                TextButton(onClick = { later = true; disclosure = true }, enabled = !locating, modifier = Modifier.fillMaxWidth()) {
+                    Text("회사가 아니에요 · 다음 출근 때 정하기")
+                }
+                Text("지금 있는 곳을 회사 위치로 저장해요. 회사가 아니면 다음 근무가 시작하고 ${com.bamnat.core.work.Commute.PLACE_AFTER_MINUTES}분 뒤 있는 곳으로 정해요.",
+                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 return@Column
             }
             if (!fine || !background) {
                 WarningBanner("위치 권한이 ‘항상 허용’이 아니에요", "앱을 닫아 두면 출퇴근을 적지 못해요. 위치 권한에서 ‘항상 허용’을 골라 주세요.")
-                OutlinedButton(onClick = { start() }, modifier = Modifier.fillMaxWidth()) { Text("권한 다시 확인") }
+                // A refused permission is not asked again by the phone: the settings, as when it could not be turned on.
+                if (refused > 0) OutlinedButton(onClick = {
+                    context.startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.fromParts("package", context.packageName, null)))
+                }, modifier = Modifier.fillMaxWidth()) { Text("권한 설정 열기") }
+                else OutlinedButton(onClick = { start() }, modifier = Modifier.fillMaxWidth()) { Text("권한 다시 확인") }
             }
             if (!s.auto && !canNotify) {
-                WarningBanner("알림이 꺼져 있어요", "‘물어보고 적기’는 알림으로 물어봐요. 알림을 켜거나 ‘바로 적기’를 골라 주세요.")
-                OutlinedButton(onClick = {
-                    context.startActivity(Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).putExtra(Settings.EXTRA_APP_PACKAGE, context.packageName))
-                }, modifier = Modifier.fillMaxWidth()) { Text("알림 켜기") }
+                // 2.0.0 [RVJ-66] (HQ-103): 묻는 알림이 꺼짐은 챙길 일(주의), 단추는 카드 안에 하나.
+                com.bamnat.app.ui.components.NudgeCard("알림이 꺼져 있어요", tone = com.bamnat.app.ui.theme.Tone.Caution,
+                    detail = "‘물어보고 적기’는 알림으로 물어봐요. 알림을 켜거나 ‘바로 적기’를 골라 주세요.", action = "알림 켜기", onAction = {
+                        context.startActivity(Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).putExtra(Settings.EXTRA_APP_PACKAGE, context.packageName))
+                    })
             }
             SectionCard(title = "회사 위치") {
-                Text(if (s.hasPlace) "위도 %.5f, 경도 %.5f · 반경 %dm".format(s.lat, s.lng, s.radius) else "아직 정하지 않았어요",
-                    style = MaterialTheme.typography.bodyMedium)
+                // [RVH-35] 검토 WORK-16 Said in words, not as 위도·경도 numbers.
+                Text(when {
+                    s.hasPlace -> "정해 둔 곳에서 ${s.radius}m 안을 회사로 봐요"
+                    s.placeNext -> placeAt?.let { "${Fmt.monthDay(it.toLocalDate())} ${Fmt.time(it.toLocalTime())}쯤(근무 시작 ${com.bamnat.core.work.Commute.PLACE_AFTER_MINUTES}분 뒤) 있는 곳을 회사로 정해요" }
+                        ?: "2주 안에 근무가 없어 아직 정하지 못해요. 회사에서 아래 단추를 눌러 주세요"
+                    else -> "아직 정하지 않았어요"
+                }, style = MaterialTheme.typography.bodyMedium)
+                away?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
                 Spacer(Modifier.height(8.dp))
                 OutlinedButton(onClick = { vm.useHere() }, enabled = fine && !locating, modifier = Modifier.fillMaxWidth()) {
                     Text(if (locating) "지금 위치를 찾는 중…" else "지금 있는 곳을 회사로")
@@ -233,9 +262,34 @@ fun CommuteScreen(vm: CommuteViewModel, onBack: () -> Unit) {
                         calendars.forEach { c -> FilterChip(selected = s.calendarId == c.id, onClick = { vm.setCalendar(c.id) }, label = { Text(c.name) }) }
                     }
                 }
-                Text("늦게 도착하면 출근 시각을, 일찍 나오면 퇴근 시각을, 늦게 나오면 잔업을, 쉬는 날 다녀오면 특근을 적어요. " +
-                    "점심때 잠깐 나갔다 ${CommuteRecorder.LEAVE_WAIT_MINUTES}분 안에 돌아오면 퇴근으로 보지 않아요.",
-                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                // [RVH-34] 검토 WORK-15·U02-10 잔업 goes into the pay: how long after the end is still leaving, and whether it is asked.
+                Spacer(Modifier.height(8.dp))
+                Text("잔업", style = MaterialTheme.typography.labelLarge)
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    com.bamnat.core.work.Commute.OvertimeWay.entries.forEach { w ->
+                        FilterChip(selected = s.overtime == w, onClick = { vm.setOvertime(w) }, label = { Text(w.label) })
+                    }
+                }
+                if (s.overtime != com.bamnat.core.work.Commute.OvertimeWay.NONE) {
+                    Text("끝나고 이만큼은 나가는 길로 봐요", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        com.bamnat.core.work.Commute.OVERTIME_SLACK_CHOICES.forEach { m ->
+                            FilterChip(selected = s.overtimeSlack == m, onClick = { vm.setOvertimeSlack(m) }, label = { Text("${m}분") })
+                        }
+                    }
+                }
+                Text(when (s.overtime) {
+                    com.bamnat.core.work.Commute.OvertimeWay.ASK -> "끝나고 ${s.overtimeSlack}분보다 늦게 나오면 ‘잔업으로 적을까요?’를 알림으로 한 번 물어요."
+                    com.bamnat.core.work.Commute.OvertimeWay.WRITE -> "끝나고 ${s.overtimeSlack}분보다 늦게 나오면 잔업으로 적어요. 예상 급여에도 들어가요."
+                    com.bamnat.core.work.Commute.OvertimeWay.NONE -> "회사가 승인한 잔업만 세는 분께 맞아요. 잔업은 달력에서 직접 적어요."
+                }, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                // [RVH-34] 디자인 품질 조건 4 (200%에서 열 줄이 넘는 설명): one line with ⓘ once it has been read (공통 부품 Explain).
+                com.bamnat.app.ui.components.Explain(
+                    key = "commute.rules",
+                    text = "늦게 도착하면 출근 시각을, 일찍 나오면 퇴근 시각을, 늦게 나오면 잔업을, 쉬는 날 다녀오면 특근을 적어요. " +
+                        "점심때 잠깐 나갔다 ${CommuteRecorder.LEAVE_WAIT_MINUTES}분 안에 돌아오면 퇴근으로 보지 않아요.",
+                    summary = "늦거나 일찍 오가면 그 시각을 적어요",
+                )
             }
             SectionCard(title = "최근 기록") {
                 val arrived = s.arrivedAt

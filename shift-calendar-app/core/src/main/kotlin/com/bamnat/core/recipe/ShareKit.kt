@@ -31,6 +31,12 @@ object ShareKit {
     /** [r]'s looks as a link carries them; null when there is no look or it is too big. */
     fun lookText(r: Recipe): String? = text(r.copy(pieces = r.pieces.filter { it.kind in BuiltInThemes.LOOK_KINDS }), LOOK_CHARS)
 
+    /**
+     * 2.0.0 [RVG-29] 검토 SN-14 (조건 7): [r] has a look, but it cannot go on a link (over [LOOK_CHARS], or no piece the codec takes).
+     * Before, '내 테마' could be ticked and the link went without it, saying nothing; the row now says so before it is ticked.
+     */
+    fun lookTooBig(r: Recipe): Boolean = r.pieces.any { it.kind in BuiltInThemes.LOOK_KINDS } && runCatching { lookText(r) }.getOrNull() == null
+
     /** [r]'s 근무 설정 as a link carries them; null when there is nothing or it is too big. */
     fun kitText(r: Recipe): String? = text(r.copy(pieces = r.pieces.filter { it.kind in KINDS && !paid(it) }), KIT_CHARS)
 

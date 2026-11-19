@@ -45,7 +45,11 @@ object Stretches {
 
     /** The 근무시간 경고 values a tap sets: 한 주, 3개월 평균, 연속. */
     enum class Preset(val label: String, val weekly: Int, val average: Int, val stretch: Int, val note: String) {
-        GENERAL("일반", 64, 52, 0, "주 64시간 · 3개월 평균 52시간 (근로기준법 제53조)"),
+        // 2.0.0 [RVJ-23] 검토 PAYC-15·U04-07: 64·52 are not 제53조's numbers (that is 한 주 52시간). They are where the 과로 인정 기준
+        // starts to count: 발병 전 4주 평균 64시간 초과는 관련성이 강하고, 12주 평균 52시간 초과부터 길수록 관련성이 커져요(고용노동부 고시
+        // 「뇌혈관 질병 또는 심장 질병 및 근골격계 질병의 업무상 질병 인정 여부 결정에 필요한 사항」, 산재보험법 시행령 별표 3. 고시 번호는
+        // 원문 대조 못 함: 확인 필요). The note says which is which.
+        GENERAL("일반", 64, 52, 0, "주 64시간 · 3개월 평균 52시간은 과로를 살피는 값이에요(산재 과로 인정 기준 참고). 법 한도는 한 주 52시간이에요(근로기준법 제53조)"),
         RESIDENT("전공의", 80, 72, 24, "주 최대 80시간 · 평균 72시간 · 연속 24시간(응급 28시간) — 2026년 2월 전공의법 개정·시범사업 기준"),
         ;
 

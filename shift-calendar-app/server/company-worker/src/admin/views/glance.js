@@ -36,7 +36,7 @@ export function glanceViews(A) {
     const count = h.signals.length;
     const v = h.vitals;
     const sv = h.server;
-    const vNote = v?.error === "denied" ? "Play 권한 필요" : v ? (v.crash === null ? "Play 숫자 없음(사용자 적음)" : `기준 1.09% · ${v.day ?? ""}`) : "Play 서비스 계정 없음";
+    const vNote = v?.error === "denied" ? "Play 권한 필요" : v ? (v.crash === null ? "Play 숫자 없음(사용자 적음)" : `기준 1.09% · ${v.day ?? ""}`) : "Play 연결 열쇠 없음";
     return `<section class="gl-hero ${h.tone}" aria-labelledby="gl-title">
       <div class="gl-hero-top"><span class="gl-pulse" aria-hidden="true"><span></span></span>
         <div class="gl-hero-text"><p class="gl-eyebrow">앱 정상도 · ${esc(clock(d.at))} 기준</p><h2 id="gl-title">${esc(title)}${count && h.tone !== "ok" ? ` <span class="gl-count">${count}</span>` : ""}</h2>
@@ -119,7 +119,7 @@ export function glanceViews(A) {
 
   // ---- 1.39 [OBS2-01~05] 관측: 전체 사용자(Play·서버), 개선 신호, 관측 빈틈 ----
 
-  const PLAY_STATE = { off: "Play 서비스 계정 없음", nobucket: "Play 보고서 저장소 연결 필요", denied: "Play 보고서 권한 필요", unreachable: "Play에 닿지 못했어요" };
+  const PLAY_STATE = { off: "Play 연결 열쇠 없음", nobucket: "Play 보고서 저장소 연결 필요", denied: "Play 보고서 권한 필요", unreachable: "Play에 닿지 못했어요" };
   const SOURCE_NAMES = { "utm:bamnat_web": "웹 계산기·달력", "utm:bamnat_share": "받은 근무표 링크", "utm:bamnat_invite": "친구 초대" };
   const sourceName = (s) => SOURCE_NAMES[s] ?? (/search/i.test(s) ? "Play 검색" : /explore|browse/i.test(s) ? "Play 둘러보기"
     : /referr|third/i.test(s) ? "외부 링크" : s.startsWith("utm:") ? `링크 ${s.slice(4)}` : s);
@@ -170,7 +170,7 @@ export function glanceViews(A) {
     const lastCfg = cf.at(-1)?.n ?? null;
     tiles.push(tile("keep", "하루 사용자", `${lastUsers === null ? "—" : lastUsers}<small>명</small>`,
       `Play가 본 사용자(Android 진단 켠 휴대폰)${pu.at(-1)?.day ? ` · ${md(pu.at(-1).day)}` : ""}`,
-      `${L.spark(pu.map((x) => x.n), { name: "하루 사용자" })}<div class="ob-sub"><span class="gl-k">앱 → 서버 요청</span><b>${lastCfg === null ? "—" : lastCfg}</b><small>어제 · 휴대폰 구별 없이 센 요청 수(14일)</small>${L.spark(cf.map((x) => x.n), { name: "서버 요청" })}</div>`,
+      `${L.spark(pu.map((x) => x.n), { name: "하루 사용자" })}<div class="ob-sub"><span class="gl-k">앱 → 서버 요청</span><b>${lastCfg === null ? "—" : lastCfg}</b><small>어제 · 휴대폰 구별 없이 센 설정 읽기 수(14일). 앱의 읽기 주기가 바뀐 판이 퍼지면 사용자가 그대로여도 바뀌어요</small>${L.spark(cf.map((x) => x.n), { name: "서버 요청" })}</div>`,
       o.quality.vitals?.error ? "Play vitals 권한 필요" : "Play vitals · 서버"));
     // 판: 어느 판에 몇 대가 있는지.
     const v = p.versions;
@@ -202,29 +202,72 @@ export function glanceViews(A) {
   }
 
   const SIGNAL_STATE = { new: ["새 신호", "warn"], watch: ["지켜보는 중", "info"], dev: ["개발사항", "ok"], dismiss: ["아님", ""] };
+  /**
+   * 2.0.0 [RVQ-35] 검토 U22-07: 판정 셋(돌아옴·새 기준으로 굳음·자료 없음)과 HQ-117의 부풀었다 돌아옴(앞 구간이 시험 등으로 부풀었던 것뿐), 판정이 없는 옛 줄(사흘 안 보이면 '좋아짐'이던 때).
+   * 빨강은 쓰지 않아요(조건 6): 굳음만 주황, 나머지는 초록·회색.
+   */
+  const SIGNAL_OUTCOME = { back: ["돌아옴", "ok"], settled: ["새 기준으로 굳음", "warn"], nodata: ["자료 없음", ""], puffed: ["부풀었다 돌아옴", ""], old: ["옛 판정", ""] };
+  const sigNum = (v, unit) => (v === null || v === undefined || v === "" ? "—" : `${esc(String(v))}${esc(unit ?? "")}`);
 
-  /** [OBS2-04] 개선 신호: 숫자에서 찾은 문제 → 개발사항 → 고친 뒤 숫자로 확인. */
-  function signalsCard(o) {
+  /**
+   * 2.0.0 [RVN-15] 검토 U22c-03: 신호가 선 숫자의 날마다 줄(관측 판에 있는 것만). 사용 통계 신호처럼 판에 줄이 없는 것은 빈 글.
+   */
+  function signalLine(s, o) {
+    const days = o.play?.days ?? [];
+    const pick = {
+      "uninstall-spike": () => days.map((d) => d.uninstalls),
+      "net-loss": () => days.map((d) => (d.installs ?? 0) - (d.uninstalls ?? 0)),
+      "store-conv": () => days.map((d) => (d.visitors ? Math.round(((d.acq ?? 0) / d.visitors) * 1000) / 10 : 0)),
+      "rating-low": () => days.map((d) => d.rating ?? 0),
+      "active-drop": () => (o.active?.play ?? []).map((x) => x.n),
+      "config-drop": () => (o.active?.config ?? []).map((x) => x.n),
+    }[s.kind];
+    const values = pick ? pick().filter((v) => v !== null && v !== undefined) : [];
+    return values.length >= 2 ? L.spark(values, { name: s.title }) : "";
+  }
+
+  /**
+   * [OBS2-04] 개선 신호: 숫자에서 찾은 문제 → 개발사항 → 고친 뒤 숫자로 확인.
+   * 2.0.0 [RVA-42] 검토 ADMX-21: 위 정상도는 '지금 이 순간'(바로 볼 것 N개), 개선 신호는 '며칠 쌓인 흐름'이라 서로 다르게 셀 수 있어요.
+   * 그래서 설명에 그 차이를 적고, 위에 바로 볼 것이 있는데 여기가 비면 '위 칩에서 열어요'로 이어 줘요(전에는 '찾은 문제가 없어요'만).
+   */
+  function signalsCard(o, d) {
     const list = o.signals ?? [];
     const open = list.filter((s) => !s.cleared && s.state !== "dismiss");
-    const better = list.filter((s) => s.cleared);
+    const judged = list.filter((s) => s.cleared);
+    const now = d?.health && d.health.tone !== "ok" ? d.health.signals.length : 0;
     const devOk = can("dev", "edit");
+    // 2.0.0 [RVN-15] 디자인 품질 조건 2: 채운 '개발사항으로'는 맨 위 신호 하나만, 나머지는 테두리 단추.
+    const first = open.find((s) => s.state !== "dev");
     const row = (s) => {
       const [label, tone] = SIGNAL_STATE[s.state] ?? SIGNAL_STATE.new;
       const btns = s.state === "dev"
         ? `<a class="btn small" href="${href("dev", s.devId)}">개발사항 보기</a>`
-        : `${devOk ? `<button class="btn small primary" data-act="obs-signal" data-key="${esc(s.key)}" data-do="dev">개발사항으로</button>` : ""}
+        : `${devOk ? `<button class="btn small${s === first ? " primary" : ""}" data-act="obs-signal" data-key="${esc(s.key)}" data-do="dev">개발사항으로</button>` : ""}
            ${s.state === "watch" ? "" : `<button class="btn small" data-act="obs-signal" data-key="${esc(s.key)}" data-do="watch">지켜보기</button>`}
            <button class="btn small ghost" data-act="obs-signal" data-key="${esc(s.key)}" data-do="dismiss">아님</button>`;
-      return `<li class="ob-signal ${esc(s.tone)}"><div class="ob-signal-head"><span class="pill ${tone}">${esc(label)}</span>${s.back ? `<span class="pill bad">다시 나타남 ${s.back}</span>` : ""}<a href="${esc(s.to ?? "#/glance")}">${esc(s.title)}</a></div>
-        <p>${esc(s.why)}</p><p class="ob-metric">지금 <b>${esc(String(s.now ?? s.value ?? "—"))}${esc(s.unit ?? "")}</b> · 기준 ${esc(String(s.base ?? "—"))}${esc(s.unit ?? "")}${s.state === "dev" ? ` · 고치면 사흘 뒤 '좋아짐'으로 옮겨요` : ""}</p>
+      // 2.0.0 [RVQ-35] 고친 뒤에도 처음 기준까지 돌아오지 않아 대기열로 되돌아온 신호는 그 개발사항과 함께 한 줄로 알려요.
+      const stuck = s.stuck && !s.devId ? `<p class="meta" data-stuck>개발사항 ${s.devWas ?? s.prevDev ? `<a href="${href("dev", s.devWas ?? s.prevDev)}">${esc(s.devWas ?? s.prevDev)}</a>` : ""}을 고친 뒤에도 처음 기준 ${sigNum(s.base0 ?? s.base, s.unit)}까지 돌아오지 않았어요(새 기준으로 굳음). 다시 개발사항으로 넘기거나 지켜보기·아님을 골라요.</p>` : "";
+      const base0 = s.base0 !== undefined && s.base0 !== null && s.base0 !== s.base ? ` · 처음 기준 ${sigNum(s.base0, s.unit)}` : "";
+      return `<li class="ob-signal ${esc(s.tone)}"><div class="ob-signal-head"><span class="pill ${s.stuck && !s.devId ? "warn" : tone}">${esc(s.stuck && !s.devId ? "고쳤는데 그대로" : label)}</span>${s.back ? `<span class="pill bad">다시 나타남 ${s.back}</span>` : ""}<a href="${esc(s.to ?? "#/glance")}">${esc(s.title)}</a></div>
+        <p>${esc(s.why)}</p><p class="ob-metric">지금 <b>${sigNum(s.now ?? s.value, s.unit)}</b> · 기준 ${sigNum(s.base, s.unit)}${base0}${s.state === "dev" ? ` · 고침이 닿은 뒤 사흘 동안 안 보이면 처음 기준과 견줘 판정해요` : ""}${s.sample === null || s.sample === undefined ? "" : ` · 표본 ${esc(String(s.sample))}`}</p>${stuck}
+        ${signalLine(s, o)}${A.stepsLine(s.steps)}${s.caveat ? `<p class="meta">틀릴 수 있는 까닭: ${esc(s.caveat)}</p>` : ""}
+        ${s.human && s.state !== "dev" ? `<p class="meta" data-human-check>사람 확인 필요 · ${esc(s.src === "server" ? "서버가 센 요청" : "사용 통계")}에서 나온 숫자라 꾸밀 수 있어요${s.play === null || s.play === undefined ? " · Play 숫자가 아직 없어요" : ` · 같은 주 Play 하루 사용자 ${s.play > 0 ? "+" : ""}${esc(String(s.play))}%`}</p>` : ""}
         <div class="actions start">${btns}</div></li>`;
     };
-    const done = better.length ? `<details class="ob-better" data-key="obs:better"${S.opened.get("obs:better") ? " open" : ""}><summary>좋아진 신호 ${better.length}개</summary><ul>${better.map((s) =>
-      `<li><b>${esc(s.title)}</b><small>${s.devId ? `개발사항 ${esc(s.devId)} 뒤 ` : ""}${esc(String(s.value ?? "—"))}${esc(s.unit ?? "")} → ${esc(String(s.after ?? "—"))}${esc(s.unit ?? "")}</small></li>`).join("")}</ul></details>` : "";
+    const count = (k) => judged.filter((s) => (s.outcome ?? "old") === k).length;
+    const sum = Object.keys(SIGNAL_OUTCOME).filter((k) => count(k)).map((k) => `${SIGNAL_OUTCOME[k][0]} ${count(k)}`).join(" · ");
+    const done = judged.length ? `<details class="ob-better" data-key="obs:better"${S.opened.get("obs:better") ? " open" : ""}><summary>판정한 신호 ${judged.length}개 <small>${esc(sum)}</small></summary><ul>${judged.map((s) => {
+      const [name, tone] = SIGNAL_OUTCOME[s.outcome] ?? SIGNAL_OUTCOME.old;
+      // 2.0.0 [HQ-117] 부풀었다 돌아옴: 부푼 날과, 그날을 뺀 기준(처음 기준은 부푼 숫자라 보이지 않아요).
+      const md = (d) => `${Number(String(d).slice(5, 7))}월 ${Number(String(d).slice(8, 10))}일`;
+      const why = s.outcome === "puffed" ? `${(s.puffed ?? []).map(md).join("·") || "앞 구간"}이 부풀었던 것뿐 · 그날을 빼면 기준 ${sigNum(s.base, s.unit)}`
+        : s.outcome === "nodata" ? "안 보인 뒤로 이 숫자를 읽지 못했어요" : s.outcome ? `처음 기준 ${sigNum(s.base0 ?? s.base, s.unit)}` : "사흘 안 보여서 닫았어요(처음 기준과 견주기 전)";
+      return `<li data-outcome="${esc(s.outcome ?? "old")}"><span class="pill ${tone}">${esc(name)}</span> <b>${esc(s.title)}</b><small>${s.devId ? `개발사항 ${esc(s.devId)} 뒤 · ` : ""}${sigNum(s.value, s.unit)} → ${sigNum(s.after, s.unit)} · ${why}</small></li>`;
+    }).join("")}</ul></details>` : "";
     return `<section class="card ob-signals" aria-labelledby="ob-sig-title"><div class="card-head"><h2 id="ob-sig-title">개선 신호</h2>${open.length ? `<span class="pill warn">${open.length}</span>` : ""}</div>
-      <p class="hint">숫자에서 찾은 문제예요. 개발사항으로 넘기면 운영 장부·자동 순환으로 이어지고, 고친 뒤 그 숫자가 돌아오면 '좋아진 신호'로 옮겨요.</p>
-      ${open.length ? `<ul class="ob-signal-list">${open.map(row).join("")}</ul>` : `<p class="empty-line">지금 찾은 문제가 없어요. 매시 ${o.found?.length ?? 0}가지 숫자를 기준과 견줘요${o.play.state === "ok" ? "" : "(Play 보고서가 연결되면 늘어요)"}.</p>`}
+      <p class="hint">한 시간마다 며칠 쌓인 숫자를 기준과 견줘 찾은 긴 흐름 문제예요(위 정상도는 지금 이 순간의 숫자). 개발사항으로 넘기면 운영 장부·자동 순환으로 이어지고, 고친 뒤 처음 기준까지 돌아오면 '돌아옴', 못 돌아오면 다시 여기로 와요.</p>
+      ${open.length ? `<ul class="ob-signal-list">${open.map(row).join("")}</ul>` : `<p class="empty-line">긴 흐름에서는 찾은 문제가 없어요.${now ? ` 위 '${esc(TONE[d.health.tone]?.[0] ?? "")}' ${now}개는 지금 숫자라 위 칩에서 바로 열어요.` : ""} 매시 ${o.found?.length ?? 0}가지 숫자를 기준과 견줘요${o.play.state === "ok" ? "" : "(Play 보고서가 연결되면 늘어요)"}.</p>`}
       ${done}</section>`;
   }
 
@@ -262,9 +305,24 @@ export function glanceViews(A) {
     const row = (r, all = false) => `<tr${all ? ' class="ob-all-row"' : ""}><th scope="row">${esc(r.name)}</th><td data-label="진입">${r.new}대</td>${cell("1일째", r.d1)}${cell("7일째", r.d7)}${cell("30일째", r.d30)}</tr>`;
     return `<section class="card ob-kinds" aria-labelledby="ob-kinds-title"><div class="card-head"><h2 id="ob-kinds-title">유형별 흐름</h2><span class="meta">최근 61일 · 사용 통계 켠 휴대폰</span></div>
       <p class="hint">일하는 방식마다 처음 연 휴대폰이 며칠째 다시 열었는지예요. 한 유형만 낮으면 그 유형의 첫 설정·첫 주를 먼저 봐요.</p>
-      <table class="gl-cohort ob-kind-table"><thead><tr><th scope="col">유형</th><th scope="col">진입</th><th scope="col">1일째</th><th scope="col">7일째</th><th scope="col">30일째</th></tr></thead>
-      <tbody>${k.rows.map((r) => row(r)).join("")}${row(k.all, true)}</tbody></table></section>`;
+      <div class="ob-tw"><table class="gl-cohort ob-kind-table"><thead><tr><th scope="col">유형</th><th scope="col">진입</th><th scope="col">1일째</th><th scope="col">7일째</th><th scope="col">30일째</th></tr></thead>
+      <tbody>${k.rows.map((r) => row(r)).join("")}${row(k.all, true)}</tbody></table></div>${kindUse(k)}</section>`;
   }
+
+  /**
+   * 2.0.0 [RVQ-56] 검토 T21-02: 유형마다 전체보다 절반 아래로 쓰는 기능(최근 30일, 처리방침 3.14 깃발 stats.kind_use가 켜진 뒤 온 숫자만).
+   * 그 유형에 맞지 않아 숨길 것인지, 찾기 어려운 것인지 보는 자리예요. 깃발 전에는 줄이 오지 않아 이 부분이 없어요.
+   */
+  function kindUse(k) {
+    const uses = k.rows.filter((r) => r.use);
+    if (!uses.length) return "";
+    const line = (r) => (r.use.few ? `연 휴대폰이 ${OBS_KIND_USE_MIN}대보다 적어 아직 견주지 않아요`
+      : r.use.low.length ? r.use.low.map((x) => `${x.name} ${x.rate}% (전체 ${x.all}%)`).join(" · ") : "전체와 비슷하게 써요");
+    return `<h3 class="section">유형별로 덜 쓰는 기능</h3>
+      <p class="hint">최근 30일, 그 유형에서 전체의 절반 아래로 쓰는 기능이에요. 그 유형에 맞지 않으면 숨기고, 찾기 어려우면 안내를 고쳐요.</p>
+      <ul class="rows">${uses.map((r) => `<li><div class="row"><span class="row-main"><b>${esc(r.name)}</b><span class="meta">${esc(line(r))}</span></span>${r.use.low.length ? `<span class="pill warn">${r.use.low.length}개</span>` : ""}</div></li>`).join("")}</ul>`;
+  }
+  const OBS_KIND_USE_MIN = 20;
 
   /**
    * 1.39 [OBS2-08] 기능과 머묾: 그날 그 기능을 쓴 휴대폰이 7일 안에 다시 온 비율을, 그날 연 휴대폰 전체(기준)와 견줘요(처리방침 3.12, 깃발 stats.keep).
@@ -278,8 +336,8 @@ export function glanceViews(A) {
       : `<td data-label="기준과" class="${v > 0 ? "up" : v < 0 ? "down" : ""}">${v > 0 ? "+" : ""}${esc(`${v}%p`)}</td>`);
     return `<section class="card ob-keep" aria-labelledby="ob-keep-title"><div class="card-head"><h2 id="ob-keep-title">기능과 머묾</h2><span class="meta">${esc(`${day(k.from)} ~ ${day(k.to)}에 쓴 날`)}</span></div>
       <p class="hint">그 기능을 쓴 휴대폰이 7일 안에 다시 온 비율이에요. 기준은 그날 연 휴대폰 전체 <b>${esc(num(k.base?.rate7, "%"))}</b>. 함께 높다고 그 기능 덕분이라는 뜻은 아니에요.</p>
-      <table class="gl-cohort ob-keep-table"><thead><tr><th scope="col">기능</th><th scope="col">쓴 휴대폰</th><th scope="col">7일 안에</th><th scope="col">기준과</th><th scope="col">30일 안에</th></tr></thead>
-      <tbody>${k.rows.map((r) => `<tr><th scope="row">${esc(r.name)}</th><td data-label="쓴 휴대폰">${r.users}대</td><td data-label="7일 안에">${esc(num(r.rate7, "%"))}</td>${lift(r.lift7)}<td data-label="30일 안에">${esc(num(r.rate30, "%"))}</td></tr>`).join("")}</tbody></table>
+      <div class="ob-tw"><table class="gl-cohort ob-keep-table"><thead><tr><th scope="col">기능</th><th scope="col">쓴 휴대폰</th><th scope="col">7일 안에</th><th scope="col">기준과</th><th scope="col">30일 안에</th></tr></thead>
+      <tbody>${k.rows.map((r) => `<tr><th scope="row">${esc(r.name)}</th><td data-label="쓴 휴대폰">${r.users}대</td><td data-label="7일 안에">${esc(num(r.rate7, "%"))}</td>${lift(r.lift7)}<td data-label="30일 안에">${esc(num(r.rate30, "%"))}</td></tr>`).join("")}</tbody></table></div>
       ${k.small ? `<p class="meta">쓴 휴대폰이 ${OBS_KEEP_MIN}대보다 적은 기능 ${k.small}개는 빼고 보여요.</p>` : ""}</section>`;
   }
   const OBS_KEEP_MIN = 20;
@@ -292,13 +350,19 @@ export function glanceViews(A) {
       }
     },
     "obs-signal": ({ key, do: what }) => {
-      const go = async () => {
-        if (await act(() => api("/observe/signals", "POST", { key, act: what }), what === "dev" ? (r) => `개발사항 ${r.signal.devId}을 만들었어요` : what === "watch" ? "지켜볼게요" : "아님으로 두었어요")) {
+      const go = (wrong = false) => async () => {
+        const body = wrong ? { key, act: "dismiss", wrong: true } : { key, act: what };
+        if (await act(() => api("/observe/signals", "POST", body), what === "dev" ? (r) => `개발사항 ${r.signal.devId}을 만들었어요` : what === "watch" ? "지켜볼게요"
+          : wrong ? "거짓 신호로 닫고, 같은 규칙은 표본이 더 모여야 뜨게 했어요" : "아님으로 두었어요")) {
           await load({ quiet: true });
         }
       };
-      if (what === "dismiss") return confirmBox("이 신호를 '아님'으로 둘까요?", "30일 동안 같은 신호를 다시 띄우지 않아요. 활동 기록에 남아요.", "아님으로", go, "primary");
-      return go();
+      // 2.0.0 [RVN-15] 검토 U22c-03: 같은 창에서 '거짓이었어요'도 골라요. 그 규칙의 표본 기준을 1.5배 올려요(세 번까지, 다시 열면 내려요).
+      if (what === "dismiss") {
+        return confirmBox("이 신호를 '아님'으로 둘까요?", "30일 동안 같은 신호를 다시 띄우지 않아요. 숫자가 틀렸던 거라면 '거짓이었어요'를 눌러 주세요. 같은 규칙은 표본이 1.5배 더 모여야 떠요. 활동 기록에 남아요.",
+          "아님으로", go(), "primary", [], { label: "거짓이었어요", then: go(true) });
+      }
+      return go()();
     },
   };
 
@@ -311,7 +375,7 @@ export function glanceViews(A) {
     const o = S.data.observe;
     if (!d) return `<div class="gl-hero skeleton"></div>${skeleton(2)}`;
     return `<div class="glance">${hero(d)}<div class="ob-cols"><div class="ob-main">${o ? everyone(o) : skeleton(1)}${flow(d)}${o ? kindsCard(o) + keepCard(o) : ""}</div>
-      <div class="ob-side">${o ? signalsCard(o) : ""}${early(d)}${o ? gapsCard(o) : ""}</div></div>${more()}</div>`;
+      <div class="ob-side">${o ? signalsCard(o, d) : ""}${early(d)}${o ? gapsCard(o) : ""}</div></div>${more()}</div>`;
   }
 
   const loads = { glance: () => [["/glance", "glance"], ["/observe", "observe"]] };

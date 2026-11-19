@@ -19,7 +19,7 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
+import com.bamnat.app.ui.components.OutlinedButton
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -28,6 +28,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -99,7 +100,7 @@ internal fun TaxCard(
                         PayTaxLines(view, onTaxWay)
                         ledgerNet?.let { net ->
                             Muted("가계부 수입에 넣는 급여")
-                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            androidx.compose.foundation.layout.FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                                 com.bamnat.app.ui.components.FilterChip(selected = !net, onClick = { onLedgerNet(false) }, label = { Text("그달 일한 세전") })
                                 com.bamnat.app.ui.components.FilterChip(selected = net, onClick = { onLedgerNet(true) }, label = { Text("지급일 실수령") })
                             }
@@ -118,8 +119,8 @@ private fun PayTaxLines(view: TakeHomeView?, onTaxWay: (com.bamnat.core.pay.TaxM
     if (view != null && view.taxUnknown) {
         // [J133-01] The 세전 alone, and the way to pick, never the 세전 called 실수령.
         view.gross?.let { TaxLine("${view.month.monthValue}월 세전 예상", Fmt.won(it)) }
-        Muted("${com.bamnat.app.tax.TaxWay.UNKNOWN}. 월급에서 무엇을 떼나요?")
-        com.bamnat.app.tax.TaxWayChips(null, Modifier.padding(top = 4.dp), onTaxWay)
+        Muted("${com.bamnat.app.tax.TaxWay.UNKNOWN}. ${if (view.daily) "일당" else "월급"}에서 무엇을 떼나요?")
+        com.bamnat.app.tax.TaxWayChips(null, Modifier.padding(top = 4.dp), daily = view.daily, onPick = onTaxWay)
         return
     }
     if (view == null || f == null) {
@@ -141,6 +142,12 @@ private fun PayTaxLines(view: TakeHomeView?, onTaxWay: (com.bamnat.core.pay.TaxM
 private fun BusinessTaxLines(y: BusinessTax.Year?) {
     if (y == null) {
         Muted("매출·일감·경비를 적으면 올해 낼 세금과 내는 날을 어림해 드려요.")
+        return
+    }
+    if (y.dayLabourOnly) {
+        // 2.0.0 [PC-136] A phone of 공수 alone (no 3.3%) is a 일용근로자's: no 부가세 (부가가치세법 제12조 제3항) and nothing for 종합소득세
+        // (소득세법 제14조 제3항 제2호). Said in a line, not a 부가세 number.
+        Muted("일당(공수)은 일용근로소득이라 부가가치세가 없고 종합소득세에도 합치지 않아요. 일당에서 떼는 세금은 일감·수입 › 일용직 세금에서 봐요.")
         return
     }
     TaxLine("${y.year}년 낼 세금 예상", Fmt.won(y.total), strong = true)
@@ -207,7 +214,7 @@ internal fun TakeHomeSheet(
                     Muted("월급이 통장에 들어오면 결제 알림으로 저절로 남아요. 지난 명세서를 사진으로 읽거나 직접 적어도 돼요.")
                 }
                 view.records.forEach { o -> RecordRow(o, onDelete, onNotPay) }
-                Muted("들어온 월급은 수입에 한 번만 셉니다: 예상 급여가 있으면 그 달은 예상으로 세고, 들어온 돈은 관측으로 남겨 세금 예측에만 써요. 기록은 휴대폰 밖으로 나가지 않아요.")
+                Muted("들어온 월급은 수입에 한 번만 세요: 예상 급여가 있으면 그 달은 예상으로 세고, 들어온 돈은 관측으로 남겨 세금 예측에만 써요. 기록은 휴대폰 밖으로 나가지 않아요.")
             }
         },
     )
@@ -237,14 +244,15 @@ private fun RecordRow(o: PayObservation, onDelete: (PayObservation) -> Unit, onN
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 internal fun PayRecordDialog(start: YearMonth, onSave: (PayObservation) -> Unit, onDismiss: () -> Unit) {
-    var kind by remember { mutableStateOf(IncomeKind.SALARY) }
-    var month by remember { mutableStateOf(start) }
-    var gross by remember { mutableStateOf("") }
-    var net by remember { mutableStateOf("") }
-    var hours by remember { mutableStateOf("") }
-    var rate by remember { mutableStateOf("") }
-    var days by remember { mutableStateOf("") }
-    var source by remember { mutableStateOf(PayObservation.Source.TYPED) }
+    // 2.0.0 [RVK-42] (검토 U06a-23) What is typed stays through a rebuilt screen, and back or a swipe asks before it goes.
+    var kind by rememberSaveable { mutableStateOf(IncomeKind.SALARY) }
+    var month by rememberSaveable { mutableStateOf(start) }
+    var gross by rememberSaveable { mutableStateOf("") }
+    var net by rememberSaveable { mutableStateOf("") }
+    var hours by rememberSaveable { mutableStateOf("") }
+    var rate by rememberSaveable { mutableStateOf("") }
+    var days by rememberSaveable { mutableStateOf("") }
+    var source by rememberSaveable { mutableStateOf(PayObservation.Source.TYPED) }
     var read by remember { mutableStateOf<String?>(null) }
     val texts = remember { mutableStateListOf<String>() }
     val g: Long? = when (kind) {
@@ -261,6 +269,7 @@ internal fun PayRecordDialog(start: YearMonth, onSave: (PayObservation) -> Unit,
     val n = net.toLongOrNull() ?: lawNet
     FormSheet(
         onDismissRequest = onDismiss,
+        unsaved = listOf(gross, net, hours, rate, days).any { it.isNotBlank() } || texts.isNotEmpty(),
         title = { Text("지난 월급 적기") },
         confirmButton = {
             TextButton(enabled = n != null && n > 0, onClick = {
@@ -330,10 +339,11 @@ internal fun BusinessTaxSheet(
     onDismiss: () -> Unit,
 ) {
     var p by remember { mutableStateOf(start) }
-    var simple by remember { mutableStateOf(start.simpleRate?.toString().orEmpty()) }
-    var standard by remember { mutableStateOf(start.standardRate?.toString().orEmpty()) }
-    var lastIncome by remember { mutableStateOf(start.lastYearIncome?.toString().orEmpty()) }
-    var lastTax by remember { mutableStateOf(start.lastYearTax?.toString().orEmpty()) }
+    // 2.0.0 [RVK-42] (검토 U06a-23) The typed numbers stay through a rebuilt screen, and closing asks before they go.
+    var simple by rememberSaveable { mutableStateOf(start.simpleRate?.toString().orEmpty()) }
+    var standard by rememberSaveable { mutableStateOf(start.standardRate?.toString().orEmpty()) }
+    var lastIncome by rememberSaveable { mutableStateOf(start.lastYearIncome?.toString().orEmpty()) }
+    var lastTax by rememberSaveable { mutableStateOf(start.lastYearTax?.toString().orEmpty()) }
     val draft = p.copy(
         simpleRate = simple.toDoubleOrNull()?.takeIf { it in 0.0..100.0 }, standardRate = standard.toDoubleOrNull()?.takeIf { it in 0.0..100.0 },
         lastYearIncome = lastIncome.toLongOrNull(), lastYearTax = lastTax.toLongOrNull(),
@@ -341,6 +351,7 @@ internal fun BusinessTaxSheet(
     val y = remember(draft) { yearOf(draft) }
     FormSheet(
         onDismissRequest = onDismiss,
+        unsaved = draft != start,
         title = { Text("사업자 세금 예상") },
         confirmButton = { TextButton(onClick = { onSave(draft) }) { Text("저장") } },
         dismissButton = { TextButton(onClick = onDismiss) { Text("닫기") } },
@@ -348,6 +359,8 @@ internal fun BusinessTaxSheet(
             Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 TaxLine("${y.year}년 낼 세금 예상", Fmt.won(y.total), strong = true)
                 Muted("${Fmt.monthDay(y.until)}까지 적은 매출 ${Fmt.won(y.sales)} · 경비 ${Fmt.won(y.costs)} (증빙 ${Fmt.won(y.proved)})를 한 해로 늘려 계산했어요.")
+                // 2.0.0 [PC-136] Where the 일당 went: not in the 매출 above.
+                if (y.dayWages > 0) Muted("공수(일당)로 받은 ${Fmt.won(y.dayWages)}은 일용근로소득이라 넣지 않았어요(부가세 없음, 종합소득에 안 합침).")
                 y.options.forEach { o ->
                     TaxLine((if (o == y.best) "✓ " else "") + o.method.label, if (o.allowed) Fmt.won(o.tax) else "못 써요", muted = o != y.best)
                     if (o.why.isNotBlank()) Muted("  " + o.why)
@@ -382,9 +395,9 @@ internal fun BusinessTaxSheet(
                 AmountField("작년 종합소득세 (11월 중간예납용)", lastTax, { lastTax = it })
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text("기본공제 사람 수 (나 포함)", modifier = Modifier.weight(1f))
-                    TextButton(onClick = { p = p.copy(family = (p.family - 1).coerceAtLeast(1)) }) { Text("−") }
+                    com.bamnat.app.ui.components.GlyphStepButton("−", "기본공제 사람 수 줄이기", onClick = { p = p.copy(family = (p.family - 1).coerceAtLeast(1)) }, outlined = false)
                     Text("${p.family}명")
-                    TextButton(onClick = { p = p.copy(family = (p.family + 1).coerceAtMost(10)) }) { Text("+") }
+                    com.bamnat.app.ui.components.GlyphStepButton("+", "기본공제 사람 수 늘리기", onClick = { p = p.copy(family = (p.family + 1).coerceAtMost(10)) }, outlined = false)
                 }
                 SwitchRow("올해 처음 시작한 사업", p.newBusiness) { p = p.copy(newBusiness = it) }
                 SwitchRow("성실사업자 (표준세액공제 12만 원)", p.sincere) { p = p.copy(sincere = it) }

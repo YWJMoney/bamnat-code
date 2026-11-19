@@ -1,10 +1,14 @@
 # 첫 화면 bamnat.app/ (웹 2판, 사용자 2026-11-10 '최정상의 인터랙션을 가지는 대표 페이지').
-# public_pages.py·print_pages.py 다음에 돌려요: python3 home_page.py ../-
-# 틀은 같은 폴더의 home.html, 움직임은 공개 저장소 assets/home.js·home.css, 머리·바닥은 public_pages.py와 같은 조각을 써요.
-import json, os, html, sys
+# build.py가 public_pages.py·print_pages.py 다음에 돌려요. 틀은 같은 폴더의 home.html, 움직임·모양은 static/assets/home.js·home.css,
+# 머리·바닥은 site_common.py의 site_header()·site_footer() 하나를 함께 써요.
+import html
+import json
+import os
+
+from site_common import *
+
 HERE = os.path.dirname(os.path.abspath(__file__))
-_src = open(os.path.join(HERE, 'public_pages.py'), encoding='utf-8').read().split('# ---------- 주휴수당')[0]
-exec(_src)  # ROOT, LOGO, PLAY_ICON, site_header(), site_footer()
+
 
 def icon(d, extra=''):
     return f'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"{extra}>{d}</svg>'
@@ -36,13 +40,17 @@ FAQ = [
     ('회원가입을 해야 하나요?', '아니요. 로그인이나 회원가입 없이 설치하자마자 근무를 넣어요.'),
     ('우리 회사 교대 순서가 특이해요.', '주주야야휴휴처럼 순서를 직접 적어도 되고, 종이·엑셀·PDF 근무표를 찍거나 열면 내 줄을 찾아 달력에 넣어요. 회사 찾기에서 회사 이름으로 고르면 순서와 근무 시간이 맞춰져요.'),
     ('간호사처럼 근무표가 매달 바뀌어도 되나요?', '네. 근무표가 나오는 날 사진을 찍거나 파일을 열면 내 줄을 찾아 한 달을 채워요. 헷갈리는 날은 따로 보여 줘서 바로 고쳐요.'),
-    ('아이폰에서도 쓸 수 있나요?', '지금 앱은 안드로이드(Google Play)에서 받을 수 있어요. 팀 리더나 사장님이 보낸 근무표·출퇴근 링크는 아이폰에서도 앱 없이 열어 볼 수 있어요.'),
+    ('아이폰에서도 쓸 수 있나요?', '지금 앱은 안드로이드(Google Play)에서 받을 수 있어요. 아이폰에서는 이 사이트의 교대 근무 달력·계산기를 그대로 쓰고, 홈 화면에 더해 두면 매일 오늘 근무가 바로 보여요. 팀 리더나 사장님이 보낸 근무표·출퇴근 링크도 앱 없이 열려요.'),
     ('궁금한 게 있으면 어디로 물어요?', '앱의 설정 › 도움말과 문의에서 보내 주세요. 보내 주신 의견으로 고친 판이 나오면 앱에서 알려 드려요. 전자우편 yoj0790@naver.com으로도 받아요.'),
 ]
 
 def main():
     t = open(os.path.join(HERE, 'home.html'), encoding='utf-8').read()
-    pats = len([p for p in json.load(open(os.path.join(ROOT, 'remote/v1/presets.json'), encoding='utf-8'))['data']['patterns'] if p['codes'] != 'DDDDDOO'])
+    pats = len([p for p in PRESETS if p['codes'] != 'DDDDDOO'])
+    # [WEB-22] 공휴일 칸은 연도 없는 쪽 하나와 인쇄하는 해 쪽 하나. 해가 바뀌어도 손으로 고치지 않아요.
+    arrow = I['ARROW']
+    hol_tiles = (f'<a class="tile reveal" href="holiday/"><span class="go">{arrow}</span><h3>공휴일·연휴 달력</h3><p>올해·내년 공휴일과 다음 공휴일까지 남은 날</p></a>\n      '
+                 f'<a class="tile reveal" href="holiday/{PRINT_YEAR}/"><span class="go">{arrow}</span><h3>{PRINT_YEAR}년 연휴·교대 근무자 쉬는 날</h3><p>대체공휴일과 사흘 이상 연휴, 내 순서로 쉬는 공휴일</p></a>')
     gallery = ''.join(
         f'<figure><div class="img"><img src="assets/app/{k}-360.webp" srcset="assets/app/{k}-360.webp 360w, assets/app/{k}-720.webp 720w" sizes="270px" width="360" height="640" alt="{html.escape(a)}" loading="lazy" decoding="async"></div><figcaption><b>{html.escape(a)}</b>{html.escape(b)}</figcaption></figure>'
         for k, a, b in GALLERY)
@@ -55,6 +63,8 @@ def main():
         '<!--LOGO-->': LOGO, '<!--LOGO_DOCK-->': LOGO.replace('<svg ', '<svg class="logo" ', 1), '<!--PLAY-->': PLAY_ICON, '<!--QR-->': qr,
         '<!--GALLERY-->': gallery, '<!--JOBS1-->': jobs(JOBS1), '<!--JOBS2-->': jobs(JOBS2),
         '<!--FAQ-->': faq, '<!--FAQ_LD-->': faq_ld, '<!--PATS-->': str(pats),
+        '<!--HOL_TILES-->': hol_tiles, '<!--PRINT_YEAR-->': str(PRINT_YEAR),
+        '<!--THIS_YEAR-->': f'{THIS}년',  # [RVR-34] 미리 보기 폰의 해: 손으로 적으면 새해에 '지난해 숫자' 검사가 막아요
     }
     for k, v in I.items(): rep[f'<!--I_{k}-->'] = v
     rep['<!--CHECK-->'] = I['CHECK']; rep['<!--ARROW-->'] = I['ARROW']

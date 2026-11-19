@@ -115,11 +115,21 @@ internal fun AheadCard(
     if (line == null && shown.flows.isEmpty() && !shown.hasBalance) return
     SectionCard(title = "앞으로의 돈") {
         line?.let { Text(it, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold) }
-        // 1.37 PC 확인 6a4efc92 제안: '오늘 쓸 돈'을 어떻게 셌는지 한 줄 풀이.
+        // 1.37 PC 확인 6a4efc92 제안: '오늘 쓸 돈'을 어떻게 셌는지 한 줄 풀이. 2.0.0 [RVK-29] (검토 HQ-44 같은 모양, 조건 1·4) The sum
+        // itself was four to five grey lines under the card's title (편 폭 사진 k4-03); the card says what was done in one line with ⓘ,
+        // and the sum waits in its sheet.
         full.untilNext(nextKinds(style), todaySpent, fromStart)?.takeIf { it.perDay != null }?.let { u ->
-            Muted("(" + (if (fromStart > 0) "오늘 아침 통장 " else "통장 ") + "${Fmt.won(full.start + fromStart)}" + (if (u.reserved > 0) " − 그 전에 나갈 돈 ${Fmt.won(u.reserved)}" else "") +
-                (if (u.arriving > 0) " + 들어올 돈 ${Fmt.won(u.arriving)}" else "") + ") ÷ ${u.daysLeft}일 = 하루 ${Fmt.won(u.perDay!!)}" +
-                (if (todaySpent > 0) ", 오늘 쓴 ${Fmt.won(todaySpent)}을 빼고 보여요" else ""))
+            val start = (if (fromStart > 0) "오늘 아침 통장 " else "통장 ") + Fmt.won(full.start + fromStart)
+            com.bamnat.app.ui.components.NotesLine(
+                summary = "통장 돈을 남은 ${u.daysLeft}일로 나눴어요",
+                title = "이렇게 셌어요",
+                notes = listOfNotNull(
+                    "($start" + (if (u.reserved > 0) " − 그 전에 나갈 돈 ${Fmt.won(u.reserved)}" else "") +
+                        (if (u.arriving > 0) " + 들어올 돈 ${Fmt.won(u.arriving)}" else "") + ") ÷ ${u.daysLeft}일 = 하루 ${Fmt.won(u.perDay!!)}",
+                    if (todaySpent > 0) "오늘 쓴 ${Fmt.won(todaySpent)}을 빼고 오늘 쓸 돈을 보여요." else null,
+                    "나갈 돈은 반복 지출·카드값·대출 갚기, 들어올 돈은 월급·일감·받을 돈처럼 날짜가 정해진 돈이에요.",
+                ),
+            )
         }
         // 1.37 [LEDH-23] 내 월급 만들기: money that comes in unevenly, paid to yourself evenly.
         if (style == WorkStyle.FIELD || style == WorkStyle.BUSINESS || style == WorkStyle.HOURLY) {
@@ -135,7 +145,7 @@ internal fun AheadCard(
             }
             self?.let { p ->
                 Muted("내 월급" + (if (style == WorkStyle.FIELD) "(경비 뺀 뒤)" else "") + ": 매달 ${Fmt.won(p.salary)}씩 나에게 주면 지난 ${p.months}달 중 ${p.covered}달은 그만큼 벌었어요" +
-                    (p.lastFor?.let { " · 지금 통장으로 ${"%.1f".format(it).removeSuffix(".0")}달 버텨요(지난 ${p.months}달 한 달 평균 지출 ${Fmt.won(p.spend)} 기준)" } ?: "") + ". 더 번 달의 남는 돈은 모으기 봉투로 옮겨 두면 덜 번 달을 메워요.")
+                    (p.lastFor?.let { " · 지금 통장으로 ${"%.1f".format(java.util.Locale.ROOT, it).removeSuffix(".0")}달 버텨요(지난 ${p.months}달 한 달 평균 지출 ${Fmt.won(p.spend)} 기준)" } ?: "") + ". 더 번 달의 남는 돈은 모으기 봉투로 옮겨 두면 덜 번 달을 메워요.")
             }
         }
         rhythm?.let { p ->
@@ -168,8 +178,9 @@ internal fun AheadCard(
         if (next.isNotEmpty()) {
             Column(Modifier.padding(top = 6.dp)) {
                 next.forEach { f ->
-                    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp)) {
-                        Text("${Fmt.shortDate(f.date)} ${f.label}", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f), maxLines = 1)
+                    // 2.0.0 [RVK-23]·HQ-30: at 200% the name was cut to its date; it now wraps and the amount goes under it.
+                    NameAndAmount({ Text("${Fmt.shortDate(f.date)} ${f.label}", style = MaterialTheme.typography.bodyMedium) },
+                        Modifier.padding(vertical = 2.dp)) {
                         Text((if (f.amount > 0) "+" else "−") + Fmt.won(kotlin.math.abs(f.amount)), style = MaterialTheme.typography.bodyMedium,
                             color = if (f.amount > 0) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface)
                     }

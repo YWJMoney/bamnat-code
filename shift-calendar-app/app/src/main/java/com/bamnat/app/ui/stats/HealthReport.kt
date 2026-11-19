@@ -28,7 +28,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.TopAppBar
+import com.bamnat.app.ui.components.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -49,6 +49,7 @@ import com.bamnat.app.ui.Fmt
 import com.bamnat.app.data.ScheduleSnapshot
 import com.bamnat.app.ui.components.SectionCard
 import com.bamnat.app.ui.components.StatTile
+import com.bamnat.app.ui.components.StatTiles
 import com.bamnat.app.ui.theme.NumberStyle
 import com.bamnat.core.holiday.KoreanHolidays
 import com.bamnat.core.work.HealthYear
@@ -57,6 +58,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.withContext
 import java.time.LocalDate
 import kotlin.math.roundToInt
@@ -117,12 +119,12 @@ internal fun HealthYearCard(snapshot: ScheduleSnapshot, calendarId: String? = nu
     SectionCard(title = "${year}년 건강 지표", trailing = {
         TextButton(onClick = { NoticeLinks.open(NoticeLinks.Target.HEALTH_REPORT) }) { Text("자세히") }
     }) {
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        StatTiles {
             StatTile("야간 비율", pct(y.nightShare), Modifier.weight(1f), caption = "근무 ${y.workDays}일 중 야간 ${y.nights}번")
             StatTile("최장 연속 야간", "${y.longestNightRun}일", Modifier.weight(1f))
         }
         Spacer(Modifier.height(8.dp))
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        StatTiles {
             StatTile("짧은 휴식", "${y.quickReturns}번", Modifier.weight(1f), caption = "근무 사이 11시간 미만",
                 onClick = if (y.quickReturns > 0) ({ showShort = true }) else null)
             StatTile("주말·공휴일 근무", "${y.weekendDays + y.holidayDays}일", Modifier.weight(1f),
@@ -132,7 +134,9 @@ internal fun HealthYearCard(snapshot: ScheduleSnapshot, calendarId: String? = nu
 }
 
 class HealthReportViewModel(container: AppContainer, val calendarId: String) : ViewModel() {
+    // 2.0.0 [RVH-94] 검토 PC-212: a year's 건강 지표 counts the months the app was in use ([FactsSince]).
     val snapshot: StateFlow<ScheduleSnapshot?> = container.scopeOf(calendarId).schedule.snapshot
+        .map { s -> s?.let { FactsSince.of(container.installedAt, it) } }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
 }
 
@@ -172,12 +176,12 @@ fun HealthReportScreen(vm: HealthReportViewModel, onBack: () -> Unit) {
                 now < before -> "작년보다 ${before - now} 적어요"
                 else -> "작년과 같아요"
             }
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            StatTiles {
                 StatTile("야간 비율", pct(y.nightShare), Modifier.weight(1f),
                     caption = if (last.isEmpty) "야간 ${y.nights}번" else "야간 ${y.nights}번 · 작년 ${pct(last.nightShare)}")
                 StatTile("최장 연속 야간", "${y.longestNightRun}일", Modifier.weight(1f), caption = versus(y.longestNightRun, last.longestNightRun))
             }
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            StatTiles {
                 StatTile("짧은 휴식", "${y.quickReturns}번", Modifier.weight(1f), caption = versus(y.quickReturns, last.quickReturns) ?: "근무 사이 11시간 미만")
                 StatTile("주말·공휴일", "${y.weekendDays + y.holidayDays}일", Modifier.weight(1f),
                     caption = versus(y.weekendDays + y.holidayDays, last.weekendDays + last.holidayDays) ?: "주말 ${y.weekendDays} · 공휴일 ${y.holidayDays}")
@@ -210,7 +214,7 @@ fun HealthReportScreen(vm: HealthReportViewModel, onBack: () -> Unit) {
             Text(
                 "· 야간은 22시~6시에 걸친 근무예요(대근 포함).\n" +
                     "· 짧은 휴식은 앞 근무가 끝나고 다음 근무까지 11시간이 안 되는 경우예요.\n" +
-                    "· 연속 야간은 야간을 며칠 이어서 했는지예요. 달을 넘긴 연속은 끝난 달에 셉니다.\n" +
+                    "· 연속 야간은 야간을 며칠 이어서 했는지예요. 달을 넘긴 연속은 끝난 달에 세요.\n" +
                     "· 달력에 적힌 근무로 계산한 참고용 숫자예요.",
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
