@@ -585,6 +585,10 @@ class LegalPagesTest {
         assertFalse(text.contains("Block Store"))
         assertFalse(text.contains("<b>폰 바꾸기</b>"))
         assertTrue(text.contains("1항·1-14항의 바뀐 곳은 ${p30}부터."))
+        // 6항 데이터 요청 대행 기록 (D 서버 대조 11-19): the operator may act for the user, and the record is kept 3 years (운영 기준).
+        assertTrue(text.contains("운영자가 이용자를 대신해 서버 자료를 찾아 내보내거나 지울 수 있습니다"))
+        assertTrue(text.contains("요청을 닫은 날부터 <b>3년</b> 보관한 뒤 지웁니다(운영 기준)"))
+        assertTrue(text.contains("<b>열람·삭제 요청을 대신 처리한 기록</b>(6항, ${p30}부터)"))
         // 광장 운영 규칙 3: 4항 '금액과 연락처' from the 7-day line, the 2판 kept as (이전).
         assertTrue(rules.contains("운영 규칙 3 · 앱 버전 2.0.0 기준 · 게시일 $posted · 시행일 $p7"))
         assertTrue(rules.contains("<h2>4. 금액과 연락처</h2>"))
