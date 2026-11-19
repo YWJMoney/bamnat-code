@@ -321,10 +321,10 @@
 {"track": "RVK-01", "title": "한 줄로 적기가 쓴 곳에 맞는 분류로 넣고 넣은 분류를 보여 줌", "status": "check", "size": "fix", "route": "app", "test": "QuickLineCorpusTest", "check": "가계부 › 한 줄로 적기에 '버스 1450', '택시 12000', '약국 8천', '통신비 55000' → 교통·교통·의료·통신 분류로 적히고 적었다는 말에 분류가 보임"}
 {"track": "RVK-02", "title": "'2천만'·'1억'·'15천원'·'1.5만'을 한 금액으로 읽음", "status": "check", "size": "fix", "route": "app", "test": "QuickLineCorpusTest", "check": "한 줄로 적기 '전세 보증금 2천만' → 20,000,000원, '점심 15천원' → 15,000원"}
 {"track": "RVK-03", "title": "돈 적기 창이 화면이 다시 만들어져도 열린 채로 남음", "status": "check", "size": "fix", "route": "app", "check": "가계부에서 줄을 열어 고치는 중에 어두운 모드 전환·화면 돌리기·개발자 옵션 '활동 유지 안 함' → 같은 창과 적던 값 그대로"}
-{"track": "RVK-04", "title": "저장하고 하나 더가 날짜·결제수단을 이어받고 적다 만 것은 모든 칸을 남김", "status": "check", "size": "fix", "route": "app", "check": "어제 날짜·카드로 한 줄 적고 '저장하고 하나 더' → 어제·같은 카드, 금액 칸에 커서. 태그·할부를 적다 닫고 다시 열면 그대로"}
+{"track": "RVK-04", "title": "저장하고 하나 더가 날짜·결제수단을 이어받고 적다 만 것은 모든 칸을 남김", "status": "check", "size": "fix", "route": "app", "check": "어제 날짜·카드로 한 줄 적고 '저장하고 하나 더' → 어제·같은 카드, 금액 칸에 커서. 태그·할부를 적다 닫고 다시 열면 그대로", "test": "RvkGuardsScreenshotTest.saveAndNextStartsOnTheDayJustSaved"}
 {"track": "RVK-05", "title": "가게 하루 마감 창이 바깥 누르기·뒤로에 묻고 닫힘", "status": "check", "size": "fix", "route": "app", "check": "가게 달력 › 오늘 마감에 매출을 적고 바깥 누르기·뒤로 두 번 → '적던 것을 버릴까요?'"}
 {"track": "RVK-06", "title": "하루 마감에 가계부 이날 지출이 따로 빠진다고 알려 줌", "status": "check", "size": "polish", "route": "app", "check": "가게 달력에 오늘 지출 2건 적고 오늘 마감 → 경비 칸 아래 '가계부에 적은 이날 지출 2건 …은 따로 빠져요'"}
-{"track": "RVK-07", "title": "받을 돈·결제 문자 붙여넣기·봉투 창이 묻고 닫힘", "status": "check", "size": "fix", "route": "app", "check": "받을 돈 적기·붙여넣기·봉투 고치기에 적고 바깥 누르기 → 묻기"}
+{"track": "RVK-07", "title": "받을 돈·결제 문자 붙여넣기·봉투 창이 묻고 닫힘", "status": "check", "size": "fix", "route": "app", "check": "받을 돈 적기·붙여넣기·봉투 고치기에 적고 바깥 누르기 → 묻기", "test": "RvkGuardsScreenshotTest.owedAddAsksBeforeItGoes"}
 {"track": "RVK-08", "title": "급여·카드값 같은 계산용 분류는 이름을 바꾸지 않음", "status": "check", "size": "fix", "route": "app", "check": "분류 고치기에서 '급여' 이름 바꾸기 → '이름은 그대로 둬요' 안내와 숨기기"}
 {"track": "RVK-09", "title": "분류 이름을 사슬·맞바꾸기로 바꿔도 기록이 섞이지 않음", "status": "check", "size": "fix", "route": "app", "test": "LedgerK200Test", "check": "식비→외식, 장보기→식비를 한 번에 저장 → 옛 식비 줄은 외식, 옛 장보기 줄은 식비. 되돌리기 → 처음대로"}
 {"track": "RVK-10", "title": "여러 줄 지우기 전에 묻고 지운 기록은 30일 되살림", "status": "check", "size": "fix", "route": "app", "check": "내역에서 3줄 골라 지우기 → 기간·합계와 함께 묻기, 지운 뒤 ⋮ › 최근 지운 기록에서 되살리기"}

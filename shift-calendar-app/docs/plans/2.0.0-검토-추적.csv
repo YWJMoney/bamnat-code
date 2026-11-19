@@ -194,7 +194,7 @@ MONEY-30,발견,06a 가계부 화면,중간,유형 빈틈,"가게: 하루 마감
 MONEY-33,발견,06a 가계부 화면,중간,시험 빈틈,위험한 화면 로직에 시험이 없어요,,"`app/src/test/java/com/bamnat/app/ui/money/`(AmountFieldTest 하나뿐), `app/src/test/java/com/bamnat/app/data/Led…",K,,할 일,
 MONEY-06,발견,06a 가계부 화면,낮음,버그,영수증 사진이 옆으로 누워 저장돼요 (EXIF 방향 무시),,`ui/money/ReceiptProof.kt:61-76`(메모 사진 `MemoPhotoFiles`는 EXIF를 읽는데 영수증만 안 읽음),K,RVK-43,코드 고침(확인 전),영수증 사진은 EXIF 방향대로 세워 저장
 MONEY-08,발견,06a 가계부 화면,낮음,버그,카드값 '어디로' 자동 채우기의 지금 상태 (1.37 MED-1 확인),,`ui/money/LedgerEntrySheet.kt:410-434`,K,,할 일,
-MONEY-09,발견,06a 가계부 화면,낮음,데이터 손실,받을 돈 적기 창은 바깥을 누르면 적던 것이 말없이 사라져요,,"`ui/money/OwedScreen.kt:1020-1092`(AlertDialog, 칸 6개), `ui/money/MoneyPlanCards.kt:442-484`(문자 붙여넣기), `ui/com…",K,RVK-07,코드 고침(확인 전),받을 돈·붙여넣기·봉투 창 묻고 닫기
+MONEY-09,발견,06a 가계부 화면,낮음,데이터 손실,받을 돈 적기 창은 바깥을 누르면 적던 것이 말없이 사라져요,,"`ui/money/OwedScreen.kt:1020-1092`(AlertDialog, 칸 6개), `ui/money/MoneyPlanCards.kt:442-484`(문자 붙여넣기), `ui/com…",K,RVK-07,코드 고침(확인 전),받을 돈·붙여넣기·봉투 창 묻고 닫기 · 시험 RvkGuardsScreenshotTest.owedAddAsksBeforeItGoes·pastedTextsAskBeforeTheyGo(봉투 창은 같은 FormSheet)
 MONEY-10,발견,06a 가계부 화면,낮음,데이터 손실,받은 기록 '취소'는 묻지도 되돌리지도 못해요,,"`ui/money/OwedScreen.kt:215-220, 905`",K,RVK-42,코드 고침(확인 전),
 MONEY-14,발견,06a 가계부 화면,낮음,버그,"되돌리기 알림이 줄을 서서, 연달아 지우면 방금 것을 바로 되돌릴 수 없어요",,"`ui/money/MoneyScreen.kt:308, 655-664`, `ui/money/OwedScreen.kt:297`",K,RVK-42,코드 고침(확인 전),
 MONEY-15,발견,06a 가계부 화면,낮음,데이터 손실,분류 고치기에서 지출·수입·이체 탭을 바꾸면 고치던 것이 말없이 버려져요,,"`ui/money/LedgerSummary.kt:777-801, 844-851`",K,RVK-42,코드 고침(확인 전),
@@ -206,7 +206,7 @@ MONEY-23,발견,06a 가계부 화면,낮음,버그,"짧은 금액 표기가 경�
 MONEY-24,발견,06a 가계부 화면,낮음,디자인,가계부 안에서 돈 색·지우기 확인·선 굵기가 화면마다 달라요,,"`ui/money/LedgerBoards.kt`(지출·수입에 `colorScheme.error/primary`), `ui/money/LedgerSmartCards.kt:48, 80`, `ui/mo…",K,RVK-43,코드 고침(확인 전),"돈 색은 moneyInks 하나, 선 굵기 dp, 오른 값·결제수단 잔액 경고·봉투 늦음은 주황 주의 색(bamnat.caution), 층 머리 48dp. 일감·규칙 지우기 되돌리기는 이미 있었음"
 MONEY-25,발견,06a 가계부 화면,낮음,문구,"같은 것을 다르게 부르거나, 내용과 안 맞는 말이 있어요",,"`ui/money/DayWhatIfSection.kt:69` + `core/.../pay/DayWhatIf.kt`(라벨), `ui/money/LedgerSummary.kt:104`, `ui/mon…",K,RVK-43,코드 고침(확인 전),"이날 쉬면?/이날 일하면?, 낱말표 들어온 돈·나간 돈·남은 돈(요약·모든 달력·받을 돈)"
 MONEY-26,발견,06a 가계부 화면,낮음,디자인,'복귀 반김' 카드의 '넘기기'가 저장되지 않아 앱을 열 때마다 다시 나와요,,"`ui/money/MoneyLayers.kt:110-112`, `ui/money/MonthStoryCard.kt:43-45`",K,RVK-42,코드 고침(확인 전),
-MONEY-27,발견,06a 가계부 화면,낮음,버그,돈 적기 흐름의 작은 구멍들 (하나 더·적다 만 것·바뀜 판단),,"`ui/money/MoneyScreen.kt:970-982`, `ui/money/LedgerEntrySheet.kt:226-229, 707-723`",K,RVK-04,코드 고침(확인 전),"하나 더가 날짜·결제수단 이어받기, 적다 만 것 달력별 모든 칸, 바뀜 판단 모든 칸"
+MONEY-27,발견,06a 가계부 화면,낮음,버그,돈 적기 흐름의 작은 구멍들 (하나 더·적다 만 것·바뀜 판단),,"`ui/money/MoneyScreen.kt:970-982`, `ui/money/LedgerEntrySheet.kt:226-229, 707-723`",K,RVK-04,코드 고침(확인 전),"하나 더가 날짜·결제수단 이어받기, 적다 만 것 달력별 모든 칸, 바뀜 판단 모든 칸 · 시험 EntryDraftTest(적다 만 것 모든 칸·달력별·하루·한 번·30분), RvkGuardsScreenshotTest.saveAndNextStartsOnTheDayJustSaved·aLineClosedWithoutSavingComesBack"
 MONEY-28,발견,06a 가계부 화면,낮음,버그,환불·취소를 손으로 적을 길이 없어요,,"`ui/money/LedgerEntrySheet.kt:155-156, 466-468`, `ui/money/MoneyEditors.kt`(`AmountField`는 숫자만)",K,,할 일,
 MONEY-31,발견,06a 가계부 화면,낮음,버그,내역 '기록 찾기' 칸에서 한글이 풀리거나 글자가 빠질 수 있어요,,`ui/money/LedgerList.kt:343-350`,K,RVK-43,코드 고침(확인 전),EchoText: 적은 글을 지키고 뷰모델의 늦은 사본은 따라잡을 때까지 무시
 MONEY-32,발견,06a 가계부 화면,낮음,버그,가로로 미는 줄(분류 보드·표·칩 줄)의 끝에서 더 밀면 달이 넘어갈 수 있어요,,"`ui/MonthSwipe.kt:13-24`, `ui/money/MoneyScreen.kt:926-943`, `ui/money/LedgerBoards.kt`",K,RVK-43,코드 고침(확인 전),이미 막혀 있었음(가로 줄이 끌기를 가져 끝에서도 달이 넘어가지 않음). 시험 RvkEightScreenshotTest.aSidewaysRowKeepsItsDragAtTheEnd로 지킴
