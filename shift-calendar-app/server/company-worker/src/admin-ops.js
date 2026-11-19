@@ -1,7 +1,7 @@
 import { BUDGET_WARN, LIMITS, audit, batch, can, cfPlan, json, one, randomId, readJson, refuse, stmt } from "./index.js";
 import { DEV, actorName, devEvent } from "./inquiries.js";
 import { signalsOfDev } from "./observe.js";
-import { DB_FULL, DB_LIMIT, ROW_WHERE, SCREEN_ERROR, WATCH_SCHEMA, errorState, healthBoard, jobRow, recordScreenError, requiredSetup, setErrorState, speedState } from "./ops-watch.js";
+import { DB_FULL, DB_LIMIT, LIVE_JOBS, ROW_WHERE, SCREEN_ERROR, WATCH_SCHEMA, errorState, healthBoard, jobRow, recordScreenError, requiredSetup, setErrorState, speedState } from "./ops-watch.js";
 import { moneyBoard, moneyYesterday, savePriceTable } from "./money-board.js";
 import { findDevice, personView } from "./person.js";
 import { CHANGE_KINDS, RELEASE_SCHEMA, changeMarks, releaseRoute, versionHealth } from "./release-desk.js";
@@ -74,7 +74,7 @@ export const OPS_BADGE_SQL = {
  * 오늘 화면이 한 번의 batch로 읽게 [OPS_ALERT_SQL]을 index.js today()가 함께 보내고, [opsAlertsFrom]이 그 답으로 줄을 만들어요.
  */
 export const OPS_ALERT_SQL = (now) => ({
-  ops_jobs: ["SELECT step, ok_at, fail_at, error FROM job_runs"],
+  ops_jobs: [`SELECT step, ok_at, fail_at, error FROM job_runs WHERE ${LIVE_JOBS}`],
   // 2.0.0 [RVA-37] 읽지 못한 줄(row/…)은 오늘 맨 위 '읽지 못한 N줄' 카드가 따로 보여요(같은 일을 두 번 세지 않게).
   ops_errors: ["SELECT COUNT(*) AS n FROM error_groups WHERE status IN ('new', 'again') AND last_at > ? AND route NOT LIKE 'row/%'", now - DAY],
   ops_requests: ["SELECT COUNT(*) AS n FROM data_requests WHERE status = 'open' AND due_at < ?", now + 2 * DAY],
