@@ -266,9 +266,9 @@ fun LedgerListPane(
                     item(key = "empty") {
                         when {
                             // 2.0.0 [RVK-35] (PC-126) One '돈 적기': the floating one, always there (this one stood beside it). Named as it
-                            // shows: with big letters it is only its +.
+                            // shows (갈래 P 5: the bar under the page says its words at every letter size).
                             book.entries.isEmpty() -> LedgerEmpty(Icons.AutoMirrored.Outlined.ReceiptLong, "아직 적은 돈이 없어요",
-                                (if (com.bamnat.app.ui.components.bigLetters()) "아래 + 단추" else "아래 ‘돈 적기’") + "를 누르거나 위 ⋮ › 자동 기록을 켜면 여기에 쌓여요.",
+                                (if (com.bamnat.app.ui.components.addDocks() || !com.bamnat.app.ui.components.bigLetters()) "아래 ‘돈 적기’" else "아래 + 단추") + "를 누르거나 위 ⋮ › 자동 기록을 켜면 여기에 쌓여요.",
                                 kani = com.bamnat.app.ui.components.KaniMood.Point)
                             view.narrowed -> LedgerEmpty(Icons.Outlined.SearchOff, "조건에 맞는 기록이 없어요",
                                 "기간을 넓히거나 조건을 지워 보세요.", action = "조건 지우기", onAction = { onView(view.copy(filter = LedgerFilter())) })

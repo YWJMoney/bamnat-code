@@ -976,6 +976,11 @@ fun MoneyScreen(
     // 2.0.0 [RVK-46] This calendar's own category looks (the app gives the main calendar's).
     val looks = remember(book.categories) { com.bamnat.core.money.CategoryLook.byName(book.categories) }
     androidx.compose.runtime.CompositionLocalProvider(LocalWorkTime provides workTime, LocalCategoryLooks provides looks) {
+    // 2.0.0 갈래 P 5 (검토 HQ-75·HQ-111): 돈 적기 is the bar under the page ([com.bamnat.app.ui.components.addDocks]), never over an amount.
+    val dockAdd = com.bamnat.app.ui.components.addDocks()
+    val barUp = com.bamnat.app.ui.components.AppSnack.current != null || snackbar?.currentSnackbarData != null
+    var fabBack by remember { mutableStateOf(true) }
+    LaunchedEffect(barUp) { if (barUp) fabBack = false else { kotlinx.coroutines.delay(1_200); fabBack = true } }
     Box(Modifier.fillMaxSize().nestedScroll(fabScroll)) {
         Column(Modifier.fillMaxSize()) {
             // At very large text the tab has no room for the 프로 mark (the cards inside still carry it),
@@ -1052,7 +1057,7 @@ fun MoneyScreen(
             }
             // 2.0.0 [RVK-42] (검토 MONEY-21·U06a-12) Each page keeps its own place: 내역을 20일까지 내려 보다가 통계를 보고 돌아와도 그 자리
             // (the pages were drawn in turn by `when`, so the one left threw its scroll away).
-            pages.SaveableStateProvider(page.name) { when (page) {
+            Box(Modifier.weight(1f)) { pages.SaveableStateProvider(page.name) { when (page) {
                 MoneyViewModel.Page.SUMMARY -> if (wide) {
                     Row(Modifier.fillMaxSize().padding(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
                         Column(Modifier.weight(1f).fillMaxHeight().monthSwipe(month) { vm.showMonth(month.plusMonths(it.toLong())) }.verticalScroll(rememberScrollState()).padding(vertical = 12.dp),
@@ -1078,18 +1083,17 @@ fun MoneyScreen(
                         snapshot = snapshot, onMessage = vm::message, budgetLines = budget.categories,
                         onBudget = { c -> budgetFocus = c; budgeting = true })
                 }
-            } }
+            } } }
+            // 2.0.0 갈래 P 5 (HQ-75·HQ-111): 돈 적기 is a bar under the page, so it never sits on an amount (조건 9).
+            if (dockAdd && selection.isEmpty() && page != MoneyViewModel.Page.REPORT)
+                com.bamnat.app.ui.components.AddDock("돈 적기", onClick = { adding = MoneyKind.EXPENSE }, enabled = !barUp && fabBack)
         }
         // PC 4277abca (통계에서 '돈 적기'가 카페 줄 금액·카드 머리를 덮음): 통계 is for reading, so the floating button is not over it;
         // 돈 적기 stays on 요약 and 내역.
         // 1.37 PC 4차: 되돌리기 줄이 '돈 적기'를 덮어, 줄이 사라질 때 누른 손이 돈 적기를 열었어요. 줄이 있는 동안과 사라진 뒤 잠깐은 숨겨요.
-        val barUp = com.bamnat.app.ui.components.AppSnack.current != null || snackbar?.currentSnackbarData != null
-        var fabBack by remember { mutableStateOf(true) }
-        LaunchedEffect(barUp) { if (barUp) fabBack = false else { kotlinx.coroutines.delay(1_200); fabBack = true } }
-        // 2.0.0 [RVK-44] (검토 HQ-75) With big letters the cards fill the width, so the button (already its icon alone) covered the
-        // ends of amounts ('838,282원 / 1,600,000원'): it steps aside while the page scrolls down and comes back on the way up.
-        val bigLetters = com.bamnat.app.ui.components.bigLetters()
-        AnimatedVisibility(selection.isEmpty() && page != MoneyViewModel.Page.REPORT && !barUp && fabBack && (fabExpanded || !bigLetters), enter = fadeIn() + scaleIn(), exit = fadeOut() + scaleOut(),
+        // 2.0.0 [RVK-44] (검토 HQ-75) With big letters the cards fill the width, so the button covered the ends of amounts
+        // ('838,282원 / 1,600,000원', and '-4,500원' at 100%: HQ-111) even at rest; it is the bar under the page (dockAdd, 갈래 P 5) instead.
+        AnimatedVisibility(!dockAdd && selection.isEmpty() && page != MoneyViewModel.Page.REPORT && !barUp && fabBack, enter = fadeIn() + scaleIn(), exit = fadeOut() + scaleOut(),
             modifier = Modifier.align(Alignment.BottomEnd).padding(16.dp)) {
             // 2.0.0 [RVP-06] The shared floating-button rule (icon alone with big letters: 검토 UIX-19 '글자 200%의 가계부').
             com.bamnat.app.ui.components.AddFab("돈 적기", onClick = { adding = MoneyKind.EXPENSE }, open = fabExpanded)

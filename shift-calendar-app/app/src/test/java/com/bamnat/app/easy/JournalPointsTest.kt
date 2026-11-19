@@ -1,5 +1,7 @@
 package com.bamnat.app.easy
 
+import com.bamnat.app.TestClock
+import org.junit.After
 import android.os.Looper
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
@@ -38,10 +40,13 @@ import java.time.LocalDateTime
 @RunWith(AndroidJUnit4::class)
 @Config(sdk = [35])
 class JournalPointsTest {
+    @After fun clockBack() = Today.reset()
+
     private val app get() = ApplicationProvider.getApplicationContext<BamnatApp>()
     private val c get() = app.container
 
     @Before fun ready() = runBlocking {
+        TestClock.at(10)  // 2.0.0 [RVR-44] (총괄 HQ-123): the hour is set (10:00 today, ticking), not the hour the run starts.
         val end = System.currentTimeMillis() + 60_000  // real clock: a timeout
         while (c.scheduleRepository.shiftTypes.first().isEmpty()) {
             check(System.currentTimeMillis() < end) { "Timed out waiting for the first shifts" }  // real clock: a timeout
