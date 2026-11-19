@@ -66,7 +66,7 @@
     },
     {
       "id": "policy-3.14-p30",
-      "what": "처리방침 3.14 30일 줄 시행(링크 확인했어요·이름 낱말·피곤해요 표시, 6항 열람·삭제 대행 기록 3년 보관 안내)",
+      "what": "처리방침 3.14 30일 줄 시행(링크 확인했어요·이름 낱말·피곤해요 표시, 팀원 앱 수, 사용 통계 둘, 장터 숫자, 근무표 약어, 6항 열람·삭제 대행 기록 3년 보관 안내)",
       "area": "앱·서버·사람",
       "from": {"file": "core/src/main/kotlin/com/bamnat/core/ops/PolicyConsent.kt", "re": "val REVISION14_POSTED: LocalDate = LocalDate\\.of\\((\\d{4}), (\\d{1,2}), (\\d{1,2})\\)", "plus_days": 30},
       "before": "관리자 앱 › 처리방침 일정의 3.14 시행일이 이 날과 같은지, 공유 서버 POLICY_314_FROM이 이 날로 배포됐는지 봐요(갈래 D)."

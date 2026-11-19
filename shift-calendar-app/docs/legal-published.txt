@@ -1,4 +1,4 @@
 # tools/legal_dates.py --site 가 씀: 공개 저장소 YWJMoney/- 에 올린 처리방침·약관·광장 운영 규칙의 sha256 (LegalPagesTest)
-fbfb23f2c1e2514318adf156c339b12eb8b58c48ec3659eb35d9d960755391f1  privacy/index.html
+9f6ec5df26de26bf5bdd829e2c05bad2ee4bc093f29bf4e2e2b3902f9413dd2a  privacy/index.html
 bc9b2ec5b3c8db409a3a8c4a3ff326c60d82ab16a23d9b0ffe17e6c9d50a2f99  terms/index.html
 c39afe202760e7d63b018169c0eb6fdd67596d9b79fcadd003f68f4873591f34  community/index.html
