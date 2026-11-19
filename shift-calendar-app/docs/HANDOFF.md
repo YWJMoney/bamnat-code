@@ -302,6 +302,7 @@ Phase 2에서 만든 기능을 실사용 수준 넘어 완성한 판이에요. �
 
 - 안드로이드 전용 앱이에요. 갤럭시 폴드의 접은 화면과 펼친 화면을 둘 다 맞추고, 첫 화면은 달력이에요.
 - Kotlin, Compose BOM 2025.05.00, Room v18 (투자 달력 표 9개, INV), minSdk 26, targetSdk 36, Robolectric 4.14.1.
+- **targetSdk 37로 올릴 때 볼 것(2.0.0 [RVIB-29], PC-189, 안드로이드 17 뒤에서 소리 내기)**: 안드로이드 17은 target과 무관하게 뒤에서 소리·소리 초점·음량을 다루려면 보이는 화면이나 SHORT_SERVICE가 아닌 포그라운드 서비스가 있어야 하고, target 37부터는 그 서비스에 '쓰는 동안'(WIU) 자격까지 필요해요(정확한 알람 권한 + USAGE_ALARM이면 면제). 소리 길: ① 근무·다시 울림·낮잠·일어났나요?·깨우는 구간·메모 일정·투자 알람 = `AlarmService`(systemExempted, USAGE_ALARM, 정확한 알람에서 시작, 이어 울리기 `RingKeeper`도 정확한 알람) ② 예비 소리 = 알림 채널 소리(시스템이 냄) ③ 잠드는 소리 = `NoiseService`(mediaPlayback, 화면이나 잘 자요 알림 단추에서 시작, USAGE_MEDIA라 면제 아님: target 37에서 알림 단추 시작이 WIU를 받는지 확인) ④ 소리 고르기 미리 듣기·수면 소리 조각 듣기·알람 소리 70% = 화면에서만. 부팅 때 지난 알람을 바로 울리는 길은 없어요(BOOT_COMPLETED는 다음 알람만 다시 걺). PC에서 logcat `AudioHardening` 줄의 level(full·partial)을 적어 두고 `adb shell cmd audio set-enable-hardening throw`로 알람이 아닌 소리를 확인해요.
 - 버전별로 들어간 큰 줄기
 
 | 버전 | 단계 | 들어간 것 |

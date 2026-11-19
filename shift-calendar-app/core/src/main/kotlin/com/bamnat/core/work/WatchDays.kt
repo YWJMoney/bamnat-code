@@ -20,6 +20,11 @@ data class WatchDay(
     val off: Boolean = false,
     /** [WEAR-03] The shift's icon key ([com.bamnat.core.model.ShiftIcon]), for the watch face's small image. */
     val icon: String? = null,
+    /**
+     * 2.0.0 [RVIB-21] (결정 19, 설계 4-2절 5번) A day of two parts: each part's start and end ("11:00-15:00,17:00-21:00", the 9th
+     * field); empty for a day of one part, and from a phone before 2.0.0 (the day then reads as one stretch from [start] to [end]).
+     */
+    val parts: List<Pair<LocalTime, LocalTime>> = emptyList(),
 ) {
     /**
      * 2.0.0 [RVIB-09] (총괄 SN-18) An emoji 근무 그림 ("e:🌙", 1.34, 장터 작품 100개가 써요): the watch knows only the drawn icons, so it
@@ -32,10 +37,15 @@ data class WatchDay(
 
     /** "주간 09:00–18:00", "휴무", "연차" (2.0.0 [RVIB-09] "🌙 야간 22:00–07:00" with an emoji 근무 그림). */
     val line: String
-        get() = if (start != null && end != null && !off) "$shown ${hm(start)}–${hm(end)}" else shown
+        get() = if (start != null && end != null && !off) "$shown $times" else shown
 
-    /** "09:00–18:00", or empty on a day off. */
-    val times: String get() = if (start != null && end != null && !off) "${hm(start)}–${hm(end)}" else ""
+    /** "09:00–18:00", or empty on a day off; 2.0.0 [RVIB-21] "11:00–15:00, 17:00–21:00" for a day of two parts. */
+    val times: String
+        get() = when {
+            start == null || end == null || off -> ""
+            parts.size > 1 -> parts.joinToString(", ") { (a, b) -> "${hm(a)}–${hm(b)}" }
+            else -> "${hm(start)}–${hm(end)}"
+        }
 }
 
 /** [SHFT-08] Everything the phone sends the watch at once: the days, the next alarm and when it was sent. */
@@ -83,6 +93,11 @@ data class WatchPayload(
     val tasks: List<WatchTask> = emptyList(),
     /** 2.0.0 [RVI-95] The list's head as the widget says it ("오늘 할 일 3개 · 1개 늦음"). */
     val taskHead: String = "",
+    /**
+     * 2.0.0 [RVIB-21] (결정 19) What this calendar calls the stop between two parts of a day: 브레이크 타임 (가게·알바) or 비는 시간
+     * (일근·교대·현장), never 쉬는 시간 (휴게). Field 21; "비는 시간" from an older phone.
+     */
+    val gap: String = "비는 시간",
 ) {
     enum class Clock { NONE, IN, OUT }
 }
@@ -95,28 +110,53 @@ object WatchDays {
      * 1.32 [WEAR-04] 조사 대조 C16 (조사 11-4 "컴플리케이션에 다음 근무까지 n시간"): one stretch the complication shows one thing
      * in: before a shift, the time to its start; on it, the time to its end. [to] is the moment counted to.
      */
-    data class Countdown(val from: LocalDateTime, val to: LocalDateTime, val onShift: Boolean, val name: String)
+    data class Countdown(
+        val from: LocalDateTime, val to: LocalDateTime, val onShift: Boolean, val name: String,
+        /** 2.0.0 [RVIB-21] On a part that stops at [to] with more of the same day after it: counts to the 브레이크 타임·비는 시간. */
+        val pausesAtEnd: Boolean = false,
+        /** [RVIB-21] In the stop between two parts: counts to when work starts again (다시 시작까지). */
+        val resumes: Boolean = false,
+    )
 
-    /** The stretches from [now] over the next [max] shifts of [days] (days off and leave are passed over). */
+    /**
+     * The stretches from [now] over the next [max] shifts of [days] (days off and leave are passed over). 2.0.0 [RVIB-21] A day of two
+     * parts is counted part by part: on the first to the stop, in the stop to the second part's start, on the second to its end.
+     */
     fun countdowns(days: List<WatchDay>, now: LocalDateTime, max: Int = 14): List<Countdown> {
-        val shifts = days.filter { it.start != null && it.end != null && !it.off }.map { d ->
-            val s = d.date.atTime(d.start!!)
-            val e = if (d.end!!.isAfter(d.start)) d.date.atTime(d.end) else d.date.plusDays(1).atTime(d.end)
-            Triple(s, e, d.name)
-        }.sortedBy { it.first }.filter { it.second.isAfter(now) }.take(max)
+        class Piece(val from: LocalDateTime, val to: LocalDateTime, val name: String, val first: Boolean, val last: Boolean)
+        // The first [t] after [after] (or at it, when [orAt]).
+        fun next(t: LocalTime, after: LocalDateTime, orAt: Boolean): LocalDateTime {
+            val same = after.toLocalDate().atTime(t)
+            return if (same.isAfter(after) || (orAt && same == after)) same else same.plusDays(1)
+        }
+        val shifts = days.filter { it.start != null && it.end != null && !it.off }.sortedBy { it.date }.flatMap { d ->
+            val spans = d.parts.takeIf { it.size > 1 } ?: listOf(d.start!! to d.end!!)
+            var prevEnd: LocalDateTime? = null
+            spans.mapIndexed { i, (a, b) ->
+                val s = prevEnd?.let { next(a, it, orAt = true) } ?: d.date.atTime(a)
+                val e = next(b, s, orAt = false)
+                prevEnd = e
+                Piece(s, e, d.name, first = i == 0, last = i == spans.lastIndex)
+            }
+        }.sortedBy { it.from }.filter { it.to.isAfter(now) }.take(max * 2)
         var cursor = now
         val out = mutableListOf<Countdown>()
-        for ((s, e, name) in shifts) {
-            if (s.isAfter(cursor)) out += Countdown(cursor, s, onShift = false, name = name)
-            val from = if (s.isAfter(cursor)) s else cursor
-            if (e.isAfter(from)) out += Countdown(from, e, onShift = true, name = name)
-            cursor = maxOf(cursor, e)
+        var shiftsSeen = 0
+        for (p in shifts) {
+            if (p.first && ++shiftsSeen > max) break
+            if (p.from.isAfter(cursor)) out += Countdown(cursor, p.from, onShift = false, name = p.name, resumes = !p.first)
+            val from = if (p.from.isAfter(cursor)) p.from else cursor
+            if (p.to.isAfter(from)) out += Countdown(from, p.to, onShift = true, name = p.name, pausesAtEnd = !p.last)
+            cursor = maxOf(cursor, p.to)
         }
         return out
     }
 
-    /** "주간까지 5시간 20분", "근무 끝까지 2시간"; null with no shift ahead. */
-    fun countdownLine(c: Countdown?, now: LocalDateTime): String? {
+    /**
+     * "주간까지 5시간 20분", "근무 끝까지 2시간"; null with no shift ahead. 2.0.0 [RVIB-21] On a day of two parts "[gap]까지 1시간" on the
+     * first part and "다시 시작까지 40분" in the stop.
+     */
+    fun countdownLine(c: Countdown?, now: LocalDateTime, gap: String = "비는 시간"): String? {
         c ?: return null
         val m = java.time.Duration.between(now, c.to).toMinutes().coerceAtLeast(0)
         val left = when {
@@ -124,7 +164,12 @@ object WatchDays {
             m >= 60 -> "${m / 60}시간" + if (m % 60 > 0 && m < 10 * 60) " ${m % 60}분" else ""
             else -> "${m}분"
         }
-        return if (c.onShift) "근무 끝까지 $left" else "${c.name}까지 $left"
+        return when {
+            c.onShift && c.pausesAtEnd -> "${gap}까지 $left"
+            c.onShift -> "근무 끝까지 $left"
+            c.resumes -> "다시 시작까지 $left"
+            else -> "${c.name}까지 $left"
+        }
     }
     const val PATH = "/bamnat/days"
     const val KEY = "payload"
@@ -150,7 +195,8 @@ object WatchDays {
         return when {
             leave != null && leave.isFullDay -> WatchDay(d.date, leave.label, leave.label.take(1), OFF_COLOR, off = true)
             d.isWorkDay -> WatchDay(d.date, (type?.name ?: "근무") + (leave?.let { " · ${it.label}" } ?: ""), type?.label ?: "근",
-                type?.colorArgb ?: 0xFF2F80EDL, d.start, d.end, icon = type?.icon)
+                type?.colorArgb ?: 0xFF2F80EDL, d.start, d.end, icon = type?.icon,
+                parts = if (d.split) d.segments.map { it.start.toLocalTime() to it.endInclusive.toLocalTime() } else emptyList())
             d.extras.isNotEmpty() -> d.extras.first().let { e ->
                 // [DAYW-10] Two pieces on a day off (특근 and a 야간 대근) both show: "특근 외 1건" (I 리뷰 1-5).
                 val first = e.covered?.name?.let { "$it ${e.kind.name}" } ?: e.kind.name
@@ -174,11 +220,15 @@ object WatchDays {
             // 2.0.0 [RVI-08][RVI-09][RVI-10] Fields 14 on; an older watch ignores them.
             if (p.hourly) "1" else "0", clean(p.noun), p.recentAmounts.joinToString(","),
             // 2.0.0 [RVI-94][RVI-95] Fields 17 on.
-            if (p.sleepOn) "1" else "0", p.asleepSince?.toString().orEmpty(), WatchTask.encode(p.tasks), clean(p.taskHead))
+            if (p.sleepOn) "1" else "0", p.asleepSince?.toString().orEmpty(), WatchTask.encode(p.tasks), clean(p.taskHead),
+            // 2.0.0 [RVIB-21] Field 21.
+            clean(p.gap))
             .joinToString("\t")
         return (listOf(head) + p.days.map { d ->
             listOf(d.date.toString(), clean(d.name), clean(d.label), d.colorArgb.toString(), d.start?.let(::hm).orEmpty(),
-                d.end?.let(::hm).orEmpty(), if (d.off) "1" else "0", d.icon.orEmpty()).joinToString("\t")
+                d.end?.let(::hm).orEmpty(), if (d.off) "1" else "0", d.icon.orEmpty(),
+                // 2.0.0 [RVIB-21] (결정 19) The 9th field: a day's parts. A watch before 2.0.0 reads 7 or 8 fields and leaves it.
+                d.parts.joinToString(",") { (a, b) -> "${hm(a)}-${hm(b)}" }).joinToString("\t")
         }).joinToString("\n")
     }
 
@@ -193,7 +243,8 @@ object WatchDays {
             if (f.size < 7) return@mapNotNull null
             runCatching {
                 WatchDay(LocalDate.parse(f[0]), f[1], f[2], f[3].toLong(), f[4].takeIf { it.isNotEmpty() }?.let(LocalTime::parse),
-                    f[5].takeIf { it.isNotEmpty() }?.let(LocalTime::parse), f[6] == "1", f.getOrNull(7)?.takeIf { it.isNotEmpty() })
+                    f[5].takeIf { it.isNotEmpty() }?.let(LocalTime::parse), f[6] == "1", f.getOrNull(7)?.takeIf { it.isNotEmpty() },
+                    parts = parts(f.getOrNull(8)))
             }.getOrNull()
         }
         return WatchPayload(days, synced, head[2].takeIf { it.isNotEmpty() }?.let { runCatching { LocalDateTime.parse(it) }.getOrNull() }, head[3], head[4],
@@ -213,7 +264,19 @@ object WatchDays {
             sleepOn = head.getOrNull(17) == "1",
             asleepSince = head.getOrNull(18)?.takeIf { it.isNotEmpty() }?.let { runCatching { LocalDateTime.parse(it) }.getOrNull() },
             tasks = WatchTask.decode(head.getOrNull(19).orEmpty()),
-            taskHead = head.getOrNull(20).orEmpty())
+            taskHead = head.getOrNull(20).orEmpty(),
+            gap = head.getOrNull(21)?.takeIf { it.isNotBlank() } ?: "비는 시간")
+    }
+
+    /** [RVIB-21] The 9th field back: "11:00-15:00,17:00-21:00"; empty (one part) when missing or not reading, never half of it. */
+    private fun parts(field: String?): List<Pair<LocalTime, LocalTime>> {
+        if (field.isNullOrBlank()) return emptyList()
+        val out = field.split(',').map { p ->
+            val ab = p.trim().split('-')
+            if (ab.size != 2) return emptyList()
+            (runCatching { LocalTime.parse(ab[0]) }.getOrNull() ?: return emptyList()) to (runCatching { LocalTime.parse(ab[1]) }.getOrNull() ?: return emptyList())
+        }
+        return out.takeIf { it.size > 1 }.orEmpty()
     }
 
     /*
