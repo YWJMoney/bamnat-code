@@ -119,8 +119,8 @@ private fun PayTaxLines(view: TakeHomeView?, onTaxWay: (com.bamnat.core.pay.TaxM
     if (view != null && view.taxUnknown) {
         // [J133-01] The 세전 alone, and the way to pick, never the 세전 called 실수령.
         view.gross?.let { TaxLine("${view.month.monthValue}월 세전 예상", Fmt.won(it)) }
-        Muted("${com.bamnat.app.tax.TaxWay.UNKNOWN}. 월급에서 무엇을 떼나요?")
-        com.bamnat.app.tax.TaxWayChips(null, Modifier.padding(top = 4.dp), onTaxWay)
+        Muted("${com.bamnat.app.tax.TaxWay.UNKNOWN}. ${if (view.daily) "일당" else "월급"}에서 무엇을 떼나요?")
+        com.bamnat.app.tax.TaxWayChips(null, Modifier.padding(top = 4.dp), daily = view.daily, onPick = onTaxWay)
         return
     }
     if (view == null || f == null) {

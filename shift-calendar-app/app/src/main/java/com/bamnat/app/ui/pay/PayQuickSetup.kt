@@ -214,7 +214,12 @@ fun PayQuickSetup(
     // [J133-59] 1.33 (중간 빌드 확인): a part-timer starts on 떼지 않음 (주 15시간·월 60시간 미만은 4대보험을 떼지 않는 곳이 많아요)
     // until the user picks; a pick stays whatever form comes next.
     var taxPicked by remember { mutableStateOf(if (kept != null) kept.tax else initial?.takeIf { it.taxKnown }?.taxMode) }
-    val tax = taxPicked ?: if (form?.wageType == WageType.HOURLY) com.bamnat.core.pay.TaxMode.NONE else com.bamnat.core.pay.TaxMode.INSURANCE_4
+    // 2.0.0 [RVJ-80] 검토 T04-05: a 일당 starts on 일용근로, the way a 현장 일당 is taxed.
+    val tax = taxPicked ?: when (form?.wageType) {
+        WageType.HOURLY -> com.bamnat.core.pay.TaxMode.NONE
+        WageType.DAILY -> com.bamnat.core.pay.TaxMode.DAILY_WORKER
+        else -> com.bamnat.core.pay.TaxMode.INSURANCE_4
+    }
     // A payslip's rules, kept over the form and amount the user picked; picking again starts from the form.
     var fromSlip by remember { mutableStateOf(kept?.fromSlip) }
     // 1.36 PC 급여 검토 E2·W2 (포괄임금을 넣는 길을 못 찾음): on the last page, "연장수당이 월급에 들어 있어요". [fixedOtMinutes] the time the
@@ -683,15 +688,21 @@ private fun ConfirmPage(
         Text("통장에 들어올 돈 (세후 예상)", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
         Text(com.bamnat.app.ui.Fmt.won(net.net), style = MaterialTheme.typography.titleLarge, color = MaterialTheme.colorScheme.primary,
             fontWeight = androidx.compose.ui.text.font.FontWeight.Bold)
-        if (net.deductions.isNotEmpty()) Text("떼는 돈 ${com.bamnat.app.ui.Fmt.won(r.total - net.net)} (간이세액표·4대 보험 요율 참고값)",
+        if (net.deductions.isNotEmpty()) Text("떼는 돈 ${com.bamnat.app.ui.Fmt.won(r.total - net.net)} " +
+            (if (p.taxMode == com.bamnat.core.pay.TaxMode.DAILY_WORKER) "(일용근로 소득세·고용보험 참고값)" else "(간이세액표·4대 보험 요율 참고값)"),
             style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
     // PC 8eae2521 (알바 설정 마지막 쪽에 '월급에서 떼는 돈'): 시급·일당 is 급여.
     Text(if (p.wageType == WageType.MONTHLY) "월급에서 떼는 돈" else "급여에서 떼는 돈", style = MaterialTheme.typography.labelLarge, modifier = Modifier.padding(top = 4.dp))
-    com.bamnat.app.tax.TaxWayChips(p.taxMode, onPick = onTax)
-    Text(if (p.wageType == WageType.HOURLY && p.taxMode == com.bamnat.core.pay.TaxMode.NONE)
-        "알바는 주 15시간·월 60시간 미만이면 떼지 않는 곳이 많아 ‘떼지 않음’으로 골라 뒀어요. 명세서에 4대보험이나 3.3%가 있으면 바꿔 주세요. 나중에 ‘$tab’에서도 바꿀 수 있어요."
-        else "대부분 회사는 4대보험·소득세를 떼요. 프리랜서·알바 중 3.3%를 떼는 곳도 있어요. 나중에 ‘$tab’에서 바꿀 수 있어요.",
+    com.bamnat.app.tax.TaxWayChips(p.taxMode, daily = p.wageType == WageType.DAILY, onPick = onTax)
+    Text(when {
+        p.wageType == WageType.HOURLY && p.taxMode == com.bamnat.core.pay.TaxMode.NONE ->
+            "알바는 주 15시간·월 60시간 미만이면 떼지 않는 곳이 많아 ‘떼지 않음’으로 골라 뒀어요. 명세서에 4대보험이나 3.3%가 있으면 바꿔 주세요. 나중에 ‘$tab’에서도 바꿀 수 있어요."
+        // 2.0.0 [RVJ-80] 검토 T04-05 (소득세법 제47조 제2항: 일용근로자 근로소득공제 하루 15만 원).
+        p.wageType == WageType.DAILY ->
+            "일당은 대부분 ‘일용근로’로 떼요. 하루 15만 원까지는 소득세가 없고 고용보험만 떼요. 명세서에 3.3%나 4대보험이 있으면 바꿔 주세요. 나중에 ‘$tab’에서도 바꿀 수 있어요."
+        else -> "대부분 회사는 4대보험·소득세를 떼요. 프리랜서·알바 중 3.3%를 떼는 곳도 있어요. 나중에 ‘$tab’에서 바꿀 수 있어요."
+    },
         style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
     OutlinedButton(onClick = onSlip, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
         Text("명세서·회사 계산 방법 사진으로 맞추기")

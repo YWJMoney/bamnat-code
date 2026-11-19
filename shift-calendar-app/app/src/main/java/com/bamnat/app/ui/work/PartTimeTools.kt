@@ -259,7 +259,8 @@ private fun OfferEditor(offer: JobOffer, result: com.bamnat.core.work.OfferResul
             }
             Text("세금", style = MaterialTheme.typography.labelLarge)
             FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                TaxMode.entries.forEach { m -> FilterChip(selected = offer.taxMode == m, onClick = { onChange(offer.copy(taxMode = m)) }, label = { Text(m.label) }) }
+                // 2.0.0 [RVJ-80] 일용근로 is a 일당's way: here only while it is the one picked.
+                TaxMode.entries.filter { it != TaxMode.DAILY_WORKER || offer.taxMode == it }.forEach { m -> FilterChip(selected = offer.taxMode == m, onClick = { onChange(offer.copy(taxMode = m)) }, label = { Text(m.label) }) }
             }
             StepperRow("오가는 시간", hint = "왕복") {
                 MinutesStepper(offer.commuteMinutes, { onChange(offer.copy(commuteMinutes = it)) }, step = 10, max = 4 * 60, dialogTitle = "오가는 시간 (왕복)")

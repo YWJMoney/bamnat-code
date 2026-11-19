@@ -58,9 +58,12 @@ internal fun YearEndCard(profile: PayProfile, snapshot: ScheduleSnapshot, month:
     if (profile.taxMode != TaxMode.INSURANCE_4) {
         val scope = rememberCoroutineScope()
         SectionCard(title = "${month.year}년 연말정산 미리보기") {
-            Text("연말정산은 4대보험과 소득세를 떼는 월급에서 미리 볼 수 있어요. 지금 세금 방식은 ‘${profile.taxMode.label}’이에요.",
+            // 2.0.0 [RVJ-80] 검토 T04-05: 일용근로소득 is 분리과세 (소득세법 제14조 제3항 제2호), so no 연말정산 and no way to switch to.
+            val daily = profile.taxMode == TaxMode.DAILY_WORKER
+            Text(if (daily) "일용근로로 뗀 소득세는 그것으로 끝나요. 연말정산·5월 신고에 넣지 않아요."
+                else "연말정산은 4대보험과 소득세를 떼는 월급에서 미리 볼 수 있어요. 지금 세금 방식은 ‘${profile.taxMode.label}’이에요.",
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            if (calendarId != null) TextButton(onClick = { scope.launch { com.bamnat.app.tax.TaxWay.pick(c, calendarId, TaxMode.INSURANCE_4) } }) {
+            if (calendarId != null && !daily) TextButton(onClick = { scope.launch { com.bamnat.app.tax.TaxWay.pick(c, calendarId, TaxMode.INSURANCE_4) } }) {
                 Text("4대보험으로 바꾸기")
             }
         }

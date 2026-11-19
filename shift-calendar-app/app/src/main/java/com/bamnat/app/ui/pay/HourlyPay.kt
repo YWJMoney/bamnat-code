@@ -78,7 +78,13 @@ val TaxMode.label: String
         TaxMode.NONE -> "떼지 않음"
         TaxMode.WITHHOLDING_3_3 -> "3.3%"
         TaxMode.INSURANCE_4 -> "4대보험"
+        TaxMode.DAILY_WORKER -> com.bamnat.app.tax.TaxWay.DAILY_CHOICE
     }
+
+/**
+ * 2.0.0 [RVJ-80] 검토 T04-05: the 일용근로 way in one line (소득세법 제47조 제2항 하루 15만 원 공제, 제14조 제3항 제2호 분리과세).
+ */
+const val DAILY_WAY_NOTE = "일용근로는 하루 15만 원을 빼고 남은 금액에 소득세를 매겨요. 떼는 것으로 끝나 연말정산·5월 신고에 넣지 않아요."
 
 /**
  * 1.39 [PAYX-58][PAYX-59] Under a take-home's lines: why a 4대보험 line is missing or on the 28만 원 floor, and a 비과세 kind over its
@@ -151,7 +157,8 @@ internal fun HourlyPayCard(
     SectionCard(title = "예상 실수령") {
         Text("세금 떼는 방식", style = MaterialTheme.typography.labelLarge)
         FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            TaxMode.entries.forEach { m ->
+            // 2.0.0 [RVJ-80] 일용근로 is a 일당's way: here only while it is the one picked.
+            TaxMode.entries.filter { it != TaxMode.DAILY_WORKER || profile.taxMode == it }.forEach { m ->
                 FilterChip(selected = profile.taxMode == m, onClick = { vm.update { it.copy(taxMode = m, taxChosen = true) } }, label = { Text(m.label) })
             }
         }
@@ -192,6 +199,7 @@ internal fun HourlyPayCard(
                 TaxMode.INSURANCE_4 -> "4대보험은 그해 근로자 몫이에요. 소득세는 국세청 간이세액표(가족 ${profile.taxFamily}명" +
                     (if (profile.taxChildren > 0) ", 8~20세 자녀 ${profile.taxChildren}명" else "") +
                     ") 값이고, 실제는 회사 선택(80·100·120%)과 연말정산으로 정해져요. 가족 수는 통계 ‘○월 한눈에’에서 바꿔요. " + TakeHome.PENSION_NOTE
+                TaxMode.DAILY_WORKER -> DAILY_WAY_NOTE
             },
             style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 4.dp),
         )

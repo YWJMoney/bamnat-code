@@ -751,6 +751,14 @@ private fun JobFigures(book: MoneyBook, month: YearMonth, columns: Int) {
                     style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(top = 8.dp))
             }
+            // 2.0.0 [RVJ-80] 검토 T05b-11: the 일당(공수) days as 일용근로 too (하루 15만 원 공제, 한 번에 받을 때), the same figure as
+            // 현장 도구 › 일용직 세금 ([com.bamnat.core.money.DailyWorkerTax.month]). 분리과세라 신고할 일이 없어요.
+            val daily = remember(book, month) { com.bamnat.core.money.DailyWorkerTax.month(month, book.jobs) }
+            if (daily.days > 0) {
+                Text("일용직으로 받으면 ${Fmt.won(daily.wages - daily.together.total)} (일당 ${daily.days}일, 한 번에 받을 때) · 따로 신고하지 않아요",
+                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(top = 4.dp))
+            }
         }
     }
     if (trend.any { it.second > 0 }) {
@@ -977,7 +985,7 @@ private fun NetPayLine(vm: StatsViewModel, profile: com.bamnat.core.pay.PayProfi
                 style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.primary)
         } else {
             Text(com.bamnat.app.tax.TaxWay.UNKNOWN, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            com.bamnat.app.tax.TaxWayChips(null) { m ->
+            com.bamnat.app.tax.TaxWayChips(null, daily = com.bamnat.app.tax.TaxWay.daily(profile)) { m ->
                 scope.launch { com.bamnat.app.tax.TaxWay.pick(context.appContainer, vm.calendarId, m) }
             }
         }

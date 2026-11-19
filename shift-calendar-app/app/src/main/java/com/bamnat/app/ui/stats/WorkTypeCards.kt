@@ -283,7 +283,7 @@ private fun DayFirstCard(
             if (profile?.publicGrade != null) Text(DayWork.PUBLIC_RULE_NOTE, style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(bottom = 8.dp))
         }
-        com.bamnat.app.tax.TaxWayChips(mode) { m -> taxScope.launch { com.bamnat.app.tax.TaxWay.pick(container, calendarId, m) } }
+        com.bamnat.app.tax.TaxWayChips(mode, daily = com.bamnat.app.tax.TaxWay.daily(profile)) { m -> taxScope.launch { com.bamnat.app.tax.TaxWay.pick(container, calendarId, m) } }
         if (mode == TaxMode.INSURANCE_4 && profile != null) TaxFamilyRow(calendarId, profile)
         takeHome?.takeIf { it.deductions.isNotEmpty() }?.let { r ->
             Text(
@@ -368,7 +368,9 @@ private fun PayGapCard(
             profile != null && payTotal != null && mode == null && !fromRecords -> {
                 Text("${com.bamnat.app.tax.TaxWay.UNKNOWN}. ${payWord}에서 무엇을 떼나요?", style = MaterialTheme.typography.bodyMedium)
                 val c = context.appContainer
-                com.bamnat.app.tax.TaxWayChips(null, Modifier.padding(top = 6.dp)) { m -> scope.launch { com.bamnat.app.tax.TaxWay.pick(c, calendarId, m) } }
+                com.bamnat.app.tax.TaxWayChips(null, Modifier.padding(top = 6.dp), daily = com.bamnat.app.tax.TaxWay.daily(profile)) { m ->
+                    scope.launch { com.bamnat.app.tax.TaxWay.pick(c, calendarId, m) }
+                }
             }
             profile == null || expected == null -> {
                 Text("급여 계산을 먼저 맞추면, 들어온 급여와 계산한 급여의 차이를 알려 드려요.",
@@ -433,6 +435,7 @@ private fun TaxMode.gapLabel(): String = when (this) {
     TaxMode.INSURANCE_4 -> "4대보험·세금 뺀 참고값"
     TaxMode.WITHHOLDING_3_3 -> "3.3% 뺀 값"
     TaxMode.NONE -> "세전"
+    TaxMode.DAILY_WORKER -> "일용근로 세금·고용보험 뺀 참고값"
 }
 
 /** [PAYX-48] 들어온 급여: the amount that reached the account and the day, kept as a 급여 line in 돈. */

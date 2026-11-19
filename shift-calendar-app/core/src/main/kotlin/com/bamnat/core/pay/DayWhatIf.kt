@@ -65,7 +65,9 @@ object DayWhatIf {
         val a = calculator.calculate(profile, month, before, checks = false).total
         val b = calculator.calculate(profile, month, after, checks = false).total
         val net = if (!profile.taxChosen) null else {
-            fun take(g: Long) = TakeHome.estimate(g, profile.taxMode, profile.taxFamily, date, profile.taxChildren).net
+            // 2.0.0 [RVJ-80] 일용근로 reads the month as days of the 일당.
+            fun take(g: Long) = TakeHome.estimate(g, profile.taxMode, profile.taxFamily, date, profile.taxChildren,
+                dayRate = TakeHome.dayRateOf(profile, month)).net
             take(b) - take(a)
         }
         return Answer(change, b - a, net)
