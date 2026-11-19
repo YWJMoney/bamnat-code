@@ -5899,15 +5899,19 @@ function adminApp(L, BUILD, M) {
     }),
     // 1.38 [STM-10] 밤낮 재료 묶음: 공개·숨기기, 무료·광고 나누기.
     // 2.0.0 [RVA-04] 검토 ADM-05: 공개는 모든 사용자 스튜디오에 가니 한 번 묻고, 공개·숨기기 모두 15초 되돌리기.
+    // 2.0.0 [RVN-24] 검토 U22c-05: 되돌리기는 반대 상태로 바꾸기가 아니라 바꾸기 전 모습으로(출시 대기였던 재료는 대기로).
     "material-state": ({ id, key }) => {
       const go = async () => {
         await act(() => api("/recipes/materials/state", "POST", { state: key, pack: id }), key === "ok" ? `‘${id}’ 묶음을 공개했어요` : `‘${id}’ 묶음을 숨겼어요`,
-          async () => { await act(() => api("/recipes/materials/state", "POST", { state: key === "ok" ? "hidden" : "ok", pack: id }), "되돌렸어요"); load(); });
+          async (r) => { if (r?.log) await act(() => api("/recipes/materials/undo", "POST", { log: r.log }), "되돌렸어요"); load(); });
         load();
       };
       if (key !== "ok") return go();
       danger({ title: `‘${id}’ 묶음을 공개할까요?`, text: "모든 사용자의 스튜디오 재료에 바로 보여요. 15초 안에는 되돌릴 수 있어요.", label: "공개", tone: "primary", run: go });
     },
+    // U22c-05: 묶음 줄의 '되돌리기'(마지막 바꿈만). 그 뒤에 또 바꿨으면 서버가 받지 않아요.
+    "material-undo": ({ id, key }) => danger({ title: `‘${key}’의 마지막 바꿈을 되돌릴까요?`, text: "그때 바꾼 재료만 바꾸기 전 모습으로 돌아가요. 공개를 되돌리면 사용자 스튜디오에서 바로 빠져요.",
+      label: "되돌리기", tone: "primary", run: async () => { await act(() => api("/recipes/materials/undo", "POST", { log: Number(id) }), "되돌렸어요"); load(); } }),
     // 2.0.0 [RVA-04] 검토 ADM-05·ADMX-09: 가리기는 쓰기 제한 1번으로 세니 한 번 묻고 15초 되돌리기, 공식 표시는 15초 되돌리기와 '공식 빼기'.
     "recipe-do": async ({ id, key }) => {
       const run = (k, body = {}) => api(`/recipes/${id}/${k}`, "POST", body);
@@ -6199,7 +6203,8 @@ function adminApp(L, BUILD, M) {
     // 1.38 [STM-10] 밤낮 재료 묶음의 무료·광고 나누기.
     "material-free": async (form) => {
       const mode = String(new FormData(form).get("mode") ?? "");
-      await act(() => api("/recipes/materials/free", "POST", { pack: form.dataset.key, mode }), (r) => `무료 ${r?.free ?? 0} · 광고·프로 ${r?.paid ?? 0}`);
+      await act(() => api("/recipes/materials/free", "POST", { pack: form.dataset.key, mode }), (r) => `무료 ${r?.free ?? 0} · 광고·프로 ${r?.paid ?? 0}`,
+        async (r) => { if (r?.log) await act(() => api("/recipes/materials/undo", "POST", { log: r.log }), "되돌렸어요"); load(); });
       load();
     },
     // 1.39 E11 재료 파일 올리기: 25개씩(서버 한 번에 받는 수) 나눠, 몇 개째인지 단추에 보이며 넣어요.

@@ -646,3 +646,45 @@ test("[RVN-24] I22cc-03 판 건강 worse than the version before, or Play halted
   await releaseTick(env, Date.now());
   assert.equal((await one()).doneAt, null);
 });
+
+test("[RVN-24] U22c-05 스튜디오 재료: each pack shows who changed it when, and 되돌리기 puts back only what that change moved", async (t) => {
+  t.mock.timers.enable({ apis: ["Date"], now: NOW });
+  const { call, DB } = server();
+  const h = await signIn(call);
+  const put = DB.prepare("INSERT INTO studio_materials (id, kind, pack, name, ord, w, h, free, state, at) VALUES (?, 'icon', ?, ?, ?, 1, 1, 1, ?, 0)");
+  await put.bind("a000000000000001", "봄", "a", 0, "waiting").run();
+  await put.bind("a000000000000002", "봄", "b", 1, "waiting").run();
+  await put.bind("a000000000000003", "봄", "c", 2, "hidden").run();
+  await put.bind("b000000000000001", "여름", "d", 0, "waiting").run();
+  const states = async (pack) => (await DB.prepare("SELECT state FROM studio_materials WHERE pack = ? ORDER BY ord").bind(pack).all()).results.map((r) => r.state);
+  const list = async () => (await call("GET", "/api/admin/recipes/materials", undefined, h)).data;
+  const shown = await call("POST", "/api/admin/recipes/materials/state", { state: "ok", pack: "봄" }, h);
+  assert.equal(shown.status, 200, JSON.stringify(shown.data));
+  assert.ok(Number.isInteger(shown.data.log));
+  let last = (await list()).last["봄"];
+  assert.equal(last.what, "공개 3개");
+  assert.ok(last.by, "who");
+  assert.equal(last.at, NOW);
+  // Undo: 출시 대기 goes back to 대기 and 숨김 to 숨김 (not 'hidden' for all, as the old opposite-state undo did).
+  t.mock.timers.tick(60_000);
+  const undo = await call("POST", "/api/admin/recipes/materials/undo", { log: shown.data.log }, h);
+  assert.deepEqual([undo.status, undo.data.back], [200, 3]);
+  assert.deepEqual(await states("봄"), ["waiting", "waiting", "hidden"]);
+  last = (await list()).last["봄"];
+  assert.equal(last.undoneAt, NOW + 60_000);
+  assert.equal((await call("POST", "/api/admin/recipes/materials/undo", { log: shown.data.log }, h)).data.error, "already");
+  // 잠금 (무료·광고) too; an older change cannot be undone over a newer one.
+  const free = await call("POST", "/api/admin/recipes/materials/free", { pack: "봄", mode: "none" }, h);
+  assert.equal((await list()).last["봄"].what, "무료 0 · 광고·프로 3");
+  const again = await call("POST", "/api/admin/recipes/materials/state", { state: "hidden", pack: "봄" }, h);
+  assert.equal((await call("POST", "/api/admin/recipes/materials/undo", { log: free.data.log }, h)).data.error, "newer");
+  assert.equal((await call("POST", "/api/admin/recipes/materials/undo", { log: again.data.log }, h)).status, 200);
+  assert.equal((await call("POST", "/api/admin/recipes/materials/undo", { log: free.data.log }, h)).status, 200);
+  assert.deepEqual((await DB.prepare("SELECT free FROM studio_materials WHERE pack = '봄' ORDER BY ord").all()).results.map((r) => r.free), [1, 1, 1]);
+  // '출시 대기 모두 공개' writes one line a pack.
+  const all = await call("POST", "/api/admin/recipes/materials/state", { state: "ok", all: true }, h);
+  assert.deepEqual(Object.keys(all.data.logs).sort(), ["봄", "여름"]);
+  assert.equal((await list()).last["여름"].what, "공개 1개");
+  const log = await DB.prepare("SELECT action FROM audit WHERE action = 'material_undo'").all();
+  assert.equal(log.results.length, 3);
+});

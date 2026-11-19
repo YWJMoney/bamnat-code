@@ -1401,7 +1401,7 @@ export function adminLib() {
     maker_reward_owed: "제작자 보상 줄 것 생김", price_table: "가격표 바꿈", earned_days: "제보 보상 날 줌", pro_share_code: "프로 나눔 코드 만듦",
     pro_share_claim: "프로 나눔 받음", link_guess: "친구 초대 링크 추측 막음", old_pay_cut: "옛 결제 정리", release_start: "출시 점검표 시작",
     release_step: "출시 점검표 단계", review_reply: "스토어 리뷰에 답함", review_draft: "스토어 리뷰 답 초안",
-    material_add: "스튜디오 재료 올림", material_free: "스튜디오 재료 무료·광고 나눔", material_state: "스튜디오 재료 공개·숨김",
+    material_add: "스튜디오 재료 올림", material_free: "스튜디오 재료 무료·광고 나눔", material_state: "스튜디오 재료 공개·숨김", material_undo: "스튜디오 재료 바꿈 되돌림",
     sync_key_make: "개발 기록 맞춤 열쇠 만듦", ops_key_make: "운영 열쇠 만듦", ops_key_ship: "운영 열쇠로 나간 판 저장(10분 보류)", need_ready: "꾸미기 부탁 올리기 전 확인에 옴", loop_fixed_yes: "문의한 분이 해결됐다고 함", loop_fixed_no: "문의한 분이 아직이라고 함",
     // 2.0.0 갈래 Q1 #478의 보관 장부(keep.js): 백업 되살려 보기와 개인정보 요청 처리.
     backup_drill: "백업 되살려 보기(저절로)", backup_drill_run: "백업 되살려 보기 지금 함", data_request_run: "개인정보 요청 처리함",
