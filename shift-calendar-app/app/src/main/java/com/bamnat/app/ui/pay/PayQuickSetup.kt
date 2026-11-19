@@ -697,15 +697,17 @@ private fun ConfirmPage(
     // PC 8eae2521 (알바 설정 마지막 쪽에 '월급에서 떼는 돈'): 시급·일당 is 급여.
     Text(if (p.wageType == WageType.MONTHLY) "월급에서 떼는 돈" else "급여에서 떼는 돈", style = MaterialTheme.typography.labelLarge, modifier = Modifier.padding(top = 4.dp))
     com.bamnat.app.tax.TaxWayChips(p.taxMode, daily = p.wageType == WageType.DAILY, onPick = onTax)
-    Text(when {
-        p.wageType == WageType.HOURLY && p.taxMode == com.bamnat.core.pay.TaxMode.NONE ->
-            "알바는 주 15시간·월 60시간 미만이면 떼지 않는 곳이 많아 ‘떼지 않음’으로 골라 뒀어요. 명세서에 4대보험이나 3.3%가 있으면 바꿔 주세요. 나중에 ‘$tab’에서도 바꿀 수 있어요."
+    // 2.0.0 [RVJ-80] (조건 4) What to pick, in one line + ⓘ: said in full the last page of the setup read like a page at 글자 200%.
+    val (taxKey, taxShort, taxWords) = when {
+        p.wageType == WageType.HOURLY && p.taxMode == com.bamnat.core.pay.TaxMode.NONE -> Triple("pay.quick.tax.hourly", "알바는 떼지 않는 곳이 많아요",
+            "알바는 주 15시간·월 60시간 미만이면 떼지 않는 곳이 많아 ‘떼지 않음’으로 골라 뒀어요. 명세서에 4대보험이나 3.3%가 있으면 바꿔 주세요. 나중에 ‘$tab’에서도 바꿀 수 있어요.")
         // 2.0.0 [RVJ-80] 검토 T04-05 (소득세법 제47조 제2항: 일용근로자 근로소득공제 하루 15만 원).
-        p.wageType == WageType.DAILY ->
-            "일당은 대부분 ‘일용근로’로 떼요. 하루 15만 원까지는 소득세가 없고 고용보험만 떼요. 명세서에 3.3%나 4대보험이 있으면 바꿔 주세요. 나중에 ‘$tab’에서도 바꿀 수 있어요."
-        else -> "대부분 회사는 4대보험·소득세를 떼요. 프리랜서·알바 중 3.3%를 떼는 곳도 있어요. 나중에 ‘$tab’에서 바꿀 수 있어요."
-    },
-        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        p.wageType == WageType.DAILY -> Triple("pay.quick.tax.daily", "일당은 대부분 ‘일용근로’로 떼요",
+            "일당은 대부분 ‘일용근로’로 떼요. 하루 15만 원까지는 소득세가 없고 고용보험만 떼요. 명세서에 3.3%나 4대보험이 있으면 바꿔 주세요. 나중에 ‘$tab’에서도 바꿀 수 있어요.")
+        else -> Triple("pay.quick.tax", "대부분 회사는 4대보험·소득세를 떼요",
+            "대부분 회사는 4대보험·소득세를 떼요. 프리랜서·알바 중 3.3%를 떼는 곳도 있어요. 나중에 ‘$tab’에서 바꿀 수 있어요.")
+    }
+    com.bamnat.app.ui.components.Explain(taxKey, taxWords, summary = taxShort, iconOnly = false, firstInFull = false)
     OutlinedButton(onClick = onSlip, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
         Text("명세서·회사 계산 방법 사진으로 맞추기")
     }
