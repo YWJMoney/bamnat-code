@@ -133,7 +133,15 @@ class RvmScreenshotTest : ScreenshotBase() {
             tapText("이 테마 입기", exact = true)
             settle()
             appears("이렇게 바뀌어요", exact = true)
-            sees?.let { check(appears(it)) { "넣기 창에 '$it'이 없어요" } }
+            // HQ-159: 17 classes at once slow the wall clock, and at 200% the line can sit below the fold — wait longer, then scroll down to it
+            // (and back up, so the shot is the same as ever).
+            sees?.let {
+                if (!appears(it, ms = 8000)) {
+                    check(scrolledTo(it)) { "넣기 창에 '$it'이 없어요" }
+                    scrollUp(2400)
+                    settle()
+                }
+            }
         }
     }
 
