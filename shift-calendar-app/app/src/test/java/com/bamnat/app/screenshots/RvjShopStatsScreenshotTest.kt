@@ -130,9 +130,10 @@ class RvjShopStatsScreenshotTest : ScreenshotBase() {
         settle()
         assertTrue(shownWords().joinToString(" | "), appears("평일 하루 쉬는 신청", exact = true))
         touchAtLeast48("평일 하루 쉬는 신청 늘리기") // AFTER
-        compose.onNodeWithContentDescription("평일 하루 쉬는 신청 늘리기").performClick() // AFTER
+        touchAtLeast48("평일 하루 쉬는 신청 줄이기") // AFTER
+        compose.onNodeWithContentDescription("평일 하루 쉬는 신청 줄이기").performClick() // AFTER
         settle() // AFTER
-        assertTrue("한 번 눌러 1명", appears("1명", exact = true)) // AFTER
+        assertTrue("한 번 눌러 2명에서 1명으로", appears("1명", exact = true)) // AFTER
         noCuts("rvj_team_ask_steppers")
     }
 

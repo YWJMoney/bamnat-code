@@ -120,10 +120,13 @@ internal fun BossCoverDialog(place: Workplace, staff: List<StaffMember>, work: L
     }, dismissButton = { TextButton(onClick = onDismiss) { Text("닫기") } })
     picking?.let { isStart ->
         val now = shift ?: StaffShift(LocalTime.of(9, 0), LocalTime.of(18, 0))
-        com.bamnat.app.ui.components.TimePickerDialog(title = if (isStart) "몇 시부터" else "몇 시까지", initial = if (isStart) now.start else now.end,
-            onDismiss = { picking = null }) { t ->
-            set = if (isStart) "$t-${now.end}" else "${now.start}-$t"
-            picking = if (isStart) false else null
+        // Keyed: the window for 몇 시까지 is a new one (it kept the 몇 시부터 it was opened after, so the end came out as the start).
+        androidx.compose.runtime.key(isStart) {
+            com.bamnat.app.ui.components.TimePickerDialog(title = if (isStart) "몇 시부터" else "몇 시까지", initial = if (isStart) now.start else now.end,
+                onDismiss = { picking = null }) { t ->
+                set = if (isStart) "$t-${now.end}" else "${now.start}-$t"
+                picking = if (isStart) false else null
+            }
         }
     }
 }

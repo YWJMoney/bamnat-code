@@ -59,7 +59,8 @@ class RvjShopsScreenshotTest : ScreenshotBase() {
     @Test fun twoShopsWide() = shoot("rvj_362_shops_unfolded", UNFOLDED, second())
 
     @Test fun theChipsPickTheShop() = shoot("rvj_363_shops_pick_folded", FOLDED) {
-        ledger(true).invoke(this)
+        // The 대장 remembers the shop last looked at (for the process), so the first shop is asked for here.
+        ledger(true, placeId = "p1").invoke(this)
         assertTrue(appears("식당"))
         assertTrue("처음 가게의 직원: " + shownWords().joinToString(" | "), scrolledTo("김알바"))
         assertFalse(shows("이바리"))
