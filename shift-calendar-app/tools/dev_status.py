@@ -65,7 +65,9 @@ BROADCAST = [
     (re.compile(r"(\+?82[\s.-]?0?|0)\d{1,2}[\s.-]?\d{3,4}[\s.-]?\d{4}"), "전화번호"),
     (re.compile(r"오픈\s*채팅|단톡|카톡\s*방|텔레그램|디스코드|/api/|/admin|관리자\s*(페이지|화면|앱|계정)|서버\s*(주소|구조|코드)|소스\s*코드|깃허브|github|토큰|비밀\s*(값|키)|데이터\s*베이스", re.I), "보안 정보·단톡방"),
 ]
-LIMITS = {"title": 120, "publicTitle": 60, "news": 80, "shipReply": 600, "tierWhy": 600, "test": 200, "check": 1000, "reason": 300, "miss": 200}
+# title은 서버의 DEV.title(server/company-worker/src/inquiries.js, 100자)과 같아야 해요. 120이던 때 109자 제목의 새 줄(RVQ-57)이 여기 검사는
+# 지나고 서버 동기화(/dev/sync)에서 '줄 오류 1'로 떨어졌어요(2.0.0 총괄 11-19, 통합 PR의 sync 빨간 줄).
+LIMITS = {"title": 100, "publicTitle": 60, "news": 80, "shipReply": 600, "tierWhy": 600, "test": 200, "check": 1000, "reason": 300, "miss": 200}
 
 
 def read(path=None):
