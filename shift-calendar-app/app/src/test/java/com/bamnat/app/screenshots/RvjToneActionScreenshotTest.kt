@@ -44,14 +44,14 @@ class RvjToneActionScreenshotTest : ScreenshotBase() {
         store.saveStaff(StaffMember("s3", "새직원", form = WageForm.HOUR, base = 10_320L, hiredOn = LocalDate.of(2026, 9, 1)), "p1", 2)
     }
 
-    private fun ledger(): Screen.() -> Unit = {
+    private fun shopLedger(): Screen.() -> Unit = {
         seedShop()
         content { com.bamnat.app.ui.work.PayrollScreen(StaffRoster(emptyList()), null) {} }
         repeat(2) { settle() }
     }
 
     private fun filings(): Screen.() -> Unit = {
-        ledger().invoke(this)
+        shopLedger().invoke(this)
         var found = false
         repeat(4) { if (!found) { found = scrolledTo("다가올 신고·지급"); if (!found) settle() } }
         reveal("다가올 신고·지급", exact = false)
@@ -71,7 +71,7 @@ class RvjToneActionScreenshotTest : ScreenshotBase() {
     }
 
     private fun staffRows(): Screen.() -> Unit = {
-        ledger().invoke(this)
+        shopLedger().invoke(this)
         reveal("계약서 없음", exact = false)
     }
 
@@ -79,7 +79,7 @@ class RvjToneActionScreenshotTest : ScreenshotBase() {
     @Test fun theStaffLinesDarkBig() = shoot("rvj_274_tone_action_staff_folded_dark_200", DARK, 2f, staffRows())
 
     @Test fun theStaffLinesNameThePlace() = shoot("rvj_275_tone_action_staff_said_folded", FOLDED) {
-        ledger().invoke(this)
+        shopLedger().invoke(this)
         assertTrue(scrolledTo("4대보험을 고르지 않았어요"))
         assertTrue(shows("고르기", exact = false))
         assertTrue(scrolledTo("계약서 쓰기"))
@@ -109,7 +109,7 @@ class RvjToneActionScreenshotTest : ScreenshotBase() {
     // ── 사장님 › 급여 대장: 명단 가져오기 위 '읽는 칸' ──
 
     @Test fun theReadColumnsLine() = shoot("rvj_278_tone_action_reads_folded_dark_200", DARK, 2f) {
-        ledger().invoke(this)
+        shopLedger().invoke(this)
         assertTrue(scrolledTo("예시 파일 받기"))
         reveal("읽는 칸", exact = false)
     }
