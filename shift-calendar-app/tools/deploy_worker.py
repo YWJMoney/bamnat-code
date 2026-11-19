@@ -32,9 +32,12 @@
   5. 실서버 migration 태그(wrangler가 보는 /workers/services/<이름>)와 설정을 맞춰 적용할 migration을 고르고, 멈출 까닭을 봐요:
      적용할 것이 없음, 실서버 태그가 설정에 없음, 지우기·이름 바꾸기·옮기기(데이터가 사라지거나 옮겨짐, 사람이 정해요),
      바인딩 클래스를 만드는 migration 없음, 앞 판 바인딩이 설정에 없어 사라짐, 설정 이름이 비밀값을 덮어씀.
-  6. `wrangler deploy --dry-run`. migrate-check는 여기까지(손님은 앞 판 그대로).
+  6. 지금 붙은 연결(사용자 도메인·route·workers.dev·미리보기 URL)을 읽어 남기고, workers.dev·미리보기 URL은 그 값으로 배포용 설정에
+     적어요(wrangler deploy가 매번 보내는 값). route·사용자 도메인은 설정에 없으면 wrangler deploy가 건드리지 않아요
+     (4.150.0 triggersDeploy: 설정에 있을 때만 PUT). `wrangler deploy --dry-run`. migrate-check는 여기까지(손님은 앞 판 그대로).
   7. `wrangler deploy --keep-vars`(앞 판 일반 변수는 --var로 값까지 넘겨요). 새 판이 100%가 되고 이 판이 새 되돌리기 바닥이에요.
-  8. 배포 상태 새 판 100%, 바인딩 대조(앞 판 것 모두 + DO 바인딩), 실서버 migration 태그가 설정 마지막 태그, 정기 작업, health 5번.
+  8. 배포 상태 새 판 100%, 바인딩 대조(앞 판 것 모두 + DO 바인딩), 실서버 migration 태그가 설정 마지막 태그, 붙은 연결이 6과 같음,
+     정기 작업, health 5번.
      실패해도 앞 판으로 되돌리지 않아요(Cloudflare가 막아요). 크게 알리고 실패로 끝나요: 고친 판을 보통 deploy로 올려요.
   토큰 권한은 그대로예요. Durable Object 전용 권한은 없고 'Workers Scripts 편집'에 들어 있어요
   (https://developers.cloudflare.com/api/resources/durable_objects/subresources/namespaces/methods/list/).
@@ -274,6 +277,59 @@ def migrate_problems(config_text: str, old: list[dict], pending: list[dict] | No
     return out
 
 
+def pin_subdomain(config_text: str, workers_dev: bool, previews: bool) -> str:
+    """배포용 설정의 workers.dev·미리보기 URL을 지금 실서버 값으로 못 박아요.
+
+    `wrangler deploy`는 versions upload와 달리 매번 `POST …/subdomain {enabled: workers_dev, previews_enabled: preview_urls}`를
+    보내요(wrangler 4.150.0 subdomainDeploy). preview_urls가 설정에 없으면 그 칸을 빼고 보내는데, 그때 Cloudflare가 무엇으로
+    두는지 API 문서에 없어요. 되돌릴 수 없는 배포라 지금 상태를 그대로 적어 보내요.
+    """
+    out, top = [], True
+    for line in config_text.split("\n"):
+        s = line.strip()
+        if s.startswith("["):
+            top = False
+        if top and re.match(r"(workers_dev|preview_urls)\s*=", s):
+            continue
+        out.append(line)
+    text = (f"# 2.0.0 [RVD-33] 배포 도구가 지금 실서버 값으로 적음\nworkers_dev = {str(bool(workers_dev)).lower()}\n"
+            f"preview_urls = {str(bool(previews)).lower()}\n" + "\n".join(out))
+    c = tomllib.loads(text)
+    if c.get("workers_dev") is not bool(workers_dev) or c.get("preview_urls") is not bool(previews):
+        raise Stop("workers.dev·미리보기 URL 값을 배포용 설정에 적지 못했어요")
+    return text
+
+
+def attachment_state(subdomain, domains, routes, name: str) -> dict:
+    """Worker에 붙은 것: workers.dev·미리보기 URL(`GET …/scripts/<이름>/subdomain`), 사용자 도메인(`GET …/workers/domains?service=`),
+    route(읽지 못하면 None). 모양이 다르면 ValueError."""
+    if not isinstance(subdomain, dict) or not isinstance(subdomain.get("enabled"), bool):
+        raise ValueError("subdomain 응답에 enabled가 없어요")
+    if not isinstance(domains, list):
+        raise ValueError("domains 응답이 목록이 아니에요")
+    doms = sorted(f"{d.get('hostname')}{'' if d.get('enabled', True) else '(꺼짐)'}"
+                  for d in domains if isinstance(d, dict) and d.get("service", name) == name)
+    return {"workers_dev": subdomain["enabled"], "previews": bool(subdomain.get("previews_enabled", False)),
+            "domains": doms, "routes": None if routes is None else sorted(str(r) for r in routes)}
+
+
+def attachment_line(a: dict) -> str:
+    routes = "읽지 못함" if a["routes"] is None else (", ".join(a["routes"]) or "없음")
+    return (f"사용자 도메인 {', '.join(a['domains']) or '없음'} · workers.dev {'켜짐' if a['workers_dev'] else '꺼짐'} · "
+            f"미리보기 URL {'켜짐' if a['previews'] else '꺼짐'} · route {routes}")
+
+
+def attachment_diff(before: dict, after: dict) -> list[str]:
+    """배포 앞뒤로 Worker에 붙은 것이 달라졌으면 그 줄들. route는 앞뒤 모두 읽었을 때만 견줘요."""
+    out = []
+    for k, label in (("domains", "사용자 도메인"), ("workers_dev", "workers.dev"), ("previews", "미리보기 URL")):
+        if before[k] != after[k]:
+            out.append(f"{label}: {before[k]} → {after[k]}")
+    if before["routes"] is not None and after["routes"] is not None and before["routes"] != after["routes"]:
+        out.append(f"route: {before['routes']} → {after['routes']}")
+    return out
+
+
 def deploy_version_id(ndjson: str, text: str) -> str | None:
     """`wrangler deploy`가 올려 100%로 돌린 판 번호."""
     for line in ndjson.splitlines():
@@ -446,6 +502,20 @@ def watch(worker: str, base: str, new_ver: str, new_id: str, name: list[str], wd
     return problems
 
 
+def attachments(w: dict) -> dict:
+    """지금 Worker에 붙은 연결(workers.dev·미리보기 URL·사용자 도메인·route). route는 wrangler가 읽는 곳에서 읽고, 못 읽으면 None."""
+    acc = os.environ["CLOUDFLARE_ACCOUNT_ID"]
+    n = w["name"]
+    sub = cf("GET", f"/accounts/{acc}/workers/scripts/{n}/subdomain").get("result")
+    doms = cf("GET", f"/accounts/{acc}/workers/domains?service={n}").get("result") or []
+    try:
+        rs = cf("GET", f"/accounts/{acc}/workers/services/{n}/environments/production/routes").get("result") or []
+        routes = [r.get("pattern") for r in rs if isinstance(r, dict)]
+    except Exception:  # noqa: BLE001 - route는 zone 권한이 없으면 못 읽어요(wrangler deploy는 설정에 route가 없으면 건드리지 않아요)
+        routes = None
+    return attachment_state(sub, doms, routes, n)
+
+
 def live_migration_tag(w: dict) -> str | None:
     acc = os.environ["CLOUDFLARE_ACCOUNT_ID"]
     return script_migration_tag(cf("GET", f"/accounts/{acc}/workers/services/{w['name']}"))
@@ -574,6 +644,16 @@ def migrate(w: dict, worker: str, mode: str, sha: str, base: str, name: list[str
     tags = ", ".join(str(m.get("tag")) for m in pending or [])
     classes = sorted({c for m in pending or [] for c in (m.get("new_classes") or []) + (m.get("new_sqlite_classes") or [])})
     binds = ", ".join(f"{n}→{c}" for n, c in sorted(lc["bindings"].items()))
+    # wrangler deploy는 트리거도 맞춰요. 설정에 route·사용자 도메인이 없으면 대시보드의 것을 건드리지 않지만(4.150.0 triggersDeploy:
+    # routes·custom domains는 설정에 있을 때만 PUT), workers.dev·미리보기 URL은 매번 보내요. 그래서 지금 연결을 읽어 남기고,
+    # 그 두 값은 지금 값으로 못 박고, 올린 뒤 같은지 견줘요.
+    try:
+        before = attachments(w)
+    except Exception as e:  # noqa: BLE001 - 지금 연결을 모르면 견줄 수 없어 멈춰요
+        raise Stop(f"지금 붙은 연결(workers.dev·사용자 도메인)을 읽지 못했어요({type(e).__name__}: {e}). 되돌릴 수 없는 배포라 멈춰요") from e
+    config_text = pin_subdomain(config_text, before["workers_dev"], before["previews"])
+    deploy_toml.write_text(config_text, encoding="utf-8")
+    say(f"- 지금 연결: {attachment_line(before)}. workers.dev·미리보기 URL은 이 값으로 적어 올려요")
     run(WRANGLER + ["deploy", "dist/worker.js", "--config", deploy_toml.name, "--no-bundle", "--dry-run", "--outdir", ".deploy-dry"], wd)
     say(f"- 적용할 migration {tags} (실서버 지금 {live_tag or '없음'}): 새 클래스 {', '.join(classes)}, 바인딩 {binds}. "
         f"`wrangler deploy --dry-run` 통과")
@@ -620,6 +700,9 @@ def migrate(w: dict, worker: str, mode: str, sha: str, base: str, name: list[str
         tag_now = live_migration_tag(w)
         if tag_now != lc["tags"][-1]:
             problems.append(f"실서버 migration 태그가 {tag_now}예요(바라는 것 {lc['tags'][-1]})")
+        moved = attachment_diff(before, attachments(w))
+        if moved:
+            problems.append("붙은 연결이 달라졌어요(사람이 Cloudflare 대시보드 › Workers › 설정 › 도메인·경로에서 다시 붙여요): " + " / ".join(moved))
         sync_crons(w, config_text)
         if new_id and new_id != old_id:
             problems += watch(worker, base, new_ver, new_id, name, wd)

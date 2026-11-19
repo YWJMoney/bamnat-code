@@ -228,9 +228,10 @@ class DeployWorkerTest(unittest.TestCase):
             env.stop()
             shutil.rmtree(tmp, ignore_errors=True)
 
-    def run_migrate(self, mode, deploy_rc=0, deploy_goes_live=True, healthy=True):
-        """가짜 Cloudflare로 migrate를 끝까지 돌려요. (예외, 부른 명령들, 말한 줄들)."""
-        state = {"serving": "old", "tag": None}
+    def run_migrate(self, mode, deploy_rc=0, deploy_goes_live=True, healthy=True, drops_domain=False, routes_readable=True):
+        """가짜 Cloudflare로 migrate를 끝까지 돌려요. (예외, 부른 명령들, 말한 줄들, 배포용 설정)."""
+        state = {"serving": "old", "tag": None, "domains": [{"hostname": "s.bamnat.app", "service": "bamnat-share", "enabled": True}]}
+        seen = {}
         new_id = "0f0f0f0f-1111-2222-3333-444444444444"
         cmds, said = [], []
         real = (d.wrangler_json, d.run, d.cf, d.live_version, d.healthy, d.say, d.SERVER, d.time.sleep)
@@ -256,18 +257,32 @@ class DeployWorkerTest(unittest.TestCase):
             def fake_run(cmd, cwd, extra_env=None, check=True):
                 cmds.append(cmd)
                 rc, out = 0, ""
+                if cmd[:4] == ["npx", "--yes", "wrangler@4.150.0", "deploy"]:
+                    seen["config"] = (wd / "wrangler.deploy.toml").read_text(encoding="utf-8")
                 if cmd[:4] == ["npx", "--yes", "wrangler@4.150.0", "deploy"] and "--dry-run" not in cmd:
                     rc = deploy_rc
                     if deploy_goes_live:
                         state["serving"], state["tag"] = new_id, "v1-team-round"
                         out = f"Current Version ID: {new_id}"
+                        if drops_domain:
+                            state["domains"] = []
                 if check and rc:
                     raise d.Stop(f"fail {rc}")
                 return type("P", (), {"returncode": rc, "stdout": out, "stderr": ""})()
 
             d.wrangler_json = wj
             d.run = fake_run
-            d.cf = lambda method, path, body=None: {"result": {"default_environment": {"script": {"migration_tag": state["tag"]}}}}
+            def fake_cf(method, path, body=None):
+                if path.endswith("/subdomain"):
+                    return {"result": {"enabled": True, "previews_enabled": False}}
+                if "/workers/domains?service=bamnat-share" in path:
+                    return {"result": list(state["domains"])}
+                if path.endswith("/environments/production/routes"):
+                    if not routes_readable:
+                        raise RuntimeError("403")
+                    return {"result": []}
+                return {"result": {"default_environment": {"script": {"migration_tag": state["tag"]}}}}
+            d.cf = fake_cf
             d.live_version = lambda worker, base, view=None: "2.0.0"
             d.healthy = lambda worker, base, want, deep=True: (healthy, "health 200" if healthy else "health 500")
             d.say = said.append
@@ -277,7 +292,7 @@ class DeployWorkerTest(unittest.TestCase):
                 d.deploy("share", mode, "0123456789abcdef", "DO 바닥", False)
             except (d.Stop, SystemExit) as e:
                 err = e
-            return err, cmds, said
+            return err, cmds, said, seen.get("config", "")
         finally:
             d.wrangler_json, d.run, d.cf, d.live_version, d.healthy, d.say, d.SERVER, d.time.sleep = real
             env.stop()
@@ -288,15 +303,19 @@ class DeployWorkerTest(unittest.TestCase):
         return [c for c in cmds if c[3:4] == ["deploy"]]
 
     def test_migrate_check_only_dry_runs(self):
-        err, cmds, said = self.run_migrate("migrate-check")
+        err, cmds, said, config = self.run_migrate("migrate-check")
         self.assertIsNone(err)
+        # 지금 붙은 연결을 요약에 남기고, workers.dev·미리보기 URL은 지금 값으로 적어 dry-run해요.
+        self.assertIn("사용자 도메인 s.bamnat.app · workers.dev 켜짐 · 미리보기 URL 꺼짐 · route 없음", " ".join(said))
+        self.assertIn("workers_dev = true\npreview_urls = false\n", config)
         self.assertEqual([("--dry-run" in c) for c in self.wrangler_deploys(cmds)], [True])
         self.assertFalse(any("upload" in c or c[3:4] == ["versions"] for c in cmds))
         self.assertIn("새 되돌리기 바닥", " ".join(said))
 
     def test_migrate_deploys_once_and_keeps_vars(self):
-        err, cmds, said = self.run_migrate("migrate")
+        err, cmds, said, config = self.run_migrate("migrate")
         self.assertIsNone(err, said)
+        self.assertIn("preview_urls = false", config)
         real = [c for c in self.wrangler_deploys(cmds) if "--dry-run" not in c]
         self.assertEqual(len(real), 1)
         self.assertIn("--keep-vars", real[0])
@@ -307,17 +326,45 @@ class DeployWorkerTest(unittest.TestCase):
 
     def test_migrate_failure_never_rolls_back(self):
         # health가 실패해도 앞 판으로 versions deploy 하지 않아요(Cloudflare가 막고, 시도하면 헷갈려요).
-        err, cmds, said = self.run_migrate("migrate", healthy=False)
+        err, cmds, said, _ = self.run_migrate("migrate", healthy=False)
         self.assertIsInstance(err, SystemExit)
         self.assertFalse(any(c[3:5] == ["versions", "deploy"] for c in cmds))
         self.assertIn("되돌리지 않아요", " ".join(said))
         # wrangler deploy가 올리기 전에 실패했으면(손님은 앞 판) 멈춤이에요.
-        err, cmds, said = self.run_migrate("migrate", deploy_rc=1, deploy_goes_live=False)
+        err, cmds, said, _ = self.run_migrate("migrate", deploy_rc=1, deploy_goes_live=False)
         self.assertIsInstance(err, d.Stop)
         # 올린 뒤 실패(트리거 등)면 앞 판이 아니라 새 판을 확인하고 실패로 알려요.
-        err, cmds, said = self.run_migrate("migrate", deploy_rc=1, deploy_goes_live=True)
+        err, cmds, said, _ = self.run_migrate("migrate", deploy_rc=1, deploy_goes_live=True)
         self.assertIsInstance(err, SystemExit)
         self.assertIn("코드 1", " ".join(said))
+
+    def test_migrate_says_loudly_when_a_domain_falls_off(self):
+        # 올린 뒤 사용자 도메인(s.bamnat.app)이 떨어지면 health 전에 무엇을 다시 붙여야 하는지 알려요.
+        err, cmds, said, _ = self.run_migrate("migrate", drops_domain=True)
+        self.assertIsInstance(err, SystemExit)
+        self.assertIn("사용자 도메인: ['s.bamnat.app'] → []", " ".join(said))
+        self.assertIn("다시 붙여요", " ".join(said))
+        # route를 못 읽어도(zone 권한 없음) 멈추지 않고 '읽지 못함'으로 남겨요.
+        err, cmds, said, _ = self.run_migrate("migrate", routes_readable=False)
+        self.assertIsNone(err, said)
+        self.assertIn("route 읽지 못함", " ".join(said))
+
+    def test_pin_subdomain_and_attachments(self):
+        pinned = d.pin_subdomain(self.TEAM_ROUND.replace('main = "src/index.js"\n', 'main = "src/index.js"\nworkers_dev = true\n'), False, True)
+        c = d.tomllib.loads(pinned)
+        self.assertIs(c["workers_dev"], False)
+        self.assertIs(c["preview_urls"], True)
+        self.assertEqual(pinned.count("workers_dev ="), 1)
+        self.assertEqual(c["durable_objects"]["bindings"][0]["name"], "TEAM_ROUND")  # 표는 그대로
+        a = d.attachment_state({"enabled": True}, [{"hostname": "s.bamnat.app", "service": "bamnat-share"},
+                                                    {"hostname": "x.example", "service": "other"}], None, "bamnat-share")
+        self.assertEqual(a, {"workers_dev": True, "previews": False, "domains": ["s.bamnat.app"], "routes": None})
+        with self.assertRaises(ValueError):
+            d.attachment_state({}, [], [], "bamnat-share")
+        b = dict(a, routes=["s.bamnat.app/*"])
+        self.assertEqual(d.attachment_diff(a, b), [])  # 앞에서 route를 못 읽었으면 견주지 않아요
+        self.assertEqual(d.attachment_diff(dict(a, routes=[]), b), ["route: [] → ['s.bamnat.app/*']"])
+        self.assertEqual(d.attachment_diff(a, dict(a, previews=True)), ["미리보기 URL: False → True"])
 
 
 if __name__ == "__main__":
