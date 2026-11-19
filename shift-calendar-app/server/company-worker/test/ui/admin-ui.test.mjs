@@ -3259,6 +3259,21 @@ test("[RVA-38] 자동 순환: 맨 위 한 줄 상태(저절로 도는지·다음
   assert.deepEqual(u.errors, []);
 });
 
+test("[RVQ-60] PC-213 자동 순환 › Play 출시 감지: 보류 줄은 나가는 시각과 남은 시간을 함께", async (t) => {
+  offline(t);
+  const { env } = await world();
+  const u = await asOwner(env, t);
+  env.DB.db.prepare("INSERT INTO loop_ships (version, seen_at, until, status, by) VALUES ('2.0.0', ?, ?, 'waiting', 'Claude 요청')")
+    .run(Date.now(), Date.now() + 9 * 60000 + 20000);
+  await u.go("#/loop");
+  await u.settle(20);
+  const line = u.text("#loop-play");
+  assert.match(line, /2\.0\.0 안내 (오전|오후) \d{1,2}:\d{2}에 · 9분 남음/, "the folded line: when and how long");
+  assert.match(line, /Claude 요청 · (오전|오후) \d{1,2}:\d{2}에 문의 안내·업데이트 소식이 나가요 · 9분 남음/, "the held line itself");
+  assert.doesNotMatch(line, /분 뒤 문의 안내/);
+  assert.deepEqual(u.errors, []);
+});
+
 test("[RVA-39] 자동 순환 › 연결 점검: 'Play까지 점검'을 누르면 그 시각과 '방금 다시 봤어요', 바뀐 줄은 '방금 됨 → 확인'", async (t) => {
   offline(t);
   const { env } = await world();

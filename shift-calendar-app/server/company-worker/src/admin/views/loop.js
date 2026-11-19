@@ -10,10 +10,16 @@ export function loopViews(A) {
   const owner = () => Boolean(S.me?.owner);
   const head = (title, meta = "", side = "") => `<div class="card-head"><h2>${esc(title)}</h2>${meta ? `<span class="meta">${esc(meta)}</span>` : ""}${side}</div>`;
   const when = (isoText) => (isoText ? new Date(isoText).toLocaleString("ko-KR", { month: "numeric", day: "numeric", hour: "numeric", minute: "2-digit" }) : "—");
+  // 2.0.0 [RVQ-60] PC-213: 보류 줄은 나가는 시각과 남은 시간을 함께('오전 11:49에 나가요 · 9분 남음'). 시각만 보면 몇 분 남았는지 셈해야 해요.
+  const clock = (isoText) => {
+    const t = Date.parse(isoText);
+    return t - Date.now() > 12 * 3600e3 ? when(isoText) : new Date(t).toLocaleTimeString("ko-KR", { hour: "numeric", minute: "2-digit" });
+  };
   const left = (isoText) => {
     const m = Math.round((Date.parse(isoText) - Date.now()) / 60000);
-    return m <= 0 ? "곧" : m < 60 ? `${m}분 뒤` : `${Math.floor(m / 60)}시간 ${m % 60}분 뒤`;
+    return m <= 0 ? "곧" : m < 60 ? `${m}분 남음` : `${Math.floor(m / 60)}시간 ${m % 60}분 남음`;
   };
+  const goes = (isoText) => (Date.parse(isoText) - Date.now() <= 30000 ? "곧" : `${clock(isoText)}에`);
   const reload = (...keys) => {
     for (const k of keys) S.data[k] = null;
     syncUrl();
@@ -48,14 +54,14 @@ export function loopViews(A) {
     // 2.0.0 [RVQ-28] 좁은 폭에서는 판 이름·설명이 한 줄을 다 쓰고 표·단추가 아래로(380에서 글자가 한 자씩 세로로 서던 것).
     const ships = d.ships.length ? `<ul class="rows side-wrap">${d.ships.map((s) => `<li><div class="row"><span class="row-main"><b>${esc(s.version)}</b>
         <small>${s.status === "review" ? `Play 트랙에 100%로 올라갔어요. 그 뒤 이 판으로 쓰는 휴대폰이 테스터보다 많이 늘거나 Play Console에서 '게시됨'을 확인하면 1시간 보류를 시작해요${s.version === p.done && p.seen ? ` · 늘어난 휴대폰 ${p.seen.phones}/${p.seen.need}대` : ""}`
-          : s.status === "waiting" ? `${s.by ? `${esc(s.by)} · ` : ""}${esc(left(s.until))} 문의 안내·업데이트 소식이 나가요${d.switches.autoShip ? "" : " · 스스로 안내가 꺼져 있어 '지금 보내기'를 눌러야 나가요"}` : `${esc(when(s.doneAt))} · ${esc(s.by || "")}${s.result ? ` · ${esc(s.result)}` : ""}`}</small></span>
+          : s.status === "waiting" ? `${s.by ? `${esc(s.by)} · ` : ""}${esc(goes(s.until))} 문의 안내·업데이트 소식이 나가요 · ${esc(left(s.until))}${d.switches.autoShip ? "" : " · 스스로 안내가 꺼져 있어 '지금 보내기'를 눌러야 나가요"}` : `${esc(when(s.doneAt))} · ${esc(s.by || "")}${s.result ? ` · ${esc(s.result)}` : ""}`}</small></span>
         <span class="pill ${SHIP_TONES[s.status] ?? ""}">${esc(SHIP_NAMES[s.status] ?? s.status)}</span>
         ${s.status === "review" && can("devStatus", "edit") ? `<button class="btn small" type="button" data-act="loop-ship-cancel" data-v="${esc(s.version)}">멈추기</button>
           <button class="btn small" type="button" data-act="loop-ship-live" data-v="${esc(s.version)}">게시됨 확인</button>` : ""}
         ${s.status === "waiting" && can("devStatus", "edit") ? `<button class="btn small" type="button" data-act="loop-ship-cancel" data-v="${esc(s.version)}">멈추기</button>
           <button class="btn small" type="button" data-act="loop-ship-now" data-v="${esc(s.version)}">지금 보내기</button>` : ""}</div></li>`).join("")}</ul>` : "";
     const waiting = d.ships.find((s) => s.status === "waiting");
-    const meta = waiting ? `${waiting.version} 안내 ${left(waiting.until)}` : [d.shipped ? `나간 판 ${d.shipped.v}` : "나간 판 없음", p.ready ? "Play 연결됨" : "Play 연결 열쇠 없음"].join(" · ");
+    const meta = waiting ? `${waiting.version} 안내 ${goes(waiting.until)} · ${left(waiting.until)}` : [d.shipped ? `나간 판 ${d.shipped.v}` : "나간 판 없음", p.ready ? "Play 연결됨" : "Play 연결 열쇠 없음"].join(" · ");
     return fold("play", "Play 출시 감지", meta, `<p>${pills}</p>${outboxLine(d)}${track}${ships}
       ${can("devStatus", "edit") && p.ready ? '<div class="actions start"><button class="btn small" type="button" data-act="loop-play">지금 읽기</button></div>' : ""}
       <p class="hint">판이 실제로 나가면 1시간 뒤 스스로 '나간 판 저장'을 해요. Play는 검토 중인 판도 '100%'로 보여 줘서, 이 판으로 쓰는 휴대폰이 보이거나 사람이 '게시됨 확인'을 눌러야 나간 것으로 봐요. 단계적 출시 중에는 저장하지 않아요. 그동안 고친 판으로 앱을 연 폰에는 그 폰에만 바로 안내가 가요. 새 판이 앞 판보다 나빠지면 '출시 멈춤을 생각해 보세요' 알림이 가요.</p>`, waiting || !p.ready ? "warn" : "");
@@ -259,7 +265,7 @@ export function loopViews(A) {
     const todo = steps(d);
     const waiting = sw.autoShip ? d.ships.find((s) => s.status === "waiting") : null;
     const next = todo[0];
-    const calm = waiting ? `${waiting.version} 안내는 ${left(waiting.until)} 저절로 나가요(Play 출시 감지에서 멈출 수 있어요).` : "판이 나가면 1시간 뒤 묶인 문의에 저절로 답해요.";
+    const calm = waiting ? `${waiting.version} 안내는 ${goes(waiting.until)} 저절로 나가요(${left(waiting.until)}, Play 출시 감지에서 멈출 수 있어요).` : "판이 나가면 1시간 뒤 묶인 문의에 저절로 답해요.";
     return `<section class="card loop-now" aria-labelledby="loop-now-h">
       <h2 class="loop-state" id="loop-now-h"><span class="pill ${stopped.length ? "warn" : "ok"}">${stopped.length ? "일부만 저절로" : "저절로 도는 중"}</span>
         <span>다음 출시 <b>${esc(trainDay(d.train.next))}</b></span><span>내가 할 것 <b>${todo.length}</b></span></h2>
