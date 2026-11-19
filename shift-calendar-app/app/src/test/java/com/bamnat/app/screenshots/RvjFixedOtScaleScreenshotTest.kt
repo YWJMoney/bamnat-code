@@ -62,7 +62,9 @@ class RvjFixedOtScaleScreenshotTest : ScreenshotBase() {
 
     @Test fun theAllowanceTakesHalfHoursDarkBig() = shoot("rvj_251_item_ot_direct_folded_dark_200", DARK, 2f) {
         itemDirect("22.5").invoke(this)
-        assertTrue(shows("22.5"))
+        // At 200% the field can sit under the sticky 급여 bar after the typing: bring it up before looking.
+        reveal("고정 연장 시간 (한 달)", exact = true)
+        assertTrue(shownWords().joinToString(" | "), appears("22.5"))
     }
 
     @Test fun offTheHalfHourIsSaid() = shoot("rvj_252_item_ot_off_grid_folded", FOLDED) {
