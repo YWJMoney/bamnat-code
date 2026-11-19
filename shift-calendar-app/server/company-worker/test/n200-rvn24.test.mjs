@@ -3,6 +3,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { server, device, signIn } from "./helpers.mjs";
+import { releaseTick } from "../src/release-desk.js";
 
 const NOW = Date.parse("2026-11-18T03:00:00Z");
 const DAY = 24 * 3600e3;
@@ -207,11 +208,13 @@ test("[RVN-24] SVC-102 출시 점검표: undoing a step reopens it, 판 건강 w
   assert.equal(v.left, 0);
   assert.equal(v.steps.find((s) => s.key === "notice").done, true);
   assert.match(v.steps.find((s) => s.key === "notice").hint, /2\.0\.0 업데이트 소식/);
-  // Undoing a step clears 끝: it counts as open again, and the auto steps are read as they are now.
+  // Undoing a step clears 끝: it counts as open again, and the auto steps are read as they are now. I22cc-03: what the server once saw
+  // (the 업데이트 소식, 굳힌 증거) stays seen for this version, so only the undone step is open.
   const undo = await step({ step: "play", done: false });
   assert.equal(undo.data.doneAt, null);
-  assert.equal(undo.data.left, 2);
-  assert.deepEqual(undo.data.steps.filter((s) => !s.done && !s.skipped).map((s) => s.key), ["play", "notice"]);
+  assert.equal(undo.data.left, 1);
+  assert.deepEqual(undo.data.steps.filter((s) => !s.done && !s.skipped).map((s) => s.key), ["play"]);
+  assert.match(undo.data.steps.find((s) => s.key === "notice").evidence, /2\.0\.0 업데이트 소식/);
   assert.equal((await DB.prepare("SELECT COUNT(*) AS n FROM release_runs WHERE done_at IS NULL").first()).n, 1);
   const list = (await call("GET", "/api/admin/release", undefined, h)).data;
   assert.equal(list.items[0].doneAt, null);
@@ -538,4 +541,108 @@ test("[RVN-24] T22c-06 the admin app calls one kind of work by one name: 관측,
   assert.deepEqual(CORE_NAMES.work, OBS_STYLE_NAMES);
   assert.equal(OBS_STYLE_NAMES.HOURLY, "알바");
   assert.equal(CORE_FLAGS.find((f) => f.key === "type.hourly").name, "알바 근무 유형");
+});
+
+test("[RVN-24] I22cc-03·U22c-04 출시 점검표 fills itself each hour: the Play track, the notice, 판 건강 a day on, with when and what it saw", async (t) => {
+  t.mock.timers.enable({ apis: ["Date"], now: NOW });
+  const { call, DB, env } = server();
+  const h = await signIn(call);
+  const set = (key, v) => DB.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)").bind(key, JSON.stringify(v)).run();
+  const one = async () => (await call("GET", "/api/admin/release/2.0.0", undefined, h)).data;
+  const stepOf = (v, key) => v.steps.find((s) => s.key === key);
+  assert.equal((await call("POST", "/api/admin/release", { version: "2.0.0" }, h)).status, 200);
+  // Without the Play key the step is a person's; with the track read, 단계적 20% is its 증거.
+  assert.match(stepOf(await one(), "play").hint, /Play 연결 열쇠가 없어/);
+  await set("play_track", { done: "1.39.0", rolling: { v: "2.0.0", fraction: 0.2 }, halted: null, at: Date.now() });
+  const day = (ms) => new Date(ms).toISOString();
+  await call("POST", "/api/admin/notices", { title: "2.0.0 업데이트 소식", body: "바뀐 것을 모았어요.", level: "info", from: day(Date.now()), until: day(Date.now() + 2 * DAY), action: { kind: "WHATS_NEW" } }, h);
+  await DB.prepare("INSERT INTO studio_materials (id, kind, pack, name, w, h, state, at) VALUES ('m1', 'icon', 'p', 'a', 1, 1, 'ok', 0)").run();
+  const seenAt = Date.now();
+  assert.equal((await releaseTick(env, seenAt)).changed, 1);
+  let v = await one();
+  for (const key of ["play", "notice", "materials", "market"]) {
+    const s = stepOf(v, key);
+    assert.equal(s.autoDone, true, key);
+    assert.equal(s.seenAt, seenAt, key);
+  }
+  assert.equal(stepOf(v, "play").evidence, "Play 단계적 출시 2.0.0 20%");
+  assert.match(stepOf(v, "notice").evidence, /2\.0\.0 업데이트 소식/);
+  assert.equal(stepOf(v, "materials").evidence, "공개 1 · 대기 0 · 숨김 0");
+  // An hour later nothing new: the 증거 is not written again.
+  t.mock.timers.tick(3600e3);
+  assert.equal((await releaseTick(env, Date.now())).changed, 0);
+  // The notice's days end: what was seen stays (it was posted for this version).
+  await DB.prepare("UPDATE settings SET value = '[]' WHERE key = 'notices'").run();
+  assert.equal(stepOf(await one(), "notice").done, true);
+  // Shipped; 기능 일정 확인 is a person's. 판 건강 a day on with too few phones: it says why and waits.
+  await set("shipped_version", { v: "2.0.0", at: Date.now(), by: "t" });
+  assert.equal((await call("POST", "/api/admin/release/2.0.0", { step: "flags", done: true }, h)).status, 200);
+  t.mock.timers.tick(DAY + 1000);
+  const use = DB.prepare("INSERT OR REPLACE INTO usage_days (day, app, phones) VALUES (?, ?, ?)");
+  await releaseTick(env, Date.now());
+  assert.match(stepOf(await one(), "health").hint, /이 판을 쓰는 휴대폰 숫자가 아직 없어/);
+  const today = new Date(Date.now() + 9 * 3600e3).toISOString().slice(0, 10);
+  await use.bind(today, "2.0.0", 10).run();
+  await use.bind(today, "1.39.0", 10).run();
+  await releaseTick(env, Date.now());
+  v = await one();
+  assert.equal(v.left, 1);
+  assert.match(stepOf(v, "health").hint, /휴대폰-날이 판마다 100보다 적어/);
+  // Enough phone-days on both versions and no more 문제 신고: 판 건강 is 저절로 확인, and the whole list ends by itself.
+  for (let i = 0; i < 5; i++) {
+    const d = new Date(Date.now() - i * DAY + 9 * 3600e3).toISOString().slice(0, 10);
+    await use.bind(d, "2.0.0", 60).run();
+    await use.bind(d, "1.39.0", 60).run();
+  }
+  const judged = Date.now();
+  assert.equal((await releaseTick(env, judged)).finished, 1);
+  v = await one();
+  assert.equal(v.left, 0);
+  assert.ok(v.doneAt);
+  const health = stepOf(v, "health");
+  assert.equal(health.autoDone, true);
+  assert.equal(health.seenAt, judged);
+  assert.match(health.evidence, /1\.39\.0보다 문제 신고·문의가 나빠지지 않았어요/);
+  const log = await DB.prepare("SELECT actor, detail FROM audit WHERE action = 'release_step' AND detail LIKE '%저절로%'").all();
+  assert.deepEqual(log.results.map((r) => [r.actor ?? "", r.detail]), [["", "모든 단계 끝(저절로)"]]);
+});
+
+test("[RVN-24] I22cc-03 판 건강 worse than the version before, or Play halted: the step says 나빠짐 and waits for a person", async (t) => {
+  t.mock.timers.enable({ apis: ["Date"], now: NOW });
+  const { call, DB, env } = server();
+  const h = await signIn(call);
+  const set = (key, v) => DB.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)").bind(key, JSON.stringify(v)).run();
+  const one = async () => (await call("GET", "/api/admin/release/2.0.0", undefined, h)).data;
+  assert.equal((await call("POST", "/api/admin/release", { version: "2.0.0" }, h)).status, 200);
+  await set("play_track", { done: "1.39.0", rolling: null, halted: "2.0.0", at: Date.now() });
+  await releaseTick(env, Date.now());
+  let v = await one();
+  let play = v.steps.find((s) => s.key === "play");
+  assert.equal(play.done, false);
+  assert.match(play.bad, /출시가 멈춰 있어요/);
+  assert.equal(v.bad, 1);
+  await set("shipped_version", { v: "2.0.0", at: Date.now(), by: "t" });
+  const use = DB.prepare("INSERT OR REPLACE INTO usage_days (day, app, phones) VALUES (?, ?, ?)");
+  for (let i = 0; i < 5; i++) {
+    const d = new Date(Date.now() - i * DAY + 9 * 3600e3).toISOString().slice(0, 10);
+    await use.bind(d, "2.0.0", 60).run();
+    await use.bind(d, "1.39.0", 60).run();
+  }
+  const bug = DB.prepare("INSERT INTO inquiries (id, device, kind, info, status, created_at, updated_at) VALUES (?, 'd', 'bug', ?, 'open', ?, ?)");
+  for (let i = 0; i < 6; i++) await bug.bind(`q${i}`, JSON.stringify({ app: "2.0.0 (54)" }), Date.now() - i * 3600e3, Date.now()).run();
+  t.mock.timers.tick(DAY + 1000);
+  await releaseTick(env, Date.now());
+  v = await one();
+  const health = v.steps.find((s) => s.key === "health");
+  assert.equal(health.done, false);
+  assert.match(health.bad, /문제 신고가 1\.39\.0보다 많아요/);
+  assert.equal(v.bad, 2);
+  // A person looks and says so; the 나빠짐 is theirs to clear, and the list is not ended by the hour.
+  assert.equal((await call("POST", "/api/admin/release/2.0.0", { step: "health", done: true }, h)).status, 200);
+  v = await one();
+  assert.equal(v.steps.find((s) => s.key === "health").bad, null);
+  assert.equal(v.bad, 1);
+  t.mock.timers.tick(3600e3);
+  await releaseTick(env, Date.now());
+  assert.equal((await one()).doneAt, null);
 });

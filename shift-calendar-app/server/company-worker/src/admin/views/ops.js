@@ -245,16 +245,17 @@ export function opsViews(A) {
     const edit = can("ops", "edit");
     const start = edit ? `<form data-form="launch-start" class="toolbar"><label class="sr" for="ls-v">판</label><input id="ls-v" name="version" required pattern="\\d{1,3}\\.\\d{1,3}\\.\\d{1,3}" placeholder="${esc(serverVersion() || "2.0.0")}" inputmode="decimal">
       <button class="btn primary small" type="submit">${icon(P.plus)}새 점검표</button></form>` : "";
-    const others = d.items.length > 1 ? `<div class="chips">${d.items.map((r) => `<a class="chip${r.version === run?.version ? " on" : ""}" href="${L.routeHash("launch", r.version, {})}">${esc(r.version)}${r.doneAt ? " ✓" : ` · ${r.left}`}</a>`).join("")}</div>` : "";
+    const others = d.items.length > 1 ? `<div class="chips">${d.items.map((r) => `<a class="chip${r.version === run?.version ? " on" : ""}" href="${L.routeHash("launch", r.version, {})}">${esc(r.version)}${r.doneAt ? " ✓" : ` · ${r.left}${r.bad ? " · 나빠짐" : ""}`}</a>`).join("")}</div>` : "";
     if (!run) return `${start}${empty("점검표가 없어요", "Play에 올릴 판을 적으면 할 일이 순서대로 나와요.")}`;
     const steps = `<ol class="launch-steps">${run.steps.map((s, i) => `<li class="${s.done ? "done" : s.skipped ? "skipped" : run.next === s.key ? "next" : ""}">
-        <span class="step-no">${s.done ? "✓" : i + 1}</span><div class="step-main"><b>${esc(s.name)}</b>${s.autoDone ? ' <span class="pill ok">저절로 확인</span>' : ""}${s.skipped ? ' <span class="pill">건너뜀</span>' : ""}
-        <p>${esc(s.what)}</p>${s.hint ? `<p class="meta">${esc(s.hint)}</p>` : ""}${s.doneAt ? `<p class="meta">${esc(s.by)} · ${esc(when(s.doneAt))}</p>` : ""}${s.note ? `<p class="meta">메모: ${esc(s.note)}</p>` : ""}
+        <span class="step-no">${s.done ? "✓" : i + 1}</span><div class="step-main"><b>${esc(s.name)}</b>${s.autoDone ? ' <span class="pill ok">저절로 확인</span>' : ""}${s.bad ? ' <span class="pill bad">나빠짐</span>' : ""}${s.skipped ? ' <span class="pill">건너뜀</span>' : ""}
+        <p>${esc(s.what)}</p>${s.seenAt ? `<p class="meta">${esc(when(s.seenAt))} 확인 · ${esc(s.evidence || s.hint)}</p>` : s.hint ? `<p class="meta">${esc(s.hint)}</p>` : ""}${s.doneAt ? `<p class="meta">${esc(s.by)} · ${esc(when(s.doneAt))}</p>` : ""}${s.note ? `<p class="meta">메모: ${esc(s.note)}</p>` : ""}
         <div class="actions start">${s.to ? `<a class="btn small" href="${esc(s.to)}">열기</a>` : ""}${edit ? (s.done && !s.autoDone ? `<button class="btn small ghost" type="button" data-act="launch-step" data-key="${s.key}" data-do="undo">되돌리기</button>`
           // 2.0.0 [RVN-24] 검토 SVC-102: 판 건강은 나간 지 하루가 지나기 전에는 '했어요'가 없어요(남은 시간은 바로 위 한 줄에).
+          // I22cc-03·U22c-04: 저절로 끝난 단계는 '언제 확인 · 무엇을 봤는지'를, 나빠짐이 뜬 단계는 그 까닭을 한 줄로 보여 줘요.
           : s.done ? "" : `${s.ready === false ? "" : `<button class="btn small" type="button" data-act="launch-step" data-key="${s.key}" data-do="done">했어요</button>`}<button class="btn small ghost" type="button" data-act="launch-step" data-key="${s.key}" data-do="skip">건너뛰기</button>`)
           + `<button class="btn small ghost" type="button" data-act="launch-step" data-key="${s.key}" data-do="note">메모</button>` : ""}</div></div></li>`).join("")}</ol>`;
-    return `${start}${others}<section class="card">${head(`${run.version} 출시 날`, run.doneAt ? `끝남 ${when(run.doneAt)}` : `남은 일 ${run.left}`, run.doneAt ? '<span class="pill ok">끝</span>' : "")}${steps}</section>`;
+    return `${start}${others}<section class="card">${head(`${run.version} 출시 날`, run.doneAt ? `끝남 ${when(run.doneAt)}` : `남은 일 ${run.left}${run.bad ? ` · 나빠짐 ${run.bad}` : ""}`, run.doneAt ? '<span class="pill ok">끝</span>' : "")}${steps}</section>`;
   }
 
   // ---- [ADM3-15][ADM3-33] 판 건강 ----

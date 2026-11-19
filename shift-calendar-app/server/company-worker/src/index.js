@@ -112,6 +112,7 @@ import { WORK_SCHEMA, workRoute } from "./work.js";
 import { DESK_COLUMNS, DESK_SCHEMA, DESK_SEED, deskRoute, keySession, keyView } from "./desk.js";
 import { LEDGER_SCHEMA, ledgerQuery, ledgerRoute } from "./ledger.js";
 import { LOOP_COLUMNS, LOOP_SCHEMA, effectTick, knownRoute, liveTick, loopRoute, playTick, shipTick, syncDev, updatePolicy, WAITING_SQL, waitingFrom } from "./loop.js";
+import { releaseTick } from "./release-desk.js";
 // 1.38 [ADM3] 관리자 앱 개편: 서버 감시·돈·사람·출시 점검표·판 건강·데이터 요청·백업·리뷰·사고·Claude 조종석.
 import { OPS_ALERT_SQL, OPS_BADGE_SQL, OPS_SCHEMA, morningExtra, opsAlertsFrom, opsArea, opsRoute, opsSteps } from "./admin-ops.js";
 // 1.38 [ADM3-01] 패스키(지문) 로그인.
@@ -303,7 +304,7 @@ function loopAnswer(e, id, text, at) {
 /** 2.0.0 [RVQ-12] wrangler.toml [triggers] crons와 같은 글자여야 해요(test/jobs-q1.test.mjs가 맞춰 봐요). */
 export const CRONS = { first: "17 * * * *", second: "47 * * * *", five: "*/5 * * * *" };
 /** 2.0.0 [RVQ-12] 47분에 도는 단계: Play·출시 안내·효과·응답 속도·운영(리뷰·백업·사고·요청)·개선 신호. 나머지는 17분. */
-export const SECOND_HALF = new Set(["play", "ship", "live", "effect", "watch", "reviews", "backup", "incident", "requests", "observe"]);
+export const SECOND_HALF = new Set(["play", "ship", "live", "effect", "release", "watch", "reviews", "backup", "incident", "requests", "observe"]);
 
 /** 2.0.0 [RVQ-12] 검토 SRV-14: 5분 작업의 단계(이름은 ops-watch.js JOB_NAMES). [RVQ-11] 광장 글 급증도 5분마다 봐요. */
 export const fiveMinuteSteps = (env) => [
@@ -337,6 +338,8 @@ const allHourlySteps = (env) => [
   ["ship", () => shipTick(env, Date.now(), loopAnswer)],
   ["live", () => liveTick(env, Date.now(), loopAnswer)],
   ["effect", () => effectTick(env, Date.now())], // 1.39 [LOOP-39] 출시 2주 뒤 효과 판정
+  // 2.0.0 [RVN-24] 검토 I22cc-03: 열린 출시 점검표의 증거 굳히기·하루 뒤 판 건강 판정·끝내기(Play 트랙을 읽은 뒤).
+  ["release", () => releaseTick(env, Date.now())],
   ["watch", () => flushWatch(env, Date.now(), true).then(() => pruneWatch(env, Date.now()))], // 1.38 [ADM3-19]
   ...opsSteps(env, () => playVitals(env, Date.now())),
   // 1.39 [OBS2-01][OBS2-04] Play 보고서(12시간마다 새로)와 개선 신호 합치기.
