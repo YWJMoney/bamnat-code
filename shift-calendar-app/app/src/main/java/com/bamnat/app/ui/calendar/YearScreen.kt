@@ -186,6 +186,10 @@ internal fun YearCounts(snap: ScheduleSnapshot, days: Collection<ResolvedDay>, s
     }
 }
 
+/** [RVH-99] 검토 PC-40: a month's tile counts days as the calendar's month summary does (any minute of work, a 대근 on a rest day included). */
+internal fun yearWorkDays(month: YearMonth, days: Map<LocalDate, ResolvedDay>): Int =
+    (1..month.lengthOfMonth()).count { (days[month.atDay(it)]?.totalMinutes ?: 0) > 0 }
+
 @Composable
 internal fun MiniMonth(month: YearMonth, days: Map<LocalDate, ResolvedDay>, heat: Map<LocalDate, Heat>?, weekStart: DayOfWeek, today: LocalDate, modifier: Modifier,
     style: com.bamnat.core.work.WorkStyle? = null, onOpen: () -> Unit) {
@@ -195,7 +199,7 @@ internal fun MiniMonth(month: YearMonth, days: Map<LocalDate, ResolvedDay>, heat
     val scheme = MaterialTheme.colorScheme
     val first = month.atDay(1).with(TemporalAdjusters.previousOrSame(weekStart))
     val weeks = ((java.time.temporal.ChronoUnit.DAYS.between(first, month.atEndOfMonth()) / 7) + 1).toInt()
-    val work = (1..month.lengthOfMonth()).count { days[month.atDay(it)]?.isWorkDay == true }
+    val work = yearWorkDays(month, days)
     Surface(
         shape = MaterialTheme.shapes.medium,
         color = scheme.surface,
@@ -223,6 +227,8 @@ internal fun MiniMonth(month: YearMonth, days: Map<LocalDate, ResolvedDay>, heat
                             heat != null -> heatColor(heat[date] ?: Heat.REST)
                             day?.leave != null -> scheme.tertiaryContainer
                             type != null && day.isWorkDay -> type.colorArgb.asColor().copy(alpha = 0.85f)
+                            // [RVH-99] Work on a day with no shift (a 대근, 특근 on a rest day) is filled too, in the one extra-work colour.
+                            day != null && day.totalMinutes > 0 -> scheme.secondaryContainer
                             else -> Color.Transparent
                         }
                         val sunday = date.dayOfWeek == DayOfWeek.SUNDAY || KoreanHolidays.isHoliday(date)
