@@ -44,6 +44,7 @@ import com.bamnat.core.imports.PhotoQuality
 import com.bamnat.core.pay.PhotoTurn
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
+import com.bamnat.app.ui.theme.bamnat
 import com.bamnat.app.ui.theme.Tone
 import com.bamnat.app.ui.theme.color
 
@@ -314,7 +315,7 @@ internal fun ScanButtons(
                 onAction = { if (handy) byHand() else stop() })
         }
         error?.let {
-            Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
+            Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.bamnat.caution) // 2.0.0 [RVJ-66] (HQ-103, 조건 6) 못 읽었어요: 다시 할 일
             fix?.takeIf { f -> f != com.bamnat.app.pay.OcrModel.Fix.AGAIN }?.let { f ->
                 TextButton(onClick = { com.bamnat.app.ui.imports.openFix(context, f) }, modifier = Modifier.heightIn(min = 48.dp)) { Text(f.label) }
             }
