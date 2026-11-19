@@ -4,6 +4,7 @@ import com.bamnat.core.tier.InviteTerms
 import com.bamnat.core.tier.WorkPlanTable
 import com.bamnat.core.work.TypeWords
 import com.bamnat.core.work.WorkStyle
+import com.bamnat.core.work.words
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -26,7 +27,9 @@ class RvjHelpSearchTest {
             root.walkTopDown().filter { it.isFile && it.extension == "kt" && it.name != "HelpFaq.kt" }.toList()
         }
         assertTrue("the sources are found from ${File(".").absolutePath}", files.size > 100)
-        files.joinToString("\n") { stripComments(it.readText()) } + "\n" + File("src/main/res/values/strings.xml").readText()
+        files.joinToString("\n") { stripComments(it.readText()) } + "\n" + File("src/main/res/values/strings.xml").readText() +
+            // The watch's own names (its face's 꾸미기 list).
+            "\n" + File("../wear/src/main/res/values/strings.xml").readText()
     }
 
     private fun stripComments(s: String): String =
@@ -42,7 +45,7 @@ class RvjHelpSearchTest {
     }
 
     /** Words an answer quotes as what people type, not what a screen says. */
-    private val typed = setOf("내일 3시", "다음 야간 때 알려 줘", "내일 저녁 6시 치과")
+    private val typed = setOf("내일 3시", "다음 야간 때 알려 줘", "내일 저녁 6시 치과", "내일 야간 대타 7시")
     private val typedDate = Regex("""^(\d+/\d+|다음주 [월화수목금토일]+) .+""")
 
     /** Shapes with a number or a name in them, and the screen that draws each. */
@@ -52,8 +55,17 @@ class RvjHelpSearchTest {
         "이달 시간외 41/57" to "CalendarScreen: 이달 시간외 \${it.text}",
     )
 
+    /**
+     * The rows a settings page draws in its kind's words ([com.bamnat.core.work.TypeWords.say] through `said`), and the names put
+     * together from a kind's own words (its pattern word + ' 설정', the calendar menu's): what each kind sees.
+     */
+    private val kindNames: Set<String> by lazy {
+        val literals = Regex(""""((?:[^"\\\n]|\\.)*)"""").findAll(screenText).map { it.groupValues[1] }.filter { '$' !in it && it.length in 4..40 }.toSet()
+        WorkStyle.entries.flatMap { s -> literals.map { com.bamnat.core.work.TypeWords.say(s, it) } + listOf("${s.words().pattern} 설정") }.toSet()
+    }
+
     private fun onScreen(word: String): Boolean =
-        word in screenText || templates.any { it.matches(word) } || word in typed || typedDate.matches(word) || word in shapes
+        word in screenText || templates.any { it.matches(word) } || word in typed || typedDate.matches(word) || word in shapes || word in kindNames
 
     @Test fun everyQuotedWordInTheAnswersIsOnAScreen() {
         val missing = sortedSetOf<String>()
