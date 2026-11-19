@@ -349,7 +349,7 @@ object SlipTable {
             places = ordered.map { places[it] }
             out = ordered.map { out[it] }
         }
-        return Laid(SlipVote.Result(PayslipRead(out, PayslipReader.monthOf(text)), flags, text), places)
+        return Laid(SlipVote.Result(PayslipRead(out, PayslipReader.monthOf(text), PayslipReader.companyOf(text)), flags, text), places)
     }
 
     /**
@@ -1011,7 +1011,7 @@ object SlipReading {
         }
         // Items before the totals, as one payslip lists them.
         val order = lines.indices.sortedBy { if (lines[it].role in TOTALS) 1 else 0 }
-        val merged = PayslipRead(order.map { lines[it] }, read.firstNotNullOfOrNull { it.read.month })
+        val merged = PayslipRead(order.map { lines[it] }, read.firstNotNullOfOrNull { it.read.month }, read.firstNotNullOfOrNull { it.read.company })
         val flags = order.indices.filter { order[it] in unsure }.toSet()
         val fixed = SlipSums.repair(merged, flags)
         return SlipVote.Result(fixed.read, fixed.unsure, read.joinToString("\n") { it.text })

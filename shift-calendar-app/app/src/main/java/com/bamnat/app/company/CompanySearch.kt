@@ -318,6 +318,27 @@ class CompanySearch(
         }
     }
 
+    /**
+     * 2.0.0 [RVN-22] 검토 I10bc-01: the list's two tags as the day's digest said them. The same as the list kept here: it is as good as
+     * checked now (the next [warm] does not ask for [ALL_FRESH_MS]). True then; false when one moved (the list is taken at the next warm).
+     */
+    suspend fun tagsSaid(names: String, counts: String): Boolean {
+        load()
+        val w = whole ?: return false
+        if (w.etag != names + LIST_TAG_SEP + counts) return false
+        w.checked = now()
+        return true
+    }
+
+    /**
+     * 2.0.0 [RVN-24] 검토 I10ac-02: the companies of the whole list ([SPD-11]) whose 대표 주기 is a rotation, for 내 달력이 회사를
+     * 찾아 주기; empty before the list was ever read. Nothing is asked of the server.
+     */
+    suspend fun withOrders(): List<CompanyHit> {
+        load()
+        return whole?.list?.map { it.hit }?.filter { it.lead?.steps != null }.orEmpty()
+    }
+
     @Volatile private var warming: kotlinx.coroutines.Job? = null
     @Volatile private var warmedAt = Long.MIN_VALUE / 2
 

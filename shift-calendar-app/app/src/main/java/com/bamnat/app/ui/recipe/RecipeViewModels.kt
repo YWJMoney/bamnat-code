@@ -805,7 +805,13 @@ class RecipeDetailViewModel(private val c: AppContainer, val code: String, val c
         viewModelScope.launch {
             runCatching { c.companyApi.flag(device, post, reason) }
                 .onSuccess { _state.value = _state.value.copy(message = "신고했어요. 운영자가 살펴봐요") }
-                .onFailure { _state.value = _state.value.copy(message = RecipeClient.problem(it)) }
+                .onFailure {
+                    // 2.0.0 [RVN-22] 검토 I10bb-01: no connection keeps the 신고 on the phone; it goes once online.
+                    if (com.bamnat.app.company.SmallSends.waits(it)) {
+                        com.bamnat.app.company.SmallSends.later(c, c.companyStore, com.bamnat.app.company.SmallSends.flag(post, reason))
+                        _state.value = _state.value.copy(message = com.bamnat.app.company.SmallSends.FLAG_LINE)
+                    } else _state.value = _state.value.copy(message = RecipeClient.problem(it))
+                }
         }
     }
 

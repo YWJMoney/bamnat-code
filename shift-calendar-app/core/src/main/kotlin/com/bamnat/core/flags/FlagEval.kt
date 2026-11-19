@@ -280,6 +280,6 @@ object FlagEval {
         // 1.38 [P3-01] Phase 3 관문: the developer starts a pilot or confirms the watch, in the admin app.
     )
     val TYPE_WORDS = mapOf(
-        "SHIFT" to "교대", "DAY" to "일근", "HOURLY" to "시급", "FIELD" to "현장", "BUSINESS" to "자영업", "INVEST" to "투자",
+        "SHIFT" to "교대", "DAY" to "일근", "HOURLY" to "알바", "FIELD" to "현장", "BUSINESS" to "자영업", "INVEST" to "투자",
     )
 }

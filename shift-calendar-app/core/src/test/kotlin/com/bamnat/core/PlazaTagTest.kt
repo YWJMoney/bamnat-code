@@ -102,4 +102,21 @@ class PlazaTagTest {
         assertEquals(c, com.bamnat.core.plaza.WorkCard.of { c.fields()[it] })
         assertNull(com.bamnat.core.plaza.WorkCard.of { mapOf("d" to 3, "w" to 5, "n" to 0, "s" to 0, "o" to 0)[it] })
     }
+
+    @Test
+    fun `T10b-03 알바·현장 days not written yet are not 쉬는 날`() {
+        val first = LocalDate.of(2026, 11, 1)
+        val work = type(1, "근무", 9, 18)
+        val rest = type(2, "휴무", null, null)
+        fun day(i: Int, t: ShiftType?) = com.bamnat.core.schedule.ResolvedDay(
+            date = first.plusDays(i.toLong()), shiftType = t,
+            source = if (t == null) com.bamnat.core.schedule.DaySource.NONE else com.bamnat.core.schedule.DaySource.OVERRIDE,
+            start = t?.start, end = t?.end, breakMinutes = 0, scheduledMinutes = if (t?.isOff == false) 540 else 0, alarmSkipped = false, entry = null,
+        )
+        // 1일 일함, 2일 쉼(적음), 3~5일 아직 안 적음, 6일 일함.
+        val c = com.bamnat.core.plaza.WorkCard.ofDays(listOf(day(0, work), day(1, rest), day(2, null), day(3, null), day(4, null), day(5, work)))!!
+        assertEquals(2, c.work)
+        assertEquals("적은 쉬는 날만", 1, c.off)
+        assertEquals(6, c.days)
+    }
 }

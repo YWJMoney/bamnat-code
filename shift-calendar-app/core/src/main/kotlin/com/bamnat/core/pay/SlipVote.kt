@@ -133,10 +133,13 @@ object SlipVote {
             have += k
             if (counts.size > 1 || found.size < others.size) unsure += at
         }
-        val read = anchor.copy(lines = lines)
+        // 2.0.0 [RVN-24] I10ac-01: the company another reading found when the anchor's did not.
+        val company = anchor.company ?: others.firstNotNullOfOrNull { it.company }
+        val read = anchor.copy(lines = lines, company = company)
         // A put-together that no longer adds up is worse than the anchor as read.
         if (adds(anchor) && !adds(read)) {
-            val named = anchor.copy(lines = anchor.lines.mapIndexed { i, l -> renamed[i]?.let { l.copy(name = it.name, role = it.role, check = it.check) } ?: l })
+            val named = anchor.copy(lines = anchor.lines.mapIndexed { i, l -> renamed[i]?.let { l.copy(name = it.name, role = it.role, check = it.check) } ?: l },
+                company = company)
             return Result(named, checked(named, disagreed), anchorText)
         }
         return Result(read, checked(read, unsure), anchorText)

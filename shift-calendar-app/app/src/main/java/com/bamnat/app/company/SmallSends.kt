@@ -12,7 +12,7 @@ import org.json.JSONObject
  */
 object SmallSends {
     data class Call(
-        /** "use", "vote" or "leave". */
+        /** "use", "vote", "leave" or (2.0.0 [RVN-22] I10bb-01) "flag": a 신고 of post [company] for reason [setup]. */
         val kind: String,
         val company: String,
         val setup: String = "",
@@ -38,7 +38,7 @@ object SmallSends {
         }
     }
 
-    private val KINDS = setOf("use", "vote", "leave")
+    private val KINDS = setOf("use", "vote", "leave", "flag")
 
     fun use(company: String, setup: String, on: Boolean, cal: String) = Call("use", company, setup, on, cal = cal)
     fun vote(company: String, setup: String, ok: Boolean, verified: Boolean = false, why: String? = null) =
@@ -59,6 +59,18 @@ object SmallSends {
     /** [call] could not go just now ([waits]): kept for [OutboxJob], the last word for the same thing winning. */
     fun later(c: AppContainer, store: CompanyStore, call: Call) = keep(c, store, call)
     fun leave(company: String) = Call("leave", company)
+
+    /**
+     * 2.0.0 [RVN-22] 검토 I10bb-01: a 신고 that could not reach the server (지하·공장 안) waits on the phone like the rest, one per post,
+     * and goes once online. Its line under the screen: [FLAG_LINE].
+     */
+    fun flag(post: String, reason: String) = Call("flag", post, reason)
+    const val FLAG_LINE = "인터넷이 연결되면 신고를 보낼게요"
+
+    /** What waits for a connection in the 광장 and 회사 screens' line: these words, a 되돌리기 and a 나눌게요 not sent yet. */
+    fun waitingCount(c: AppContainer): Int = runCatching {
+        c.companyScopes().sumOf { s -> s.store.keptCalls.size + (if (s.autoShare.takingBack) 1 else 0) + (if (s.store.autoOnce) 1 else 0) }
+    }.getOrDefault(0)
 
     /** [call] now; kept in [store] for [OutboxJob] when the server could not be reached. True when it went. */
     suspend fun send(c: AppContainer, store: CompanyStore, call: Call): Boolean {
@@ -114,6 +126,7 @@ object SmallSends {
             "use" -> c.companyApi.use(device, call.company, call.setup, call.on, call.cal)
             "vote" -> c.companyApi.vote(device, call.company, call.setup, ok = call.on, verified = call.verified, why = call.why.ifEmpty { null })
             "leave" -> c.companyApi.leave(device, call.company)
+            "flag" -> c.companyApi.flag(device, call.company, call.setup)
         }
     }
 

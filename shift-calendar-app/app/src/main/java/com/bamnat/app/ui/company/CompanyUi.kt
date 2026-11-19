@@ -9,6 +9,9 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.CardGiftcard
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
@@ -26,6 +29,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.isSpecified
 import com.bamnat.app.company.CompanyTerms
 import com.bamnat.app.company.ReportStatus
 
@@ -41,10 +45,12 @@ fun companyProblem(e: com.bamnat.app.company.CompanyException): String = when (e
 fun companyProblem(code: String, field: String? = null): String = when (code) {
     "offline" -> "인터넷에 연결되지 않았어요. 연결한 뒤 다시 해 주세요"
     "rate_limited" -> com.bamnat.app.company.RateLimits.text()
-    "amount", "phone", "email" -> when (field) {
+    "amount", "phone", "email", "account" -> when (field) {
         "note" -> when (code) {
             "amount" -> "한마디에 금액은 빼 주세요. ‘기본급의 10%’처럼 비율로 적으면 돼요"
             "phone" -> "한마디에 전화번호는 빼 주세요"
+            // 2.0.0 [RVN-22] 처리방침 3.14 N몫 ①.
+            "account" -> "한마디에 계좌번호는 빼 주세요"
             else -> "한마디에 메일 주소는 빼 주세요"
         }
         "dept" -> "부서 이름에 숫자나 연락처처럼 보이는 글자를 빼 주세요"
@@ -109,17 +115,29 @@ fun rewardText(months: Int, launched: Boolean = false): String =
 /** The same in a few words, for a pill next to a button. */
 fun rewardShort(terms: CompanyTerms?): String? = terms?.rewardMonths?.takeIf { it > 0 }?.let { "채택되면 프로 ${it}개월" }
 
-/** A soft pill: 🎁 채택되면 프로 3개월. */
+/**
+ * A soft pill: 채택되면 프로 3개월, after a gift.
+ * 2.0.0 [RVN-22] HQ-112 (총괄이 #502 사진에서 찾음, 조건 5·6: 복숭아색, 어두운 모드 갈색 바탕이 주의로 읽혔어요): the one quiet background the
+ * guide cards have, the meaning in the icon's colour only (a gift, in the app's own colour), the words in the body colour. Every reward
+ * line uses it (회사 찾기 '처음으로 알려 주세요', 내 설정 나누기, 광장 보상 안내, 공개 근무주기), so they change together.
+ */
 @Composable
 fun RewardPill(text: String, modifier: Modifier = Modifier) {
     // Rounded rather than a full pill, so a narrow screen that wraps it into two lines still looks tidy.
-    Surface(shape = MaterialTheme.shapes.large, color = MaterialTheme.colorScheme.tertiaryContainer, modifier = modifier) {
-        Text(
-            "🎁 $text",
-            style = MaterialTheme.typography.labelLarge,
-            color = MaterialTheme.colorScheme.onTertiaryContainer,
-            modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
-        )
+    Surface(shape = MaterialTheme.shapes.large, color = MaterialTheme.colorScheme.surfaceContainerHigh, modifier = modifier) {
+        androidx.compose.foundation.layout.Row(Modifier.padding(horizontal = 12.dp, vertical = 6.dp), verticalAlignment = Alignment.Top) {
+            // As tall as the words' first line, so it grows with the words at 글자 200% and stays beside the first line when they wrap.
+            val style = MaterialTheme.typography.labelLarge
+            val line = with(androidx.compose.ui.platform.LocalDensity.current) {
+                (if (style.lineHeight.isSpecified) style.lineHeight else style.fontSize * 1.4f).toDp()
+            }
+            androidx.compose.foundation.layout.Box(Modifier.height(line), contentAlignment = Alignment.Center) {
+                Icon(Icons.Outlined.CardGiftcard, contentDescription = null, tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(with(androidx.compose.ui.platform.LocalDensity.current) { style.fontSize.toDp() } + 2.dp))
+            }
+            androidx.compose.foundation.layout.Spacer(Modifier.width(8.dp))
+            Text(text, style = style, color = MaterialTheme.colorScheme.onSurface)
+        }
     }
 }
 

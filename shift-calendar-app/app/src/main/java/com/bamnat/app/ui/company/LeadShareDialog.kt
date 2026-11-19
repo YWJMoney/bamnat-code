@@ -80,8 +80,9 @@ fun LeadShareDialog(step: Step, lead: LeadShare, onOpen: (String) -> Unit) {
                         Text("‘$company’에서 일하는 다른 분이 이 근무주기를 찾으면 바로 쓸 수 있어요.", style = MaterialTheme.typography.bodyLarge)
                         Text("근무 이름·시간·순서만 나눠요. 급여 금액, 이름, 연락처, 사진은 보내지 않아요.",
                             style = MaterialTheme.typography.bodyMedium)
-                        // 2.0.0 [RVN-11] COMP-44 What the yes goes on doing, in the words it is given for: the cycle only.
-                        Text("앞으로 근무주기를 바꾸면 하루 한 번 저절로 고쳐 올려요. 급여 계산 방식은 그때마다 따로 물어요. ${settingsWay("plaza.autoShare", c.settingsRepository.current.workStyle)}에서 바꿀 수 있어요.",
+                        // 2.0.0 [RVN-11] COMP-44 What the yes goes on doing, in the words it is given for: the cycle (and its hours) only.
+                        // [RVN-22] I10bc-03 the next morning, with 취소 until then.
+                        Text("앞으로 근무주기·근무 시간을 바꾸면 다음 날 오전에 저절로 고쳐 올려요(그 전에 취소할 수 있어요). 급여 계산 방식은 그때마다 따로 물어요. ${settingsWay("plaza.autoShare", c.settingsRepository.current.workStyle)}에서 바꿀 수 있어요.",
                             style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                     is Step.Working -> Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {

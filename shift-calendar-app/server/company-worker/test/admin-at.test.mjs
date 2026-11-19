@@ -39,7 +39,7 @@ test("[ADMCP-02][ADMCP-04][ADMCP-06] the list filters by kind, 복사 전 and on
   assert.equal(all.total, 3);
   for (const x of all.inquiries) {
     assert.equal(x.copied, null, "nobody copied it yet");
-    assert.match(x.sender, /^[0-9a-f]{6}$/);
+    assert.match(x.sender, /^[0-9a-f]{8}$/); // 2.0.0 [RVN-24] SVC-106: 8자
   }
   assert.deepEqual(all.fresh, { bugs: 2, today: 2 });
   assert.deepEqual((await list("&kind=bug")).inquiries.map((x) => x.id).sort(), [bug.id, same.id].sort());
@@ -49,7 +49,7 @@ test("[ADMCP-02][ADMCP-04][ADMCP-06] the list filters by kind, 복사 전 and on
   assert.equal(all.inquiries.find((x) => x.id === q.id).sender, mine, "the same phone, the same mark");
   assert.notEqual(all.inquiries.find((x) => x.id === same.id).sender, mine);
   assert.deepEqual((await list(`&sender=${mine}`)).inquiries.map((x) => x.id).sort(), [bug.id, q.id].sort());
-  assert.equal((await list("&sender=ZZ")).total, 3, "only six small hex letters are a phone's mark");
+  assert.equal((await list("&sender=ZZ")).total, 3, "only six to eight small hex letters are a phone's mark");
   // [ADMCP-05] 문의 찾기 also reads what came with it (app version, phone) and a question's id.
   assert.deepEqual((await list("&q=1.27.0")).inquiries.map((x) => x.id), [same.id]);
   assert.deepEqual((await list("&q=SM-S918N")).inquiries.map((x) => x.id), [bug.id]);

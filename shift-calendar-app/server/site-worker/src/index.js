@@ -3,6 +3,10 @@
 // GitHub Pages (https://ywjmoney.github.io/-/) stays where the pages live and where the app reads its
 // remote files: the app reads those with redirects off (RemoteFilesStore), so the Pages site must never
 // move to a custom domain. This Worker shows the same pages at bamnat.app without moving them.
+//
+// 2.0.0 [RVN-24] 검토 SVC-110: every visit still runs this Worker (a cache rule in front of it is a dashboard setting). On Workers Paid
+// (사용자 2026-11-12) that is billing, not a daily cap shared with the API servers; the query no longer reaches GitHub, so a robot
+// changing ?x= only meets the cache.
 
 const ORIGIN = "https://ywjmoney.github.io/-";
 const HOME = "https://bamnat.app";
@@ -15,6 +19,13 @@ const ELSEWHERE = { "/privacy.html": "/privacy/" };
  * share server's bamnat.app/app-ads.txt route, so this Worker passes the request on to it rather than to Pages (404 there).
  */
 const ADS = "https://s.bamnat.app/app-ads.txt";
+
+/**
+ * 2.0.0 [RVN-24] 검토 SVC-110: what GitHub Pages and its cache in front add about themselves; not ours to pass on (and
+ * access-control-allow-origin: * would let any site read the pages from script).
+ */
+const UPSTREAM_ONLY = ["server", "via", "x-github-request-id", "access-control-allow-origin", "x-served-by", "x-cache", "x-cache-hits", "x-timer",
+  "x-fastly-request-id", "x-proxy-cache", "x-origin-cache"];
 
 /**
  * 2.0.0 [RVQ-55] 검토 SVC-39: 모든 답에 붙는 보안 머리. 공개 페이지라 다른 사이트 안에 넣어 보이지 않게(가로채기 막기) 하고,
@@ -72,7 +83,9 @@ export default {
       const ads = await fetch(ADS, { method: request.method, redirect: "manual", cf: { cacheEverything: true, cacheTtl: 300 } });
       return secure(new Response(ads.body, { status: ads.status, headers: { "content-type": "text/plain; charset=utf-8" } }));
     }
-    const upstream = await fetch(ORIGIN + url.pathname + url.search, {
+    // 2.0.0 [RVN-24] SVC-110: the pages read no query on the server (utm_* is read by the page's own script from the address bar), so
+    // the query stays here: one cached copy a page, and ?x=1, ?x=2, … never reach GitHub one by one.
+    const upstream = await fetch(ORIGIN + url.pathname, {
       method: request.method,
       redirect: "manual",
       cf: { cacheEverything: true, cacheTtl: 300 },
@@ -84,9 +97,16 @@ export default {
       return secure(new Response(body, { status: 404, headers: { "content-type": "text/html; charset=utf-8", "cache-control": "public, max-age=300" } }));
     }
     const response = new Response(upstream.body, upstream);
-    // GitHub sends /terms to /terms/ on its own host; keep the visitor on bamnat.app.
+    for (const h of UPSTREAM_ONLY) response.headers.delete(h);
+    // GitHub sends /terms to /terms/ on its own host; keep the visitor on bamnat.app, with the query they came with.
     const location = upstream.headers.get("location");
-    if (location) response.headers.set("location", location.replace(/^https?:\/\/ywjmoney\.github\.io\/-/, HOME));
+    if (location) {
+      const to = location.replace(/^https?:\/\/ywjmoney\.github\.io\/-/, HOME);
+      response.headers.set("location", url.search && !to.includes("?") ? to + url.search : to);
+    }
+    // One address for search engines whatever query came along (the same pages are also on ywjmoney.github.io/-/).
+    if (upstream.status === 200) response.headers.set("link", `<${HOME}${url.pathname}>; rel="canonical"`);
+    // nosniff and the referrer rule are among SECURITY's headers.
     return secure(response);
   },
 };

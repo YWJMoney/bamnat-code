@@ -34,6 +34,7 @@ jobs:
       - run: npm test
         working-directory: shift-calendar-app/server/company-worker
       # 2.0.0 [RVQ-55] 사이트 서버(bamnat.app 앞의 Worker): 없는 주소의 밤낮 404와 보안 머리. 전에는 CI에서 돌지 않았어요.
+      # [RVN-24] 검토 SVC-110의 질의·머리·HEAD 시험도 같은 파일이라 이 한 번으로 돌아요(N #548을 합치며 겹친 단계를 하나로).
       - run: node --test test/site.test.mjs
         working-directory: shift-calendar-app/server/site-worker
       # [ADMUX-08] The admin app's happy-dom screen tests need the devDependency from the lock file.

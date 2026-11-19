@@ -43,6 +43,13 @@ object PushPhone {
             .setProjectId(BuildConfig.FCM_PROJECT_ID).setGcmSenderId(BuildConfig.FCM_SENDER_ID).build())
     }.getOrNull()
 
+    /**
+     * 2.0.0 [RVN-22] 검토 COMP-55·I10ba-05: the server holds this phone's token, so an answer comes by push and the job's look
+     * is only the fallback.
+     */
+    fun given(context: Context): Boolean = configured &&
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getString(K_SENT, null) != null
+
     private fun wanted(c: AppContainer): Boolean = configured && (
         (c.inquiryApi.enabled && c.inquiryStore.asked && c.settingsRepository.current.plazaNews) || PlazaPush.wanted(c))
 
@@ -133,11 +140,15 @@ class PushCheckJob : JobService() {
     companion object {
         internal const val INQUIRY = "inquiry"
         private const val K_KIND = "kind"
-        /** One per kind, so an answer's push does not take the place of a question's. */
+        /**
+         * One per kind, so an answer's push does not take the place of a question's. 2.0.0 [RVN-22] (갈래 N 7차에서 찾음): 4410~4412 were
+         * also the sleep jobs' (SleepRecordOffer 4410, SleepNoTap 4411·4412, 갈래 I), so a push took a waiting sleep job's place; now
+         * 4420~4422 (JobIdsTest holds every job number to one owner).
+         */
         private fun id(kind: String) = when (kind) {
-            PlazaPush.ANSWER -> 4411
-            PlazaPush.QUESTION -> 4412
-            else -> 4410
+            PlazaPush.ANSWER -> 4421
+            PlazaPush.QUESTION -> 4422
+            else -> 4420
         }
 
         /** What a push asked for: in an expedited job where the system allows one, else at once. */

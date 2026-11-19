@@ -170,7 +170,7 @@ export function glanceViews(A) {
     const lastCfg = cf.at(-1)?.n ?? null;
     tiles.push(tile("keep", "하루 사용자", `${lastUsers === null ? "—" : lastUsers}<small>명</small>`,
       `Play가 본 사용자(Android 진단 켠 휴대폰)${pu.at(-1)?.day ? ` · ${md(pu.at(-1).day)}` : ""}`,
-      `${L.spark(pu.map((x) => x.n), { name: "하루 사용자" })}<div class="ob-sub"><span class="gl-k">앱 → 서버 요청</span><b>${lastCfg === null ? "—" : lastCfg}</b><small>어제 · 휴대폰 구별 없이 센 요청 수(14일)</small>${L.spark(cf.map((x) => x.n), { name: "서버 요청" })}</div>`,
+      `${L.spark(pu.map((x) => x.n), { name: "하루 사용자" })}<div class="ob-sub"><span class="gl-k">앱 → 서버 요청</span><b>${lastCfg === null ? "—" : lastCfg}</b><small>어제 · 휴대폰 구별 없이 센 설정 읽기 수(14일). 앱의 읽기 주기가 바뀐 판이 퍼지면 사용자가 그대로여도 바뀌어요</small>${L.spark(cf.map((x) => x.n), { name: "서버 요청" })}</div>`,
       o.quality.vitals?.error ? "Play vitals 권한 필요" : "Play vitals · 서버"));
     // 판: 어느 판에 몇 대가 있는지.
     const v = p.versions;

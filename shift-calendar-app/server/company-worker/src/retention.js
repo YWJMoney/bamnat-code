@@ -73,7 +73,7 @@ export const RETENTION = [
   },
   {
     table: "settings",
-    what: "운영 설정: 채택 기준, 정식 출시, **공지(`notices`)**, **꺼 둔 기능(`switches_off`)**, **이달 할 일 체크(`ops:YYYY-MM`)**, **친구 초대 규칙(`invite_friends`·`invite_days`·`invite_months`·`invite_cap_months`, 1.26)**, 백업·정기 작업 진행, 해시용 소금(서버 비밀값 RATE_SALT가 없을 때만, 백업에는 잠가서)",
+    what: "운영 설정: 채택 기준, 정식 출시, **공지(`notices`)**, **꺼 둔 기능(`switches_off`)**, **이달 할 일 체크(`ops:YYYY-MM`)**, **친구 초대 규칙(`invite_friends`·`invite_days`·`invite_months`·`invite_cap_months`, 1.26)**, **마을 돌봄 달마다 합계(`care_numbers`, 사람을 가리키는 값 없이 12달, 2.0.0)**, 백업·정기 작업 진행, 해시용 소금(서버 비밀값 RATE_SALT가 없을 때만, 백업에는 잠가서)",
     why: "운영",
     keep: "운영자가 바꿀 때",
     link: "아니요",
@@ -763,6 +763,24 @@ export const RETENTION = [
     backup: false,
   },
   {
+    table: "plaza_pulse",
+    what: "**2.0.0** [RVN-24] 광장 방마다 머리 숫자(오늘 글·답 기다리는 질문·근무 중)와 오늘 출근 수 한 줄(누가 썼는지 없음)",
+    why: "광장 열기를 빠르게(1분 동안 같은 줄)",
+    keep: "덮어씀(글을 쓰거나 출근을 누르면 지움)",
+    link: "아니요",
+    none: "덮어씀",
+    backup: false,
+  },
+  {
+    table: "plaza_quiet",
+    what: "**2.0.0** [RVN-24] 광장 답 바로 알림을 끈 휴대폰: 설치 해시·종류(끈 것만)",
+    why: "끈 휴대폰을 깨우지 않기",
+    keep: "다시 켜면 바로, 끈 지 180일이 지나고 알림 토큰도 없으면, 모두 지우기",
+    link: "예",
+    device: { device: "delete" },
+    prune: { where: "device NOT IN (SELECT device FROM push_phones) AND at < ?", days: 180 },
+  },
+  {
     table: "plaza_watch",
     what: "**1.39** [PLZC-41] 같은 근무 새 질문 알림: 설치 해시·광장·근무형태",
     why: "알림 받을 휴대폰 고르기",
@@ -1050,6 +1068,14 @@ export const RETENTION = [
     keep: "운영자가 내릴 때",
     link: "아니요",
     none: "운영자가 내릴 때",
+  },
+  {
+    table: "studio_material_log",
+    what: "**2.0.0** [RVN-24] 스튜디오 재료 묶음을 바꾼 기록: 묶음·공개 상태나 무료 여부·바꾸기 전 재료마다의 값·관리자 이름·때·되돌린 관리자와 때",
+    why: "누가 언제 공개·잠금을 바꿨는지, 그 바꿈만 되돌리기",
+    keep: "400일",
+    link: "관리자만",
+    prune: { where: "at < ?", days: 400 },
   },
   {
     table: "studio_need_links",

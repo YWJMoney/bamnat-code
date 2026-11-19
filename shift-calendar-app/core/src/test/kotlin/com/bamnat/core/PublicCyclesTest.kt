@@ -181,6 +181,13 @@ class PublicCyclesTest {
         assertEquals(null, PublicCycles.orderCodes("휴휴"))
         assertEquals(null, PublicCycles.orderCodes("포스코"))
         assertEquals("포스코", PublicCycles.search("ㅍㅅㅋ").first().company)
+        // 2.0.0 [RVN-22] 검토 COMP-56: a name made of order letters ('오비') keeps its name's rows after the order's.
+        val obRows = listOf(
+            all.first().copy(id = "t-order", company = "가나 물류", display = "가나 물류", site = "", codes = "EB"),
+            all.first().copy(id = "t-name", company = "오비맥주", display = "오비맥주 이천공장", site = "", codes = "DDNNOO"),
+        )
+        assertEquals(listOf("t-order", "t-name"), PublicCycles.search("오비", rows = obRows).map { it.id })
+        assertEquals(listOf("t-name"), PublicCycles.search("오비맥주", rows = obRows).map { it.id })
         // An old source is marked by its year.
         assertEquals(22, PublicCycles.yearsOld(all.first { it.company == "대구 법인택시" }, LocalDate.of(2026, 11, 6)))
     }
@@ -270,5 +277,24 @@ class PublicCyclesTest {
         val again = PublicPay.prefill(p, factory, since)
         assertEquals(p.items, again.items)
         assertNotNull(PublicPay.usualItems(factory).firstOrNull())
+    }
+
+    @Test fun onlyAFactoryGetsFactoryAllowancesAndOnlyANurseANursesWay() {
+        // 2.0.0 [RVN-22] 검토 T10b-01: 운수·호텔·물류·관제 and an 업종 not known here are not 제조 (no 확인 필요 factory allowances).
+        listOf("호텔", "물류", "택시", "버스", "철도", "도시철도", "관제", "공항").forEach { ind ->
+            val row = all.firstOrNull { it.industry == ind } ?: return@forEach
+            assertEquals(ind, null, PublicPay.occupation(row))
+            assertTrue(ind, PublicPay.usualItems(row).isEmpty())
+        }
+        assertEquals(null, PublicPay.occupation(all.first().copy(industry = "새로운 업종", formKey = "4조2교대")))
+        assertEquals(Occupation.MANUFACTURING, PublicPay.occupation(all.first { it.industry == "반도체" }))
+        assertEquals(Occupation.MANUFACTURING, PublicPay.occupation(all.first { it.industry == "발전" }))
+        // T10b-02: 병원 is 간호사 only for a nurse's row.
+        assertEquals(Occupation.NURSE, PublicPay.occupation(all.first { it.company == "전주바로병원" }))
+        assertEquals(WorkForm.NURSE, PublicPay.form(all.first { it.company == "전주바로병원" }))
+        val radiology = all.first { it.company == "전주바로병원" }.copy(site = "영상의학과 방사선사", display = "전주바로병원 [방사선사] · 병원")
+        assertEquals(null, PublicPay.occupation(radiology))
+        assertTrue(PublicPay.form(radiology) != WorkForm.NURSE)
+        assertEquals(Occupation.PUBLIC, PublicPay.occupation(all.first { it.industry == "세관" }))
     }
 }

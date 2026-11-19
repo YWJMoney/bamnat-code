@@ -272,8 +272,15 @@ export function marketViews(A) {
     }
     const c = d.counts ?? {};
     const freeOf = (p) => (p.free === p.n ? "all" : p.free === 0 ? "none" : "third");
+    // 2.0.0 [RVN-24] 검토 U22c-05: 묶음마다 마지막으로 공개·숨김·무료 잠금을 바꾼 분과 때, 그 바꿈만 되돌리기(15초가 지나도).
+    const lastOf = (name) => {
+      const l = d.last?.[name];
+      if (!l) return "";
+      const who = l.undoneAt ? `${esc(ago(l.undoneAt))}${l.undoneBy ? ` · ${esc(l.undoneBy)}` : ""} 되돌림 (${esc(l.what)})` : `${esc(ago(l.at))}${l.by ? ` · ${esc(l.by)}` : ""} · ${esc(l.what)}`;
+      return `<small class="meta">${who}${edit && !l.undoneAt ? ` <button class="btn small ghost" type="button" data-act="material-undo" data-id="${l.id}" data-key="${esc(name)}">되돌리기</button>` : ""}</small>`;
+    };
     const row = ([name, p]) => `<li><form data-form="material-free" data-key="${esc(name)}" class="row"><span class="row-main"><b>${esc(name)}</b>
-        <small>${p.n}개 · 공개 ${p.ok}${p.waiting ? ` · 대기 ${p.waiting}` : ""}${p.hidden ? ` · 숨김 ${p.hidden}` : ""} · 무료 ${p.free}</small></span>
+        <small>${p.n}개 · 공개 ${p.ok}${p.waiting ? ` · 대기 ${p.waiting}` : ""}${p.hidden ? ` · 숨김 ${p.hidden}` : ""} · 무료 ${p.free}</small>${lastOf(name)}</span>
         ${edit ? `<span class="row-side inline"><select name="mode" aria-label="${esc(name)} 무료·광고">${[["all", "모두 무료"], ["third", "3분의 1 무료"], ["none", "모두 광고·프로"]]
           .map(([k, l]) => `<option value="${k}"${freeOf(p) === k ? " selected" : ""}>${l}</option>`).join("")}</select>
           <button class="btn small" type="submit">바꾸기</button>
@@ -399,12 +406,17 @@ export function marketViews(A) {
   function recipeMonthView(d, edit) {
     const by = (k) => d.items.filter((i) => i.style === k).map((i) => i.maker);
     // 2.0.0 [RVQ-27] 검토 SVC-59: 🏅와 마을 맨 위 '이달의 제작자'는 여기서 고른 분만. 쓰는 분 수로 센 분은 후보로만 보여요(가짜 설치로 살 수 없게).
-    const cand = (k) => d.candidates?.[k] ?? [];
+    // 2.0.0 [RVN-24] 검토 SVC-107: 후보는 그달 쓰는 분 d.floor명부터. 이달 후보가 없으면(달 초) 지난달 끝난 셈의 후보를 보여 주고 그대로 고를 수 있어요.
+    const now = (k) => d.candidates?.[k] ?? [];
+    const last = (k) => d.last?.[k] ?? [];
+    const cand = (k) => (now(k).length ? now(k) : last(k));
+    const who = (list) => list.map((c) => `${esc(c.face ?? "🙂")} ${esc(c.nick ?? "이름 없음")}(${esc(c.maker)}, 쓰는 분 ${c.users})`).join(" · ");
+    const floor = Number(d.floor) || 30;
     // 2.0.0 [RVA-72] PC-209(조건 1·4): 설명은 줄 아래 접힌 한 줄(첫 문장 + 자세히)로, 첫 줄이 화면 위 25% 안에서 시작해요.
-    const how = `<details class="tip" data-key="recipe-month-how"><summary>${esc(d.month)}. 근무 유형마다 3명까지 골라 마을 맨 위에 🏅와 함께 보여요.</summary><p class="hint">팔로우한 분이 없는 분에게 보여요. 고른 분이 없으면 아무도 보이지 않아요. 이달에 쓰는 분이 많은 만든 분이 후보로 보여요. 프로필을 열어 본 뒤 ‘후보 그대로 고르기’로 한 번에 골라요.</p></details>`;
+    const how = `<details class="tip" data-key="recipe-month-how"><summary>${esc(d.month)}. 근무 유형마다 3명까지 골라 마을 맨 위에 🏅와 함께 보여요.</summary><p class="hint">팔로우한 분이 없는 분에게 보여요. 고른 분이 없으면 아무도 보이지 않아요. 그달 쓰는 분이 ${floor}명 이상인 만든 분만 후보로 보여요(달 초에는 지난달 후보). 프로필을 열어 본 뒤 ‘후보 그대로 고르기’로 한 번에 골라요.</p></details>`;
     return `<ul class="rows">${RECIPE_STYLES.map(([k, label]) => `<li><form data-form="recipe-month" data-key="${k}" class="row">
         <span class="row-main"><b>${esc(label)}</b><small>${by(k).length ? esc(by(k).join(", ")) : "고른 분 없음"}</small>
-        ${cand(k).length ? `<small data-candidates>후보: ${cand(k).map((c) => `${esc(c.face ?? "🙂")} ${esc(c.nick ?? "이름 없음")}(${esc(c.maker)}, 쓰는 분 ${c.users})`).join(" · ")}</small>` : ""}
+        ${now(k).length ? `<small data-candidates>후보: ${who(now(k))}</small>` : last(k).length ? `<small data-candidates="last">지난달(${esc(d.lastMonth ?? "")}) 후보: ${who(last(k))}</small>` : ""}
         ${edit ? `<input name="makers" aria-label="${esc(label)} 제작자 id" placeholder="id 3개, 쉼표로" value="${esc(by(k).join(", "))}">` : ""}</span>
         ${edit ? `<span class="row-side"><button class="btn small" type="submit">저장</button>${cand(k).length && !by(k).length ? `<button class="btn small" type="button" data-act="recipe-month-take" data-key="${k}">후보 그대로 고르기</button>` : ""}</span>` : ""}</form></li>`).join("")}</ul><div class="list-foot">${how}</div>`;
   }

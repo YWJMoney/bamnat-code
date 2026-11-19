@@ -155,6 +155,9 @@ function groupOf(type) {
   return Object.keys(WORK_GROUPS).find((g) => WORK_GROUPS[g].includes(type)) ?? "ops";
 }
 
+/** 2.0.0 [RVN-24] SVC-106: /work/count의 1분 기억(isolate 안). */
+const COUNT_MEMO = new Map();
+
 export async function workRoute(request, env, url, path, now) {
   const method = request.method;
   const actor = env.actor;
@@ -184,6 +187,7 @@ export async function workRoute(request, env, url, path, now) {
       names: { states: WORK_STATE_NAMES, wait: WAIT_REASONS, done: DONE_REASONS, types: WORK_TYPES, groups: WORK_GROUP_NAMES }, rules: WORK });
   }
   if (path === "/work" && method === "POST") {
+    COUNT_MEMO.clear();
     // {keys: [...], state, reason, note}: one or many at once; each change goes to the log with what it was before.
     const body = await readJson(request, 16 * 1024);
     const keys = Array.isArray(body.keys) ? [...new Set(body.keys.filter((k) => typeof k === "string" && /^[a-z_]{2,20}:[A-Za-z0-9._-]{1,60}$/.test(k)))].slice(0, 100) : [];
@@ -221,10 +225,18 @@ export async function workRoute(request, env, url, path, now) {
         : DONE_REASONS[r.reason] ?? WAIT_REASONS[r.reason] ?? "", note: r.note, by: r.by_name, at: iso(r.at) })) });
   }
   // 할 일함 메뉴 숫자: 남은 일과 기한 넘김.
+  // 2.0.0 [RVN-24] 검토 SVC-106: 숫자 둘을 위해 목록 전체를 다시 만들어요. 같은 관리자가 1분 안에 다시 물으면 그 숫자를 그대로 줘요
+  // (목록을 바꾸는 POST /work는 그 관리자의 숫자를 지워요).
   if (path === "/work/count" && method === "GET") {
+    const key = `${actor?.id ?? "?"}|${JSON.stringify(actor?.perms ?? null)}|${Boolean(actor?.owner)}`;
+    const hit = COUNT_MEMO.get(key);
+    if (hit && now - hit.at < 60_000 && now >= hit.at) return json(hit.value);
     const list = await workList(env, actor, now);
     const open = list.filter((x) => x.state !== "done");
-    return json({ open: open.length, late: open.filter((x) => x.late).length });
+    const value = { open: open.length, late: open.filter((x) => x.late).length };
+    if (COUNT_MEMO.size > 50) COUNT_MEMO.clear();
+    COUNT_MEMO.set(key, { at: now, value });
+    return json(value);
   }
   return null;
 }

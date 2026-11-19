@@ -166,6 +166,29 @@ class LServerAlarmTest {
         assertTrue("agreed to this version: nothing changed", PlazaRules.changedSince(PlazaRules.VERSION).isEmpty())
     }
 
+    /** 2.0.0 [RVN-22] 운영 규칙 3판 (COMP-14 방 글 금액, 처리방침 3.14 게시일 + 7일): 4항 한 줄만 바뀌고, 2판 위에서만 서요. */
+    @Test fun moneyRulesAskAgainOnlyForTheAmountLineAndOnlyOverTheCareRules() {
+        // Before the server takes amounts nothing changes for anyone: 2판 stays the one in force.
+        assertEquals(PlazaRules.VERSION_CARE, PlazaRules.version(care = true, money = false))
+        assertTrue(PlazaRules.agreed(PlazaRules.VERSION_CARE, care = true, money = false))
+        // From that day 3판: someone who agreed to 2판 is asked again, with the one changed line (4항) marked.
+        assertEquals(PlazaRules.VERSION_MONEY, PlazaRules.version(care = true, money = true))
+        assertFalse(PlazaRules.agreed(PlazaRules.VERSION_CARE, care = true, money = true))
+        assertEquals(listOf(3), PlazaRules.changedSince(PlazaRules.VERSION_CARE, care = true, money = true))
+        assertTrue(PlazaRules.agreed(PlazaRules.VERSION_MONEY, care = true, money = true))
+        // Someone still on 1판 sees both the 2판 line and the 4항 line marked.
+        assertEquals(listOf(3, PlazaRules.LINES.lastIndex), PlazaRules.changedSince(PlazaRules.VERSION, care = true, money = true))
+        val lines = PlazaRules.lines(care = true, money = true)
+        assertEquals(PlazaRules.LINES.size, lines.size)
+        assertTrue(lines[3].contains("금액") && lines[3].contains("계좌번호") && lines[3].contains("50%"))
+        assertTrue("an amount is written as a rate in the rules, never as 원", lines.none { Regex("\\d+원").containsMatchIn(it) })
+        assertEquals(PlazaRules.lines(care = true).drop(4), lines.drop(4))
+        // A phone not yet under 2판 (community.care off) keeps 1판 even when the server takes amounts: the number never runs ahead.
+        assertFalse(PlazaRules.money(roomMoney = true, care = false))
+        assertEquals(PlazaRules.VERSION, PlazaRules.version(care = false, money = true))
+        assertEquals(PlazaRules.lines(care = false), PlazaRules.lines(care = false, money = true))
+    }
+
     @Test fun theRestNudgeSaysTheAlarmsWorkBreaksARule() {
         val n = Fixtures.night; val d = Fixtures.day; val o = Fixtures.off
         val monday = LocalDate.of(2026, 11, 2)

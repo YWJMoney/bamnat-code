@@ -114,6 +114,30 @@ test("SVC-91: 지켜보는 분이 많으면 가장 오래 못 들은 분부터, 
   assert.ok(next.devices.every((d) => Number(d.slice(-4)) >= 20), "those told an hour before the first 20 come first");
 });
 
+test("[RVN-24] I22cc-02 답할 사람 찾기: of many watchers, those whose answers here helped someone are asked first", async (t) => {
+  const { DB, env } = await plaza(t);
+  const room = "style-shift";
+  const writer = await deviceHash(device(901));
+  const many = PLAZA_PUSH.watchers + 20;
+  for (let i = 0; i < many; i++) {
+    const dev = `watcher-${String(i).padStart(4, "0")}`;
+    await DB.prepare("INSERT INTO plaza_watch (device, room, form, at) VALUES (?, ?, 'FOUR_TEAM', ?)").bind(dev, room, NOW - (many - i) * 60e3).run();
+    await DB.prepare("INSERT INTO push_phones (device, token, at) VALUES (?, ?, ?)").bind(dev, `${dev}-token-0123456789abcdef:APA91b`, NOW).run();
+  }
+  // The five newest watchers (cut by the 200 before) wrote answers someone picked as 도움 됐어요 in this 광장; one more did elsewhere only.
+  const helper = (i, where) => DB.prepare(`INSERT INTO posts (id, company_id, grp, device, body, status, created_at, parent)
+    VALUES (?, ?, 'room', ?, '답', 'shown', ?, 'q-${i}')`).bind(`a-${i}`, where, `watcher-${String(i).padStart(4, "0")}`, NOW - HOUR).run()
+    .then(() => DB.prepare(`INSERT INTO posts (id, company_id, grp, device, body, kind, status, created_at, answer)
+      VALUES (?, ?, 'room', 'asker', '질문', 'question', 'shown', ?, ?)`).bind(`q-${i}`, where, NOW - 2 * HOUR, `a-${i}`).run());
+  for (const i of [215, 216, 217, 218, 219]) await helper(i, room);
+  await helper(214, "style-day");
+  const told = await plazaPushAfter(env, { room, writer, parent: null, kind: "question", form: "FOUR_TEAM", on: true }, NOW);
+  assert.equal(told.devices.length, PLAZA_PUSH.watchers);
+  for (const i of [215, 216, 217, 218, 219]) assert.ok(told.devices.includes(`watcher-0${i}`), `helper ${i} is asked`);
+  assert.ok(!told.devices.includes("watcher-0214"), "a helper of another 광장 waits its turn");
+  assert.deepEqual(told.devices.slice(0, 5), ["watcher-0215", "watcher-0216", "watcher-0217", "watcher-0218", "watcher-0219"]);
+});
+
 // ---- [RVN-05] SVC-97 할 일함: 다른 칸의 줄 상태·기록은 그 칸 권한이 있어야 바꾸고 봐요 ----
 
 const APP = { "x-admin": "1", origin: ORIGIN };
@@ -192,4 +216,29 @@ test("COMP-42: 모두 지우기 takes the push token, the watched 광장, the la
   // The other phone's stay.
   const other = await deviceHash(device(1));
   assert.equal((await DB.prepare("SELECT COUNT(*) AS n FROM push_phones WHERE device = ?").bind(other).first()).n, 1);
+});
+
+test("I10bb-02: 서버에 있는 내 정보 counts this phone's rows by kind, and 모두 지우기 leaves 0 but what the law keeps", async (t) => {
+  const { call } = await plaza(t);
+  const { mineGroups, MINE_GROUPS } = await import("../src/index.js");
+  // Every group's tables are in the retention book with an install column (so deviceRows counts them).
+  const { RETENTION, deviceColumns } = await import("../src/retention.js");
+  const withDevice = new Set(RETENTION.filter((r) => deviceColumns(r).length).map((r) => r.table));
+  for (const g of MINE_GROUPS) for (const table of g.tables) assert.ok(withDevice.has(table), `${g.key}: ${table}`);
+  assert.deepEqual(mineGroups({ posts: 2, post_votes: 1, counters: 3, subs: 1 }).filter((g) => g.n > 0),
+    [{ key: "posts", n: 2 }, { key: "votes", n: 1 }, { key: "law", n: 1, stays: "law" }, { key: "other", n: 3 }]);
+  const mine = async () => Object.fromEntries((await call("GET", "/api/mine", undefined, as(2))).data.groups.filter((g) => g.n > 0).map((g) => [g.key, g.n]));
+  assert.equal((await call("GET", "/api/mine", undefined, from(2))).status, 400);
+  assert.equal((await call("POST", "/api/push/phone", { device: device(2), token: token(2) }, from(2))).status, 200);
+  await write(call, 2, "야간 끝나고 다들 뭐 드세요?");
+  await call("POST", "/api/plaza/watch", { device: device(2), room: "style-shift", form: "FOUR_TEAM" }, from(2));
+  const before = await mine();
+  assert.equal(before.posts, 1);
+  assert.equal(before.alerts, 2);
+  assert.equal((await call("DELETE", "/api/mine", undefined, as(2))).status, 200);
+  const after = await mine();
+  assert.equal(after.posts, undefined);
+  assert.equal(after.alerts, undefined);
+  // Only what stays by law or until it ends may be left.
+  for (const key of Object.keys(after)) assert.ok(["law", "limits"].includes(key), `${key} left after 모두 지우기`);
 });

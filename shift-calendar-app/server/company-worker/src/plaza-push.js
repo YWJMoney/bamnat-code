@@ -16,7 +16,33 @@ export const PLAZA_PUSH_SCHEMA = [
     PRIMARY KEY (device, room))`,
   `CREATE INDEX IF NOT EXISTS plaza_watch_form ON plaza_watch (room, form)`,
   `CREATE TABLE IF NOT EXISTS plaza_pushed (device TEXT NOT NULL, kind TEXT NOT NULL, at INTEGER NOT NULL, PRIMARY KEY (device, kind))`,
+  // 2.0.0 [RVN-24] 검토 I22ca-03·U22c-07: '내 질문에 답이 오면 바로 알림'을 끈 휴대폰(끈 것만 한 줄, 켜면 지움). 문의 답 알림 토큰이 있어도
+  // 그 폰을 깨우지 않아요(배터리·FCM).
+  `CREATE TABLE IF NOT EXISTS plaza_quiet (device TEXT NOT NULL, kind TEXT NOT NULL, at INTEGER NOT NULL, PRIMARY KEY (device, kind))`,
 ];
+
+/** Kinds a phone can turn off on the server ([plazaQuietRoute]); 같은 근무 새 질문은 plaza_watch를 지우면 돼요. */
+export const PLAZA_QUIET_KINDS = ["plaza_answer"];
+
+/**
+ * 2.0.0 [RVN-24] I22ca-03 POST /api/plaza/quiet {device, kind: "plaza_answer", off}: off true keeps one line so the server sends this phone
+ * no answer push; off false takes it away. Turning off is always taken (even while plaza.people is off or the hour's limit is spent).
+ */
+export async function plazaQuietRoute(request, env) {
+  const body = await readJson(request, 512);
+  const id = deviceId(body?.device);
+  if (!id) return json({ error: "device", field: "device" }, 400);
+  if (!PLAZA_QUIET_KINDS.includes(body.kind)) return json({ error: "kind", field: "kind" }, 400);
+  if (typeof body.off !== "boolean") return json({ error: "off", field: "off" }, 400);
+  const dev = await deviceHash(id);
+  if (!body.off) {
+    await run(env, "DELETE FROM plaza_quiet WHERE device = ? AND kind = ?", dev, body.kind);
+    return json({ ok: true, off: false });
+  }
+  const now = Date.now();
+  await run(env, "INSERT INTO plaza_quiet (device, kind, at) VALUES (?, ?, ?) ON CONFLICT (device, kind) DO UPDATE SET at = excluded.at", dev, body.kind, now);
+  return json({ ok: true, off: true });
+}
 export const PLAZA_PUSH = { answerGap: HOUR / 12, questionGap: 3 * HOUR, watchers: 200, perHour: 30 };
 const PLAZA_PUSH_ROOMS = { "style-shift": "SHIFT", "style-day": "DAY" };
 
@@ -86,15 +112,22 @@ export async function plazaPushAfter(env, { room, writer, parent, kind, form, on
       const q = (await all(env, "SELECT device, kind, status FROM posts WHERE id = ?", parent))[0];
       if (!q || q.kind !== "question" || q.status !== "shown" || q.device === writer) return null;
       if ((await all(env, "SELECT 1 AS x FROM recipe_blocks WHERE device = ? AND maker = ?", q.device, maker)).length) return null;
+      // I22ca-03: the question's writer turned 답 알림 off.
+      if ((await all(env, "SELECT 1 AS x FROM plaza_quiet WHERE device = ? AND kind = 'plaza_answer'", q.device)).length) return { kind: "plaza_answer", devices: [] };
       if ((await recentlyTold(env, [q.device], "plaza_answer", PLAZA_PUSH.answerGap, now)).size) return { kind: "plaza_answer", devices: [] };
       return { kind: "plaza_answer", devices: await tellAndMark(env, [q.device], "plaza_answer", now) };
     }
     if (kind !== "question" || !form || !PLAZA_PUSH_ROOMS[room]) return null;
-    const watchers = (await all(env, `SELECT w.device FROM plaza_watch w
+    // 2.0.0 [RVN-24] 검토 I22cc-02 답할 사람 찾기: of the watchers, those whose answers in this 광장 helped someone (도움 됐어요) come first,
+    // then the longest waiting. The phone still holds the notice through sleep and work, and words it as an ask on a day off.
+    const watchers = (await all(env, `SELECT w.device,
+        (SELECT COUNT(*) FROM posts a CROSS JOIN posts q ON q.answer = a.id WHERE a.device = w.device AND a.company_id = ?1 AND a.status = 'shown'
+          AND q.status = 'shown' AND q.device <> a.device) AS helped
+      FROM plaza_watch w
       LEFT JOIN plaza_pushed p ON p.device = w.device AND p.kind = 'plaza_question'
-      WHERE w.room = ? AND w.form = ? AND w.device <> ? AND (p.at IS NULL OR p.at <= ?)
-        AND NOT EXISTS (SELECT 1 FROM recipe_blocks b WHERE b.device = w.device AND b.maker = ?)
-      ORDER BY COALESCE(p.at, 0) ASC, w.at ASC LIMIT ${PLAZA_PUSH.watchers}`,
+      WHERE w.room = ?1 AND w.form = ?2 AND w.device <> ?3 AND (p.at IS NULL OR p.at <= ?4)
+        AND NOT EXISTS (SELECT 1 FROM recipe_blocks b WHERE b.device = w.device AND b.maker = ?5)
+      ORDER BY helped > 0 DESC, COALESCE(p.at, 0) ASC, w.at ASC LIMIT ${PLAZA_PUSH.watchers}`,
     room, form, writer, now - PLAZA_PUSH.questionGap, maker)).map((r) => r.device);
     return { kind: "plaza_question", devices: await tellAndMark(env, watchers, "plaza_question", now) };
   } catch (e) {

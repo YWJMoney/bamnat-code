@@ -345,6 +345,8 @@ class MainActivity : ComponentActivity() {
         AppLock.onStart(this, c.settingsRepository.settings.value.appLock, HomeRequests.awaitingResult)
         HomeRequests.onStart()
         c.verifyAlarms()
+        // 2.0.0 [RVN-22] 검토 I10bc-02: this half hour's open, kept on this phone, and the next reading ahead before a likely open.
+        com.bamnat.app.company.ReadAheadJob.sawOpen(this)
         // [TYPE-04] Shop days that passed with no sales become 임시휴무 when the app is opened.
         // [PERF-03] 324-2 (검토 A6): at most once in [CATCH_UP_EVERY]; a day turns over far less often than the app
         // comes back. 알람 점검 and the 정식 출시 switch below keep running every time (they keep their own pace).

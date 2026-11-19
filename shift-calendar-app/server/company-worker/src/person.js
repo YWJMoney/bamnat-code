@@ -1,5 +1,5 @@
 import { all, batch, one, stmt } from "./index.js";
-import { DAY } from "./units.js";
+import { DAY, deviceMark, markRange } from "./units.js";
 import { isBillingRecord } from "./ask-check.js";
 
 // ---- 1.38 [ADM3-11] 사람 옆 패널(휴대폰 한 대를 중심으로) ----
@@ -8,7 +8,7 @@ import { isBillingRecord } from "./ask-check.js";
 // 이름·연락처는 없어요(새로 모으지 않음). 관리자 앱은 해시 앞 6자('보낸 휴대폰')만 보여 주고, 해시 전체는 화면에 내보내지 않아요.
 // 문의(inquiries 권한)를 가진 사람만 열어요. 결제·동의 칸은 최고 관리자나 보상(rewards) 권한이 있을 때만 채워요.
 
-const PERSON_MARK = /^[0-9a-f]{6}$/;
+const PERSON_MARK = /^[0-9a-f]{6,8}$/;
 const PERSON_INQ = /^[A-Za-z0-9]{8,32}$/;
 
 /** 문의 번호나 '보낸 휴대폰' 6자로 그 설치의 해시를 찾아요. 6자가 둘 이상에 맞으면 ambiguous. */
@@ -18,9 +18,10 @@ export async function findDevice(env, { inquiry, mark }) {
     return r ? { device: r.device } : { missing: true };
   }
   if (mark && PERSON_MARK.test(mark)) {
+    // 2.0.0 [RVN-24] 검토 SVC-106: LIKE 대신 범위(색인을 타요).
     const rows = await all(env, `SELECT DISTINCT device FROM (
-      SELECT device FROM inquiries WHERE device LIKE ?1 UNION SELECT device FROM subs WHERE device LIKE ?1
-      UNION SELECT device FROM posts WHERE device LIKE ?1 UNION SELECT device FROM reports WHERE device LIKE ?1) LIMIT 3`, `${mark}%`);
+      SELECT device FROM inquiries WHERE device >= ?1 AND device < ?2 UNION SELECT device FROM subs WHERE device >= ?1 AND device < ?2
+      UNION SELECT device FROM posts WHERE device >= ?1 AND device < ?2 UNION SELECT device FROM reports WHERE device >= ?1 AND device < ?2) LIMIT 3`, ...markRange(mark));
     if (!rows.length) return { missing: true };
     if (rows.length > 1) return { ambiguous: rows.length };
     return { device: rows[0].device };
@@ -83,7 +84,7 @@ export async function personView(env, device, now, { money = false } = {}) {
   const refundAsks = inq.filter((q) => q.billing_at || isBillingRecord(q.first ?? "")).length;
   if (refundAsks) flags.push({ tone: "warn", text: `결제·환불 문의 ${refundAsks}번` });
   return {
-    mark: device.slice(0, 6), app, type, flags,
+    mark: deviceMark(device), app, type, flags,
     inquiries: inq.map((q) => ({ id: q.id, kind: q.kind, status: q.status, at: q.created_at, days: ago(now, q.created_at), first: String(q.first ?? "").slice(0, 80), billing: Boolean(q.billing_at) })),
     counts: {
       reports: sumBy(reports), posts: sumBy(posts), postFlags: posts.reduce((n, r) => n + (r.flags ?? 0), 0), recipes: sumBy(recipes),

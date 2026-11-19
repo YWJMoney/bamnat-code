@@ -21,6 +21,13 @@ object WayPick {
         val parts: Map<SlipGlance.Part, Long> = emptyMap(),
         /** Allowances and bonuses by the name printed on the payslip. */
         val allowances: Map<String, Long> = emptyMap(),
+        /** 2.0.0 [RVN-24] I10ac-01: the hours (minutes) the payslip prints for a 가산, for what an hour of it comes to. */
+        val minutes: Map<SlipGlance.Part, Int> = emptyMap(),
+        /**
+         * 2.0.0 [RVN-24] I10ac-01: read from a payslip whole (a photo or its text), so a 가산 or an allowance it does not print is
+         * one it does not pay; typed by hand it says nothing of what is left out.
+         */
+        val whole: Boolean = false,
     ) {
         companion object {
             /** The pick's view of a payslip read from a photo or text ([PayslipRead.payslip]). */
@@ -32,6 +39,12 @@ object WayPick {
                     p.holidayPay?.let { put(SlipGlance.Part.HOLIDAY, it) }
                 },
                 allowances = p.allowances,
+                minutes = buildMap {
+                    p.overtimeMinutes?.takeIf { it > 0 }?.let { put(SlipGlance.Part.OVERTIME, it) }
+                    p.nightMinutes?.takeIf { it > 0 }?.let { put(SlipGlance.Part.NIGHT, it) }
+                    p.holidayMinutes?.takeIf { it > 0 }?.let { put(SlipGlance.Part.HOLIDAY, it) }
+                },
+                whole = true,
             )
         }
     }
@@ -40,7 +53,14 @@ object WayPick {
      * One version worked out: [id] the server's setup id, [glance] how it stands against the payslip, [unknown] the names of
      * allowances it pays that differ by person and the payslip did not name (left out of its total, said under it).
      */
-    data class Tried(val id: String, val month: MonthPay, val glance: SlipGlance.Result, val unknown: List<String>) {
+    data class Tried(
+        val id: String,
+        val month: MonthPay,
+        val glance: SlipGlance.Result,
+        val unknown: List<String>,
+        /** 2.0.0 [RVN-24] I10ac-01: how much of the payslip's shape (수당 이름·가산 꼴) the version has. */
+        val fit: SlipShape.Fit = SlipShape.Fit(emptyList()),
+    ) {
         val gap: Long get() = abs(glance.diff)
     }
 
@@ -79,12 +99,30 @@ object WayPick {
 
     /** [month] against the payslip. */
     fun tried(id: String, month: MonthPay, slip: Slip): Tried =
-        Tried(id, month, SlipGlance.of(month, slip.gross, slip.parts), month.missing.map { it.name }.distinct())
+        Tried(id, month, SlipGlance.of(month, slip.gross, slip.parts), month.missing.map { it.name }.distinct(), SlipShape.of(slip, month))
 
-    /** The versions tried, the closest first: a match before a miss, then the smaller gap, then the order the server gave. */
+    /**
+     * The versions tried, the closest first: a match before a miss, then (2.0.0 [RVN-24] I10ac-01) the one with fewer items unlike
+     * the payslip — the same 수당 and 가산 꼴 say it is the same way even when a month's amounts are off — then the smaller gap, then
+     * the order the server gave.
+     */
     fun rank(tried: List<Tried>): List<Tried> =
-        tried.withIndex().sortedWith(compareBy<IndexedValue<Tried>>({ if (it.value.glance.matched) 0 else 1 }, { it.value.gap }, { it.index }))
+        tried.withIndex().sortedWith(compareBy<IndexedValue<Tried>>({ if (it.value.glance.matched) 0 else 1 }, { it.value.fit.misses },
+            { it.value.gap }, { it.index }))
             .map { it.value }
+
+    /**
+     * 2.0.0 [RVN-24] I10ac-01: the payslip, read whole, and [t] agree on the total and on every item: '맞아요' may go with putting it in,
+     * in one tap (it counts as a payslip check, [SlipProof.MATCH]).
+     */
+    fun sure(t: Tried, slip: Slip): Boolean = slip.whole && t.glance.matched && t.fit.whole
+
+    /** 2.0.0 [RVN-24] I10ac-01: "(항목 9/10)" after the line, for a payslip read whole; empty otherwise. */
+    fun items(t: Tried, slip: Slip): String = if (!slip.whole) "" else t.fit.count()?.let { " ($it)" }.orEmpty()
+
+    /** 2.0.0 [RVN-24] I10ac-01: "명세서와 다른 곳: 야간·식대", for a payslip read whole; null when nothing differs. */
+    fun differ(t: Tried, slip: Slip): String? =
+        t.fit.differ.takeIf { slip.whole && it.isNotEmpty() }?.let { "명세서와 다른 곳: ${it.take(4).joinToString("·")}" + if (it.size > 4) " 외 ${it.size - 4}곳" else "" }
 
     /**
      * What the best one says: "이 방식이 10월 명세서와 3,200원 차이로 가장 맞아요". With one version only it says how close that one
@@ -93,12 +131,13 @@ object WayPick {
     fun line(best: Tried, count: Int, slip: Slip, won: (Long) -> String): String {
         val m = "${slip.month.monthValue}월 명세서"
         val gap = if (best.gap == 0L) "차이 없이" else "${won(best.gap)} 차이로"
+        val items = items(best, slip)
         return when {
             far(best, slip) -> "${m}와 ${won(best.gap)} 차이가 나서 맞는 방식이 없어요. 기본급과 내 수당이 명세서와 같은지 먼저 봐 주세요"
-            best.glance.matched && count > 1 -> "이 방식이 ${m}와 $gap 가장 맞아요"
-            best.glance.matched -> "이 방식이 ${m}와 $gap 맞아요"
-            count > 1 -> "${m}와 ${won(best.gap)} 차이가 나요. 고른 방식이 가장 가까워요"
-            else -> "${m}와 ${won(best.gap)} 차이가 나요"
+            best.glance.matched && count > 1 -> "이 방식이 ${m}와 $gap 가장 맞아요$items"
+            best.glance.matched -> "이 방식이 ${m}와 $gap 맞아요$items"
+            count > 1 -> "${m}와 ${won(best.gap)} 차이가 나요. 고른 방식이 가장 가까워요$items"
+            else -> "${m}와 ${won(best.gap)} 차이가 나요$items"
         }
     }
 

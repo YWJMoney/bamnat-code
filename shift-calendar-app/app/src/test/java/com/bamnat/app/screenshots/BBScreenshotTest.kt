@@ -180,7 +180,13 @@ class BBScreenshotTest : ScreenshotBase() {
         board(b)
         // 2.0.0 [RVN-18] 검토 U10a-04: the chips are one line with 펼치기 at its end (before, a row pushed sideways), so a calendar
         // that does not fit on a small phone at 200% is one tap away, all of them at once.
-        if (!shows("편의점 알바 · (주)예시정밀", exact = true)) tapText("달력 칩 모두 펼쳐 보기", exact = true)
+        // 2.0.0 [RVN-22] HQ-115 (Q1이 찾음): the picked chip, wider than the row in one line, is whole where it rests (its calendar over its
+        // company), folded or open.
+        val chip = "편의점 알바 달력의 광장, (주)예시정밀"
+        assertTrue(appears(chip, exact = true))
+        assertTrue("고른 칩이 접힌 줄에서 잘려요", whole(chip, exact = true))
+        tapText("달력 칩 모두 펼쳐 보기", exact = true)
         assertTrue(appears("편의점 알바 · (주)예시정밀", exact = true))
+        assertTrue("고른 칩이 펼친 줄에서 잘려요", whole(chip, exact = true))
     }
 }
