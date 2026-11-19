@@ -605,6 +605,9 @@ fun ShiftTypeEditorDialog(
 ) {
     // [CAL-30] I 리뷰 P14: what is being typed survives a fold or a turn of the phone.
     var draft by rememberSaveable(initial, stateSaver = ShiftTypeSaver) { mutableStateOf(initial) }
+    // 2.0.0 [RVH-89] 검토 PC-12 (가게 영업 고치기에 '근무 시간'·'근로기준법 휴게'): a shop's 영업 reads as 영업, and the 근로기준법
+    // break line and the 야간 가산 break start are a worker's, so a shop owner's kind leaves them out.
+    val shop = noun == "영업"
     // 검토 WORK-19 From when the new hours count; kept like the rest of what is typed.
     var since by rememberSaveable(initial) { mutableStateOf(com.bamnat.core.schedule.SinceChoice.Way.FROM_TODAY) }
     val today = com.bamnat.app.ui.calendar.rememberToday()
@@ -666,7 +669,8 @@ fun ShiftTypeEditorDialog(
                         OutlinedTextField(
                             value = draft.name,
                             onValueChange = { v -> draft = draft.copy(name = v.take(10)) },
-                            label = { Text("이름 (예: 주간, 야간, 오픈)") },
+                            // 2.0.0 [RVH-89] 검토 PC-12: a shop's examples are its own (a 가게 has no 야간 to name).
+                            label = { Text(if (shop) "이름 (예: 점심, 저녁)" else "이름 (예: 주간, 야간, 오픈)") },
                             singleLine = true,
                             modifier = Modifier.weight(1f),
                         )
@@ -676,9 +680,10 @@ fun ShiftTypeEditorDialog(
                             // 2.0.0 [RVM-29] SN-16: two letters as a person counts them (👩‍⚕️ is one), never half an emoji (ShiftRules).
                             onValueChange = { v -> draft = draft.copy(label = com.bamnat.core.model.ShiftRules.cut(v,
                                 com.bamnat.core.model.ShiftRules.LABEL_LETTERS, com.bamnat.core.model.ShiftRules.LABEL_UNITS)) },
-                            label = { Text("표시") },
+                            label = { Text("표시", maxLines = 1, softWrap = false) },
                             singleLine = true,
-                            modifier = Modifier.width(76.dp),
+                            // 2.0.0 [RVH-89] 사진 (조건 12): at 200% the 76dp box stood '표시' up letter by letter; it grows with the letters.
+                            modifier = Modifier.width(76.dp * androidx.compose.ui.platform.LocalDensity.current.fontScale.coerceIn(1f, 1.4f)),
                         )
                     }
 
@@ -686,8 +691,8 @@ fun ShiftTypeEditorDialog(
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Column(Modifier.weight(1f)) {
                                 // [SETUP-08] Said as the user would: is this a day without work?
-                                Text("일하지 않는 날이에요", style = MaterialTheme.typography.bodyLarge)
-                                Text("휴무·비번처럼 근무가 없는 날이면 켜요", style = MaterialTheme.typography.bodySmall,
+                                Text(if (shop) "영업하지 않는 날이에요" else "일하지 않는 날이에요", style = MaterialTheme.typography.bodyLarge)
+                                Text(if (shop) "정기 휴무처럼 문을 닫는 날이면 켜요" else "휴무·비번처럼 근무가 없는 날이면 켜요", style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant)
                             }
                             Spacer(Modifier.width(12.dp))
@@ -709,7 +714,7 @@ fun ShiftTypeEditorDialog(
                         val start = draft.start ?: LocalTime.of(9, 0)
                         val end = draft.end ?: LocalTime.of(18, 0)
                         val timed = draft.copy(start = start, end = end)
-                        SectionCard(title = "근무 시간") {
+                        SectionCard(title = "$noun 시간") {
                             Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                                 TimeButton("시작", start, Modifier.weight(1f)) { pickEnd = false; pickTimes = true }
                                 TimeButton(
@@ -721,7 +726,7 @@ fun ShiftTypeEditorDialog(
                             Spacer(Modifier.height(12.dp))
                             Row(verticalAlignment = Alignment.CenterVertically) {
                                 Column(Modifier.weight(1f)) {
-                                    Text("근무 길이", style = MaterialTheme.typography.bodyLarge)
+                                    Text("$noun 길이", style = MaterialTheme.typography.bodyLarge)
                                     Text("시작부터 끝까지", style = MaterialTheme.typography.bodySmall,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant)
                                 }
@@ -730,7 +735,7 @@ fun ShiftTypeEditorDialog(
                                     onChange = { draft = timed.withDuration(it) },
                                     step = 30,
                                     max = 24 * 60,
-                                    dialogTitle = "근무 길이",
+                                    dialogTitle = "$noun 길이",
                                 )
                             }
                             FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -743,19 +748,19 @@ fun ShiftTypeEditorDialog(
                                 }
                             }
                             Spacer(Modifier.height(4.dp))
-                            com.bamnat.app.ui.components.LabelControlRow("휴게 시간") { // [RVH-81] HQ-98
+                            com.bamnat.app.ui.components.LabelControlRow(if (shop) "쉬는 시간" else "휴게 시간") { // [RVH-81] HQ-98
                                 MinutesStepper(
                                     minutes = draft.breakMinutes,
                                     onChange = { draft = draft.copy(breakMinutes = it) },
                                     step = 10,
                                     max = 12 * 60,
-                                    dialogTitle = "휴게 시간",
+                                    dialogTitle = if (shop) "쉬는 시간" else "휴게 시간",
                                     format = com.bamnat.core.hours.HoursFormat::breakText,
                                 )
                             }
                             // 순번 285: 근로기준법 제54조 asks for 30 minutes from 4 hours and an hour from 8; say so, never block.
                             val legalBreak = LegalBreak.minutesFor(timed.durationMinutes)
-                            if (draft.breakMinutes < legalBreak) {
+                            if (!shop && draft.breakMinutes < legalBreak) {
                                 Text(
                                     "${HoursFormat.korean(timed.durationMinutes)} 근무는 휴게가 ${legalBreak}분 이상이어야 해요(근로기준법 제54조). " +
                                         "휴게 없이 모두 일한 시간으로 쳐 주는 회사라면 그대로 두세요.",
@@ -763,7 +768,7 @@ fun ShiftTypeEditorDialog(
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 )
                             }
-                            if (draft.breakMinutes > 0) {
+                            if (draft.breakMinutes > 0 && !shop) {
                                 // [PAY-01] Where the break falls decides how much of the shift is night work.
                                 Row(verticalAlignment = Alignment.CenterVertically) {
                                     Column(Modifier.weight(1f)) {
@@ -784,7 +789,7 @@ fun ShiftTypeEditorDialog(
                                 }
                             }
                             Text(
-                                "실제 근무 ${HoursFormat.korean(timed.workMinutes)}" +
+                                (if (shop) "실제 영업 " else "실제 근무 ") + HoursFormat.korean(timed.workMinutes) +
                                     if (!end.isAfter(start)) " · 다음날 ${Fmt.time(end)}에 끝나요" else "",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -801,7 +806,7 @@ fun ShiftTypeEditorDialog(
                                 }
                                 Text(
                                     if (since == com.bamnat.core.schedule.SinceChoice.Way.FROM_TODAY) "지난 날 ${pastDays}일은 ${hoursText(initial)} 그대로예요"
-                                    else com.bamnat.core.schedule.SinceChoice.line(pastDays, "근무시간·통계·예상 급여"),
+                                    else com.bamnat.core.schedule.SinceChoice.line(pastDays, if (shop) "영업한 시간·통계" else "근무시간·통계·예상 급여"),
                                     style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 )
@@ -828,7 +833,7 @@ fun ShiftTypeEditorDialog(
                         if (showAlarms) SectionCard(title = "알람") {
                             Row(verticalAlignment = Alignment.CenterVertically) {
                                 Column(Modifier.weight(1f)) {
-                                    Text("근무 전 알람", style = MaterialTheme.typography.bodyLarge)
+                                    Text("$noun 전 알람", style = MaterialTheme.typography.bodyLarge)
                                     Text(
                                         "여러 개를 추가할 수 있어요",
                                         style = MaterialTheme.typography.bodySmall,

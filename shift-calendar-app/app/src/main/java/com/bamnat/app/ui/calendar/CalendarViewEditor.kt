@@ -217,7 +217,9 @@ fun CalendarViewSample(view: CalendarView, days: List<SampleDay> = SAMPLE, cell:
     listed: Boolean = false) {
     val scheme = MaterialTheme.colorScheme
     val cal = LocalCalendarColors.current
-    val height = when (view.size) { "short" -> 46.dp; "tall" -> 86.dp; "huge" -> 120.dp; else -> 60.dp }
+    // 2.0.0 HQ-140: rows grow with 글자 크기 as [com.bamnat.app.ui.settings.CellWeeks] does, so the 근무 표시 is not cut at 200%.
+    val textGrow = androidx.compose.ui.platform.LocalDensity.current.fontScale.coerceAtLeast(1f).let { 1f + (it - 1f) * 0.6f }
+    val height = when (view.size) { "short" -> 46.dp; "tall" -> 86.dp; "huge" -> 120.dp; else -> 60.dp } * textGrow
     val bump = when (view.text) { "small" -> -1; "large" -> 1; else -> 0 }
     val left = view.date == "left"
     Column(Modifier.fillMaxWidth().semantics { contentDescription = "달력 모양 보기" }) {

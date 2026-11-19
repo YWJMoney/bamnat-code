@@ -108,7 +108,8 @@ class S3ScreenshotTest : ScreenshotBase() {
         content { RecipeDetailScreen(vm, onBack = {}, onRemake = {}) }
         settle()
         // The choices are read off the main thread; the 창 is opened once they are there, as a person would after a look at the page.
-        waitUntil { vm.state.value.feels.isNotEmpty() }
+        // A cold first shot of a run reads the work for longer than waitUntil's 5초 (rvs15_put_feel_light_100_folded once had no 앱 느낌).
+        if (!waitUntil(20_000L) { vm.state.value.feels.isNotEmpty() }) return@fourLooks "작품의 앱 느낌을 20초 안에 읽지 못했어요"
         settle()
         tapText("내 달력에 넣기", exact = false)
         settle()
@@ -129,7 +130,8 @@ class S3ScreenshotTest : ScreenshotBase() {
         content { RecipeDetailScreen(vm, onBack = {}, onRemake = {}) }
         settle()
         // The choices are read off the main thread; the 창 is opened once they are there, as a person would after a look at the page.
-        waitUntil { vm.state.value.feels.isNotEmpty() }
+        // A cold first shot of a run reads the work for longer than waitUntil's 5초 (rvs15_put_feel_light_100_folded once had no 앱 느낌).
+        if (!waitUntil(20_000L) { vm.state.value.feels.isNotEmpty() }) return@fourLooks "작품의 앱 느낌을 20초 안에 읽지 못했어요"
         settle()
         tapText("내 달력에 넣기", exact = false)
         settle()

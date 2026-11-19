@@ -167,6 +167,29 @@ class WorkHoursCalculatorTest {
         assertFalse(calc(fiveDay()).threeMonths(YearMonth.of(2026, 10)).overLimit)
     }
 
+    /** 2.0.0 [RVH-85] 검토 PC-173: a roster of December alone averages December, not October–December with two empty months. */
+    @Test
+    fun threeMonthAverageCountsOnlyTheCoveredStretch() {
+        val dec = LocalDate.of(2026, 12, 1)
+        val entries = (0L until 31L).map { dec.plusDays(it) }.filter { it.dayOfWeek.value <= 5 }
+            .map { DayEntry(it, override = ShiftOverride.Shift(day.id)) }
+        val t = calc(null, entries).threeMonths(YearMonth.of(2026, 12))
+        assertEquals(YearMonth.of(2026, 12), t.firstMonth)
+        assertEquals(YearMonth.of(2026, 12), t.lastMonth)
+        assertEquals(entries.first().date, t.start)
+        assertEquals(entries.last().date, t.end)
+        val minutes = entries.size * 480
+        assertEquals(minutes, t.totalMinutes)
+        // 12/1(화)~12/31(목): 31 days, blanks inside are days off.
+        assertEquals(31, t.days)
+        assertEquals(minutes / (31 / 7.0), t.averageWeeklyMinutes, 1e-9)
+        assertEquals(minutes.toDouble(), t.averageMonthlyMinutes, 1e-9)
+        // A pattern started mid-window counts from its first day.
+        val mid = calc(fiveDay(LocalDate.of(2026, 11, 2))).threeMonths(YearMonth.of(2026, 12))
+        assertEquals(LocalDate.of(2026, 11, 2), mid.start)
+        assertEquals(40 * 60.0, mid.averageWeeklyMinutes, 40 * 60 * 0.1)
+    }
+
     @Test
     fun threeMonthWindowCrossesYearBoundary() {
         val t = calc(null).threeMonths(YearMonth.of(2026, 1))

@@ -90,7 +90,7 @@ class StatsViewModel(
 ) : ViewModel() {
     private val scope = container.scopeOf(calendarId)
     /** [NAV-01] The month shown here, the calendar's and 돈's too. */
-    val shownMonth: StateFlow<YearMonth> = container.shownMonth.month
+    val shownMonth: StateFlow<YearMonth> = container.shownMonth.others // [RVH-91] HQ-114
     fun showMonth(month: YearMonth) = container.shownMonth.show(month)
     val snapshot: StateFlow<ScheduleSnapshot?> =
         scope.schedule.live.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), scope.schedule.lastSnapshot)
@@ -199,6 +199,10 @@ fun StatsScreen(vm: StatsViewModel, wide: Boolean, onOpenPay: () -> Unit = {},
     }
     val summary = shownFigures.summary
     val three = shownFigures.three
+    // 2.0.0 [RVH-87] 검토 PC-163 (주 평균 12시간 28분 알바에게 '기준 52시간'·'주 52시간 기준'): for an 알바 whose weeks stay at 40 hours
+    // or under, the line that means something is 주 15시간 (근로기준법 제18조 제3항: under it there is no 주휴·연차), drawn as a mark
+    // to reach rather than a limit. A week past 40 hours brings the 52-hour words back.
+    val juhyu = style == WorkStyle.HOURLY && summary.weeks.none { it.totalMinutes > 40 * 60 } && three.averageWeeklyMinutes <= 40 * 60
     val trend = shownFigures.trend
     // [LEDG-15] Field and shop work show their jobs or sales; hours only once some are on the calendar.
     val hasHours = pays || summary.totalMinutes > 0 || three.totalMinutes > 0
@@ -451,14 +455,19 @@ fun StatsScreen(vm: StatsViewModel, wide: Boolean, onOpenPay: () -> Unit = {},
 
                 }
                 StatsPart.THREE -> {
-                SectionCard(title = "3개월 평균 (${three.firstMonth.monthValue}월–${three.lastMonth.monthValue}월)") {
+                // 2.0.0 [RVH-85] 검토 PC-173: the months the calendar covers (one month of a received roster is that month alone).
+                SectionCard(title = if (three.firstMonth == three.lastMonth) "${three.firstMonth.monthValue}월 평균"
+                    else "3개월 평균 (${three.firstMonth.monthValue}월–${three.lastMonth.monthValue}월)".let {
+                        if (java.time.temporal.ChronoUnit.MONTHS.between(three.firstMonth, three.lastMonth) == 1L) it.replace("3개월", "2개월") else it
+                    }) {
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         StatTile(
                             "주 평균",
                             HoursFormat.korean(Math.round(three.averageWeeklyMinutes).toInt()),
                             Modifier.weight(1f),
                             // 2.0.0 [RVJ-66] (HQ-103, 조건 6) 3개월 평균이 기준을 넘은 것은 몸을 챙길 주의예요(빨간 칸이었어요): 말과 주의 색.
-                            caption = if (employee) "기준 ${settings.averageLimitHours}시간" + (if (three.overLimit) " 넘음" else "") else "참고용",
+                            caption = if (juhyu) "주휴 기준 ${JUHYU_HOURS}시간" + (if (three.averageWeeklyMinutes >= JUHYU_HOURS * 60) " 넘음" else " 아래")
+                                else if (employee) "기준 ${settings.averageLimitHours}시간" + (if (three.overLimit) " 넘음" else "") else "참고용",
                             captionTone = if (three.overLimit) com.bamnat.app.ui.theme.Tone.Caution else com.bamnat.app.ui.theme.Tone.Plain,
                         )
                         StatTile(
@@ -469,7 +478,12 @@ fun StatsScreen(vm: StatsViewModel, wide: Boolean, onOpenPay: () -> Unit = {},
                         )
                     }
                     Spacer(Modifier.height(12.dp))
-                    if (employee) LimitBar(
+                    if (juhyu) LimitBar(
+                        value = three.averageWeeklyMinutes / 60.0,
+                        limit = JUHYU_HOURS.toDouble(),
+                        max = maxOf(JUHYU_HOURS * 2.0, three.averageWeeklyMinutes / 60.0),
+                        mark = true,
+                    ) else if (employee) LimitBar(
                         value = three.averageWeeklyMinutes / 60.0,
                         limit = settings.averageLimitHours.toDouble(),
                         max = maxOf(settings.weeklyLimitHours.toDouble(), three.averageWeeklyMinutes / 60.0),
@@ -489,16 +503,17 @@ fun StatsScreen(vm: StatsViewModel, wide: Boolean, onOpenPay: () -> Unit = {},
                 StatsPart.WEEKS -> {
                 SectionCard(title = when {
                     !employee -> "주별 일한 시간"
+                    juhyu -> "주별 근무시간 (주휴 기준 주 ${JUHYU_HOURS}시간)"
                     noWeekLaw -> "주별 근무시간 (법정 한 주 한도 없음 · 경고 ${weekLimit}시간)"
                     else -> "주별 근무시간 (주 ${weekLimit}시간 기준)"
                 }) {
                     val maxHours = maxOf(
-                        weekLimit.toDouble(),
+                        if (juhyu) JUHYU_HOURS * 2.0 else weekLimit.toDouble(),
                         summary.weeks.maxOfOrNull { it.totalMinutes / 60.0 } ?: 0.0,
                     )
                     summary.weeks.forEachIndexed { i, week ->
                         // [DAILY-07] A week's bar opens that week on the calendar, its Monday chosen.
-                        WeekRow(week, weekLimit, maxHours) {
+                        WeekRow(week, weekLimit, maxHours, mark = JUHYU_HOURS.takeIf { juhyu }) {
                             com.bamnat.app.NoticeLinks.open(com.bamnat.app.NoticeLinks.Target.DAY, vm.calendarId, week.start.toString())
                         }
                         if (i != summary.weeks.lastIndex) Spacer(Modifier.height(10.dp))
@@ -518,12 +533,18 @@ fun StatsScreen(vm: StatsViewModel, wide: Boolean, onOpenPay: () -> Unit = {},
                     val next = remember(calc, today) { calc.glance(today.plusWeeks(1)) }
                     if (employee && next.minutes > 0) {
                         Text(
-                            "다음 주(${Fmt.shortDate(next.start)}~) 예상 ${next.text}",
+                            "다음 주(${Fmt.shortDate(next.start)}~) 예상 ${if (juhyu && next.leftToLegal >= 0) next.brief else next.text}", // [RVH-87] 알바는 52시간을 넘지 않으면 그 말 없이
                             style = MaterialTheme.typography.bodyMedium.merge(NumberStyle),
                             color = if (next.leftToLegal < 0) Tone.Caution.color() else MaterialTheme.colorScheme.onSurface, // 미리 알림: 주의
                             modifier = Modifier.padding(top = 12.dp),
                         )
                     }
+                    if (juhyu) Text(
+                        "주 ${JUHYU_HOURS}시간은 주휴수당과 연차가 생기는 기준이에요(정해진 근무시간으로 4주 평균, 근로기준법 제18조 제3항).",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(top = 12.dp),
+                    )
                     Text(
                         // 2.0.0 [RVJ-67] (PC-167): 가게는 영업 말, 말투는 '~해요'.
                         (if (employee) "주 근무시간은" else if (style == WorkStyle.BUSINESS) "주마다 영업한 시간은" else "주마다 일한 시간은") +
@@ -569,7 +590,7 @@ fun StatsScreen(vm: StatsViewModel, wide: Boolean, onOpenPay: () -> Unit = {},
 
 
 @Composable
-private fun WeekRow(week: WeekSummary, limitHours: Int, maxHours: Double, onOpen: () -> Unit) {
+private fun WeekRow(week: WeekSummary, limitHours: Int, maxHours: Double, mark: Int? = null, onOpen: () -> Unit) {
     val cal = LocalCalendarColors.current
     val hours = week.totalMinutes / 60.0
     Column(Modifier.heightIn(min = 48.dp).clickable(onClickLabel = "달력에서 이 주 보기", onClick = onOpen).padding(vertical = 2.dp)) {
@@ -593,14 +614,18 @@ private fun WeekRow(week: WeekSummary, limitHours: Int, maxHours: Double, onOpen
             )
         }
         Spacer(Modifier.height(4.dp))
-        LimitBar(value = hours, limit = limitHours.toDouble(), max = maxHours)
+        if (mark != null) LimitBar(value = hours, limit = mark.toDouble(), max = maxHours, mark = true)
+        else LimitBar(value = hours, limit = limitHours.toDouble(), max = maxHours)
     }
 }
 
-/** Horizontal bar with a marker at the legal limit; turns red past it. */
+/** 2.0.0 [RVH-87] 근로기준법 제18조 제3항: 4주 평균 주 15시간 아래면 주휴(제55조)·연차(제60조)가 없어요. */
+internal const val JUHYU_HOURS = 15
+
+/** Horizontal bar with a marker at the legal limit; turns the caution colour past it, unless the marker is a [mark] to reach. */
 @Composable
-private fun LimitBar(value: Double, limit: Double, max: Double) {
-    val over = value > limit
+private fun LimitBar(value: Double, limit: Double, max: Double, mark: Boolean = false) {
+    val over = value > limit && !mark
     val safeMax = if (max <= 0.0) 1.0 else max
     BoxWithConstraints(
         Modifier
