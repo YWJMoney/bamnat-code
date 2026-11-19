@@ -22,7 +22,7 @@ const STOP_SECTION = "[앱 멈춤]";
 const EMPTY = "기록 없음";
 const UNREAD = "(못 읽음)";
 
-export const CRASH_RECORD_NAMES = { has: "멈춤 기록 있음", none: "멈춤 기록 없음", unread: "멈춤 기록 못 읽음", unsent: "점검 기록 없이 옴" };
+export const CRASH_RECORD_NAMES = { has: "멈춤 기록 있음", none: "멈춤 기록 없음", unread: "멈춤 기록 못 읽음", nostop: "멈춤 칸 없음", unsent: "점검 기록 없이 옴" };
 
 /** 닫힘 문의인지: 오류 종류이고, 말에 닫힘이 있거나 앱이 '앱 멈춤'을 앞에 둔 점검 기록을 붙였을 때. */
 export function isCloseAsk(kind, text, info) {
@@ -31,13 +31,14 @@ export function isCloseAsk(kind, text, info) {
 }
 
 /**
- * 점검 기록의 '앱 멈춤' 칸: has(멈춘 기록이 있음) · none(멈춤 없음) · unread(앱이 그 칸을 읽지 못함) · unsent(점검 기록을 안 보냈거나 그 칸이 없음).
+ * 점검 기록의 '앱 멈춤' 칸: has(멈춘 기록이 있음) · none(멈춤 없음) · unread(앱이 그 칸을 읽지 못함) · nostop(점검 기록은 왔지만 그 칸이 없음,
+ * 2.0.0 [RVA-64]) · unsent(점검 기록을 안 보냄).
  * 칸은 `[제목]` 줄로 시작해 빈 줄에서 끝나요.
  */
 export function crashRecord(diag) {
   const d = String(diag ?? "");
   const at = d.startsWith(STOP_SECTION) ? 0 : d.indexOf(`\n${STOP_SECTION}`);
-  if (at < 0) return "unsent";
+  if (at < 0) return d.trim() ? "nostop" : "unsent";
   const body = d.slice(d.indexOf(STOP_SECTION, at) + STOP_SECTION.length).split(/\n\s*\n/)[0];
   const all_ = body.split("\n").map((l) => l.trim()).filter(Boolean);
   // 2.0.0 L [RVL-84]: 앱이 읽지 못한 것은 '(못 읽음) '으로 시작해요. 멈춘 줄로 세지 않아요.
@@ -60,6 +61,17 @@ export function crashOf(kind, text, info) {
   if (!isCloseAsk(kind, text, info)) return null;
   const record = crashRecord(info?.diag);
   return { record, recordName: CRASH_RECORD_NAMES[record] };
+}
+
+/**
+ * 2.0.0 [RVA-64] HQ-132: 열쇠로 읽을 때 점검 기록 자리에 남기는 표식. 내용은 가리고 줄 수와 '앱 멈춤' 칸의 셈(위 crashRecord)만 알려요.
+ * 기록이 안 왔으면 null(열쇠로도 '안 옴'을 알 수 있게 자리는 비워 둬요). 멈춘 곳 줄(예외 종류@코드 자리)은 싣지 않아요(사용자 결정 전).
+ */
+export function diagMark(diag) {
+  const d = String(diag ?? "");
+  if (!d.trim()) return null;
+  const n = d.split("\n").filter((l) => l.trim()).length;
+  return `가려짐: 운영자만 봐요 · ${n}줄 · ${CRASH_RECORD_NAMES[crashRecord(d)]}`;
 }
 
 /** "1.39.0 (53)" → "1.39.0". */

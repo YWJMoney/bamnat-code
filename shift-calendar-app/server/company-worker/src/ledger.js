@@ -8,7 +8,7 @@ import { DONE_REASONS, WAIT_REASONS, WORK, WORK_GROUPS, WORK_GROUP_NAMES, WORK_S
 import { errorLine, recordRowErrors } from "./ops-watch.js";
 import { REVIEWS } from "./store-reviews.js";
 import { marketHealthRows } from "./market-health.js";
-import { CRASH_ASK_DRAFT, crashOf, crashRepeats, repeatPlaces } from "./crash-repeat.js";
+import { CRASH_ASK_DRAFT, crashOf, crashRepeats, diagMark, repeatPlaces } from "./crash-repeat.js";
 
 // ---- 1.38 [DESK-02][DESK-03] 운영 장부: 들어온 모든 일을 한 줄씩, 한 화면에서 (설계 docs/plans/1.37-문의-개발-운영장부-설계.md 2장) ----
 //
@@ -294,6 +294,8 @@ export async function ledgerList(env, actor, now, { days = LEDGER.days } = {}) {
         overlapsOf: waitingAdmin && !d ? { text, kind: q.kind, info, id: q.id } : null,
         crash: crashes.has(q.id) ? { record: crashes.get(q.id).record, recordName: crashes.get(q.id).recordName } : null,
         repeat: places.get(q.id) ?? null,
+        // 2.0.0 [RVA-64] HQ-132: 점검 기록은 내용 없이 표식만(열쇠·Claude 장부도 '왔는지·멈춤 기록 있는지'를 알게).
+        diag: diagMark(info.diag),
       });
     } catch (e) {
       unreadable(`inquiry:${q.id}`, "inquiry", q.id, e, { at: q.created_at, last: q.updated_at, status: q.status });
@@ -442,7 +444,7 @@ export async function ledgerList(env, actor, now, { days = LEDGER.days } = {}) {
       note: s?.note ?? "", reopened: s?.reopened ?? 0, closed: closed || state === "done",
       lastMove: lastMove ? { at: iso(lastMove.at), by: lastMove.by, byKind: whoKind(lastMove.by), what: lastMove.what } : null,
       ...(r.unreadable ? { unreadable: r.unreadable } : {}),
-      ...(r.crash ? { crash: r.crash } : {}), ...(r.repeat ? { repeat: r.repeat } : {}),
+      ...(r.crash ? { crash: r.crash } : {}), ...(r.repeat ? { repeat: r.repeat } : {}), ...(r.diag ? { diag: r.diag } : {}),
     };
   }
 }
