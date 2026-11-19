@@ -28,16 +28,16 @@ class LedgerK200Test {
     }
 
     @Test fun fixedNamesAreNeverRenamedOrTaken() {
-        assertFalse(MoneyCategories.renamable(MoneyCategories.SALARY))
-        assertFalse(MoneyCategories.renamable("카드값"))
+        // 2.0.0 [RVK-60] (I06ab-01) The sums read 급여·카드값 by their fixed id now, so they may be renamed; only 기타 keeps its name.
+        assertTrue(MoneyCategories.renamable(MoneyCategories.SALARY))
+        assertTrue(MoneyCategories.renamable("카드값"))
         assertFalse(MoneyCategories.renamable(MoneyCategories.OTHER))
         assertTrue(MoneyCategories.renamable("식비"))
-        assertEquals(emptyList<Pair<String, String>>(), MoneyCategories.renameSteps(listOf("급여" to "월급")))
         assertEquals(emptyList<Pair<String, String>>(), MoneyCategories.renameSteps(listOf("식비" to "기타")))
         // Blank or unchanged names are no step either.
         assertEquals(emptyList<Pair<String, String>>(), MoneyCategories.renameSteps(listOf("식비" to "  ", "카페" to "카페")))
-        // The rest still go through.
-        assertEquals(listOf("외식", "급여"), applied(listOf("식비", "급여"), listOf("식비" to "외식", "급여" to "월급")))
+        // The rest go through, 급여 too.
+        assertEquals(listOf("외식", "월급"), applied(listOf("식비", "급여"), listOf("식비" to "외식", "급여" to "월급")))
     }
 
     private fun line(kind: MoneyKind, amount: Long, name: String, account: Long, id: Long = 0, time: LocalTime = LocalTime.NOON) =

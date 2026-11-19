@@ -36,7 +36,7 @@ object LedgerSmarts {
         return recent.filter { e ->
             e.id != new.id && e.kind == wantKind && abs(e.amount) == abs(new.amount) && e.accountId != null && e.accountId != from &&
                 abs(ChronoUnit.DAYS.between(e.date, new.date)) <= TRANSFER_DAYS && e.toAccountId == null &&
-                e.shareOf(MoneyCategories.SALARY) == 0L && !othersApart(e, new, myNames)
+                e.shareOf(CategoryRole.SALARY) == 0L && !othersApart(e, new, myNames)
         }.minByOrNull { abs(ChronoUnit.MINUTES.between(it.date.atTime(it.time ?: java.time.LocalTime.NOON), new.date.atTime(new.time ?: java.time.LocalTime.NOON))) }
     }
 
