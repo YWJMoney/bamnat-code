@@ -85,7 +85,8 @@ class RvjDailyTaxScreenshotTest : ScreenshotBase() {
             money.save(Job(date = LocalDate.of(2026, 10, 2), title = "욕실 타일", client = "김OO 고객", amount = 600_000, balancePaid = true))
         }
         settle()
-        content { com.bamnat.app.ui.stats.StatsScreen(com.bamnat.app.ui.stats.StatsViewModel(app.container), wide = wide) }
+        val vm = com.bamnat.app.ui.stats.StatsViewModel(app.container)
+        content { com.bamnat.app.ui.stats.StatsScreen(vm, wide = wide) }
         repeat(2) { settle() }
         reveal("3.3% 떼고 받으면", exact = false)
     }

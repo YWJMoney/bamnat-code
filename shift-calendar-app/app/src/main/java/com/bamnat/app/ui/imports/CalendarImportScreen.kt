@@ -168,7 +168,7 @@ class CalendarImportViewModel(
             }.getOrNull() ?: uri.lastPathSegment?.substringAfterLast('/') ?: "달력 파일"
             val read = runCatching {
                 val events = withContext(Dispatchers.IO) {
-                    val bytes = ctx.contentResolver.openInputStream(uri)?.use { it.readNBytes(com.bamnat.core.imports.Ics.MAX_BYTES + 1) }
+                    val bytes = ctx.contentResolver.openInputStream(uri)?.use { com.bamnat.app.recipe.readAtMost(it, com.bamnat.core.imports.Ics.MAX_BYTES + 1) }
                         ?: throw java.io.IOException("open")
                     val text = String(bytes, Charsets.UTF_8)
                     if (bytes.size > com.bamnat.core.imports.Ics.MAX_BYTES || !com.bamnat.core.imports.Ics.looksLikeIcs(text)) throw NotIcs()
