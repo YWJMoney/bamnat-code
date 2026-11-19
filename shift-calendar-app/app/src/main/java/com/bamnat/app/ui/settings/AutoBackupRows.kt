@@ -74,16 +74,31 @@ internal fun AutoBackupRows(vm: SettingsViewModel) {
         val line = statusLine(state, open)
         Text(line.first, style = MaterialTheme.typography.bodySmall,
             color = if (line.second) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant)
-        Row(Modifier.fillMaxWidth().padding(vertical = 4.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            OutlinedButton(onClick = vm::backupNow, enabled = !state.running, modifier = Modifier.weight(1f).heightIn(min = 48.dp)) {
+        // 2.0.0 [RVL-52] (검토 HQ-149, 총괄이 #536 사진에서) The row's own one: '지금 백업' (or '지금 한 번 저장'), and '위치 바꾸기' a
+        // text button under it; from 150% type the two stand one above the other, so neither breaks into two lines (조건 2·12).
+        val now: @Composable (Modifier) -> Unit = { m ->
+            OutlinedButton(onClick = vm::backupNow, enabled = !state.running, modifier = m.heightIn(min = 48.dp)) {
                 Text(when {
                     state.running -> "백업하는 중…"
                     open -> "지금 백업"
                     else -> SAVE_ONCE
                 })
             }
-            OutlinedButton(onClick = { moving = true }, enabled = !state.running, modifier = Modifier.weight(1f).heightIn(min = 48.dp)) {
+        }
+        val where: @Composable (Modifier) -> Unit = { m ->
+            androidx.compose.material3.TextButton(onClick = { moving = true }, enabled = !state.running, modifier = m.heightIn(min = 48.dp)) {
                 Text("위치 바꾸기")
+            }
+        }
+        if (androidx.compose.ui.platform.LocalDensity.current.fontScale >= 1.5f) {
+            androidx.compose.foundation.layout.Column(Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
+                now(Modifier.fillMaxWidth())
+                where(Modifier.fillMaxWidth())
+            }
+        } else {
+            Row(Modifier.fillMaxWidth().padding(vertical = 4.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                now(Modifier.weight(1f))
+                where(Modifier)
             }
         }
     }

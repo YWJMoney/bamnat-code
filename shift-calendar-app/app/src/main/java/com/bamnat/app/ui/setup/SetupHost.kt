@@ -355,6 +355,7 @@ fun SetupHost(
             now = null,
             title = RESTORE_START_TITLE,
             confirmLabel = "이 백업으로 시작",
+            filled = true,
             onDismiss = vm::cancelFile,
             onConfirm = vm::confirmRestore,
         )

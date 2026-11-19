@@ -178,6 +178,8 @@ fun RestoreDialog(
     onDismiss: () -> Unit,
     onConfirm: () -> Unit,
     destructive: Boolean = false,
+    /** 2.0.0 [RVL-49] (검토 HQ-149 물음) The window's one thing to do is filled (the new phone's '이 백업으로 시작', 조건 2). */
+    filled: Boolean = false,
 ) {
     val today = com.bamnat.core.time.Today.date()
     val saved = file.exportedAtMillis.takeIf { it > 0 }?.let { com.bamnat.app.alarm.AlarmScheduler.millisToLocal(it).toLocalDate() }
@@ -204,7 +206,8 @@ fun RestoreDialog(
             }
         },
         confirmButton = {
-            TextButton(onClick = onConfirm) {
+            if (filled) com.bamnat.app.ui.components.Button(onClick = onConfirm) { Text(confirmLabel) }
+            else TextButton(onClick = onConfirm) {
                 Text(confirmLabel, color = if (destructive) MaterialTheme.colorScheme.error else androidx.compose.ui.graphics.Color.Unspecified)
             }
         },
