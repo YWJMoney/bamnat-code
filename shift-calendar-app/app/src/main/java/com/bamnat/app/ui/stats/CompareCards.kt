@@ -45,7 +45,9 @@ import com.bamnat.core.time.Today
 @Composable
 internal fun CompareCard(vm: StatsViewModel, calc: WorkHoursCalculator, snap: ScheduleSnapshot, month: YearMonth, profile: PayProfile?, gate: Gate,
                          /** 1.39 [PAYX-60] Each month over its 급여 기간 (10/21~11/20 for 11월), as its pay beside it is. */
-                         period: com.bamnat.core.pay.PayPeriod? = null) {
+                         period: com.bamnat.core.pay.PayPeriod? = null,
+                         /** 2.0.0 [RVH-93] 검토 PC-210: who reads it; 야간 and 급여 are said only to those they reach. */
+                         style: com.bamnat.core.work.WorkStyle? = null) {
     // [UX-10] 1.25 Z (U7): the last figures from the first frame, worked out again only when the days or pay changed.
     val sides by com.bamnat.app.ui.rememberLast("compare:${vm.calendarId}:$month:${period?.endDay}", snap, month, profile, period) {
         runCatching {
@@ -59,7 +61,13 @@ internal fun CompareCard(vm: StatsViewModel, calc: WorkHoursCalculator, snap: Sc
     val (now, last, lastYear) = s
     ProLock(Feature.WORK_COMPARE, gate) {
         SectionCard(title = "${month.monthValue}월 비교", trailing = { com.bamnat.app.ui.components.ProBadge(locked = gate.locked(Feature.WORK_COMPARE)) }) {
-            CompareTable(now, last, "지난달 ${last.month.monthValue}월")
+            // 2.0.0 [RVH-94] 검토 PC-212: a last month with nothing in it (before the app was in use) is said, not compared as 0.
+            if (last.empty) {
+                Text("지난달 ${last.month.monthValue}월은 달력에 근무가 없어 비교할 게 없어요.",
+                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            } else {
+                CompareTable(now, last, "지난달 ${last.month.monthValue}월")
+            }
             HorizontalDivider(Modifier.padding(vertical = 10.dp))
             if (lastYear.empty) {
                 Text("작년 ${lastYear.month.year % 100}년 ${lastYear.month.monthValue}월은 달력에 근무가 없어 비교할 게 없어요.",
@@ -67,7 +75,17 @@ internal fun CompareCard(vm: StatsViewModel, calc: WorkHoursCalculator, snap: Sc
             } else {
                 CompareTable(now, lastYear, "작년 ${lastYear.month.monthValue}월")
             }
-            Text(if (profile == null) "급여를 설정하면 야간과 급여도 비교해요." else "급여는 세금 떼기 전 예상이에요.",
+            // 2.0.0 [RVH-93] 검토 PC-210 (일근에게 '야간과 급여도'): 야간 for 교대 and 알바 (야간수당), only 급여 for 일근, nothing for the
+            // kinds whose money is 돈 (현장·가게·투자 have no 급여 to set here).
+            val pays = style?.usesPayEngine != false
+            val nights = style == null || style == com.bamnat.core.work.WorkStyle.SHIFT || style == com.bamnat.core.work.WorkStyle.HOURLY
+            val note = when {
+                profile != null -> "급여는 세금 떼기 전 예상이에요."
+                !pays -> null
+                nights -> "급여를 설정하면 야간과 급여도 비교해요."
+                else -> "급여를 설정하면 급여도 비교해요."
+            }
+            if (note != null) Text(note,
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 8.dp))
         }
     }

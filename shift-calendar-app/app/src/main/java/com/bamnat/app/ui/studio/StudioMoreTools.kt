@@ -247,7 +247,7 @@ internal fun LockChips(vm: StudioViewModel) {
         Text(" · " + (vm.locked.takeIf { it.isNotEmpty() }?.joinToString("·") { "🔒 " + lockName(it, vm.style) } ?: "바꾸지 않을 화면 고르기"),
             style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1,
             overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
-        Text(if (open) "접기 ▴" else "펼치기 ▾", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
+        Text(if (open) "접기\u00A0▴" else "펼치기\u00A0▾", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
     }
     if (!open) return
     Text("잠근 화면은 한 색·섞기·모든 화면에·조각 얹기가 건드리지 않아요. 그 화면 도구로는 고칠 수 있어요",

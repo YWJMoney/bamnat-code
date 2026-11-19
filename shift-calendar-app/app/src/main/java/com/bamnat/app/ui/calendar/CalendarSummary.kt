@@ -298,7 +298,7 @@ internal fun CalendarViewSwitch(listView: Boolean, onListView: (Boolean) -> Unit
     Row(modifier, verticalAlignment = Alignment.CenterVertically) {
         IconButton(onClick = onLegend) { Icon(Icons.Outlined.Info, "달력 표시 안내", tint = MaterialTheme.colorScheme.onSurfaceVariant) }
         if (boardLabel != null) {
-            // [TAB-04] PC 확인 bad7d860 사용성 제안: an icon alone did not say it opens 판 고르기, so the button reads "월 ▾".
+            // [TAB-04] PC 확인 bad7d860 사용성 제안: an icon alone did not say it opens 판 고르기, so the button reads "월\u00A0▾".
             com.bamnat.app.ui.components.FilledTonalButton(
                 onClick = { haptics.performHapticFeedback(HapticFeedbackType.SegmentTick); onListView(!listView) },
                 contentPadding = androidx.compose.foundation.layout.PaddingValues(start = 10.dp, end = 6.dp),

@@ -160,7 +160,7 @@ object MoneyAhead {
         return lines.sumOf { it.amount } / span to (span < MIN_LEARN_DAYS)
     }
 
-    private fun isPayLine(c: FixedCost) = c.kind == MoneyKind.INCOME && (c.category == MoneyCategories.SALARY || c.name.contains("월급") || c.name.contains("급여"))
+    private fun isPayLine(c: FixedCost) = c.kind == MoneyKind.INCOME && (CategoryIds.matches(c.categoryId, c.category, CategoryRole.SALARY) || c.name.contains("월급") || c.name.contains("급여"))
 
     /**
      * [LEDH-01] Every known movement from [today] to [until]. A pay day already written down (an income line of at least
@@ -181,12 +181,12 @@ object MoneyAhead {
             .mapNotNull { u ->
                 val c = u.cost
                 when {
-                    u.cardId != null || (c.kind == MoneyKind.TRANSFER && c.category == UpcomingPayments.CARD_BILL) ->
+                    u.cardId != null || (c.kind == MoneyKind.TRANSFER && CategoryIds.matches(c.categoryId, c.category, CategoryRole.CARD)) ->
                         MoneyFlow(u.date, -c.amount, FlowKind.CARD_BILL, "${c.name} ${UpcomingPayments.CARD_BILL}".trim())
                     c.kind == MoneyKind.INCOME -> MoneyFlow(u.date, c.amount, FlowKind.FIXED_IN, c.name)
                     c.kind == MoneyKind.EXPENSE -> MoneyFlow(u.date, -c.amount, FlowKind.FIXED_OUT, c.name)
                     // Between the user's own accounts nothing leaves; to savings, a loan or the owner it does.
-                    c.category == "내 계좌" -> null
+                    CategoryIds.matches(c.categoryId, c.category, CategoryRole.OWN) -> null
                     else -> MoneyFlow(u.date, -c.amount, FlowKind.FIXED_OUT, c.name)
                 }
             }

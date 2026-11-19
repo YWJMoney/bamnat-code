@@ -133,23 +133,43 @@ internal const val INQUIRY_KEEP_WORDS =
         "결제·환불 문의는 전자상거래법에 따라 마지막 글부터 3년 동안 운영자가 보관해요(지우면 앱에서는 바로 사라져요). "
 
 /** [ADMIN-02] What the form and the privacy policy say about a question before it goes. */
-/** [INQ-01] A company way names the workplace, so it stays with the developer; the privacy policy 1-3항 says the same. */
-internal const val INQUIRY_PRIVATE_NOTICE =
-    "회사 방식은 모두의 문의에 올라가지 않고 개발자만 봐요. 이름, 메일 주소, 전화번호, 기본급·수당 금액은 적지 말아 주세요. " +
-        INQUIRY_KEEP_WORDS +
-        "다만 운영자가 고칠 일(개발사항)로 옮겨 적거나 요약한 내용은 문의를 지운 뒤에도 앱 개선 기록으로 남아요."
+private const val INQUIRY_RECORD_WORDS = "다만 운영자가 고칠 일(개발사항)로 옮겨 적거나 요약한 내용은 문의를 지운 뒤에도 앱 개선 기록으로 남아요."
 
-internal const val INQUIRY_SEND_NOTICE =
-    "모두의 문의에 올라가요. 앱을 쓰는 다른 분도 적은 글과 개발자 답을 볼 수 있고, 보낸 분이 누구인지는 보이지 않아요. " +
-        "3번의 ‘함께 보내는 정보’는 개발자만 봐요. 이름, 메일 주소, 전화번호, 금액은 적지 말아 주세요. " +
-        INQUIRY_KEEP_WORDS +
-        "다만 운영자가 고칠 일(개발사항)로 옮겨 적거나 요약한 내용은 문의를 지운 뒤에도 앱 개선 기록으로 남아요."
+/**
+ * 2.0.0 [RVO-29] (PC-204, 조건 4·13) The notice above 보내기, by the kind chosen: [lead] is said in full (who sees it and what not to
+ * write, in that kind's words: a 결제·환불 question is not told about 회사 방식, and is asked for its Play order number instead of an
+ * amount), [keep] (how long it stays) goes behind '보관 기간·지우기' ⓘ. Amounts still do not go anywhere (처리방침 1-3항).
+ */
+internal data class InquiryNotice(val lead: String, val keep: String)
 
-/** [INQ-06] 모두의 문의에 올리기 off: the developer only, with the same keeping rules. */
-internal const val INQUIRY_ONLY_DEVELOPER_NOTICE =
-    "모두의 문의에 올리지 않고 개발자만 봐요. 3번의 ‘함께 보내는 정보’도 개발자만 봐요. 이름, 메일 주소, 전화번호, 금액은 적지 말아 주세요. " +
-        INQUIRY_KEEP_WORDS +
-        "다만 운영자가 고칠 일(개발사항)로 옮겨 적거나 요약한 내용은 문의를 지운 뒤에도 앱 개선 기록으로 남아요."
+internal fun inquiryNotice(kind: InquiryKind?, share: Boolean): InquiryNotice = when {
+    kind == InquiryKind.BILLING -> InquiryNotice(
+        "결제·환불 문의는 나만 보고 운영팀이 직접 답해요. 금액 대신 Play 주문 번호(GPA.로 시작)를 적어 주시면 낸 금액까지 바로 찾아요. " +
+            "이름, 메일 주소, 전화번호는 적지 말아 주세요.",
+        "보낸 문의는 언제든 지울 수 있지만, 결제·환불 문의는 전자상거래법에 따라 마지막 글부터 3년 동안 운영자가 보관해요" +
+            "(지우면 앱에서는 바로 사라져요). " + INQUIRY_RECORD_WORDS,
+    )
+    // [INQ-01] A company way names the workplace, so it stays with the developer; the privacy policy 1-3항 says the same.
+    kind == InquiryKind.COMPANY -> InquiryNotice(
+        "회사 방식은 모두의 문의에 올라가지 않고 개발자만 봐요. 이름, 메일 주소, 전화번호, 기본급·수당 금액은 적지 말아 주세요.",
+        INQUIRY_KEEP_WORDS + INQUIRY_RECORD_WORDS,
+    )
+    // [RVQ-29] 꾸미기 부탁 (and any kind added later that stays with the developer).
+    kind?.public == false -> InquiryNotice(
+        (if (kind == InquiryKind.STUDIO) "꾸미기 부탁은" else "이 문의는") + " 모두의 문의에 올라가지 않고 개발자만 봐요. 이름, 메일 주소, 전화번호, 금액은 적지 말아 주세요.",
+        INQUIRY_KEEP_WORDS + INQUIRY_RECORD_WORDS,
+    )
+    // [INQ-06] 모두의 문의에 올리기 off: the developer only, with the same keeping rules.
+    !share -> InquiryNotice(
+        "모두의 문의에 올리지 않고 개발자만 봐요. 이름, 메일 주소, 전화번호, 금액은 적지 말아 주세요.",
+        "3번의 ‘함께 보내는 정보’도 개발자만 봐요. " + INQUIRY_KEEP_WORDS + INQUIRY_RECORD_WORDS,
+    )
+    else -> InquiryNotice(
+        "모두의 문의에 올라가요. 다른 분도 적은 글과 개발자 답을 볼 수 있고, 보낸 분이 누구인지는 보이지 않아요. " +
+            "이름, 메일 주소, 전화번호, 금액은 적지 말아 주세요.",
+        "3번의 ‘함께 보내는 정보’는 개발자만 봐요. " + INQUIRY_KEEP_WORDS + INQUIRY_RECORD_WORDS,
+    )
+}
 
 private const val LIST = "list"
 private const val NEW = "new"
@@ -667,15 +687,13 @@ private fun InquiryForm(
                 else "개발자만 봐요. 같은 일을 겪는 분이 답을 함께 볼 수는 없어요",
                 checked = share, onChange = { share = it })
         }
-        Text(
-            when {
-                mail -> "메일 앱이 열려요. 보내기 전에 한 번 더 보고 고칠 수 있어요. 받는 곳: $REPORT_EMAIL"
-                kind?.public == false -> INQUIRY_PRIVATE_NOTICE
-                !share -> INQUIRY_ONLY_DEVELOPER_NOTICE
-                else -> INQUIRY_SEND_NOTICE
-            },
-            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
+        if (mail) Text("메일 앱이 열려요. 보내기 전에 한 번 더 보고 고칠 수 있어요. 받는 곳: $REPORT_EMAIL",
+            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        else {
+            val notice = inquiryNotice(kind, share)
+            Text(notice.lead, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            com.bamnat.app.ui.components.Explain("inquiry_keep", notice.keep, summary = "보관 기간·지우기", iconOnly = false, firstInFull = false)
+        }
         error?.let {
             Text(it, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.error,
                 modifier = Modifier.semantics { liveRegion = LiveRegionMode.Assertive })
@@ -921,7 +939,8 @@ private fun InquiryThread(vm: InquiryViewModel, i: Inquiry) {
             when {
                 i.hidden != null -> Text("모두의 문의에서 가려졌어요: ${i.hidden}", style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.error)
-                i.public -> Text("모두의 문의에 올라가 있어요" + if (i.same > 0) " · 나도 그래요 ${i.same}" else "",
+                // 2.0.0 [RVO-29] HQ-152: at 글자 200% the two go on two lines rather than leave the dot at a line's end.
+                i.public -> com.bamnat.app.ui.components.DotText("모두의 문의에 올라가 있어요" + if (i.same > 0) " · 나도 그래요 ${i.same}" else "",
                     style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
             ProgressSteps(i)
@@ -997,19 +1016,35 @@ private fun ProgressSteps(i: Inquiry) {
     val steps = inquirySteps(i)
     val at = steps.indexOfFirst { it.first == i.stage }.coerceAtLeast(0)
     val scheme = MaterialTheme.colorScheme
-    Row(
-        Modifier.fillMaxWidth().semantics(mergeDescendants = true) { contentDescription = "진행 상황: ${steps[at].second}" },
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        steps.forEachIndexed { n, (_, name) ->
-            val done = n <= at
-            Column(Modifier.weight(1f), horizontalAlignment = Alignment.CenterHorizontally) {
-                Box(Modifier.fillMaxWidth().height(4.dp).background(if (done) scheme.primary else scheme.surfaceVariant, RoundedCornerShape(2.dp)))
-                Text(name, style = MaterialTheme.typography.labelSmall, maxLines = 1, overflow = TextOverflow.Ellipsis,
-                    color = if (n == at) scheme.primary else if (done) scheme.onSurface else scheme.onSurfaceVariant,
-                    fontWeight = if (n == at) FontWeight.Bold else FontWeight.Normal, modifier = Modifier.padding(top = 4.dp))
+    val label = MaterialTheme.typography.labelSmall
+    val measurer = androidx.compose.ui.text.rememberTextMeasurer()
+    val density = androidx.compose.ui.platform.LocalDensity.current
+    androidx.compose.foundation.layout.BoxWithConstraints(Modifier.fillMaxWidth()) {
+        // 2.0.0 [RVO-29] HQ-154 (조건 12): when a step's name does not fit its share of the width (folded, 글자 200%), the bar keeps
+        // its steps and only the step it is at is named under it in full ('답변 · 3/6'); every name is still read aloud.
+        val gap = 4.dp
+        val share = with(density) { ((maxWidth - gap * (steps.size - 1)) / steps.size).roundToPx() }
+        val fits = steps.all { (_, name) ->
+            measurer.measure(name, label.copy(fontWeight = FontWeight.Bold), maxLines = 1, softWrap = false).size.width <= share
+        }
+        Column(Modifier.fillMaxWidth().semantics(mergeDescendants = true) {
+            contentDescription = "진행 상황: ${steps[at].second}, ${steps.size}단계 중 ${at + 1}단계" +
+                if (fits) "" else " (${steps.joinToString(", ") { it.second }})"
+        }) {
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                steps.forEachIndexed { n, (_, name) ->
+                    val done = n <= at
+                    Column(Modifier.weight(1f), horizontalAlignment = Alignment.CenterHorizontally) {
+                        Box(Modifier.fillMaxWidth().height(4.dp).background(if (done) scheme.primary else scheme.surfaceVariant, RoundedCornerShape(2.dp)))
+                        if (fits) Text(name, style = label, maxLines = 1,
+                            color = if (n == at) scheme.primary else if (done) scheme.onSurface else scheme.onSurfaceVariant,
+                            fontWeight = if (n == at) FontWeight.Bold else FontWeight.Normal, modifier = Modifier.padding(top = 4.dp))
+                    }
+                    if (n < steps.lastIndex) Spacer(Modifier.width(gap))
+                }
             }
-            if (n < steps.lastIndex) Spacer(Modifier.width(4.dp))
+            if (!fits) Text("${steps[at].second} · ${at + 1}/${steps.size}", style = MaterialTheme.typography.labelLarge,
+                color = scheme.primary, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 4.dp))
         }
     }
 }

@@ -108,7 +108,7 @@ fun ProCollectionCard(gate: Gate, settings: AppSettings, startFolded: Boolean = 
         }
         val more = total - shown.size
         TextButton(onClick = { all = !all }, modifier = Modifier.heightIn(min = 48.dp)) {
-            Text(if (all) "접기 ▴" else if (shown.isEmpty()) "프로 기능 ${total}개 모두 보기 ▾" else "모두 보기 · ${more}개 더 ▾")
+            Text(if (all) "접기\u00A0▴" else if (shown.isEmpty()) "프로 기능 ${total}개 모두 보기\u00A0▾" else "${more}개 더 보기\u00A0▾")
         }
         Text("늘 무료", style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(top = 8.dp).semantics { heading() })
         ProPitch.freeAlways(style).forEach { line ->
