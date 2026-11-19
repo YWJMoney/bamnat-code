@@ -62,6 +62,23 @@ class PatternTimelineTest {
         assertEquals(today.minusYears(2), PatternTimeline.firstFor(com.bamnat.core.work.WorkStyle.DAY, weekly, today).startDate)
     }
 
+    /** 2.0.0 [RVH-94] 검토 PC-212: figures count an order from the month the app came into use; the days after it do not move. */
+    @Test
+    fun sinceCutsTheFilledPastOnly() {
+        val today = LocalDate.of(2026, 11, 19)
+        val first = PatternTimeline.first(WorkPattern.Rotation(today, listOf(d, d, null, null, n, n)), today)
+        val from = LocalDate.of(2026, 11, 1)
+        val cut = PatternTimeline.since(listOf(first), from)
+        val r0 = ScheduleResolver(Fixtures.all, listOf(first), emptyList())
+        val r = ScheduleResolver(Fixtures.all, cut, emptyList())
+        assertEquals(com.bamnat.core.schedule.DaySource.NONE, r.resolve(LocalDate.of(2026, 10, 31)).source)
+        for (day in generateSequence(from) { it.plusDays(1) }.take(40)) assertEquals(r0.resolve(day).shiftType?.id, r.resolve(day).shiftType?.id)
+        // An order that ended before goes; one that starts after stays as it is.
+        val old = WorkPattern.Rotation(LocalDate.of(2026, 1, 1), listOf(d, null)).withRange(LocalDate.of(2026, 1, 1), LocalDate.of(2026, 9, 30))
+        val later = WorkPattern.Rotation(LocalDate.of(2026, 12, 1), listOf(n, null))
+        assertEquals(listOf(later), PatternTimeline.since(listOf(old, later), from))
+    }
+
     @Test
     fun aFirstPatternFillsTheLastTwoYears() {
         val today = LocalDate.of(2026, 10, 14)

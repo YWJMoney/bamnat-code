@@ -549,7 +549,7 @@ private fun RestChecks(vm: SettingsViewModel, settings: AppSettings) {
                 if (shifts) "연속 야간 ${r.maxNightsInRow}일, 한 달 야간 ${r.maxNightsPerMonth}일" else "연속 근무 ${r.maxWorkDaysInRow}일") {
                 rulesOpen = true
             }
-            if (rulesOpen) com.bamnat.app.ui.calendar.RestRulesSheet(r, com.bamnat.core.schedule.RotationSpeed.NONE, onDismiss = { rulesOpen = false }) { n ->
+            if (rulesOpen) com.bamnat.app.ui.calendar.RestRulesSheet(r, com.bamnat.core.schedule.RotationSpeed.NONE, onDismiss = { rulesOpen = false }, nights = shifts) { n ->
                 vm.update { it.copy(restRules = n.copy(on = true).encode(), restCheck = n.on, strictRest = false) }
                 rulesOpen = false
             }
