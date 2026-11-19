@@ -72,7 +72,15 @@ fun RecipeMineScreen(vm: RecipeMineViewModel, onBack: () -> Unit, onOpen: (Strin
     // 1.35 자유도 점검: 되돌리기 asks first too (what it puts back and what it keeps).
     var undoing by remember { mutableStateOf<Pair<String, () -> Unit>?>(null) }
     // PC 확인 20ab0254: cleared after it was shown; cleared first, the key changed and took the snackbar down at once.
-    LaunchedEffect(message) { message?.let { snack.showSnackbar(it); vm.shown() } }
+    LaunchedEffect(message) {
+        val m = message ?: return@LaunchedEffect
+        // 2.0.0 [RVM-55] 검토 U09b-02: a 되돌리기 that left something as I made it has 보기.
+        val left = vm.left
+        val r = snack.showSnackbar(m, actionLabel = UndoLeft.SEE.takeIf { left.isNotEmpty() },
+            duration = if (left.isNotEmpty()) androidx.compose.material3.SnackbarDuration.Long else androidx.compose.material3.SnackbarDuration.Short)
+        vm.shown()
+        if (r == androidx.compose.material3.SnackbarResult.ActionPerformed) UndoLeft.show(left)
+    }
     Scaffold(
         snackbarHost = { com.bamnat.app.ui.components.AppSnackHost() },
         topBar = { TopAppBar(title = { Text("내 것 · 올린·받은·만들던 작품", maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis) }, navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "뒤로") } }) },

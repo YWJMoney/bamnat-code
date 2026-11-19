@@ -127,10 +127,12 @@ private fun RecipeDetailPage(vm: RecipeDetailViewModel, onBack: () -> Unit, onRe
         val undo = (s.appliedId != null && m.startsWith("넣었어요")) || (s.laidAt != null && m.contains("테마 위에 얹었어요"))
         // PC 확인 20ab0254: cleared after it was shown; cleared first, the key changed and took the snackbar down at once.
         // PC 확인 7525ccff (신고 띠가 아래 스위치를 가려요): a line with nothing to do has its own ✕, so it goes at once when asked.
-        val r = snack.showSnackbar(m, actionLabel = if (undo) "되돌리기" else null, withDismissAction = !undo,
-            duration = if (undo) SnackbarDuration.Long else SnackbarDuration.Short)
+        // 2.0.0 [RVM-55] 검토 U09b-02: a 되돌리기 that left something as I made it has 보기 (what, and 이것도 되돌리기 one by one).
+        val left = s.left.takeIf { !undo }.orEmpty()
+        val r = snack.showSnackbar(m, actionLabel = if (undo) "되돌리기" else if (left.isNotEmpty()) UndoLeft.SEE else null,
+            withDismissAction = !undo, duration = if (undo || left.isNotEmpty()) SnackbarDuration.Long else SnackbarDuration.Short)
         vm.shown()
-        if (r == SnackbarResult.ActionPerformed) vm.undo()
+        if (r == SnackbarResult.ActionPerformed) { if (undo) vm.undo() else UndoLeft.show(left) }
     }
     Scaffold(
         snackbarHost = { com.bamnat.app.ui.components.AppSnackHost() },

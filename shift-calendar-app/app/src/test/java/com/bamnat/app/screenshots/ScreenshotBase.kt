@@ -119,6 +119,10 @@ abstract class ScreenshotBase {
         com.bamnat.app.ui.components.AppSnack.resetForTest()
         com.bamnat.app.ui.components.AskTurn.resetForTest()
         com.bamnat.app.ui.components.Busy.resetForTest()
+        // 2.0.0 [RVM-57] Nor a 입어 보기 an earlier shot asked for (a swipe card's '입어 보기' with nowhere to go): the first tryOn shot of
+        // a run opened on 입어 보기 at once and could not find '예시로 보기' (총괄 11-19, a different tryOn each run).
+        com.bamnat.app.recipe.RecipeLinks.resetForTest()
+        com.bamnat.app.ui.recipe.LiveTryOn.resetForTest()
         val c = app.container
         // [QA-05] No shot asks the live server: its 정식 출시 answer could land after a shot set its own (launched()).
         c.tierApi = com.bamnat.app.tier.TierClient(baseUrl = "")

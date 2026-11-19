@@ -804,6 +804,34 @@ class RvmScreenshotTest : ScreenshotBase() {
     @Test fun triedCardFoldedDarkBig() = shoot("rvm_91_tried_card_folded_dark_200", DARK, 2f, triedCard())
     @Test fun triedCardUnfolded() = shoot("rvm_92_tried_card_unfolded", UNFOLDED, triedCard())
 
+    /**
+     * 2.0.0 [RVM-55] 검토 U09b-02: 되돌리기 › 보기. Each place that stayed as I made it, why, and 이것도 되돌리기 asked once in its row;
+     * a shift days use says where it can go instead of a button.
+     */
+    private fun undoLeft(): Screen.() -> Unit = {
+        var took = 0
+        val items = listOf(
+            com.bamnat.app.recipe.RecipePieces.Kept("근무 순서", com.bamnat.app.recipe.RecipePieces.MINE) { took++ },
+            com.bamnat.app.recipe.RecipePieces.Kept("‘오전’ 근무 시간", com.bamnat.app.recipe.RecipePieces.MINE) { took++ },
+            com.bamnat.app.recipe.RecipePieces.Kept("‘교육’ 근무", "달력에서 쓰는 날이 있어 남겼어요 · 근무 설정에서 지울 수 있어요", null),
+        )
+        content { com.bamnat.app.ui.recipe.UndoLeftSheet(c, items) {} }
+        settle()
+        check(appears("그대로 둔 것 3개", exact = true))
+        check(appears("근무 설정에서 지울 수 있어요", exact = false))
+        tapText("이것도 되돌리기", exact = true)
+        settle()
+        check(appears("내가 바꾼 값은 사라지고 넣기 전 값이 돼요", exact = false)) { "한 번 묻고" }
+        check(took == 0)
+        tapText("돌리기", exact = true)
+        settle()
+        check(took == 1) { "돌리기를 눌러야 돌려요" }
+        check(appears("넣기 전으로 돌렸어요", exact = true))
+    }
+    @Test fun undoLeftFolded() = shoot("rvm_93_undo_left_folded", FOLDED, undoLeft())
+    @Test fun undoLeftFoldedDarkBig() = shoot("rvm_94_undo_left_folded_dark_200", DARK, 2f, undoLeft())
+    @Test fun undoLeftUnfolded() = shoot("rvm_95_undo_left_unfolded", UNFOLDED, undoLeft())
+
     private companion object {
         const val DARK = "w369dp-h905dp-port-night-420dpi"
         const val UNFOLDED_DARK = "w707dp-h823dp-port-night-420dpi"

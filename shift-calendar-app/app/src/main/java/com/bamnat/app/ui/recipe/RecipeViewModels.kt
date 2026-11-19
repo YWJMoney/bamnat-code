@@ -244,6 +244,8 @@ class RecipeDetailViewModel(private val c: AppContainer, val code: String, val c
         val doc: RecipeDoc? = null, val recipe: Recipe? = null, val error: String? = null,
         val pieces: List<Piece> = emptyList(), val answers: Map<String, Any?> = emptyMap(),
         val votes: Votes? = null, val talk: RecipeTalk? = null, val message: String? = null,
+        /** 2.0.0 [RVM-55] 검토 U09b-02: what the last 되돌리기 left as I made it; [message]'s line then has 보기. */
+        val left: List<com.bamnat.app.recipe.RecipePieces.Kept> = emptyList(),
         val applying: Boolean = false, val appliedId: Long? = null,
         /** [RCP-24] My kinds of day as they are and as the 근무 꾸미기 piece would make them. */
         val looks: List<Pair<com.bamnat.core.model.ShiftType, com.bamnat.core.model.ShiftType>> = emptyList(),
@@ -562,7 +564,8 @@ class RecipeDetailViewModel(private val c: AppContainer, val code: String, val c
             val left = c.recipes.inUse().filter { it.code == code && c.recipes.canUndo(it) }.maxByOrNull { it.appliedAt }
             _state.value = _state.value.copy(appliedId = left?.id, appliedAt = left?.appliedAt, undoable = undoableNow(),
                 laidAt = laidHere().maxOfOrNull { it.at },
-                message = if (rows == 0 && n > 0) "되돌렸어요. 그 사이 적은 기록은 그대로예요" else c.recipes.undoSay(n > 0))
+                message = if (rows == 0 && n > 0) "되돌렸어요. 그 사이 적은 기록은 그대로예요" else c.recipes.undoSay(n > 0),
+                left = if (rows > 0) c.recipes.lastUndo.items else emptyList())
         }
     }
 
@@ -633,7 +636,7 @@ class RecipeDetailViewModel(private val c: AppContainer, val code: String, val c
         }
     }
 
-    fun shown() { _state.value = _state.value.copy(message = null) }
+    fun shown() { _state.value = _state.value.copy(message = null, left = emptyList()) }
 
     /** The written recipe, for 고쳐 만들기. */
     fun body(): String? = _state.value.recipe?.let(RecipeCodec::write)
@@ -653,6 +656,9 @@ class RecipeMineViewModel(private val c: AppContainer) : ViewModel() {
     val mine: StateFlow<MyRecipes?> = _mine.asStateFlow()
     private val _message = MutableStateFlow<String?>(null)
     val message: StateFlow<String?> = _message.asStateFlow()
+    /** 2.0.0 [RVM-55] 검토 U09b-02: what the last 되돌리기 here left as I made it ([message]'s 보기). */
+    var left: List<com.bamnat.app.recipe.RecipePieces.Kept> = emptyList()
+        private set
 
     /** [RCX-02] Codes put on whose maker made a newer version: code → its version. */
     private val _newer = MutableStateFlow<Map<String, Int>>(emptyMap())
@@ -730,7 +736,11 @@ class RecipeMineViewModel(private val c: AppContainer) : ViewModel() {
     }
 
     fun undo(id: Long) {
-        viewModelScope.launch { _message.value = c.recipes.undoSay(c.recipes.undo(id)) }
+        viewModelScope.launch {
+            val ok = c.recipes.undo(id)
+            left = if (ok) c.recipes.lastUndo.items else emptyList()
+            _message.value = c.recipes.undoSay(ok)
+        }
     }
 
     /** 2.0.0 [RVS-12] HQ-57 ②: received works whose 부품 꾸미기 did not go on before (by record id), offered here until put on. */
@@ -765,7 +775,7 @@ class RecipeMineViewModel(private val c: AppContainer) : ViewModel() {
     }
 
     fun deleteDraft(id: Long) { viewModelScope.launch { c.recipes.deleteDraft(id) } }
-    fun shown() { _message.value = null }
+    fun shown() { _message.value = null; left = emptyList() }
 
     /** [RCX-31] 새 판 만들기 from 내가 올린 레시피: the recipe as it is now, handed to [then] to change and send again. */
     fun newVersion(code: String, then: (String) -> Unit) {
