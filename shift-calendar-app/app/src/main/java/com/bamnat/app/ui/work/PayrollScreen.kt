@@ -153,7 +153,7 @@ internal fun PayrollScreen(roster: StaffRoster, startMonth: YearMonth? = null, o
             }
         }
 
-        // 2.0.0 [RVP-47] (검토 U13-18·T13-02, 조건 1·4) The two grey paragraphs over the month were most of the first screen: said in full the first
+        // 2.0.0 [RVP-52] (검토 U13-18·T13-02, 조건 1·4) The two grey paragraphs over the month were most of the first screen: said in full the first
         // time, then one line each with ⓘ, so the month's 인건비 starts high on the page.
         com.bamnat.app.ui.components.Explain("payroll.notice", PayrollLedger.NOTICE, summary = "참고용 계산이에요. 최종 지급액은 사장님이 확인해요", iconOnly = false)
         // The month: ◀ 2026년 11월 ▶
@@ -172,7 +172,7 @@ internal fun PayrollScreen(roster: StaffRoster, startMonth: YearMonth? = null, o
         }
         com.bamnat.app.ui.components.Explain("payroll.month", monthSaid, summary = com.bamnat.app.ui.components.firstSentence(monthSaid), iconOnly = false)
         SectionCard(title = place.name, trailing = { TextButton(onClick = { settings = true }) { Text("사업장 설정") } }) {
-            // 2.0.0 [RVP-47] (U13-18) The month's 인건비 is first of the card, above the 주의 줄 and the 5인 question (1.39 [FLOW-24]: one number first, then each person's bar against last month).
+            // 2.0.0 [RVP-52] (U13-18) The month's 인건비 is first of the card, above the 주의 줄 and the 5인 question (1.39 [FLOW-24]: one number first, then each person's bar against last month).
             Text("${ym.monthValue}월 인건비", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(top = 4.dp))
             Text(Fmt.won(ledger.total), style = MaterialTheme.typography.headlineSmall)

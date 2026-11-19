@@ -86,6 +86,17 @@ class ReviewP7TeamStepsTest : ScreenshotBase() {
     @Test fun sentLight200() = shoot("rvp7_team_steps_sent_folded_light_200", FOLDED, 2f, steps(31, true, "보내기", 4))
     @Test fun fillWide() = shoot("rvp7_team_steps_fill_unfolded_light", UNFOLDED, steps(24, false, "채우기", 2))
 
+    /** The paint keys are swatches in their own colours, not four more filled buttons beside the stage's one. */
+    private fun keypad(): Screen.() -> Unit = {
+        seedTeam(24, false)
+        open().invoke(this)
+        reveal("✕ 지우기", exact = true)
+        assertTrue("지우기·건너뛰기 키가 같은 줄에", shows("» 건너뛰기", exact = true))
+    }
+
+    @Test fun keypadLight() = shoot("rvp7_team_keypad_folded_light", FOLDED, keypad())
+    @Test fun keypadDark200() = shoot("rvp7_team_keypad_folded_dark_200", DARK, 2f, keypad())
+
     companion object {
         const val DARK = "w369dp-h905dp-port-night-420dpi"
     }
