@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""2.0.0 [RVR-43] (총괄 HQ-121): how the screenshot tests are split into CI shards (shots-a … shots-d).
+"""2.0.0 [RVR-43] (총괄 HQ-121): how the screenshot tests are split into CI shards (shots-a … shots-e).
 
 app/build.gradle.kts reads tools/data/shot-seconds.tsv (seconds each screenshot class took in CI) and hands the classes out
 by time: longest first, each to the shard with the least so far. A class not in the file counts as DEFAULT seconds, and the
@@ -17,7 +17,7 @@ import sys
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 WEIGHTS = ROOT / "tools/data/shot-seconds.tsv"
 TESTS = ROOT / "app/src/test/java/com/bamnat/app/screenshots"
-SHARDS = ["shots-a", "shots-b", "shots-c", "shots-d"]
+SHARDS = ["shots-a", "shots-b", "shots-c", "shots-d", "shots-e"]  # [RVR-45] five (app/build.gradle.kts)
 DEFAULT = 30.0
 
 
