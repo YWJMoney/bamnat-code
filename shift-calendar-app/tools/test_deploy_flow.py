@@ -5,6 +5,7 @@
 만들어요. build(토큰 없이 시험·번들)와 ship(토큰, build가 만든 파일만)을 차례로 끝까지 돌려요(2.0.0 [RVQ-01]부터 둘로 나뉨).
 시험하는 길: 판이 나뉘어 돎, check 모드, 대시보드에만 있던 변수 다시 올리기, 바인딩 빠짐, 판 낮음, 시험 실패, build에 토큰,
 카나리 뒤 배포, 카나리에서 나쁘면 되돌리기, 100% 뒤 health 실패면 앞 판·정기 작업 되돌리기, 날짜에 낡은 시험 넘기기.
+2.0.0 [RVD-33] Durable Object 첫 배포(mode migrate-check·migrate): MigrateFlowTest가 공유 서버로 끝까지 돌려 봐요.
 """
 import contextlib
 import datetime
@@ -295,6 +296,224 @@ class DeployFlowTest(unittest.TestCase):
         self.assertEqual([(OLD_ID, 100.0)], self.cloud.serving)
         self.assertEqual(["0 * * * *"], self.cloud.schedules)
         self.assertIn("되돌림", self.printed)
+
+
+SHARE_OLD = [
+    {"type": "plain_text", "name": "ANDROID_CERT_SHA256", "text": "AA:BB"},
+    {"type": "version_metadata", "name": "CF_VERSION_METADATA"},
+    {"type": "secret_text", "name": "RATE_SALT"},
+    {"type": "kv_namespace", "name": "SHARES", "namespace_id": "abc123"},
+    {"type": "secret_text", "name": "SHARE_ADMIN_TOKEN"},
+]
+DO_BINDING = {"type": "durable_object_namespace", "name": "TEAM_ROUND", "class_name": "TeamRound"}
+SHARE_TOML = (
+    'name = "bamnat-share"\nmain = "src/index.js"\nkeep_vars = true\n'
+    '[version_metadata]\nbinding = "CF_VERSION_METADATA"\n'
+    '[[kv_namespaces]]\nbinding = "SHARES"\nid = "REPLACE_WITH_KV_NAMESPACE_ID"\n'
+    '[[durable_objects.bindings]]\nname = "TEAM_ROUND"\nclass_name = "TeamRound"\n'
+    '[[migrations]]\ntag = "v1-team-round"\nnew_sqlite_classes = ["TeamRound"]\n'
+)
+
+
+class FakeShare(FakeCloud):
+    """공유 서버: 실서버 바인딩 다섯, migration 태그 없음, 사용자 도메인 s.bamnat.app, workers.dev 켜짐·미리보기 꺼짐."""
+
+    def __init__(self, wd):
+        super().__init__(wd)
+        self.views = {OLD_ID: SHARE_OLD}
+        self.live = "2.0.0"
+        self.tag = None
+        self.domains = [{"hostname": "s.bamnat.app", "service": "bamnat-share", "enabled": True}]
+        self.routes_readable = True
+        self.deploy_rc = 0
+        self.deploy_goes_live = True
+        self.drops_domain = False
+        self.wrangler_deploys = []  # wrangler deploy 명령(dry-run 포함)
+        self.deploy_configs = []
+
+    def run(self, cmd, cwd, extra_env=None, check=True, stage="", clean_env=False):
+        args = cmd[len(d.WRANGLER):] if cmd[:len(d.WRANGLER)] == d.WRANGLER else []
+        if args[:1] != ["deploy"]:
+            return super().run(cmd, cwd, extra_env, check, stage, clean_env)
+        self.calls.append((cmd, clean_env))
+        self.wrangler_deploys.append(cmd)
+        self.deploy_configs.append((Path(cwd) / "wrangler.deploy.toml").read_text(encoding="utf-8"))
+        rc, out = 0, ""
+        if "--dry-run" not in args:
+            rc = self.deploy_rc
+            if self.deploy_goes_live:
+                self.serving, self.tag = [(NEW_ID, 100.0)], "v1-team-round"
+                self.views[NEW_ID] = SHARE_OLD + [DO_BINDING]
+                out = f"Current Version ID: {NEW_ID}"
+                if self.drops_domain:
+                    self.domains = []
+        if check and rc:
+            raise d.Stop(f"`wrangler deploy …` 실패 (코드 {rc})", stage=stage)
+        return subprocess.CompletedProcess(cmd, rc, out, "")
+
+    def cf(self, method, path, body=None):
+        if path.endswith("/subdomain"):
+            return {"result": {"enabled": True, "previews_enabled": False}}
+        if "/workers/domains?service=bamnat-share" in path:
+            return {"result": list(self.domains)}
+        if path.endswith("/environments/production/routes"):
+            if not self.routes_readable:
+                raise RuntimeError("403")
+            return {"result": []}
+        if path.endswith("/workers/services/bamnat-share"):
+            return {"result": {"default_environment": {"script": {"migration_tag": self.tag}}}}
+        raise AssertionError(path)
+
+    def get(self, url, headers=None):
+        new = self.serving == [(NEW_ID, 100.0)]
+        if url.endswith("/api/health"):
+            return (503, "") if new and not self.new_healthy else (200, json.dumps({"ok": True, "version": "2.0.0" if new else self.live}))
+        return 404, ""
+
+
+class MigrateFlowTest(unittest.TestCase):
+    """2.0.0 [RVD-33] DO 첫 배포를 ship 일에서 끝까지(가짜 wrangler·Cloudflare)."""
+
+    def setUp(self):
+        self.dir = Path(tempfile.mkdtemp())
+        self.out = self.dir / "ship"
+        (self.out / "share").mkdir(parents=True)
+        (self.out / "share/worker.js").write_text("export default {}", encoding="utf-8")
+        (self.out / "share/wrangler.toml").write_text(SHARE_TOML, encoding="utf-8")
+        (self.out / "share/version.txt").write_text("2.0.0", encoding="utf-8")
+        self.cloud = FakeShare(self.dir)
+        self.keep = d.run, d.cf, d.get, d.time
+        d.run, d.cf, d.get = self.cloud.run, self.cloud.cf, self.cloud.get
+        d.time = types.SimpleNamespace(sleep=lambda s: None)
+        self.env = {k: d.os.environ.get(k) for k in ("CLOUDFLARE_API_TOKEN", "CLOUDFLARE_ACCOUNT_ID", "GITHUB_STEP_SUMMARY", "GITHUB_OUTPUT")}
+        for k in self.env:
+            d.os.environ.pop(k, None)
+        d.os.environ["CLOUDFLARE_ACCOUNT_ID"] = "acc"
+        self.printed = ""
+
+    def tearDown(self):
+        d.run, d.cf, d.get, d.time = self.keep
+        for k, v in self.env.items():
+            if v is None:
+                d.os.environ.pop(k, None)
+            else:
+                d.os.environ[k] = v
+        shutil.rmtree(self.dir)
+
+    def ship(self, mode, workers=("share",)):
+        out = io.StringIO()
+        d.os.environ["CLOUDFLARE_API_TOKEN"] = "test-token-not-real"
+        try:
+            with contextlib.redirect_stdout(out):
+                d.ship(list(workers), self.out, mode, "0123456789abcdef", "DO 바닥", False)
+        finally:
+            d.os.environ.pop("CLOUDFLARE_API_TOKEN", None)
+            self.printed = out.getvalue()
+        return self.printed
+
+    def real_deploys(self):
+        return [c for c in self.cloud.wrangler_deploys if "--dry-run" not in c]
+
+    def test_migrate_check_only_dry_runs(self):
+        out = self.ship("migrate-check")
+        # 지금 붙은 연결을 요약에 남기고, workers.dev·미리보기 URL은 지금 값으로 적어 dry-run해요. 손님은 앞 판 그대로.
+        self.assertIn("사용자 도메인 s.bamnat.app · workers.dev 켜짐 · 미리보기 URL 꺼짐 · route 없음", out)
+        self.assertIn("workers_dev = true\npreview_urls = false\n", self.cloud.deploy_configs[0])
+        self.assertEqual([("--dry-run" in c) for c in self.cloud.wrangler_deploys], [True])
+        self.assertEqual([(OLD_ID, 100.0)], self.cloud.serving)
+        self.assertEqual([], self.cloud.commands(d.WRANGLER + ["versions", "upload"]) + self.cloud.commands(d.WRANGLER + ["versions", "deploy"]))
+        self.assertIn("새 되돌리기 바닥", out)
+        self.assertIn(f"앞 판 `{OLD_ID[:8]}`", out)
+
+    def test_migrate_deploys_once_keeps_vars_and_has_no_canary(self):
+        out = self.ship("migrate")
+        real = self.real_deploys()
+        self.assertEqual(len(real), 1)
+        self.assertIn("--keep-vars", real[0])
+        self.assertIn("ANDROID_CERT_SHA256:AA:BB", real[0])  # 대시보드 일반 변수는 값까지 넘겨요
+        self.assertNotIn("RATE_SALT", " ".join(real[0]))  # 비밀값은 건드리지 않아요
+        # upload도 카나리(versions deploy)도 없어요: 올리는 것은 wrangler deploy 한 번뿐.
+        self.assertEqual([], self.cloud.commands(d.WRANGLER + ["versions", "upload"]) + self.cloud.commands(d.WRANGLER + ["versions", "deploy"]))
+        self.assertEqual([(NEW_ID, 100.0)], self.cloud.serving)
+        self.assertIn("preview_urls = false", self.cloud.deploy_configs[-1])
+        self.assertIn("Durable Object 첫 배포 끝", out)
+        self.assertIn(f"새 되돌리기 바닥 `{NEW_ID[:8]}`", out)
+
+    def test_a_failing_health_never_rolls_back(self):
+        # health가 실패해도 앞 판으로 versions deploy 하지 않아요(Cloudflare가 막고, 시도하면 헷갈려요).
+        self.cloud.new_healthy = False
+        with self.assertRaises(d.Stop) as e:
+            self.ship("migrate")
+        self.assertEqual("DO 첫 배포 확인", e.exception.stage)
+        self.assertEqual([], self.cloud.commands(d.WRANGLER + ["versions", "deploy"]))
+        self.assertIn("되돌리지 않아요", str(e.exception))
+        self.assertIn("되돌릴 수 없어요", "\n".join(d.summary_lines(e.exception.stage)))
+        # wrangler deploy가 올리기 전에 실패했으면(손님은 앞 판) 앞 단계 멈춤이에요.
+        self.cloud.new_healthy, self.cloud.deploy_rc, self.cloud.deploy_goes_live = True, 1, False
+        with self.assertRaises(d.Stop) as e:
+            self.ship("migrate")
+        self.assertEqual("DO 첫 배포", e.exception.stage)
+        # 올린 뒤 실패(트리거 등)면 앞 판이 아니라 새 판을 확인하고 실패로 알려요.
+        self.cloud.deploy_goes_live = True
+        self.cloud.serving, self.cloud.tag = [(OLD_ID, 100.0)], None
+        with self.assertRaises(d.Stop) as e:
+            self.ship("migrate")
+        self.assertEqual("DO 첫 배포 확인", e.exception.stage)
+        self.assertIn("코드 1", str(e.exception))
+
+    def test_a_domain_that_falls_off_is_said_loudly(self):
+        # 올린 뒤 사용자 도메인(s.bamnat.app)이 떨어지면 무엇을 다시 붙여야 하는지 알려요.
+        self.cloud.drops_domain = True
+        with self.assertRaises(d.Stop) as e:
+            self.ship("migrate")
+        self.assertIn("사용자 도메인: ['s.bamnat.app'] → []", str(e.exception))
+        self.assertIn("다시 붙여요", str(e.exception))
+
+    def test_unreadable_routes_do_not_stop(self):
+        # route를 못 읽어도(zone 권한 없음) 멈추지 않고 '읽지 못함'으로 남겨요.
+        self.cloud.routes_readable = False
+        out = self.ship("migrate")
+        self.assertIn("route 읽지 못함", out)
+        self.assertIn("Durable Object 첫 배포 끝", out)
+
+    def test_migrate_is_one_server_at_a_time(self):
+        with self.assertRaisesRegex(d.Stop, "한 서버씩"):
+            self.ship("migrate", workers=("company", "share"))
+        self.assertEqual([], self.cloud.calls)
+        with self.assertRaisesRegex(d.Stop, "한 서버씩"):
+            self.ship("migrate-check", workers=("company", "share"))
+
+    def test_migrate_stops_when_there_is_nothing_to_apply(self):
+        self.cloud.tag = "v1-team-round"  # 실서버에 이미 적용됨 → 보통 deploy로
+        with self.assertRaisesRegex(d.Stop, "이미 모두"):
+            self.ship("migrate-check")
+        self.assertEqual([], self.cloud.wrangler_deploys)
+
+    def test_normal_ship_stops_on_a_pending_migration_and_goes_on_when_applied(self):
+        # 보통 ship은 설정에 실서버보다 새 migration이 있으면 올리기 전에 migrate로 보내요(versions upload까지 가지 않아요).
+        with self.assertRaises(d.Stop) as e:
+            self.ship("check")
+        self.assertEqual("올리기", e.exception.stage)
+        self.assertIn("migrate", e.exception.next_step)
+        self.assertEqual([], self.cloud.commands(d.WRANGLER + ["versions", "upload"]))
+        # 실서버에 이미 적용됐으면 보통 ship으로 올라가요(check는 올리기·대조까지).
+        self.cloud.tag = "v1-team-round"
+        self.cloud.views[OLD_ID] = SHARE_OLD + [DO_BINDING]
+        self.cloud.new_bindings = SHARE_OLD + [DO_BINDING]
+        out = self.ship("check")
+        self.assertEqual(1, len(self.cloud.uploads))
+        self.assertIn("check 모드", out)
+        self.assertEqual([(OLD_ID, 100.0)], self.cloud.serving)
+
+    def test_a_share_bundle_without_the_room_class_stops_on_the_lost_binding(self):
+        # 바닥 판이 올라간 뒤 TeamRound 바인딩이 없는 공유 묶음은 보통 ship이 '앞 판 바인딩이 빠져요'로 멈춰요(손님은 앞 판 그대로).
+        self.cloud.tag = "v1-team-round"
+        self.cloud.views[OLD_ID] = SHARE_OLD + [DO_BINDING]
+        self.cloud.new_bindings = list(SHARE_OLD)
+        (self.out / "share/wrangler.toml").write_text(SHARE_TOML.split("[[durable_objects.bindings]]")[0], encoding="utf-8")
+        with self.assertRaisesRegex(d.Stop, "앞 판 바인딩이 빠져요"):
+            self.ship("check")
+        self.assertEqual([], self.cloud.deploys)
 
 
 if __name__ == "__main__":

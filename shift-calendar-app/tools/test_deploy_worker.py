@@ -135,6 +135,108 @@ class DeployWorkerTest(unittest.TestCase):
         self.assertIn("migrate", d.upload_hint(out))
         self.assertIsNone(d.upload_hint("✘ [ERROR] Authentication error [code: 10000]"))
 
+    SHARE_OLD = [
+        {"type": "plain_text", "name": "ANDROID_CERT_SHA256", "text": "AA:BB"},
+        {"type": "version_metadata", "name": "CF_VERSION_METADATA"},
+        {"type": "secret_text", "name": "RATE_SALT"},
+        {"type": "kv_namespace", "name": "SHARES", "namespace_id": "abc123"},
+        {"type": "secret_text", "name": "SHARE_ADMIN_TOKEN"},
+    ]
+    TEAM_ROUND = (
+        'name = "bamnat-share"\nmain = "src/index.js"\nkeep_vars = true\n'
+        '[version_metadata]\nbinding = "CF_VERSION_METADATA"\n'
+        '[[kv_namespaces]]\nbinding = "SHARES"\nid = "abc123"\n'
+        '[[durable_objects.bindings]]\nname = "TEAM_ROUND"\nclass_name = "TeamRound"\n'
+        '[[migrations]]\ntag = "v1-team-round"\nnew_sqlite_classes = ["TeamRound"]\n'
+    )
+
+
+    def test_do_lifecycle_and_pending(self):
+        lc = d.do_lifecycle(self.TEAM_ROUND)
+        self.assertEqual(lc["bindings"], {"TEAM_ROUND": "TeamRound"})
+        self.assertEqual(lc["tags"], ["v1-team-round"])
+        # 실서버에 태그가 없으면 전부, 마지막 태그면 없음, 설정에 없는 태그면 None(멈춤).
+        self.assertEqual([m["tag"] for m in d.pending_migrations(lc, None)], ["v1-team-round"])
+        self.assertEqual(d.pending_migrations(lc, "v1-team-round"), [])
+        self.assertIsNone(d.pending_migrations(lc, "v0-gone"))
+        two = d.do_lifecycle(self.TEAM_ROUND + '[[migrations]]\ntag = "v2"\nnew_sqlite_classes = ["X"]\n')
+        self.assertEqual([m["tag"] for m in d.pending_migrations(two, "v1-team-round")], ["v2"])
+        # 다른 Worker의 DO를 쓰는 바인딩은 이 Worker의 클래스가 아니에요.
+        other = d.do_lifecycle('[[durable_objects.bindings]]\nname = "R"\nclass_name = "R"\nscript_name = "x"\n')
+        self.assertEqual(other["bindings"], {})
+
+    def test_script_migration_tag_shape(self):
+        self.assertEqual(d.script_migration_tag({"result": {"default_environment": {"script": {"migration_tag": "v1-team-round"}}}}), "v1-team-round")
+        self.assertIsNone(d.script_migration_tag({"result": {"default_environment": {"script": {"tag": "abc"}}}}))
+        with self.assertRaises(ValueError):
+            d.script_migration_tag({"result": {}})
+
+    def test_real_share_config_ready_for_migrate(self):
+        # 지금 실서버 바인딩으로 TeamRound 바닥 판을 올릴 때 멈출 까닭이 없어야 해요.
+        self.assertEqual(d.migrate_problems(self.TEAM_ROUND, self.SHARE_OLD, d.pending_migrations(d.do_lifecycle(self.TEAM_ROUND), None)), [])
+        names = d.config_binding_names(self.TEAM_ROUND)
+        self.assertEqual(names, {"CF_VERSION_METADATA", "SHARES", "TEAM_ROUND"})
+
+    def test_migrate_problems_stop_before_unrecoverable_deploy(self):
+        lc = d.do_lifecycle(self.TEAM_ROUND)
+        # 이미 적용됨 → 보통 deploy, migration 없음 → 보통 deploy, 실서버 태그 모름 → 멈춤.
+        self.assertIn("이미 모두", " ".join(d.migrate_problems(self.TEAM_ROUND, self.SHARE_OLD, [])))
+        self.assertIn("[[migrations]]가 없어요", " ".join(d.migrate_problems('name = "x"\n', [], [])))
+        self.assertIn("태그가 설정에 없어요", " ".join(d.migrate_problems(self.TEAM_ROUND, self.SHARE_OLD, None)))
+        # 지우기·이름 바꾸기·옮기기는 데이터가 사라지거나 옮겨져요.
+        gone = self.TEAM_ROUND + '[[migrations]]\ntag = "v2"\ndeleted_classes = ["TeamRound"]\n'
+        why = " ".join(d.migrate_problems(gone, self.SHARE_OLD, d.pending_migrations(d.do_lifecycle(gone), "v1-team-round")))
+        self.assertIn("deleted_classes", why)
+        self.assertIn("만드는 migration이 없어요", why)  # 지운 클래스를 바인딩이 아직 써요
+        # 바인딩 클래스를 만드는 migration이 없으면 멈춰요.
+        typo = self.TEAM_ROUND.replace('new_sqlite_classes = ["TeamRound"]', 'new_sqlite_classes = ["TeamRoom"]')
+        self.assertIn("TeamRound를 만드는", " ".join(d.migrate_problems(typo, self.SHARE_OLD, d.do_lifecycle(typo)["migrations"])))
+        # 앞 판 KV가 설정에 없으면 사라져요(비밀값·일반 변수는 남아요).
+        no_kv = self.TEAM_ROUND.replace('[[kv_namespaces]]\nbinding = "SHARES"\nid = "abc123"\n', "")
+        why = " ".join(d.migrate_problems(no_kv, self.SHARE_OLD, lc["migrations"]))
+        self.assertIn("SHARES(kv_namespace)", why)
+        self.assertNotIn("RATE_SALT", why)
+        self.assertNotIn("ANDROID_CERT_SHA256", why)
+        # 설정의 변수 이름이 비밀값을 덮어쓰면 멈춰요.
+        clash = self.TEAM_ROUND + '[vars]\nRATE_SALT = "x"\n'
+        self.assertIn("비밀값을 덮어써요: RATE_SALT", " ".join(d.migrate_problems(clash, self.SHARE_OLD, lc["migrations"])))
+
+    def test_deploy_version_id(self):
+        nd = '{"type":"wrangler-session"}\n{"type":"deploy","version_id":"0f0f0f0f-1111-2222-3333-444444444444"}\n'
+        self.assertEqual(d.deploy_version_id(nd, ""), "0f0f0f0f-1111-2222-3333-444444444444")
+        self.assertEqual(d.deploy_version_id("", "Current Version ID: 0f0f0f0f-1111-2222-3333-555555555555"), "0f0f0f0f-1111-2222-3333-555555555555")
+        self.assertIsNone(d.deploy_version_id('{"type":"version-upload","version_id":"x"}', "nothing"))
+
+    def test_pin_subdomain_and_attachments(self):
+        pinned = d.pin_subdomain(self.TEAM_ROUND.replace('main = "src/index.js"\n', 'main = "src/index.js"\nworkers_dev = true\n'), False, True)
+        c = d.tomllib.loads(pinned)
+        self.assertIs(c["workers_dev"], False)
+        self.assertIs(c["preview_urls"], True)
+        self.assertEqual(pinned.count("workers_dev ="), 1)
+        self.assertEqual(c["durable_objects"]["bindings"][0]["name"], "TEAM_ROUND")  # 표는 그대로
+        a = d.attachment_state({"enabled": True}, [{"hostname": "s.bamnat.app", "service": "bamnat-share"},
+                                                    {"hostname": "x.example", "service": "other"}], None, "bamnat-share")
+        self.assertEqual(a, {"workers_dev": True, "previews": False, "domains": ["s.bamnat.app"], "routes": None})
+        with self.assertRaises(ValueError):
+            d.attachment_state({}, [], [], "bamnat-share")
+        b = dict(a, routes=["s.bamnat.app/*"])
+        self.assertEqual(d.attachment_diff(a, b), [])  # 앞에서 route를 못 읽었으면 견주지 않아요
+        self.assertEqual(d.attachment_diff(dict(a, routes=[]), b), ["route: [] → ['s.bamnat.app/*']"])
+        self.assertEqual(d.attachment_diff(a, dict(a, previews=True)), ["미리보기 URL: False → True"])
+
+    def test_workflow_offers_migrate_one_server_at_a_time(self):
+        # 2.0.0 [RVD-33] migrate는 되돌릴 수 없어서 both로는 시작하지 않아요(gate가 build·ship 전에 멈춰요). 토큰은 여전히 gate·ship 단계에만.
+        import re
+        wf = (Path(__file__).resolve().parents[2] / ".github/workflows/deploy-server.yml").read_text(encoding="utf-8")
+        self.assertIn("options: [check, deploy, migrate-check, migrate]", wf)
+        jobs = wf.split("\njobs:\n", 1)[1]
+        parts = re.split(r"(?m)^  ([a-z]+):\n", jobs)
+        blocks = dict(zip(parts[1::2], parts[2::2]))
+        self.assertIn('migrate*:both)', blocks["gate"])
+        self.assertIn("IN_MODE: ${{ inputs.mode }}", blocks["gate"])
+        self.assertNotIn("secrets.", blocks["gate"].split("- name: 지금 판을 올린 커밋", 1)[0])
+        self.assertIn('--mode "$IN_MODE"', blocks["ship"])
+
     def test_failing_test_names(self):
         tap = "ok 1 - a\nnot ok 2 - login counts at once # TODO\n  ---\nnot ok 3 - test/accounts.test.mjs\n# fail 1\n"
         self.assertEqual(d.failing_tests(tap), ["login counts at once"])
