@@ -257,6 +257,9 @@ object LiveTryOn {
 
     const val AWAY_MILLIS = 3 * 60_000L
 
+    /** [RVM-57] A 다시 입어 보기 one test shot left must not open the next one's 입어 보기 (screenshot base). */
+    fun resetForTest() { _reopen.value = null }
+
     /** The [Reopen] for [from], taken (once). */
     fun take(match: (From) -> Boolean): Reopen? {
         val r = _reopen.value ?: return null

@@ -906,6 +906,13 @@ class RecipePieces(private val c: AppContainer) {
      */
     @Volatile var kept: Int = 0
 
+    /**
+     * 2.0.0 [RVM-55] 검토 U09b-02: what the last [restore]s left as the user made it, one line each (그대로 둔 것 [보기]), with
+     * [Kept.back] to take that one back too when the user asks (null: it cannot be from there, [Kept.why] says where).
+     */
+    class Kept(val what: String, val why: String, val back: (suspend () -> Unit)?)
+    val keptItems: MutableList<Kept> = java.util.Collections.synchronizedList(ArrayList())
+
     /** 2.0.0 [RVM-50] RCP-04: the shifts whose alarms the last [restore]s switched off, for 되돌리기 to say. */
     val alarmsOff: MutableList<String> = java.util.Collections.synchronizedList(ArrayList())
 
@@ -929,8 +936,12 @@ class RecipePieces(private val c: AppContainer) {
             }
             PieceKind.CAL_THEME -> c.settingsRepository.update { s ->
                 // 2.0.0 [RVM-45] RCP-02: colour by colour (a 일요일 colour put on later by another work stays).
-                val back = SettingBack.of("calTheme", s.calTheme, before.optString("before"), before.optString("after"))
+                val b = before.optString("before"); val a = before.optString("after")
+                val back = SettingBack.of("calTheme", s.calTheme, b, a)
                 kept += back.kept
+                if (back.kept > 0) keptItems += Kept("${kind.label} ${back.kept}곳", MINE) {
+                    c.settingsRepository.update { x -> SettingBack.of("calTheme", x.calTheme, b, a).force.let { f -> if (f != x.calTheme) x.copy(calTheme = f) else x } }
+                }
                 if (back.text != s.calTheme) s.copy(calTheme = back.text) else s
             }
             PieceKind.ALARMS -> {
@@ -1045,7 +1056,10 @@ class RecipePieces(private val c: AppContainer) {
                     val after = before.optJSONArray("patternsAfter")
                     val now = JSONArray(schedule.snapshot.first().patterns.map { p -> patternJson(p) })
                     if (after == null || UndoMerge.same(now, after)) schedule.restorePatterns(a.objects().mapNotNull(::patternFrom))
-                    else if (!UndoMerge.same(a, after)) kept++
+                    else if (!UndoMerge.same(a, after)) {
+                        kept++
+                        keptItems += Kept("근무 순서", MINE) { schedule.restorePatterns(a.objects().mapNotNull(::patternFrom)) }
+                    }
                 }
                 val mine = schedule.snapshot.first().shiftTypes.associateBy { it.id }
                 val typesAfter = before.optJSONArray("typesAfter")?.objects()?.associateBy { it.getLong("id") }
@@ -1053,16 +1067,24 @@ class RecipePieces(private val c: AppContainer) {
                     val t = mine[o.getLong("id")] ?: return@forEach
                     val a = typesAfter?.get(t.id)
                     val cur = typeTimes(t)
+                    val mineKeys = ArrayList<String>()
                     fun untouched(key: String) = (a == null || UndoMerge.same(cur.opt(key), a.opt(key))).also { same ->
-                        if (!same && !UndoMerge.same(o.opt(key), a?.opt(key))) kept++
+                        if (!same && !UndoMerge.same(o.opt(key), a?.opt(key))) { kept++; mineKeys += key }
                     }
-                    var n = t
-                    if (untouched("start")) n = n.copy(start = o.optStringOrNull("start")?.let(LocalTime::parse))
-                    if (untouched("end")) n = n.copy(end = o.optStringOrNull("end")?.let(LocalTime::parse))
-                    if (untouched("break")) n = n.copy(breakMinutes = o.optInt("break"))
-                    if (untouched("breakStart")) n = n.copy(breakStart = o.optStringOrNull("breakStart")?.let(LocalTime::parse))
-                    if (untouched("off")) n = n.copy(isOff = o.optBoolean("off"))
+                    fun put(n0: ShiftType, keys: Collection<String>): ShiftType {
+                        var n = n0
+                        if ("start" in keys) n = n.copy(start = o.optStringOrNull("start")?.let(LocalTime::parse))
+                        if ("end" in keys) n = n.copy(end = o.optStringOrNull("end")?.let(LocalTime::parse))
+                        if ("break" in keys) n = n.copy(breakMinutes = o.optInt("break"))
+                        if ("breakStart" in keys) n = n.copy(breakStart = o.optStringOrNull("breakStart")?.let(LocalTime::parse))
+                        if ("off" in keys) n = n.copy(isOff = o.optBoolean("off"))
+                        return n
+                    }
+                    val n = put(t, listOf("start", "end", "break", "breakStart", "off").filter(::untouched))
                     if (n != t) schedule.saveShiftType(n)
+                    if (mineKeys.isNotEmpty()) keptItems += Kept("‘${t.name}’ 근무 시간", MINE) {
+                        schedule.snapshot.first().shiftTypes.firstOrNull { it.id == t.id }?.let { x -> put(x, mineKeys).takeIf { it != x }?.let { schedule.saveShiftType(it) } }
+                    }
                 }
                 before.optJSONArray("added")?.let { a ->
                     (0 until a.length()).forEach { i ->
@@ -1070,7 +1092,14 @@ class RecipePieces(private val c: AppContainer) {
                         runCatching {
                             val t = mine[id] ?: return@runCatching
                             val changed = typesAfter?.get(id)?.let { !UndoMerge.same(typeTimes(t), it) } ?: false
-                            if (typesAfter != null && (changed || schedule.shiftTypeUse(id).let { u -> u.days > 0 || u.inPattern || u.covers > 0 })) { kept++; return@runCatching }
+                            val used = typesAfter != null && schedule.shiftTypeUse(id).let { u -> u.days > 0 || u.inPattern || u.covers > 0 }
+                            if (typesAfter != null && (changed || used)) {
+                                kept++
+                                // A shift a day, a 대근 or the 근무 순서 uses goes only from its own settings (where its days are asked about).
+                                keptItems += if (used) Kept("‘${t.name}’ 근무", "달력에서 쓰는 날이 있어 남겼어요 · 근무 설정에서 지울 수 있어요", null)
+                                else Kept("‘${t.name}’ 근무", MINE) { if (schedule.shiftTypeUse(id).let { u -> u.days == 0 && !u.inPattern && u.covers == 0 }) schedule.deleteShiftTypeUndoable(id) }
+                                return@runCatching
+                            }
                             schedule.deleteShiftTypeUndoable(id)
                         }
                     }
@@ -1082,7 +1111,14 @@ class RecipePieces(private val c: AppContainer) {
                         if (a == null && !before.has("typesAfter")) c.payStore.save(PayCodec.decode(p))
                         else if (a != null && now != null) {
                             val back = UndoMerge.back(PayCodec.encode(now), p, a)
-                            if (!UndoMerge.same(back, p)) kept++
+                            // [RVM-55] A place stayed only where the work changed it and so did I (my own 기본급, which the work left
+                            // alone, is not one): what 이것도 되돌리기 would still change.
+                            if (!UndoMerge.same(back, UndoMerge.force(PayCodec.encode(now), p, a))) {
+                                kept++
+                                keptItems += Kept("급여 설정", MINE) {
+                                    c.payStore.profile.value?.let { x -> PayCodec.decode(UndoMerge.force(PayCodec.encode(x), p, a)).takeIf { it != x }?.let { c.payStore.save(it) } }
+                                }
+                            }
                             PayCodec.decode(back).takeIf { it != now }?.let { c.payStore.save(it) }
                         }
                     }
@@ -1129,6 +1165,16 @@ class RecipePieces(private val c: AppContainer) {
                     }
                 }
                 kept += keptHere
+                if (keptHere > 0) keptItems += Kept("${kind.label} ${keptHere}곳", MINE) {
+                    c.settingsRepository.update { cur ->
+                        sets.keys().asSequence().fold(cur) { acc, k ->
+                            val pair = sets.getJSONArray(k)
+                            val f = SettingBack.of(k, settingOf(acc, k), pair.getString(0), pair.getString(1)).force
+                            if (f != settingOf(acc, k)) withSetting(acc, k, f) else acc
+                        }
+                    }
+                    if (kind == PieceKind.LOGIC || sets.has("logic")) com.bamnat.app.logic.LogicRunner.rulesChanged(c)
+                }
             }
         }
     }
@@ -1535,6 +1581,9 @@ class RecipePieces(private val c: AppContainer) {
     private fun dayShort(d: String) = "월화수목금토일"[DayOfWeek.valueOf(d).value - 1].toString()
 
     companion object {
+        /** 2.0.0 [RVM-55] U09b-02: why a 그대로 둔 것 line stayed. */
+        const val MINE = "넣은 뒤 직접 바꿔서 그대로 뒀어요"
+
         /** [FREE-10] What a theme may change, as settings. */
         val LOOK_SETTINGS = listOf("calView", "calTheme", "screenLooks", "memoLook", "moneyLook", "payLooks", "widgetLook", "photoLook",
             "calendarLayout", "statsLayout", "moneyLayout", "memoLayout", "tabOrder",

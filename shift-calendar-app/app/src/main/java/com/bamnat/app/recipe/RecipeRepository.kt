@@ -380,7 +380,9 @@ class RecipeRepository(private val c: AppContainer, context: Context) {
         e.undoneAt == null && e.replacedAt == null && now - e.appliedAt < UNDO_DAYS * DAY_MILLIS
 
     /** 2.0.0 [RVM-45] 검토 RCP-02: what the last [undo] / [undoAll] left as the user made it, and the pieces it could not take back. */
-    data class UndoReport(val kept: Int = 0, val failed: List<PieceKind> = emptyList(), /** [RVM-50] shifts whose alarms went off. */ val alarmsOff: List<String> = emptyList())
+    data class UndoReport(val kept: Int = 0, val failed: List<PieceKind> = emptyList(), /** [RVM-50] shifts whose alarms went off. */ val alarmsOff: List<String> = emptyList(),
+                          /** 2.0.0 [RVM-55] U09b-02: the pieces taken back, and what stayed as the user made it (그대로 둔 것 [보기]). */
+                          val back: Int = 0, val items: List<RecipePieces.Kept> = emptyList())
 
     /**
      * 2.0.0 [RVM-50] 검토 RCP-04: by shift, the alarm times (minutes before) the works still on this phone want, other than record
@@ -411,6 +413,8 @@ class RecipeRepository(private val c: AppContainer, context: Context) {
         when {
             r.failed.isNotEmpty() -> "되돌리지 못한 것이 있어요(" + r.failed.joinToString("·") { it.label } + "). 한 번 더 눌러 주세요"
             !ok -> "되돌릴 수 없어요. 넣은 지 7일이 지났거나 이미 되돌렸어요"
+            // 2.0.0 [RVM-55] 검토 U09b-02: how much went back too, with 보기 (the line's action) for what stayed.
+            r.kept > 0 && r.back > 0 -> "되돌렸어요. 조각 ${r.back}개를 돌리고, 넣은 뒤 직접 바꾼 ${r.kept}곳은 그대로 뒀어요"
             r.kept > 0 -> "되돌렸어요. 넣은 뒤 직접 바꾼 ${r.kept}곳은 그대로 뒀어요"
             else -> "되돌렸어요. 그 사이 적은 기록은 그대로예요"
         } + if (ok && r.alarmsOff.isNotEmpty()) " · " + r.alarmsOff.distinct().joinToString("·") { "‘$it’" } + " 알람이 꺼졌어요" else ""
@@ -427,6 +431,7 @@ class RecipeRepository(private val c: AppContainer, context: Context) {
         // again. Now the record keeps the pieces still on (and stays undoable); the rest are taken back.
         val failed = ArrayList<String>()
         pieces.kept = 0
+        pieces.keptItems.clear()
         pieces.alarmsOff.clear()
         pieces.undoing = e.id
         for (key in e.pieces.split(',').reversed()) {
@@ -435,7 +440,8 @@ class RecipeRepository(private val c: AppContainer, context: Context) {
             runCatching { pieces.restore(kind, snap, e.calendarId) }.onFailure { failed += key }
         }
         pieces.undoing = null
-        val report = UndoReport(pieces.kept, failed.mapNotNull(PieceKind::of), pieces.alarmsOff.toList())
+        val report = UndoReport(pieces.kept, failed.mapNotNull(PieceKind::of), pieces.alarmsOff.toList(),
+            e.pieces.split(',').count { PieceKind.of(it) != null && it !in failed && before.has(it) }, pieces.keptItems.toList())
         if (failed.isNotEmpty()) {
             dao.upsertApplied(e.copy(pieces = e.pieces.split(',').filter { it in failed }.joinToString(",")))
             return true to report
@@ -454,7 +460,7 @@ class RecipeRepository(private val c: AppContainer, context: Context) {
         var all = UndoReport()
         val n = undoable(code).count { e ->
             val (ok, r) = undoOne(e.id)
-            all = UndoReport(all.kept + r.kept, all.failed + r.failed, all.alarmsOff + r.alarmsOff)
+            all = UndoReport(all.kept + r.kept, all.failed + r.failed, all.alarmsOff + r.alarmsOff, all.back + r.back, all.items + r.items)
             ok
         }
         lastUndo = all
