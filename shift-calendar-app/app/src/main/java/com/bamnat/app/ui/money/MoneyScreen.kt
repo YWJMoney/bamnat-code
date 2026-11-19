@@ -1106,11 +1106,19 @@ fun MoneyScreen(
         snapshot?.let { s -> com.bamnat.core.design.DayBoundary.dayOf(at, s.resolver::resolve, com.bamnat.core.design.DayBoundary.startAt(settings.dayStartMinutes)) }
             ?.takeIf { at.toLocalDate() == today } ?: today
     }
+    // 2.0.0 [RVK-58] (PC-192): why a new line starts on a day before today, said on the sheet's top line (a night worker at 00:45 saw
+    // '11월 18일 (수)' and '어제' with no reason, and on an unfolded phone the date row was under the keyboard).
+    val addWhy = if (addDate == today) null else {
+        val held = snapshot?.resolver?.resolve(addDate)?.takeIf { it.isWorkDay && it.start != null && it.end != null }
+        if (held != null) (held.shiftType?.name?.takeIf { it.isNotBlank() } ?: "근무").let { if ("근무" in it) it else "$it 근무" } + " 시간이에요"
+        else "하루 시작 ${com.bamnat.core.design.DayBoundary.startAt(settings.dayStartMinutes)} 전이에요"
+    }
     adding?.let { k ->
         // A new round for 저장하고 하나 더, so the sheet starts empty again, on the day and account of the line just saved.
         key(addRound) {
             val done = { nextDay = null; nextAccount = null; adding = null }
             EntryDialog(nextDay?.let(LocalDate::parse) ?: addDate, null, k, onSave = { vm.saveEntry(it); done() }, onDismiss = done,
+                dayWhy = addWhy.takeIf { nextDay == null },
                 frequent = vm::frequentAmounts, rules = rules, book = book,
                 onSaveAndNext = { vm.saveEntry(it); nextDay = it.date.toString(); nextAccount = it.accountId; addRound++ },
                 onEditCategories = { editingCategories = true }, startAccount = nextAccount)

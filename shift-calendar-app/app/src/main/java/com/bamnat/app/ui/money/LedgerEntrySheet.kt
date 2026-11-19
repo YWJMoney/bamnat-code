@@ -142,6 +142,8 @@ fun EntryDialog(
     onEditCategories: (() -> Unit)? = null,
     /** 2.0.0 [RVK-04] (U06a-02, MONEY-27): 저장하고 하나 더 starts on the account of the line just saved. */
     startAccount: Long? = null,
+    /** 2.0.0 [RVK-58] (PC-192) Why [date] is not today (근무 기준 하루, FLOW-30), shown on the top line while that day is kept. */
+    dayWhy: String? = null,
 ) {
     val ledger = rememberLedger(book)
     val entries = ledger.entries
@@ -268,6 +270,21 @@ fun EntryDialog(
                     )
                 }
                 IconButton(onClick = close) { Icon(Icons.Filled.Close, "닫기") }
+            }
+            // 2.0.0 [RVK-58] (PC-192): a new line on a day other than today says which day, and why, right under the title: the date row
+            // further down can be under the keyboard on an unfolded phone. Tapping it opens the calendar to pick another day.
+            if (isNew && onDay != Today.date() && (dayWhy != null || onDay != date)) {
+                val why = dayWhy?.takeIf { onDay == date }
+                Row(Modifier.fillMaxWidth().heightIn(min = 48.dp).clickable(role = Role.Button) { pickingDate = true }
+                    .semantics(mergeDescendants = true) { contentDescription = "${Fmt.dayTitle(onDay)}에 적어요" + (why?.let { ", $it" } ?: "") + ", 날짜 고르기" }
+                    .padding(horizontal = 20.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.Outlined.CalendarMonth, null, Modifier.size(18.dp), tint = MaterialTheme.colorScheme.primary)
+                    Spacer(Modifier.width(8.dp))
+                    Column {
+                        Text("${Fmt.dayTitle(onDay)}에 적어요", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.primary)
+                        why?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
+                    }
+                }
             }
             Column(
                 Modifier.weight(1f, fill = false)
