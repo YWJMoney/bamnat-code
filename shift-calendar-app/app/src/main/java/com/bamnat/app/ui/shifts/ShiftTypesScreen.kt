@@ -670,7 +670,7 @@ fun ShiftTypeEditorDialog(
                             value = draft.name,
                             onValueChange = { v -> draft = draft.copy(name = v.take(10)) },
                             // 2.0.0 [RVH-89] 검토 PC-12: a shop's examples are its own (a 가게 has no 야간 to name).
-                            label = { Text(if (shop) "이름 (예: 점심 영업, 저녁 영업)" else "이름 (예: 주간, 야간, 오픈)") },
+                            label = { Text(if (shop) "이름 (예: 점심, 저녁)" else "이름 (예: 주간, 야간, 오픈)") },
                             singleLine = true,
                             modifier = Modifier.weight(1f),
                         )
@@ -680,9 +680,10 @@ fun ShiftTypeEditorDialog(
                             // 2.0.0 [RVM-29] SN-16: two letters as a person counts them (👩‍⚕️ is one), never half an emoji (ShiftRules).
                             onValueChange = { v -> draft = draft.copy(label = com.bamnat.core.model.ShiftRules.cut(v,
                                 com.bamnat.core.model.ShiftRules.LABEL_LETTERS, com.bamnat.core.model.ShiftRules.LABEL_UNITS)) },
-                            label = { Text("표시") },
+                            label = { Text("표시", maxLines = 1, softWrap = false) },
                             singleLine = true,
-                            modifier = Modifier.width(76.dp),
+                            // 2.0.0 [RVH-89] 사진 (조건 12): at 200% the 76dp box stood '표시' up letter by letter; it grows with the letters.
+                            modifier = Modifier.width(76.dp * androidx.compose.ui.platform.LocalDensity.current.fontScale.coerceIn(1f, 1.4f)),
                         )
                     }
 
