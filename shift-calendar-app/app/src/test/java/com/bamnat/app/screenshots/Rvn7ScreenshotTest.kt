@@ -36,7 +36,8 @@ import org.robolectric.annotation.GraphicsMode
 /**
  * 2.0.0 [RVN-22] 갈래 N 7차 화면 사진(앞·뒤 같은 차례): 검토 I10bc-03, 회사 광장에 나눌 것을 부분마다(근무주기·근무 시간·급여 계산 방식)
  * 저절로·묻기·안 함으로 고르는 설정, 그 부분만 묻는 창, '내일 오전에 나눠요 · 취소' 한 줄(광장 위에도 남음). 검토 PC-27 문의의 '점검 기록도
- * 보내기'(앱이 이상해요). 이 파일은 앞(I10bc-03 전) 코드에서도 돌아요: 앞 코드에 있는 길(set, setAutoShare, setAutoPay, check)만 써요.
+ * 보내기'(앱이 이상해요). U10b-08 보내기 대기(몇 개·고칠 것·까닭), I10bb-02 서버에 있는 내 정보, I10bb-03 쓰는 동안 글 검사. 이 파일은 앞(7차 전)
+ * 코드에서도 돌아요: 앞 코드에 있는 길(set, setAutoShare, setAutoPay, check, queue, refused, talk.show)만 써요.
  */
 @RunWith(AndroidJUnit4::class)
 @GraphicsMode(GraphicsMode.Mode.NATIVE)
@@ -121,6 +122,48 @@ class Rvn7ScreenshotTest : ScreenshotBase() {
         waitFor(400)
     }
 
+    /** 검토 U10b-08: two questions wait for the internet, one the server would not take (a phone number); how many, and why. */
+    private fun waiting(): Screen.() -> Unit = {
+        val info = com.bamnat.app.company.InquiryInfo("2.0.0", "Pixel", "15")
+        c.inquiryStore.queue(com.bamnat.app.company.QueuedInquiry("request-id-0000001", com.bamnat.app.company.InquiryKind.BUG,
+            "알람이 5분 늦게 울려요", info, Today.instant()))
+        c.inquiryStore.queue(com.bamnat.app.company.QueuedInquiry("request-id-0000002", com.bamnat.app.company.InquiryKind.QUESTION,
+            "010-1234-5678로 연락 주세요", info, Today.instant()))
+        c.inquiryStore.refused("request-id-0000002", "phone")
+        val vm = com.bamnat.app.ui.settings.InquiryViewModel(c)
+        content { com.bamnat.app.ui.settings.InquiryScreen(vm, onBack = {}) }
+        settle()
+        tapText("내 문의", exact = true)
+        waitFor(600)
+        scrolledTo("보내기 대기")
+        settle()
+    }
+
+    /** 검토 I10bb-02: 내가 보낸 정보 at its end, where 서버에 있는 내 정보 says what the server has (before: only 모두 지우기). */
+    private fun mine(): Screen.() -> Unit = {
+        companyOn()
+        company.mine.reversed().forEach { c.companyStore.addSent(com.bamnat.app.company.SentReport(it.id, it.company, it.dept, it.ask, it.createdAt)) }
+        val vm = com.bamnat.app.ui.company.CompanyReportViewModel(c)
+        content { com.bamnat.app.ui.company.CompanySentScreen(vm, onBack = {}, onShare = {}) }
+        settle()
+        waitFor(600)
+        scrolledTo("이 휴대폰이 보낸 정보 모두 지우기")
+        settle()
+        waitFor(400)
+    }
+
+    /** 검토 I10bb-03: an account number typed in the 교대 광장 box is marked while typing and said under it (before: only after 보내기). */
+    private fun typing(big: Boolean): Screen.() -> Unit = {
+        val vm = com.bamnat.app.ui.company.CompanyBoardViewModel(companyOn())
+        content { com.bamnat.app.ui.company.CompanyBoardScreen(vm, onBack = {}, onOpen = {}, onShare = {}) }
+        vm.talk.show("style-shift", com.bamnat.core.plaza.StylePlaza.ROOM, "교대 광장")
+        settle()
+        check(appears("교대 광장")) { "광장 방 토론이 열리지 않았어요" }
+        typeInto(if (big) "이야기를 적어요" else "이 광장 분들과 나누고 싶은 이야기를 적어 주세요", "회비는 국민 123456-01-234567로 보내 주세요")
+        settle()
+        waitFor(400)
+    }
+
     @Test fun settingLight() = shoot("rvn_100_share_ways_folded", FOLDED, setting())
     @Test fun settingDarkBig() = shoot("rvn_101_share_ways_folded_dark_200", Rvn5ScreenshotTest.DARK, 2f, setting())
     @Test fun settingWide() = shoot("rvn_102_share_ways_unfolded_dark", Rvn5ScreenshotTest.DARK_WIDE, setting())
@@ -133,4 +176,13 @@ class Rvn7ScreenshotTest : ScreenshotBase() {
     @Test fun plazaDarkBig() = shoot("rvn_109_share_held_plaza_folded_dark_200", Rvn5ScreenshotTest.DARK, 2f, plaza())
     @Test fun inquiryLight() = shoot("rvn_110_inquiry_bug_check_folded", FOLDED, inquiry())
     @Test fun inquiryDarkBig() = shoot("rvn_111_inquiry_bug_check_folded_dark_200", Rvn5ScreenshotTest.DARK, 2f, inquiry())
+    @Test fun waitingLight() = shoot("rvn_112_inquiry_waiting_folded", FOLDED, waiting())
+    @Test fun waitingDarkBig() = shoot("rvn_113_inquiry_waiting_folded_dark_200", Rvn5ScreenshotTest.DARK, 2f, waiting())
+    @Test fun waitingWide() = shoot("rvn_114_inquiry_waiting_unfolded_dark", Rvn5ScreenshotTest.DARK_WIDE, waiting())
+    @Test fun mineLight() = shoot("rvn_115_server_mine_folded", FOLDED, mine())
+    @Test fun mineDarkBig() = shoot("rvn_116_server_mine_folded_dark_200", Rvn5ScreenshotTest.DARK, 2f, mine())
+    @Test fun mineWide() = shoot("rvn_117_server_mine_unfolded", UNFOLDED, mine())
+    @Test fun typingLight() = shoot("rvn_118_text_check_typing_folded", FOLDED, typing(big = false))
+    @Test fun typingDarkBig() = shoot("rvn_119_text_check_typing_folded_dark_200", Rvn5ScreenshotTest.DARK, 2f, typing(big = true))
+    @Test fun typingWide() = shoot("rvn_120_text_check_typing_unfolded_dark", Rvn5ScreenshotTest.DARK_WIDE, typing(big = false))
 }

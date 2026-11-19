@@ -193,8 +193,10 @@ fun HeldNotice(wait: MemberWait, company: String, payHidden: Boolean, freeing: B
             if (wait.undo) TextButton(onClick = { asking = true }, enabled = !freeing) { Text(if (freeing) "푸는 중…" else "잘못 골랐어요") }
             else TextButton(onClick = { InquiryLinks.ask(InquiryStart(about = "회사 바꾸기", text = "${wait.line}. ")) }) { Text("문의하기") }
         })
-        val more = listOfNotNull("급여 계산 방식은 이 회사 설정을 쓰는(참여한) 분께만 보여요.".takeIf { payHidden },
-            (wait.askLine() + ".").takeIf { !wait.undo })
+        // With 잘못 골랐어요 beside it, '근무주기만' already says what this page is for: the pay way's why stays out, so the first 판
+        // card starts within the screen's top quarter (조건 1, rvn_97 7차 사진 25.7% → 아래). Without it, both behind ⓘ.
+        val more = if (wait.undo) emptyList() else listOfNotNull("급여 계산 방식은 이 회사 설정을 쓰는(참여한) 분께만 보여요.".takeIf { payHidden },
+            wait.askLine() + ".")
         if (more.isNotEmpty()) com.bamnat.app.ui.components.Explain("company.held.more", more.joinToString(" "), firstInFull = false)
     }
 }

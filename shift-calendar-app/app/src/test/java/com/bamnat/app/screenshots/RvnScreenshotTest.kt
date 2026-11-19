@@ -212,7 +212,9 @@ class RvnScreenshotTest : ScreenshotBase() {
             openPhasesFor = if (dialog) "s1" else null) }
         settle()
         if (dialog) check(appears("정해져 있어요")) { "잡힌 달력을 묻는 창이 뜨지 않았어요" }
-        else reveal("급여 계산 방식은", exact = false)
+        // 7차 HQ-113: beside 잘못 골랐어요 the page says only what can be put in (the card says the pay way shows once it is used),
+        // and the first 판 card starts in the screen's top quarter.
+        else check(appears("근무주기만 넣을 수 있어요", exact = false)) { "잡힌 달력 줄이 없어요" }
     }
 
     @Test fun heldNameLight() = shoot("rvn_95_held_name_folded", FOLDED, heldBy(dialog = true))
