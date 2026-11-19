@@ -373,3 +373,35 @@ test("[POLICY-314] 처리방침 3.14 전(스위치 꺼짐): 확인했어요 칸�
   assert.equal(kept.people, undefined, "휴대폰 수를 남기지 않아요");
   assert.equal(kept.links.length, 6);
 });
+
+test("[RVQ-21] 3.14 문장표: the day's phone marks are a key of their own that goes in two days; the box keeps only numbers, 30 days", async () => {
+  readsForget();
+  const ttl = new Map();
+  const store = kv();
+  const put = store.put;
+  store.put = async (k, v, o = {}) => { if (o.expirationTtl) ttl.set(k, o.expirationTtl); return put(k, v); };
+  const env = { SHARES: store, ...ON };
+  const links = [];
+  for (let i = 0; i < 5; i++) links.push(await (await call(env, "/api/share", post(schedule()))).json());
+  const box = await (await call(env, "/api/tired", post({ team: "6병동" }))).json();
+  for (const l of links) await call(env, `/api/share/${l.id}/tired`, { method: "PUT", body: JSON.stringify({ box: box.id }), headers: { "x-delete-token": l.deleteToken } });
+  for (let i = 0; i < 3; i++) await call(env, `/api/share/${links[i].id}/tired`, { method: "POST", headers: { "user-agent": `phone-${i}` } }, `198.51.100.${30 + i}`);
+  const kept = JSON.parse(store.map.get(`tired:${box.id}`));
+  assert.equal(kept.marks, undefined, "the box keeps no phone marks");
+  assert.deepEqual(Object.values(kept.people), [3]);
+  const marks = [...store.map.keys()].filter((k) => k.startsWith(`tiredm:${box.id}:`));
+  assert.equal(marks.length, 1, "one key for today's marks");
+  assert.equal(ttl.get(marks[0]), 2 * 86400, "gone by itself two days on");
+  assert.equal(JSON.parse(store.map.get(marks[0])).length, 3);
+  // A box from before (marks inside, a day older than 30 days): reading it drops both, with no press since.
+  store.map.set(`tired:${box.id}`, JSON.stringify({ ...kept, days: { ...kept.days, "2020-01-01": 5 }, people: { ...kept.people, "2020-01-01": 5 },
+    marks: { day: "2020-01-01", list: ["abcdef1234"] } }));
+  await call(env, `/api/tired/${box.id}`, { headers: { "x-delete-token": box.token } });
+  const read = JSON.parse(store.map.get(`tired:${box.id}`));
+  assert.equal(read.marks, undefined);
+  assert.equal(read.days["2020-01-01"], undefined);
+  assert.equal(read.people["2020-01-01"], undefined);
+  // Deleting the box takes today's marks with it.
+  assert.equal((await call(env, `/api/tired/${box.id}`, { method: "DELETE", headers: { "x-delete-token": box.token } })).status, 204);
+  assert.equal([...store.map.keys()].filter((k) => k.startsWith("tiredm:")).length, 0);
+});

@@ -1,6 +1,9 @@
 package com.bamnat.app.ui.recipe
 
 import androidx.compose.foundation.background
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
@@ -42,7 +45,6 @@ import androidx.compose.material.icons.filled.Close
 import com.bamnat.app.ui.components.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.OutlinedCard
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import com.bamnat.app.ui.components.FilterChip
 import com.bamnat.app.ui.components.FilledTonalButton
@@ -285,6 +287,7 @@ private fun RecipeListPage(vm: RecipeListViewModel, onBack: (() -> Unit)?, onOpe
         }
     }
     val listState = androidx.compose.foundation.lazy.rememberLazyListState()
+    // [RVQ-36] U22-04: the next page comes by itself near the end; RVM-63 (below, M) does it and 3c's own was dropped for it.
     // 사용자 2026-11-03 (마을 › 장터 스크롤): in 마을 the tab row already says 장터 and whose; the list starts right under it.
     val hubHeader = if (onBack == null) com.bamnat.app.ui.hub.LocalHubHeader.current else null
     val reselect = com.bamnat.app.ui.hub.LocalHubReselect.current
@@ -495,6 +498,7 @@ internal fun marketCols(widthDp: Int, small: Boolean): Int {
 internal const val MARKET_CARD = 160
 internal const val MARKET_CARD_SMALL = 104
 internal const val MARKET_GAP = 8
+
 internal const val MARKET_GAP_SMALL = 6
 
 private const val VIEW_PREFS = "market_view"
@@ -774,6 +778,11 @@ private fun MarketEmpty(state: RecipeListViewModel.State, vm: RecipeListViewMode
             action = "스튜디오에서 만들기" to onMake
             more += "다시 불러오기" to { vm.load() }
         }
+        // 2.0.0 [RVQ-37] 검토 U22b-06: '!!!' or '...' has nothing to find by (the server says ask: "words"); said as it is, not 'none'.
+        q.isNotEmpty() && !searchable(q) -> {
+            title = "찾는 말을 글자로 적어 주세요"
+            detail = "작품 이름이나 ‘교대 가계부’, ‘밤 근무 알람’처럼 적으면 찾아요"
+        }
         // 1.39.1 [P391-01] 2.0.0 [RVM-64]: a search looks in all three 구간 at once; this says none only after all three answered.
         q.isNotEmpty() -> {
             when {
@@ -814,3 +823,7 @@ private fun MarketEmpty(state: RecipeListViewModel.State, vm: RecipeListViewMode
         }
     }
 }
+
+/** 2.0.0 [RVQ-37] 검토 U22b-06: a search the server can look by: a letter, a digit or a 표지 emoji (as the server's searchWords). */
+internal fun searchable(q: String): Boolean = q.any { it.isLetterOrDigit() } ||
+    q.codePoints().anyMatch { it >= 0x1F000 || it in 0x2600..0x27BF }

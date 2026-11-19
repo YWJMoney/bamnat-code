@@ -37,3 +37,10 @@ database_id = "REPLACE_WITH_D1_DATABASE_ID"
 # [[r2_buckets]]
 # binding = "BACKUP"
 # bucket_name = "bamnat-backup"
+
+# 2.0.0 [RVQ-55] 검토 SVC-25: 나눈 글꼴 파일(8MB까지)을 D1 대신 R2에. 버킷을 만든 뒤(`npx wrangler r2 bucket create bamnat-assets`) 아래 세 줄의
+# # 를 지워요(대시보드면 R2 bucket, 이름 ASSETS). 백업 버킷(14일 뒤 지움)과 따로 둬요. 묶지 않아도 지금처럼 D1에 두고, 묶으면 매시 정리 때
+# 옛 글꼴도 몇 개씩 옮겨요.
+# [[r2_buckets]]
+# binding = "ASSETS"
+# bucket_name = "bamnat-assets"
