@@ -8,6 +8,8 @@ import com.bamnat.core.model.WorkPattern
 import com.bamnat.core.schedule.PatternTimeline
 import com.bamnat.core.time.Today
 import com.bamnat.core.work.WorkStyle
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -55,6 +57,33 @@ class ReviewH12ShotsTest : ScreenshotBase() {
             assertTrue("$look: 연속 근무 ${words.take(30)}", "연속 근무" in all && "근무 사이 휴식" in all)
             assertTrue("$look: 야간 없음", "야간" !in all && "병원" !in all)
         }
+    }
+
+    /** [RVH-95] 검토 HQ-157: today's date circle holds its number at 200% (the photo is the calendar's top). */
+    @Test fun todayCircleHoldsItsNumber() {
+        for ((look, q, scale) in looks) shoot("rvh12_63_today_circle_$look", q, scale, style(WorkStyle.SHIFT) {
+            settle()
+        })
+    }
+
+    /** [RVH-96] 검토 PC-08: a leave taken with no hire date reads '아직 세지 않았어요', never '-1일' / '남은 -1일'. */
+    @Test fun leaveWithoutHireDateIsNotADebt() {
+        for ((look, q, scale) in looks) shoot("rvh12_64_leave_no_hire_$look", q, scale, style(WorkStyle.DAY) {
+            twoOnTwoOff()
+            runBlocking {
+                val repo = app.container.scheduleRepository
+                val pattern = repo.snapshot.first()
+                val day = (3..20).map { Today.date().minusDays(it.toLong()) }.first { !pattern.resolver.resolve(it).isOff }
+                repo.setLeave(day, com.bamnat.core.model.Leave())
+            }
+            content {
+                com.bamnat.app.ui.leave.LeaveScreen(com.bamnat.app.ui.leave.LeaveViewModel(app.container, com.bamnat.app.data.PersonalCalendar.MAIN), {}, {})
+            }
+            settle()
+            val words = shownWords().joinToString(" ")
+            assertTrue("$look: 아직 세지 않았어요 ${shownWords().take(30)}", "아직 세지 않았어요" in words)
+            assertTrue("$look: 마이너스 없음", !Regex("남은 -|^-\\d").containsMatchIn(words) && " -1일" !in words)
+        })
     }
 
     /** [RVH-94] 검토 PC-212: the order filled before the app came into use is not counted; days written by hand move the month back. */

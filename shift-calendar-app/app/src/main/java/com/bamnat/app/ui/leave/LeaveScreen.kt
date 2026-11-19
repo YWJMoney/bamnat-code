@@ -276,13 +276,17 @@ private fun NowCard(s: LeaveSummary?, profile: PayProfile?, snapshot: ScheduleSn
     }
     SectionCard(title = "지금 쓸 수 있는 연차") {
         if (s == null) return@SectionCard
-        Text(LeaveAccrual.days(s.available), style = MaterialTheme.typography.headlineMedium.merge(NumberStyle),
+        // 2.0.0 [RVH-96] 검토 PC-08 (입사일이 없으면 남은 연차가 '-1일'): with nothing counted yet (no hire date, no row of leave given) a
+        // day taken is not a debt; the number waits for the hire date, said in its place.
+        val uncounted = s.available < 0 && s.arisen <= 1e-9
+        if (uncounted) Text("아직 세지 않았어요", style = MaterialTheme.typography.headlineMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        else Text(LeaveAccrual.days(s.available), style = MaterialTheme.typography.headlineMedium.merge(NumberStyle),
             color = if (s.available < 0) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary)
         if (s.planned > 0) ValueLine("달력에 넣은 쓸 예정", LeaveAccrual.days(s.planned))
         if (s.planned > 0) ValueLine("예정대로 쓰고 남는 날", LeaveAccrual.days(s.afterPlanned), strong = true)
         ValueLine("지금까지 생긴 연차 / 쓴 연차", "${LeaveAccrual.days(s.arisen)} / ${LeaveAccrual.days(s.used)}")
         if (s.comp != 0.0 || s.lots.any { it.lot.pool == LeavePool.COMP }) ValueLine("보상휴가", LeaveAccrual.days(s.comp))
-        if (s.available < 0) Hint("생긴 것보다 많이 썼어요(미리 쓴 연차). 다음에 생기는 연차에서 먼저 빠져요.")
+        if (s.available < 0 && !uncounted) Hint("생긴 것보다 많이 썼어요(미리 쓴 연차). 다음에 생기는 연차에서 먼저 빠져요.")
         (LeaveSources.noAuto(profile, weekly) ?: LeaveSources.partTimeNote(weekly))?.let { Hint(it) }
     }
 }
@@ -390,8 +394,9 @@ private fun LineRow(l: LedgerLine, onOpen: (Long) -> Unit) {
         }
         Column(horizontalAlignment = Alignment.End) {
             Text((if (l.days > 0) "+" else "") + LeaveAccrual.days(l.days), style = MaterialTheme.typography.titleSmall.merge(NumberStyle), color = color)
-            if (l.pool == LeavePool.ANNUAL) Text("남은 ${LeaveAccrual.days(l.balance)}", style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant)
+            // 2.0.0 [RVH-96] 검토 PC-08: a balance under zero reads '미리 쓴 1일', never '남은 -1일'.
+            if (l.pool == LeavePool.ANNUAL) Text(if (l.balance < -1e-9) "미리 쓴 ${LeaveAccrual.days(-l.balance)}" else "남은 ${LeaveAccrual.days(l.balance)}",
+                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }
 }
