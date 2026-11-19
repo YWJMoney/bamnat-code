@@ -1,5 +1,6 @@
 import { all, batch, one, stmt } from "./index.js";
 import { DAY } from "./units.js";
+import { isBillingRecord } from "./ask-check.js";
 
 // ---- 1.38 [ADM3-11] 사람 옆 패널(휴대폰 한 대를 중심으로) ----
 //
@@ -78,7 +79,8 @@ export async function personView(env, device, now, { money = false } = {}) {
   else if (careWarns) flags.push({ tone: "warn", text: `마을 경고 ${careWarns}번` });
   if (integrity[0] && !integrity[0].ok) flags.push({ tone: "warn", text: `Play 확인 안 됨(${integrity[0].why || "이유 모름"})` });
   if (pro) flags.push({ tone: "info", text: pro.trial ? "프로 체험 중" : `프로(${pro.by})` });
-  const refundAsks = inq.filter((q) => q.billing_at || /환불|결제/.test(q.first ?? "")).length;
+  // 2.0.0 [RVQ-30] PC-215: 결제 기록 기준(isBillingRecord)과 한 잣대로. '휴가 결제 올렸는데'는 우리 결제 문의가 아니에요.
+  const refundAsks = inq.filter((q) => q.billing_at || isBillingRecord(q.first ?? "")).length;
   if (refundAsks) flags.push({ tone: "warn", text: `결제·환불 문의 ${refundAsks}번` });
   return {
     mark: device.slice(0, 6), app, type, flags,

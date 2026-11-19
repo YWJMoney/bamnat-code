@@ -270,9 +270,12 @@ class InquiryViewModel(private val c: AppContainer) : ViewModel() {
         if (edit) c.inquiryStore.saveDraft(q.kind, q.text)
     }
 
-    /** [diag]: 2.0.0 [RVO-28] HQ-150 '점검 기록도 보내기'를 켠 답장의 기록, 끄면 null. */
-    fun more(id: String, text: String, diag: String? = null, done: (Inquiry?, String?) -> Unit) = act(done) {
-        (if (diag == null) c.inquiryApi.more(device, id, text) else c.inquiryApi.more(device, id, text, InquiryClient.newRequestId(), diag)).also { updated ->
+    /**
+     * 2.0.0 [RVQ-50] 검토 U22b-01: [photos] go with it (made small on the phone, at most [com.bamnat.app.company.InquiryPhotos.left]).
+     * [diag]: 2.0.0 [RVO-28] HQ-150 '점검 기록도 보내기'를 켠 답장의 기록, 끄면 null.
+     */
+    fun more(id: String, text: String, photos: List<ByteArray> = emptyList(), diag: String? = null, done: (Inquiry?, String?) -> Unit) = act(done) {
+        c.inquiryApi.more(device, id, text, InquiryClient.newRequestId(), photos, diag).also { updated ->
             c.inquiryStore.saveReply(id, "")
             _list.value = _list.value.orEmpty().map { if (it.id == id) updated else it }
         }
@@ -358,6 +361,9 @@ class InquiryViewModel(private val c: AppContainer) : ViewModel() {
         "too_many" -> "이 문의에는 더 쓸 수 없어요. 새 문의로 보내 주세요"
         "email", "phone", "amount" -> personalProblem(e.message ?: "")
         "not_found" -> "이 문의는 지워졌거나 가려졌어요"
+        // 2.0.0 [RVQ-50] 검토 U22b-01: a question takes four photos in all.
+        "photos_full" -> "이 문의에는 사진을 ${com.bamnat.app.company.InquiryPhotos.TOTAL}장까지 붙일 수 있어요. 사진을 빼고 보내 주세요"
+        "photo", "photos", "too_large" -> "사진을 보내지 못했어요. 사진을 빼고 글만 보내 주세요"
         else -> "보내지 못했어요. 잠시 뒤 다시 해 주세요"
     }
 
