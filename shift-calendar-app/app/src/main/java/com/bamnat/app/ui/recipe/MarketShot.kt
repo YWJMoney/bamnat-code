@@ -82,10 +82,15 @@ internal object MarketShots {
     private val shots = object : android.util.LruCache<String, ImageBitmap>(24 * 1024 * 1024) {
         override fun sizeOf(key: String, value: ImageBitmap): Int = value.width * value.height * 4
     }
-    /** 2.0.0 [RVM-67] 검토 MKT-29 (한 번 못 받으면 앱을 끌 때까지 다시 받지 않아요): a card that could not be had is asked for again after [RETRY_MS]. */
+    /**
+     * 2.0.0 [RVM-67] 검토 MKT-29 (한 번 못 받으면 앱을 끌 때까지 다시 받지 않아요): a card that could not be had is asked for again after [RETRY_MS].
+     * The wait is measured on the running clock ([ticks], as MarketFonts does), not the time of day: it is a length of time, so a phone
+     * whose clock is moved back does not keep the card away for a day, and the one-clock rule ([QA-08] ClockRulesTest) is kept.
+     */
     private val failed = java.util.concurrent.ConcurrentHashMap<String, Long>()
     const val RETRY_MS = 60_000L
-    private fun gave(k: String): Boolean { val at = failed[k] ?: return false; return if (System.currentTimeMillis() - at < RETRY_MS) true else { failed.remove(k); false } }
+    private fun ticks(): Long = System.nanoTime() / 1_000_000
+    private fun gave(k: String): Boolean { val at = failed[k] ?: return false; return if (ticks() - at < RETRY_MS) true else { failed.remove(k); false } }
     /** A few at a time, so a page of cards does not hold the network for the one that was tapped. */
     private val gate = Semaphore(3)
 
@@ -125,7 +130,7 @@ internal object MarketShots {
                 }
             }
         }
-        if (got == null) failed[k] = System.currentTimeMillis() else { failed.remove(k); recipes.put(k, got) }
+        if (got == null) failed[k] = ticks() else { failed.remove(k); recipes.put(k, got) }
         return got
     }
 

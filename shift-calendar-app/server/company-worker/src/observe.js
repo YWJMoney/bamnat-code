@@ -1,7 +1,8 @@
 import { all, audit, batch, can, json, one, playVitals, randomId, readJson, refuse, run, stmt } from "./index.js";
 import { DEV, actorName, devEvent, plainText } from "./inquiries.js";
 import { playReady, playToken } from "./money.js";
-import { serverEval, flagStore } from "./flags.js";
+import { flagOn, serverEval, flagStore } from "./flags.js";
+import { WEAR, wearOf } from "./recipes.js";
 import { EVENTS, SETUP_STEPS, kstDay } from "./usage.js";
 import { retention } from "./glance.js";
 import { MISS_PLACES } from "./growth.js";
@@ -65,6 +66,8 @@ export const OBS = {
   months: 3,
   /** 개선 신호: 최대 수, 끝난(돌아옴·굳음·자료 없음·아님) 신호를 지우는 날, 안 보인 지 이만큼이면 판정해요. */
   signalsMax: 60,
+  // 2.0.0 [RVQ-56] 장터 '입은 뒤' 신호는 한 번에 이만큼까지.
+  wearSignals: 5,
   signalDoneDays: 30,
   clearMs: 3 * DAY,
   /**
@@ -566,7 +569,16 @@ export function obsRules(b) {
   // 몰랐어요. 열린 신호의 대상은 관측 판이 따로 읽어(follow) 지금 값을 꺼진 채로 넘겨요. 못 읽었으면 follow가 비어 '자료 없음'이 돼요.
   for (const f of b.follow ?? []) {
     if (out.some((x) => x.kind === f.kind && x.subject === f.subject)) continue;
-    push({ kind: f.kind, src: "stats", subject: f.subject, value: f.value, base: f.base ?? null, better: f.kind === "search-miss" ? "down" : "up", on: false, title: "", why: "" });
+    push({ kind: f.kind, src: "stats", subject: f.subject, value: f.value, base: f.base ?? null, better: f.kind === "search-miss" || f.kind === "recipe-wear" ? "down" : "up", on: false, title: "", why: "" });
+  }
+  // 2.0.0 [RVQ-56] 검토 SX-03: 입은 분이 많이 바로 벗거나 글자 크기를 되돌리는 작품(안 읽히는 작품). 고칠 곳은 관리자 앱 › 장터의 그 작품.
+  for (const w of b.wear ?? []) {
+    push({ kind: "recipe-wear", src: "stats", subject: w.code, value: w.value, base: w.base, better: "down", unit: "%", on: true, sample: w.n,
+      caveat: "사용 통계를 켠 휴대폰이 작품마다 보낸 하루 합계예요(휴대폰 구별 없음).",
+      title: w.text ? `'${w.title}' 입은 분의 ${w.textBack}%가 글자 크기를 되돌렸어요(30일)` : `'${w.title}' 입은 분의 ${w.offSoon}%가 30분 안에 뺐어요(30일)`,
+      why: w.text ? "글자가 작거나 커서 읽기 어려운 작품일 수 있어요. 만든 분과 함께 글자 크기를 봐요."
+        : "입어 보고 바로 벗는 작품이에요. 미리 보기와 실제 모습이 다르거나 읽기 어려운지 봐요.",
+      dev: `장터 작품 ${w.code} 입은 뒤 숫자 고치기(${w.text ? "글자 크기" : "바로 벗음"})`, to: `#/recipes?tab=one&code=${w.code}` });
   }
   // 2.0.0 [RVA-52] 검토 I24c-02: 관리자 앱 화면 오류는 한 번이어도 신호예요(그 화면이 누구에게나 깨져 있을 수 있어요).
   for (const x of b.screen ?? []) {
@@ -718,7 +730,29 @@ async function obsStored(env) {
     return [];
   }
 }
-const obsSave = (env, list) => run(env, "INSERT OR REPLACE INTO settings (key, value) VALUES ('obs_signals', ?)", JSON.stringify({ list }));
+/**
+ * 2.0.0 [RVQ-55] 검토 SVC-37: 'obs_signals'는 한 줄 JSON이라 매시 작업이 오래 읽는 사이 관리자가 누른 것('개발로'·'아님')을 덮어써
+ * 사라졌어요. 읽은 글자 그대로일 때만 쓰고, 그 사이 바뀌었으면 새로 읽어 [change]를 다시 해요(세 번까지). [change]는 읽은 목록을
+ * 고치거나 새 목록을 돌려줘요. 쓴 목록.
+ */
+export async function obsUpdate(env, change) {
+  for (let i = 0; i < 3; i++) {
+    const row = await one(env, "SELECT value FROM settings WHERE key = 'obs_signals'").catch(() => null);
+    let list = [];
+    try {
+      list = row ? JSON.parse(row.value).list ?? [] : [];
+    } catch {
+      list = [];
+    }
+    const out = (await change(list)) ?? list;
+    const next = JSON.stringify({ list: out });
+    const r = row
+      ? await run(env, "UPDATE settings SET value = ? WHERE key = 'obs_signals' AND value = ?", next, row.value)
+      : await run(env, "INSERT OR IGNORE INTO settings (key, value) VALUES ('obs_signals', ?)", next);
+    if (r?.meta?.changes) return out;
+  }
+  throw new Error("obs_busy");
+}
 
 /** 배지: 아직 아무도 보지 않은 신호 수(index.js BADGE_SQL, 숫자 권한). */
 export const OBS_BADGE_SQL = {
@@ -759,6 +793,12 @@ export function obsGaps(b) {
   if (!b.keep) at312.push("기능과 머묾");
   if (at312.length) add("at-312", `${at312.join(" · ")}은 처리방침 3.12 시행일에 저절로 켜져요`, "처리방침 3.12 시행(사용자 결정대로 문장 넣음)",
     "기능 관리 › 일정에 3.12 날짜가 들어가면 그날부터 모여요. 그 전에는 휴대폰도 보내지 않아요", false, "wait");
+  // 2.0.0 [RVQ-56] 처리방침 3.14 30일 줄(4줄·7줄)에 함께 켜지는 둘.
+  const at314 = [];
+  if (b.flags314 && !b.flags314.kindUse) at314.push("유형별 기능 쓰임");
+  if (b.flags314 && !b.flags314.wear) at314.push("장터 입은 뒤 숫자");
+  if (at314.length) add("at-314", `${at314.join(" · ")}는 처리방침 3.14의 30일 줄 시행일에 저절로 켜져요`, "처리방침 3.14 시행(사용자 '16줄 모두' 2026-11-19)",
+    "기능 관리 › 일정의 3.14 시행일(30일 줄)이 되면 그날부터 모여요. 그 전에는 휴대폰도 보내지 않아요", false, "wait");
   if (b.kinds && (b.kinds.all?.d7?.base ?? 0) < OBS.kindMin) add("by-type", `유형별 흐름 표본이 아직 적어요(7일째를 알 수 있는 처음 연 휴대폰 ${b.kinds.all?.d7?.base ?? 0}대)`,
     `${OBS.kindMin}대 이상`, "시행일 뒤 몇 주가 지나면 차요", false, "wait");
   if (b.keep && !b.keep.rows.length) add("feature-keep", "기능과 머묾 표본이 아직 적어요", `기능마다 쓴 휴대폰 ${OBS.keepMin}대 이상(7일 창이 끝난 날)`,
@@ -786,7 +826,10 @@ export function obsLongDays(now) {
  * 유형별 흐름: usage_kinds 줄({day, style, event, phones})을 유형마다 진입(처음 연 휴대폰)과 1·7·30일째 머묾으로. 숫자 › 한눈에의 머묾과 같은 셈
  * (glance retention)이고, all은 유형을 보낸 휴대폰 전체예요.
  */
-export function obsKinds(rows, list) {
+/** 2.0.0 [RVQ-56] T21-02 유형별 기능 쓰임: 최근 [days]일, 그 유형의 연 휴대폰이 [min]대 넘을 때, 전체에서 [share] 넘게 쓰는 기능이 그 유형에서는 [ratio]배 아래면 '덜 써요'. */
+export const KIND_USE = { days: 30, min: 20, share: 0.05, ratio: 0.5, top: 3 };
+
+export function obsKinds(rows, list, names = {}) {
   const per = new Map();
   for (const r of rows) {
     const s = per.get(r.style) ?? {};
@@ -801,12 +844,32 @@ export function obsKinds(rows, list) {
       for (const [d, n] of m) a.set(d, (a.get(d) ?? 0) + n);
     }
   }
-  const row = (style, s) => {
+  // [RVQ-56] 기능 쓰임(깃발 stats.kind_use가 켜진 뒤에 온 줄만 있어요): 연 휴대폰-날 가운데 그 기능을 쓴 휴대폰-날의 비율.
+  const recent = new Set(list.slice(-KIND_USE.days));
+  const sumIn = (m) => { let n = 0; for (const [d, v] of m ?? []) if (recent.has(d)) n += v; return n; };
+  const feature = (e) => e !== "open" && !e.startsWith("life_") && !e.startsWith("disc_");
+  const shares = (s) => {
+    const open = sumIn(s.open);
+    return { open, by: Object.fromEntries(Object.entries(s).filter(([e]) => feature(e)).map(([e, m]) => [e, open ? Math.min(1, sumIn(m) / open) : 0])) };
+  };
+  const whole = shares(all);
+  const useOf = (s) => {
+    const mine = shares(s);
+    if (!Object.keys(mine.by).length) return null;
+    if (mine.open < KIND_USE.min) return { open: mine.open, few: true, low: [] };
+    const low = Object.entries(whole.by).filter(([e, w]) => w >= KIND_USE.share && (mine.by[e] ?? 0) < w * KIND_USE.ratio)
+      .map(([e, w]) => ({ event: e, name: names[e] ?? e, rate: obsRound1((mine.by[e] ?? 0) * 100), all: obsRound1(w * 100) }))
+      .sort((x, y) => x.rate / x.all - y.rate / y.all).slice(0, KIND_USE.top);
+    return { open: mine.open, few: false, low };
+  };
+  const row = (style, s, own = true) => {
     let n = 0;
     for (const v of s.life_new?.values() ?? []) n += v;
-    return { style, name: OBS_STYLE_NAMES[style] ?? "전체", new: n, d1: retention(list, s, 1), d7: retention(list, s, 7), d30: retention(list, s, 30) };
+    const use = own ? useOf(s) : null;
+    return { style, name: OBS_STYLE_NAMES[style] ?? "전체", new: n, d1: retention(list, s, 1), d7: retention(list, s, 7), d30: retention(list, s, 30),
+      ...(use ? { use } : {}) };
   };
-  return { rows: SETUP_STEPS.setup.filter((st) => per.has(st)).map((st) => row(st, per.get(st))), all: row("ALL", all) };
+  return { rows: SETUP_STEPS.setup.filter((st) => per.has(st)).map((st) => row(st, per.get(st))), all: row("ALL", all, false) };
 }
 
 /**
@@ -922,6 +985,10 @@ export async function observe(env, now = Date.now(), { names = EVENTS } = {}) {
   ]).catch(() => null);
   const q = qr?.map((r) => r.results ?? []) ?? [[], [], [], [], [{}], [{}], [], [{}], [], [], [], []];
   const [configRows, usageRows, eventRows, missRows, inqRows, revRows, noEvRows, noEvCount, screenRows = [], missAsk = [], crashRows = [], missOpenRows = []] = q;
+  // 2.0.0 [RVQ-56] 검토 SX-03: 장터 '입은 뒤'(깃발 market.wear, 처리방침 3.14 30일 줄). 최근 [WEAR.days]일 작품마다 합계, 꺼져 있으면 읽지 않아요.
+  const wearRows = flagOn(store, WEAR.flag, now) ? await all(env, `SELECT c.code, r.title, SUM(c.wear_n) AS wear_n, SUM(c.off_soon) AS off_soon,
+    SUM(c.text_back) AS text_back FROM recipe_counts c JOIN recipes r ON r.code = c.code WHERE c.day >= ? AND r.state = 'visible'
+    GROUP BY c.code HAVING SUM(c.wear_n) > 0`, kstDay(now - (WEAR.days - 1) * DAY)).catch(() => null) : null;
   const cfg = new Map(configRows.map((r) => [r.day, r.n ?? 0]));
   const sample = new Map(usageRows.map((r) => [r.day, r.phones ?? 0]));
   const sampleSeries = days.map((d) => sample.get(d) ?? 0);
@@ -948,7 +1015,7 @@ export async function observe(env, now = Date.now(), { names = EVENTS } = {}) {
   ]).catch(() => null))?.map((r) => r.results ?? []) ?? null : null;
   const keepState = store?.state?.get("stats.keep");
   const keepSince = keepState?.on_now && Number.isFinite(Number(keepState.since)) ? kstDay(Number(keepState.since)) : null;
-  const kinds = kindOn && more ? obsKinds(more[0], long) : null;
+  const kinds = kindOn && more ? obsKinds(more[0], long, names) : null;
   const keep = keepOn && more ? obsKeep(more.at(-2), more.at(-1), long, keepSince, names) : null;
   const last7 = sampleSeries.slice(-7);
   // 2.0.0 [RVN-15] 검토 SVC-86: '첫날 머묾' 규칙이 읽는 sample.keep.d1을 채워요. 유형별 흐름이 켜져 있으면 그 전체 줄, 아니면 진입·머묾 줄
@@ -970,10 +1037,12 @@ export async function observe(env, now = Date.now(), { names = EVENTS } = {}) {
     disc: obsDisc(eventRows.filter((r) => r.day >= from14)),
     screen: screenRows.map((r) => ({ sig: r.sig, screen: String(r.route).slice("screen/".length), message: r.message, n: r.n ?? 0 })),
     askMiss: obsAskMiss(missAsk),
+    wear: wearRows ? obsWear(wearRows) : null,
+    flags314: store ? { kindUse: flagOn(store, "stats.kind_use", now), wear: flagOn(store, WEAR.flag, now) } : null,
     crashRepeats: obsCrashRepeats(crashRows, now),
     tune: await obsTune(env),
   };
-  board.follow = qr ? obsFollow(stored, eventRows, from7, missOpenRows) : [];
+  board.follow = qr ? obsFollow(stored, eventRows, from7, missOpenRows, wearRows) : [];
   board.found = obsRules(board);
   // 2.0.0 [RVA-54] 개발사항으로 이어진 신호는 한 줄 걸음(뜸 → 개발사항 → 닿음 → 돌아옴)과 함께.
   const devInfo = await obsDevInfo(env, stored.map((s) => s.devId ?? s.prevDev));
@@ -1042,7 +1111,7 @@ export function obsDisc(rows) {
  * 2.0.0 [RVQ-35] 검토 SVC-18: 문제일 때만 목록에 오르는 신호(기능 쓰임·찾았는데 없던 말)의 열린 대상마다 지금 값. 기능은 최근 7일 쓴 휴대폰
  * (그 전 7일과 함께), 찾았는데 없던 말은 3주 횟수예요. 읽은 줄에 없으면 0이에요(읽기에 실패하면 부르지 않아요).
  */
-export function obsFollow(stored, eventRows, from7, missRows = []) {
+export function obsFollow(stored, eventRows, from7, missRows = [], wearRows = null) {
   const openOf = (kind) => (stored ?? []).filter((x) => x.kind === kind && x.state !== "dismiss" && !x.cleared && x.subject).map((x) => x.subject);
   const out = [];
   for (const ev of new Set(openOf("feature-fall"))) {
@@ -1057,7 +1126,32 @@ export function obsFollow(stored, eventRows, from7, missRows = []) {
   }
   const miss = new Map(missRows.map((r) => [r.subject, r.n ?? 0]));
   for (const sub of new Set(openOf("search-miss"))) out.push({ kind: "search-miss", subject: sub, value: miss.get(sub) ?? 0 });
+  // 2.0.0 [RVQ-56] 열린 '입은 뒤' 신호의 작품: 입기가 [WEAR.few]번 넘으면 지금 값, 모자라거나 깃발이 꺼졌으면 빼서 '자료 없음'.
+  if (wearRows) {
+    for (const code of new Set(openOf("recipe-wear"))) {
+      const w = obsWearOne(wearRows.find((r) => r.code === code));
+      if (w) out.push({ kind: "recipe-wear", subject: code, value: w.value, base: w.base });
+    }
+  }
   return out;
+}
+
+/**
+ * 2.0.0 [RVQ-56] 작품 하나의 '입은 뒤'를 신호 숫자로: 넘은 쪽(30분 안에 뺌 → 글자 크기 되돌림 차례)의 비율(%)과 그 선. 둘 다 아래면 30분
+ * 안에 뺌과 그 선이에요(꺼진 신호가 '돌아옴'으로 판정되게). 입기가 모자라면 null.
+ */
+export function obsWearOne(row) {
+  const w = wearOf(true, row);
+  if (w.state !== "ok") return null;
+  const text = w.textBack >= WEAR.textBack && w.offSoon < WEAR.offSoon;
+  return { offSoon: Math.round(w.offSoon * 100), textBack: Math.round(w.textBack * 100), watch: w.watch,
+    value: Math.round((text ? w.textBack : w.offSoon) * 100), base: Math.round((text ? WEAR.textBack : WEAR.offSoon) * 100), text };
+}
+
+/** 2.0.0 [RVQ-56] 개선 신호 후보: 입은 분이 [WEAR.few]명 넘고 선을 넘은 작품, 많이 벗는 차례로 [OBS.wearSignals]개. */
+export function obsWear(rows) {
+  return rows.map((r) => ({ code: r.code, title: r.title, n: r.wear_n ?? 0, ...obsWearOne(r) })).filter((x) => x.watch)
+    .sort((a, b) => b.value - b.base - (a.value - a.base)).slice(0, OBS.wearSignals);
 }
 
 /**
@@ -1170,10 +1264,14 @@ export async function obsStuck(env, list, now) {
 export async function observeTick(env, now = Date.now()) {
   const b = await observe(env, now);
   const before = new Set(b.signals.map((s) => s.key));
-  const list = obsMerge(b.signals, b.found, now, { reach: await obsReach(env, b.signals) });
-  // 2.0.0 [RVA-54] 닿고 2주가 지나도 그대로인 신호는 다시 대기열에.
-  await obsStuck(env, list, now);
-  await obsSave(env, list);
+  const reach = await obsReach(env, b.signals);
+  // [RVQ-55] SVC-37: 오래 읽는 사이 관리자가 누른 것이 있으면 그 목록에 다시 합쳐요.
+  const list = await obsUpdate(env, async (stored) => {
+    const merged = obsMerge(stored, b.found, now, { reach });
+    // 2.0.0 [RVA-54] 닿고 2주가 지나도 그대로인 신호는 다시 대기열에.
+    await obsStuck(env, merged, now);
+    return merged;
+  });
   return list.filter((s) => !before.has(s.key)).length;
 }
 
@@ -1210,6 +1308,10 @@ export async function observeRoute(request, env, path, method, now) {
   // 보기만 하는 관리자는 상태를 못 바꿔요: 숫자 고치기나 개발사항 고치기 권한.
   if (!can(actor, "metrics", "edit") && !can(actor, "dev", "edit")) return json({ error: "no_permission", area: "dev" }, 403);
   const note = body.note === undefined ? "" : plainText(body.note, 300, "note");
+  // [RVQ-55] 검토 SVC-37: 바꿀 것을 먼저 정하고, 저장할 때 새로 읽은 목록의 그 신호에 다시 붙여요(매시 작업과 겹쳐도 누른 것이 남게).
+  let patch;
+  let dropWrong = false;
+  let dev = null;
   if (act === "dev") {
     if (!can(actor, "dev", "edit")) return json({ error: "no_permission", area: "dev" }, 403);
     // 2.0.0 [RVQ-15] 검토 SRV-20: 꾸밀 수 있는 숫자의 급변·Play와 다른 신호는 사람만 개발사항으로 넘겨요(운영 열쇠는 '지켜보기'까지).
@@ -1217,27 +1319,45 @@ export async function observeRoute(request, env, path, method, now) {
     if (s.devId) return json({ error: "already", dev: s.devId }, 409);
     const title = plainText(body.title ?? s.dev ?? s.title, DEV.title, "title", true);
     const text = plainText(`관측 신호 ${s.key}\n${s.title}\n${s.why}\n지금 ${s.now ?? s.value}${s.unit} · 기준 ${s.base}${s.unit}${note ? `\n${note}` : ""}`, DEV.body, "body");
-    const id = `d${randomId(15)}`;
-    await batch(env, [
-      stmt(env, `INSERT INTO dev_items (id, title, body, status, reason, created_by, created_by_name, assignee, assignee_name, created_at, updated_at, deleted_at)
-        VALUES (?, ?, ?, 'todo', '', ?, ?, NULL, NULL, ?, ?, NULL)`, id, title, text, actor.id, actorName(env), now, now),
-      devEvent(env, id, now, "create", { title, from: "관측 신호" }),
-    ]);
-    Object.assign(s, { state: "dev", devId: id, stuck: null, by: actorName(env), at: now });
+    dev = { id: `d${randomId(15)}`, title, text };
+    patch = { state: "dev", devId: dev.id, stuck: null, by: actorName(env), at: now };
   } else if (act === "reopen") {
     // 2.0.0 [RVQ-35] 다시 열면 판정을 지우고 사흘을 새로 세요(바로 다시 닫히지 않게).
-    Object.assign(s, { state: s.devId ? "dev" : "new", cleared: null, after: null, outcome: null, stuck: null, last: now, by: actorName(env), at: now });
-  } else Object.assign(s, { state: act, stuck: null, by: actorName(env), at: now, ...(note ? { note } : {}), ...(act === "dismiss" && body.wrong === true ? { wrong: true } : {}) });
+    patch = { state: s.devId ? "dev" : "new", cleared: null, after: null, outcome: null, stuck: null, last: now, by: actorName(env), at: now };
+  } else patch = { state: act, stuck: null, by: actorName(env), at: now, ...(note ? { note } : {}), ...(act === "dismiss" && body.wrong === true ? { wrong: true } : {}) };
   // 2.0.0 [RVN-15] 검토 U22c-03: '거짓이었어요'(아님 + wrong)는 그 규칙의 표본 기준을 올려요(세 번까지, 1.5배씩). 다시 열면 하나 내려요.
   let tuned = null;
   if ((act === "dismiss" && body.wrong === true) || (act === "reopen" && s.wrong)) {
     const tune = await obsTune(env);
     tune[s.kind] = Math.min(3, Math.max(0, (Number(tune[s.kind]) || 0) + (act === "dismiss" ? 1 : -1)));
-    if (act === "reopen") delete s.wrong;
+    if (act === "reopen") dropWrong = true;
     tuned = tune[s.kind];
     await run(env, "INSERT OR REPLACE INTO settings (key, value) VALUES ('obs_tune', ?)", JSON.stringify(tune));
   }
-  await obsSave(env, list);
-  await audit(env, now, "obs_signal", s.title.slice(0, 80), `${OBS_ACTS[act]}${s.devId && act === "dev" ? ` ${s.devId}` : ""}${tuned !== null ? ` · 기준 ×${1 + 0.5 * tuned}` : ""}${note ? ` · ${note}` : ""}`);
-  return json({ signal: s, ...(tuned !== null ? { tune: { kind: s.kind, step: tuned } } : {}) });
+  let taken = null;
+  const saved = await obsUpdate(env, (fresh) => {
+    taken = null;
+    const t = fresh.find((x) => x.key === body.key);
+    if (!t) return fresh;
+    // 그 사이 다른 분이 개발사항으로 넘겼으면 하나 더 만들지 않아요.
+    if (dev && t.devId) {
+      taken = t.devId;
+      return fresh;
+    }
+    if (act === "reopen") patch.state = t.devId ? "dev" : "new";
+    Object.assign(t, patch);
+    if (dropWrong) delete t.wrong;
+    return fresh;
+  });
+  if (taken) return json({ error: "already", dev: taken }, 409);
+  if (dev) {
+    await batch(env, [
+      stmt(env, `INSERT INTO dev_items (id, title, body, status, reason, created_by, created_by_name, assignee, assignee_name, created_at, updated_at, deleted_at)
+        VALUES (?, ?, ?, 'todo', '', ?, ?, NULL, NULL, ?, ?, NULL)`, dev.id, dev.title, dev.text, actor.id, actorName(env), now, now),
+      devEvent(env, dev.id, now, "create", { title: dev.title, from: "관측 신호" }),
+    ]);
+  }
+  const out = saved.find((x) => x.key === body.key) ?? { ...s, ...patch };
+  await audit(env, now, "obs_signal", out.title.slice(0, 80), `${OBS_ACTS[act]}${out.devId && act === "dev" ? ` ${out.devId}` : ""}${tuned !== null ? ` · 기준 ×${1 + 0.5 * tuned}` : ""}${note ? ` · ${note}` : ""}`);
+  return json({ signal: out, ...(tuned !== null ? { tune: { kind: out.kind, step: tuned } } : {}) });
 }

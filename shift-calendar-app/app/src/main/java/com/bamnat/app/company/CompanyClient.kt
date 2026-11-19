@@ -596,6 +596,8 @@ class CompanyException(
     val undoAgain: String? = null,
     /** 2.0.0 [RVM-30] SN-15: with rate_limited, the day's number when the server says it (장터 사진: 12, or 48 for a trusted phone). */
     val limit: Int? = null,
+    /** 2.0.0 [RVQ-42] 검토 U22b-05: with "update", the app (versionCode) a work needs. */
+    val minApp: Int? = null,
 ) : IOException(code) {
     /** [until] as epoch millis, or null. */
     val untilMillis: Long? get() = until?.let { runCatching { java.time.Instant.parse(it).toEpochMilli() }.getOrNull() }
@@ -1772,7 +1774,7 @@ private fun exchangeOnce(
                 retry, err?.optStringOrNull("why"), err?.optStringOrNull("until"), undo = err?.optBoolean("undo") == true,
                 held = err?.optJSONObject("held")?.optString("name")?.takeIf { it.isNotBlank() },
                 undoAgain = err?.optStringOrNull("undoAgain"),
-                limit = err?.optInt("limit")?.takeIf { it > 0 })
+                limit = err?.optInt("limit")?.takeIf { it > 0 }, minApp = err?.optInt("minApp")?.takeIf { it > 0 })
         }
         result = NetTimings.Result.OK
         return Answer(code, if (text.isBlank()) JSONObject() else JSONObject(text), conn.getHeaderField("ETag"))
