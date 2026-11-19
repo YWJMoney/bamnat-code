@@ -339,6 +339,10 @@ class ReviewOShotsTest : ScreenshotBase() {
                 override suspend fun mine(device: String) = list ?: base.mine(device).map { q ->
                     if (q.id != "q2") q else q.copy(messages = q.messages + com.bamnat.app.company.InquiryMessage(true, ask, q.updatedAt))
                 }.also { list = it }
+                // 2.0.0 [RVQ-50] (총괄, Q1 #547 뒤) The screen now sends through the photos-and-record overload. `by base` would hand that one
+                // to the base fake, whose own record overload is not this one, so the record went unseen here (the app itself sends both).
+                override suspend fun more(device: String, id: String, text: String, requestId: String, photos: List<ByteArray>, diag: String?) =
+                    more(device, id, text, requestId, diag)
                 override suspend fun more(device: String, id: String, text: String, requestId: String, diag: String?): com.bamnat.app.company.Inquiry {
                     sent += diag
                     val q = mine(device).first { it.id == id }
