@@ -28,8 +28,23 @@ class RvjHelpSearchScreenshotTest : ScreenshotBase() {
         org.junit.Assert.assertEquals("$name: $cuts", emptyList<LayoutCheck.Cut>(), cuts)
     }
 
+    /**
+     * A 가게 사장님 with a 급여 대장: `boss.payroll` waits for 처리방침 3.11 (its day and its hold, read by the server's clock), so the
+     * clock is the one after 3.14 ([policy314]) and the 사업장 is there, as on a phone after 정식 출시.
+     */
+    private fun Screen.bossOn() {
+        policy314()
+        kotlinx.coroutines.runBlocking { app.container.phaseThree.saveWorkplace(com.bamnat.core.boss.Workplace("p1", "식당", fivePlus = true)) }
+        app.container.flags.refresh()
+        for (i in 0 until 200) { if (app.container.flags.on(com.bamnat.core.flags.FlagCatalog.BOSS_PAYROLL)) break; Thread.sleep(20) }
+        assertTrue("boss.payroll: ${app.container.flags.state(com.bamnat.core.flags.FlagCatalog.BOSS_PAYROLL)?.reason}",
+            app.container.flags.on(com.bamnat.core.flags.FlagCatalog.BOSS_PAYROLL))
+        settle()
+    }
+
     /** 설정 › 설정 찾기 with [query] typed, as a 가게 사장님. */
     private fun search(query: String, after: Screen.() -> Unit = {}): Screen.() -> Unit = style(WorkStyle.BUSINESS) {
+        bossOn()
         tab(SETTINGS_TAB, wide = false)
         typeInto("설정 찾기", query)
         after()
@@ -57,6 +72,7 @@ class RvjHelpSearchScreenshotTest : ScreenshotBase() {
 
     /** 문의·도움말 › 기능과 도움말 찾기 '4대보험' as a 사장님: the 사장님's answer, opened. */
     private fun insurance(): Screen.() -> Unit = style(WorkStyle.BUSINESS) {
+        bossOn()
         SettingsLinks.go(SettingsGo.INQUIRY)
         settle()
         typeInto("기능과 도움말 찾기", "4대보험")
