@@ -1852,6 +1852,9 @@ fun CalendarScreen(
                         switch()
                     }
                     if (partShown(CalendarPart.COUNTS) && isAbove(CalendarPart.COUNTS)) MonthShiftCounts(snap, visibleMonth)
+                    // 2.0.0 [RVS-03] 검토 SN-10: a worn look's 칸 꾸밈 shows on the 월 판 only; on another 판 that is said once (per look),
+                    // and a tap goes to 월.
+                    if (board != com.bamnat.core.layout.CalendarBoard.MONTH) CellLookOnMonth { pickBoard(com.bamnat.core.layout.CalendarBoard.MONTH) }
                 } else Row(place.fillMaxWidth().padding(start = 16.dp, end = 4.dp), verticalAlignment = Alignment.CenterVertically) {
                     // The counts take what is left, so the two buttons always sit at the right edge.
                     // [CAL-24] 모든 조 보기 one tap from the month, before the counts, on every screen width.
@@ -3587,4 +3590,27 @@ private fun waitingWords(ask: com.bamnat.core.guide.OpenAsk): Triple<String, Str
     com.bamnat.core.guide.OpenAsk.THEME_UPDATE -> Triple("테마 새 판", "입은 테마에 새 판이 나왔어요", "보기")
     com.bamnat.core.guide.OpenAsk.TEXT_SIZE -> Triple("글자 크기", "읽기 편한 글자 크기를 골라 보세요", "고르기")
     com.bamnat.core.guide.OpenAsk.LAUNCH_THANKS -> Triple("고마워요", "정식 출시 전부터 함께해 주셔서 고마워요", "보기")
+}
+
+/**
+ * 2.0.0 [RVS-03] 검토 SN-10 (칸 꾸밈은 '월' 판에서만 보이는데 다른 판에서는 말이 없어요): with a look whose 칸 (cal.cell 부품 or 칸 꾸밈) is
+ * worn, one quiet line on another 판 says where it shows; a tap goes to 월 and either way it is not said again for this look.
+ */
+@Composable
+private fun CellLookOnMonth(onMonth: () -> Unit) {
+    val raw = com.bamnat.app.ui.parts.LocalBlueprintRaw.current
+    val decor = com.bamnat.app.ui.decor.LocalDecor.current
+    val cellLook = raw.touches("cal.cell") || decor.has(com.bamnat.core.recipe.Decor.CELL)
+    if (!cellLook) return
+    val context = LocalContext.current
+    val prefs = remember { context.getSharedPreferences("calendar_hints", android.content.Context.MODE_PRIVATE) }
+    val key = remember(raw, decor) { (raw.hashCode() * 31 + decor.hashCode()).toString() }
+    var seen by remember(key) { mutableStateOf(runCatching { prefs.getString("cellLookOnMonth", null) == key }.getOrDefault(false)) }
+    if (seen) return
+    fun done() { seen = true; runCatching { prefs.edit().putString("cellLookOnMonth", key).apply() } }
+    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+        com.bamnat.app.ui.components.ToneLine("칸 꾸밈은 ‘월’ 판에서 보여요 · 누르면 월로", Modifier.weight(1f),
+            tone = com.bamnat.app.ui.theme.Tone.Plain) { done(); onMonth() }
+        IconButton(onClick = { done() }) { Icon(Icons.Filled.Close, "이 안내 닫기") }
+    }
 }

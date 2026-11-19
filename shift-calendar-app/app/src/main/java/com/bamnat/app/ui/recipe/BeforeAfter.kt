@@ -2,6 +2,11 @@ package com.bamnat.app.ui.recipe
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.ExpandLess
+import androidx.compose.material.icons.filled.ExpandMore
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
@@ -102,5 +107,68 @@ private fun Cell(text: String, color: Long?, strong: Boolean, modifier: Modifier
         if (text.isNotEmpty()) Text(text, style = MaterialTheme.typography.bodySmall,
             color = if (strong) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
             fontWeight = if (strong) FontWeight.Bold else null)
+    }
+}
+
+/**
+ * 2.0.0 [RVS-15] 검토 SN-04·SI-03 (사용자 2026-11-12 'A + B 혼합'): the 앱 동작 choices of a work in the 넣기 창, each as 지금 → 넣으면 with its
+ * own switch (the whole row, 48dp). Its 꾸밈 (강조색·움직임) start on; 밝기 starts off with the maker's suggestion under it; the user's own
+ * settings (글자 크기·누르기·시계…) are folded under one line, off, and each says what it would do ('글자가 지금보다 작아져요').
+ */
+@Composable
+internal fun FeelChoices(feels: List<RecipePieces.Feel>, on: Map<String, Boolean>, onTurn: (String, Boolean) -> Unit) {
+    if (feels.isEmpty()) return
+    val mine = feels.filter { it.whose == com.bamnat.core.recipe.AppFeel.Whose.MINE }
+    val first = feels.filter { it.whose != com.bamnat.core.recipe.AppFeel.Whose.MINE }
+    var open by rememberSaveable { mutableStateOf(mine.any { on[it.key] == true }) }
+    Column(Modifier.fillMaxWidth().padding(top = 4.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+        Text("앱 느낌 · 켠 것만 바뀌어요", style = MaterialTheme.typography.labelLarge, modifier = Modifier.semantics { heading() })
+        first.forEach { FeelRow(it, on[it.key] == true, onTurn) }
+        if (mine.isNotEmpty()) {
+            // The names on their own small line, so the line's point ('그대로 둬요') reads first at any text size.
+            val names = mine.take(3).joinToString(" · ") { it.what } + if (mine.size > 3) " 등" else ""
+            val turned = mine.count { on[it.key] == true }
+            Row(
+                Modifier.fillMaxWidth().heightIn(min = 48.dp).clickable(role = androidx.compose.ui.semantics.Role.Button) { open = !open },
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Column(Modifier.weight(1f).padding(vertical = 4.dp)) {
+                    Text(if (turned > 0) "내 설정 ${mine.size}개 중 ${turned}개를 바꿔요" else "내 설정 ${mine.size}개는 그대로 둬요",
+                        style = MaterialTheme.typography.bodyMedium)
+                    Text(names, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+                androidx.compose.material3.Icon(
+                    if (open) Icons.Filled.ExpandLess else Icons.Filled.ExpandMore,
+                    contentDescription = if (open) "접기" else "펼치기", tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            if (open) mine.forEach { FeelRow(it, on[it.key] == true, onTurn) }
+        }
+    }
+}
+
+@OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
+@Composable
+private fun FeelRow(f: RecipePieces.Feel, on: Boolean, onTurn: (String, Boolean) -> Unit) {
+    Row(
+        Modifier.fillMaxWidth().heightIn(min = 48.dp)
+            .toggleable(value = on, role = androidx.compose.ui.semantics.Role.Switch) { onTurn(f.key, it) }
+            .padding(start = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(Modifier.weight(1f).padding(vertical = 4.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            Text(f.what, style = MaterialTheme.typography.bodyMedium)
+            // Big text on a narrow phone: '지금 → 넣으면' wraps between whole values instead of standing '휴대폰 / 따라' (조건 12).
+            androidx.compose.foundation.layout.FlowRow(
+                horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(2.dp),
+                itemVerticalAlignment = Alignment.CenterVertically,
+            ) {
+                Cell(f.now, f.nowColor, false, Modifier)
+                Text("→", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Cell(f.then, f.thenColor, on, Modifier)
+            }
+            f.note?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
+        }
+        androidx.compose.material3.Switch(checked = on, onCheckedChange = null)
     }
 }

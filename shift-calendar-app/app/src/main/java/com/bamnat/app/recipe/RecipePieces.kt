@@ -374,6 +374,70 @@ class RecipePieces(private val c: AppContainer) {
         }
     }
 
+    // ---- 2.0.0 [RVS-15] 앱 동작, 줄마다 (검토 SN-04·SD-05·SI-03, 사용자 2026-11-12 'A + B 혼합') ----
+
+    /**
+     * One choice of an 앱 동작 piece that would change this phone: [key] the piece's, [what] its name, [now] → [then] in the user's words
+     * (a colour also as swatches), whose it is ([com.bamnat.core.recipe.AppFeel.whose]) and a short [note] where the change needs one
+     * ('글자가 지금보다 작아져요').
+     */
+    data class Feel(
+        val key: String, val what: String, val now: String, val then: String, val whose: com.bamnat.core.recipe.AppFeel.Whose,
+        val nowColor: Long? = null, val thenColor: Long? = null, val note: String? = null,
+    )
+
+    /** 2.0.0 [RVS-15] The choices of an 앱 동작 piece ([values], its inputs filled) that differ from this phone, in [com.bamnat.core.recipe.AppFeel.ORDER]. */
+    suspend fun feels(values: Map<String, Any?>, cur: com.bamnat.app.data.AppSettings = c.settingsRepository.current): List<Feel> =
+        com.bamnat.core.recipe.AppFeel.ORDER.filter { it in values }.mapNotNull { key ->
+            val sk = FEEL_SETTINGS[key] ?: return@mapNotNull null
+            val after = settingsAfter(PieceKind.APP_FEEL, mapOf(key to values[key]), PersonalCalendar.MAIN, cur)[sk] ?: return@mapNotNull null
+            val before = settingOf(cur, sk)
+            if (after == before) return@mapNotNull null
+            val whose = com.bamnat.core.recipe.AppFeel.whose(key)
+            val note = when (sk) {
+                "textStep" -> if ((after.toIntOrNull() ?: 0) < cur.textStep) "글자가 지금보다 작아져요" else null
+                "themeMode" -> when (after) {
+                    com.bamnat.app.data.ThemeMode.DARK.name, com.bamnat.app.data.ThemeMode.NIGHT_SHIFT.name -> "이 작품은 어두운 화면에서 가장 예뻐요"
+                    com.bamnat.app.data.ThemeMode.LIGHT.name -> "이 작품은 밝은 화면에서 가장 예뻐요"
+                    else -> null
+                }
+                "motion" -> if (com.bamnat.core.recipe.Motion.decode(before).off) "움직임을 꺼 두셨어요. 켜야만 움직여요" else null
+                else -> null
+            }
+            val colour = sk == "accentColor"
+            Feel(key, SETTING_NAMES[sk] ?: sk, feelWords(sk, before, now = true), feelWords(sk, after, now = false), whose,
+                nowColor = before.toLongOrNull()?.takeIf { colour && it != 0L }, thenColor = after.toLongOrNull()?.takeIf { colour && it != 0L }, note = note)
+        }
+
+    /** A setting's value ([settingOf]'s form) in the user's words, as the settings screen says it. */
+    fun feelWords(key: String, v: String, now: Boolean = true): String = when (key) {
+        "themeMode" -> when (v) {
+            com.bamnat.app.data.ThemeMode.LIGHT.name -> "밝게"; com.bamnat.app.data.ThemeMode.DARK.name -> "어둡게"
+            com.bamnat.app.data.ThemeMode.NIGHT_SHIFT.name -> "야간 근무 중 어둡게"; else -> "휴대폰 따라"
+        }
+        "accentColor" -> if (v == "0" || v.isEmpty()) "기본 색" else if (now) "지금 색" else "작품 색"
+        "textStep" -> com.bamnat.app.ui.theme.TextSize.LABELS[(v.toIntOrNull() ?: com.bamnat.app.ui.theme.TextSize.DEFAULT).coerceIn(0, com.bamnat.app.ui.theme.TextSize.LABELS.lastIndex)]
+        "phoneDayView" -> when (v) {
+            com.bamnat.app.data.PhoneDayView.SHEET.name -> "하루 화면 열기"; com.bamnat.app.data.PhoneDayView.WEEK.name -> "그 주만 보기"; else -> "아래 카드에 먼저"
+        }
+        "longPress" -> when (v) { "memo" -> "바로 메모"; "open" -> "하루 열기"; else -> "빠른 메뉴" }
+        "dayGroupOrder" -> if (now) "지금 순서" else "작품 순서"
+        "statsByPayPeriod" -> when (v) { com.bamnat.app.data.StatsPeriod.PAY.name -> "급여 기간"; com.bamnat.app.data.StatsPeriod.MONTH.name -> "1일~말일"; else -> "급여에 맞춰" }
+        "motion" -> com.bamnat.core.recipe.Motion.decode(v).said()
+        else -> if (v == "true") "켬" else "끔"
+    }
+
+    /** 2.0.0 [RVS-15] The 앱 동작 settings now, as [lookSnapshot] keeps the look (for what a theme's 앱 동작 changed). */
+    fun feelSnapshot(): Map<String, String> = FEEL_SETTINGS.values.associateWith { settingOf(c.settingsRepository.current, it) }
+
+    /** 2.0.0 [RVS-15] Puts back each setting of [changed] (setting → [before, after]) that is still as the work left it. */
+    fun putFeelBack(changed: Map<String, Pair<String, String>>): Int {
+        fun still(s: com.bamnat.app.data.AppSettings, k: String, ba: Pair<String, String>) = settingOf(s, k) == ba.second && ba.first != ba.second
+        val n = changed.count { (k, ba) -> still(c.settingsRepository.current, k, ba) }
+        c.settingsRepository.update { cur -> changed.entries.fold(cur) { acc, (k, ba) -> if (still(acc, k, ba)) withSetting(acc, k, ba.first) else acc } }
+        return n
+    }
+
     // ---- 전후 (1.39 [MKP-05]) ----
 
     /**
@@ -541,8 +605,10 @@ class RecipePieces(private val c: AppContainer) {
                 items(values, "icons").takeIf { it.isNotEmpty() }?.let { Side("근무 그림", if (l.icons.isEmpty()) "없음" else "${l.icons.size}개", "작품 그림 ${it.size}개") },
             )
         }
+        // 2.0.0 [RVS-15] 앱 동작: each choice in words (밝기 휴대폰 따라 → 어둡게, 글자 크기 더 크게 → 보통), not '지금 모양 → 작품 모양'.
+        PieceKind.APP_FEEL -> feels(values).map { f -> Side(f.what, f.now, f.then, f.nowColor, f.thenColor) }
         // 모양만 바꾸는 조각: which settings move, the picture itself is in 입어 보기.
-        PieceKind.LAYOUT, PieceKind.CARDS, PieceKind.WIDGET, PieceKind.CAL_VIEW, PieceKind.APP_FEEL, PieceKind.MEMO_LOOK, PieceKind.MONEY_LOOK,
+        PieceKind.LAYOUT, PieceKind.CARDS, PieceKind.WIDGET, PieceKind.CAL_VIEW, PieceKind.MEMO_LOOK, PieceKind.MONEY_LOOK,
         PieceKind.SCREEN_LOOK, PieceKind.PARTS, PieceKind.DECOR, PieceKind.TAB_VIEW -> {
             val cur = c.settingsRepository.current
             settingsAfter(kind, values, cal).map { (k, v) -> Side(SETTING_NAMES[k] ?: k, "지금 모양", if (settingOf(cur, k) == v) "지금 모양 그대로" else "작품 모양") }
@@ -1584,6 +1650,14 @@ class RecipePieces(private val c: AppContainer) {
         /** 2.0.0 [RVM-55] U09b-02: why a 그대로 둔 것 line stayed. */
         const val MINE = "넣은 뒤 직접 바꿔서 그대로 뒀어요"
 
+        /** 2.0.0 [RVS-15] 앱 동작's keys and the setting each writes ([settingOf]·[withSetting]). */
+        val FEEL_SETTINGS = mapOf("theme" to "themeMode", "dynamic" to "dynamicColor", "accent" to "accentColor", "textStep" to "textStep",
+            "compact" to "compact", "clock12" to "clock12", "tap" to "phoneDayView", "hold" to "longPress", "dayOrder" to "dayGroupOrder",
+            "flow" to "sleepTips", "rest" to "restCheck", "payPeriod" to "statsByPayPeriod", "motion" to "motion")
+
+        /** 2.0.0 [RVS-15] The settings that are the receiver's own ([com.bamnat.core.recipe.AppFeel.Whose.BRIGHT]·[com.bamnat.core.recipe.AppFeel.Whose.MINE]). */
+        val MY_FEEL_SETTINGS: Set<String> = FEEL_SETTINGS.filterKeys { com.bamnat.core.recipe.AppFeel.whose(it) != com.bamnat.core.recipe.AppFeel.Whose.LOOK }.values.toSet()
+
         /** [FREE-10] What a theme may change, as settings. */
         val LOOK_SETTINGS = listOf("calView", "calTheme", "screenLooks", "memoLook", "moneyLook", "payLooks", "widgetLook", "photoLook",
             "calendarLayout", "statsLayout", "moneyLayout", "memoLayout", "tabOrder",
@@ -1600,7 +1674,7 @@ class RecipePieces(private val c: AppContainer) {
             // [RUL-03] PC D4 (입히기 뒤 규칙이 모두 사라짐): 단추·규칙은 모양이 아니에요. 테마를 입거나 처음 모양으로 돌려도 그대로이고,
             // 스튜디오 입히기가 따로 저장해요 (StudioViewModel.wear).
 
-        private val SETTING_NAMES = mapOf("logic" to "수식·규칙·버튼","tabOrder" to "아래 탭 순서", "calendarLayout" to "달력 화면 카드 순서·보이기", "statsLayout" to "통계 카드 순서·보이기",
+        val SETTING_NAMES = mapOf("logic" to "수식·규칙·버튼","tabOrder" to "아래 탭 순서", "calendarLayout" to "달력 화면 카드 순서·보이기", "statsLayout" to "통계 카드 순서·보이기",
             "moneyLayout" to "가계부 카드 순서·보이기", "memoLayout" to "메모 카드 순서·보이기", "tabViews" to "탭 보기 (달력 판·메모장 보기·가계부 판)", "widgetLook" to "위젯 투명도·밝기", "shiftLooks" to "근무에 따라 바뀌는 모양", "widgetMemo" to "위젯 메모 한 줄",
             "photoLook" to "그림 꾸미기 (달력 배경·머리 그림·근무 그림·위젯 배경·모서리)",
             "calView" to "달력 모양 (칸 높이·근무 표시·날짜 자리·메모 줄·줄 순서·칸 디자인·패턴)", "memoInCells" to "날짜 칸의 메모", "showHoursInCells" to "날짜 칸의 근무 시간",
