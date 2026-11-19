@@ -132,6 +132,8 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
         with:
           cache-read-only: false
+      # 2.0.0 [RVR-46] 앱을 처음부터 컴파일하면 Gradle 기본 4g 힙이 모자라 'Java heap space'로 떨어졌어요(11-19 묶음 확인 실행, shots-e·unit). 홈의 gradle.properties가 저장소 것보다 앞서요.
+      - run: mkdir -p "$HOME/.gradle" && echo 'org.gradle.jvmargs=-Xmx6g -Dfile.encoding=UTF-8' >> "$HOME/.gradle/gradle.properties"
       # Robolectric's Android jars (100 MB and more) come from Maven Central once, then from this cache.
       # 2.0.0 [RVR-43]: one cache per shard (each needs the same Android versions every run), keyed on the Robolectric version and
       # the test SDK rather than all of build.gradle.kts, and saved even when tests fail (a red shard used to throw its download
@@ -356,6 +358,8 @@ jobs:
         with:
           cache-read-only: false
       - if: steps.changed.outputs.server == '1'
+        run: mkdir -p "$HOME/.gradle" && echo 'org.gradle.jvmargs=-Xmx6g -Dfile.encoding=UTF-8' >> "$HOME/.gradle/gradle.properties"
+      - if: steps.changed.outputs.server == '1'
         uses: actions/cache@v4
         with:
           path: ~/.m2/repository/org/robolectric
@@ -435,6 +439,8 @@ jobs:
         uses: gradle/actions/setup-gradle@v4
         with:
           cache-read-only: false
+      - if: steps.changed.outputs.run == '1'
+        run: mkdir -p "$HOME/.gradle" && echo 'org.gradle.jvmargs=-Xmx6g -Dfile.encoding=UTF-8' >> "$HOME/.gradle/gradle.properties"
       - if: steps.changed.outputs.run == '1'
         uses: actions/cache@v4
         with:
@@ -571,6 +577,8 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
         with:
           cache-read-only: false
+      # 2.0.0 [RVR-46] 앱을 처음부터 컴파일하면 Gradle 기본 4g 힙이 모자라 'Java heap space'로 떨어졌어요(11-19 묶음 확인 실행, shots-e·unit). 홈의 gradle.properties가 저장소 것보다 앞서요.
+      - run: mkdir -p "$HOME/.gradle" && echo 'org.gradle.jvmargs=-Xmx6g -Dfile.encoding=UTF-8' >> "$HOME/.gradle/gradle.properties"
       - run: sh ./gradlew $GRADLE_FLAGS :app:lintDebug --continue
       # [REL-09] The watch app builds and passes lint too. [RVR-12] (검토 TEST-13) and its unit tests run.
       - run: sh ./gradlew $GRADLE_FLAGS :wear:assembleDebug :wear:lintDebug :wear:testDebugUnitTest --continue
