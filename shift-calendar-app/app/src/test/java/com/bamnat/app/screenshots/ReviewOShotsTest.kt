@@ -318,4 +318,66 @@ class ReviewOShotsTest : ScreenshotBase() {
         }
         org.junit.Assert.assertEquals(emptyList<String>(), missed)
     }
+
+    /**
+     * 2.0.0 [RVO-28] HQ-150 (PC-201): the 운영팀 asked for the record, so the reply opens with '점검 기록도 보내기' on. A report pasted as
+     * words says it need not be (no red 2,000자 line), and one press takes it out and keeps the switch on; the record then goes as the
+     * reply's info.diag and the bubble says it went with it.
+     */
+    @Test fun replyWithTheRecord() {
+        val missed = mutableListOf<String>()
+        val sent = mutableListOf<String?>()
+        val ask = "원인을 찾으려면 휴대폰에 남은 '앱 멈춤' 기록이 꼭 필요해요. 이 문의에 답장 쓰기에서 아래 '점검 기록도 보내기'를 켜고 보내 주세요.\n\n밤낮 운영팀"
+        val report = "[앱 멈춤]\n가장 최근 기록: 11.19 07:02\n남은 기록: 3개\n\n[알람 상태]\n알람 사용: 켜짐\n" + "놓쳤을 수 있는 알람: 없음\n".repeat(120)
+        fun fake(): com.bamnat.app.company.InquiryApi {
+            val base = FakeInquiryApi()
+            return object : com.bamnat.app.company.InquiryApi by base {
+                var list: List<com.bamnat.app.company.Inquiry>? = null
+                override suspend fun mine(device: String) = list ?: base.mine(device).map { q ->
+                    if (q.id != "q2") q else q.copy(messages = q.messages + com.bamnat.app.company.InquiryMessage(true, ask, q.updatedAt))
+                }.also { list = it }
+                override suspend fun more(device: String, id: String, text: String, requestId: String, diag: String?): com.bamnat.app.company.Inquiry {
+                    sent += diag
+                    val q = mine(device).first { it.id == id }
+                    val next = q.copy(status = "open", messages = q.messages + com.bamnat.app.company.InquiryMessage(false, text,
+                        com.bamnat.core.time.Today.instant(), withCheck = diag != null))
+                    list = list!!.map { if (it.id == id) next else it }
+                    return next
+                }
+            }
+        }
+        fun Screen.checkOn(): Boolean = nodes(merged = true).any { n ->
+            n.config.getOrElseNullable(androidx.compose.ui.semantics.SemanticsProperties.Text) { null }?.any { it.text == "점검 기록도 보내기" } == true &&
+                n.config.getOrElseNullable(androidx.compose.ui.semantics.SemanticsProperties.ToggleableState) { null } == androidx.compose.ui.state.ToggleableState.On
+        }
+        fun Screen.open() {
+            app.container.inquiryApi = fake()
+            app.container.inquiryStore.asked = true
+            // The reply is kept as it is written (조건 10); each look starts from an empty one.
+            app.container.inquiryStore.saveReply("q2", "")
+            inquiryThread()
+            settle()
+        }
+        all("22_reply_pasted_record") {
+            open()
+            val look = "${RuntimeEnvironment.getQualifiers().substringBefore("-port")} ${app.resources.configuration.fontScale}"
+            if (!checkOn()) missed += "$look: 기록을 부탁한 답인데 '점검 기록도 보내기'가 꺼져 있음"
+            typeInto("점검 기록에 덧붙일 말(적지 않아도 돼요)", "말씀하신 기록이에요\n\n$report")
+            if (!appears(com.bamnat.app.ui.settings.PASTED_LINE, exact = true)) missed += "$look: 붙여 넣은 기록에 다음 할 일이 없음"
+            if (shows("${com.bamnat.app.company.InquiryClient.TEXT_MAX}자까지 쓸 수 있어요", exact = true)) missed += "$look: 2,000자 말이 그대로"
+        }
+        all("23_reply_record_sent") {
+            open()
+            typeInto("점검 기록에 덧붙일 말(적지 않아도 돼요)", "말씀하신 기록이에요\n\n$report")
+            tapText(com.bamnat.app.ui.settings.PASTED_TAKE, exact = true, scrolls = 0)
+            if (!checkOn()) missed += "빼고 켜기 뒤 스위치가 꺼짐"
+            if (shows(com.bamnat.app.ui.settings.PASTED_LINE, exact = true)) missed += "빼고 켜기 뒤에도 붙여 넣은 기록 말이 남음"
+            tapText("보내기", exact = true, scrolls = 0)
+            appears("점검 기록 함께 보냄", exact = true)
+            settle()
+            reveal("점검 기록 함께 보냄", exact = true)
+        }
+        if (sent.size != looks.size || sent.any { it.isNullOrBlank() }) missed += "답장과 함께 간 기록: $sent"
+        org.junit.Assert.assertEquals(emptyList<String>(), missed)
+    }
 }
