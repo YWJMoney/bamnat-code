@@ -73,7 +73,7 @@ async function seed() {
   for (let k = 0; k < 8; k++) await call("POST", "/api/posts", { device: dev, company: ids[0], setup: setups[0], body: `토론 글 ${k}` }, from(n));
   for (let k = 0; k < 8; k++) await call("POST", "/api/posts", { device: dev, company: ids[0], setup: "room", body: `방 글 ${k}` }, from(n));
   await call("POST", "/api/rates", { device: dev, job: "factory", region: "31", trade: "용접", unit: "day", amount: 250000 }, from(n));
-  // 2.0.0 [RVN-23] 검토 SVC-90: a kind of work's plaza once plaza.people is on (처리방침 3.12), its writers with 근무 태그 and 마을 이름,
+  // 2.0.0 [RVN-24] 검토 SVC-90: a kind of work's plaza once plaza.people is on (처리방침 3.12), its writers with 근무 태그 and 마을 이름,
   // a question with an answer and a poll, so its reads are held to a budget too.
   const owner = await signIn(call);
   await call("POST", "/api/admin/policy", { confirm: true, version: "3.12", posted: "2026-10-31", effective: "2026-11-07", heldUntil: "2026-11-07", why: "시험" }, owner);
@@ -135,7 +135,7 @@ const BUDGET = [
   ["activity", "/api/activity", 3, 12, member],
   ["rates", "/api/rates?job=factory", 2, 5, member],
   ["plazas", "/api/plazas", 2, 4],
-  // 2.0.0 [RVN-23] 검토 SVC-90 (1.39.0: 15 rounds, 27 statements; older posts 13 and 25).
+  // 2.0.0 [RVN-24] 검토 SVC-90 (1.39.0: 15 rounds, 27 statements; older posts 13 and 25).
   ["kind of work's plaza", "/api/companies/style-shift/setups/room/posts", 5, 18, { "x-device": device(9001) }],
   ["kind of work's plaza, older posts", `/api/companies/style-shift/setups/room/posts?before=${encodeURIComponent(new Date(Date.now() + 60_000).toISOString())}`,
     5, 16, { "x-device": device(9001) }],
@@ -150,7 +150,7 @@ for (const [label, path, rounds, stmts, headers] of BUDGET) {
   });
 }
 
-test("[RVN-23] SVC-90 a kind of work's plaza reads what it says about writers from its page, not from every post the room had", async () => {
+test("[RVN-24] SVC-90 a kind of work's plaza reads what it says about writers from its page, not from every post the room had", async () => {
   const { sqls } = await cost("/api/companies/style-shift/setups/room/posts", { headers: { "x-device": device(9001) } });
   const about = sqls.filter((q) => /\b(nicks|post_flags|post_votes|recipe_makers)\b/.test(q) && !/^\s*INSERT/i.test(q));
   assert.ok(about.length >= 4, about.join("\n"));

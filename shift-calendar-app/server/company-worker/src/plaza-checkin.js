@@ -1,4 +1,5 @@
-import { all, deviceHash, deviceId, json, overLimit, readJson, run } from "./index.js";
+import { all, deviceHash, deviceId, json, network, networkCheck, one, allow, overLimit, readJson, run } from "./index.js";
+import { integrityGate } from "./integrity.js";
 import { DAY, HOUR } from "./units.js";
 
 // ---- 1.39 [PLZC-21] 오늘 출근 한 번 누르기 (처리방침 3.12 ②) ----
@@ -12,7 +13,8 @@ export const PLAZA_CHECKIN_SCHEMA = [
     at INTEGER NOT NULL, PRIMARY KEY (day, room, device))`,
 ];
 export const CHECKIN_KINDS = { "style-shift": ["day", "night"], "style-field": ["go", "rain"] };
-export const CHECKIN_LIMITS = { perHour: 20, keepDays: 2 };
+// 2.0.0 [RVN-24] 검토 SVC-93: a network's taps a day too (a new install's hourly share of it, and the ceilings), as other writes.
+export const CHECKIN_LIMITS = { perHour: 20, keepDays: 2, perNetworkDay: 300 };
 
 /** The Korean date of [now], as 2026-11-07. */
 export function checkinDay(now) {
@@ -42,7 +44,15 @@ export async function plazaCheckinRoute(request, env, on) {
   const kind = body.kind ?? null;
   if (kind !== null && !kinds.includes(kind)) return json({ error: "kind", field: "kind" }, 400);
   const now = Date.now();
-  const hit = await overLimit(env, now, [["device", `checkin|${dev}`, CHECKIN_LIMITS.perHour, HOUR]]);
+  // 2.0.0 [RVN-24] 검토 SVC-93: '오늘 야간 출근 n명' is a count others see, so a new install id is not a new tap for free: the network's
+  // limit beside the install's, and Play's verdict first while 무결성 확인 is on (a take-back needs neither).
+  if (kind !== null) {
+    const gate = await integrityGate({ one, allow, json }, env, dev, now);
+    if (gate) return gate;
+  }
+  const net = await network(request, env, now);
+  const hit = await overLimit(env, now, [["device", `checkin|${dev}`, CHECKIN_LIMITS.perHour, HOUR],
+    ...(kind === null ? [] : await networkCheck(env, dev, net, "checkin", CHECKIN_LIMITS.perNetworkDay, now))]);
   if (hit) return hit;
   const day = checkinDay(now);
   if (kind === null) await run(env, "DELETE FROM plaza_checkin WHERE day = ? AND room = ? AND device = ?", day, body.room, dev);

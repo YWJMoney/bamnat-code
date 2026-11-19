@@ -1031,7 +1031,7 @@ private fun PostRow(
                 }
             }
         }
-        p.poll?.let { v -> PollView(v, enabled = onPoll != null && p.hidden == null, onPick = { i -> onPoll?.invoke(if (v.mine == i) null else i) }) }
+        p.poll?.let { v -> PollView(v, enabled = onPoll != null && p.hidden == null, byFormOn = meToo, onPick = { i -> onPoll?.invoke(if (v.mine == i) null else i) }) }
         p.hidden?.let {
             // 2.0.0 [RVN-13] HQ-40 ① a caution in the app's one line shape (J ToneLine), not red: red is for danger only (조건 6).
             com.bamnat.app.ui.components.ToneLine("다른 분께는 가려졌어요 · $it", Modifier.padding(top = 2.dp))
@@ -1141,7 +1141,7 @@ internal fun awakeNow(posts: List<TalkPost>): Int {
  * do not lead the rest); after, each choice with its share as a bar, the picked one marked, and the same one again takes it back.
  */
 @Composable
-private fun PollView(v: com.bamnat.app.company.Poll, enabled: Boolean, onPick: (Int) -> Unit) {
+private fun PollView(v: com.bamnat.app.company.Poll, enabled: Boolean, byFormOn: Boolean = false, onPick: (Int) -> Unit) {
     Column(Modifier.fillMaxWidth().padding(top = 6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
         v.options.forEachIndexed { i, label ->
             val picked = v.mine == i
@@ -1173,6 +1173,9 @@ private fun PollView(v: com.bamnat.app.company.Poll, enabled: Boolean, onPick: (
             Text("한 근무형태가 5명이 안 되면 '그 밖의 근무'로 합쳐요. 누가 무엇을 골랐는지는 보이지 않아요.",
                 style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
+        // 2.0.0 [RVN-24] 검토 U22c-08: before any 근무형태 has 5, one line says when the split comes (it no longer seems to come and go).
+        else if (v.mine != null && byFormOn) Text("근무형태별 결과는 같은 근무형태가 5명 모이면 보여요",
+            style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
 }
 

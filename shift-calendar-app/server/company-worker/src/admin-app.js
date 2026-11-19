@@ -1805,14 +1805,17 @@ function adminApp(L, BUILD, M) {
     const d = S.data.plazaEffect;
     if (!d) return skeleton(1);
     const n = (v, unit = "") => (v === null || v === undefined ? "–" : `${v}${unit}`);
+    // 2.0.0 [RVN-24] 검토 SVC-95: a share of fewer than d.few is '아직 적음' (null from the server), '–' when there is nothing at all.
+    const pct = (v, sample) => (v === null || v === undefined ? (sample > 0 ? "아직 적음" : "–") : `${v}%`);
     const mins = (m) => (m === null ? "–" : m < 60 ? `${m}분` : `${Math.round(m / 6) / 10}시간`);
-    return `<h3>광장 효과</h3><p class="hint">지난 ${d.days}일 합계예요(사람 하나하나는 보지 않아요). ‘전’은 그 앞 ${d.days}일이에요. ‘처음 쓴 분 · 다시 씀’은 처음 쓴 지 ${d.back}일이 지난 분(${d.back}~${d.back + d.days}일 전 처음 쓴 분)만 세요. 오늘 처음 쓴 분은 ${d.back}일 뒤부터 들어가요.</p>
+    return `<h3>광장 효과</h3><p class="hint">지난 ${d.days}일 합계예요(사람 하나하나는 보지 않아요). ‘전’은 그 앞 ${d.days}일이에요. 보이는 글만 세고, 신고·도배로 가려진 글은 ‘가려짐’에 따로 세요. ‘처음 쓴 분 · 다시 씀’은 처음 쓴 지 ${d.back}일이 지난 분(${d.back}~${d.back + d.days}일 전 처음 쓴 분)만 세요. 비율은 ${d.few ?? 10}건이 모여야 보여요.</p>
       <div class="table-wrap"><table class="list nums"><thead><tr><th scope="col">광장</th><th scope="col">하루 글 (전)</th><th scope="col">질문 · 답 받음</th><th scope="col">첫 답까지</th><th scope="col">답</th><th scope="col">태그 붙은 글</th>
-        <th scope="col">나도요</th><th scope="col">근무 카드</th><th scope="col">쓴 분</th><th scope="col">처음 쓴 분 · 다시 씀</th><th scope="col">오늘 출근</th></tr></thead><tbody>
+        <th scope="col">나도요</th><th scope="col">근무 카드</th><th scope="col">쓴 분</th><th scope="col">처음 쓴 분 · 다시 씀</th><th scope="col">오늘 출근</th><th scope="col">가려짐</th></tr></thead><tbody>
       ${d.items.map((x) => {
-        const cells = [["하루 글 (전)", `${n(x.postsPerDay)} (${n(x.postsPerDayBefore)})`], ["질문 · 답 받음", `${x.questions} · ${n(x.answeredPct, "%")}`],
-          ["첫 답까지", mins(x.firstAnswerMin)], ["답", x.answers], ["태그 붙은 글", n(x.tagged, "%")], ["나도요", x.metoo], ["근무 카드", x.cards],
-          ["쓴 분", x.writers], ["처음 쓴 분 · 다시 씀", `${x.newWriters} · ${n(x.cameBackPct, "%")}`], ["오늘 출근", x.checkinToday]];
+        const cells = [["하루 글 (전)", `${n(x.postsPerDay)} (${n(x.postsPerDayBefore)})`], ["질문 · 답 받음", `${x.questions} · ${pct(x.answeredPct, x.questions)}`],
+          ["첫 답까지", mins(x.firstAnswerMin)], ["답", x.answers], ["태그 붙은 글", pct(x.tagged, x.posts)], ["나도요", x.metoo], ["근무 카드", x.cards],
+          ["쓴 분", x.writers], ["처음 쓴 분 · 다시 씀", `${x.newWriters} · ${pct(x.cameBackPct, x.newWriters)}`], ["오늘 출근", x.checkinToday],
+          ["가려짐", x.hidden ?? 0]];
         return `<tr><td class="name">${esc(x.name)}</td>${cells.map(([l, v]) => `<td class="n"><span class="lab">${l} </span>${v}</td>`).join("")}</tr>`;
       }).join("")}
       </tbody></table></div>`;
@@ -3287,8 +3290,10 @@ function adminApp(L, BUILD, M) {
       }
       const about = e.label ? (e.link ? ` <a class="meta" href="${esc(e.link)}">${esc(e.label)}</a>` : ` <span class="meta">${esc(e.label)}</span>`)
         : e.target ? ` <span class="meta">${esc(e.target)}</span>` : "";
+      // 2.0.0 [RVN-24] 검토 U22c-02: what no admin did says who did: an app user, or the server by itself ('자동').
       const who = e.actorId ? `<button class="who link" data-act="audit-who" data-id="${esc(e.actorId)}" title="이 사람이 한 일만 보기">${esc(e.actor || "관리자")}</button>`
-        : `<span class="who">${esc(e.actor || "앱 사용자·시스템")}</span>`;
+        : e.actor ? `<span class="who">${esc(e.actor)}</span>`
+        : L.origin(e.action) === "app" ? '<span class="who">앱 사용자</span>' : '<span class="who"><span class="pill info" title="사람이 누르지 않고 서버가 저절로 한 일이에요">자동</span></span>';
       // 1.38 [ADM3-07] 되돌릴 수 있는 일은 그 화면으로 한 번에.
       const undo = L.undoPlace(e.action, e.target);
       out.push(`<li><span class="when">${esc(clock(e.at))}</span><span><b>${esc(L.actionName(e.action))}</b>${about}

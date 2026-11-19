@@ -100,7 +100,7 @@ import { VILLAGE_SCHEMA, topicOf, villageAdmin, villageRoute } from "./village.j
 import { makerMarks } from "./maker-mark.js";
 import { PEOPLE_COLUMNS, PEOPLE_LIMITS, peopleCard, peopleFacts, peopleMonths, peoplePulse, peopleTag, peopleTagOut, pollByForm } from "./plaza-people.js";
 import { PLAZA_CHECKIN_SCHEMA, plazaCheckinRoute, plazaCheckins } from "./plaza-checkin.js";
-import { PLAZA_PICKS_SCHEMA, plazaPicksAdmin, plazaPicksRoute } from "./plaza-picks.js";
+import { PICKS_COLUMNS, PLAZA_PICKS_SCHEMA, plazaPicksAdmin, plazaPicksRoute } from "./plaza-picks.js";
 import { plazaEffectAdmin } from "./plaza-effect.js";
 import { PHOTO_COLUMNS, PHOTO_SCHEMA, flagRecipeImages } from "./photo-guard.js";
 // 2.0.0 [RVD-25] SN-17 회사 설정 파일 검사(장터 서버도 같은 함수로).
@@ -1049,6 +1049,8 @@ const COLUMNS = [
   "ALTER TABLE posts ADD COLUMN attach TEXT",
   // 1.39 [PLZC-10] 근무 태그.
   ...PEOPLE_COLUMNS,
+  // 2.0.0 [RVN-24] 검토 I22cb-02: what a 답 모음 pick is about (도움말).
+  ...PICKS_COLUMNS,
   // 2.0.0 [RVQ-07] 검토 SRV-07·U21-04: 로그인마다 최고 관리자 비밀번호 지문(비밀값으로 서명한 것, 바뀌면 끊김), 마지막 사용, 기기 이름(브라우저·
   // 운영체제 두 낱말만, 전체 UA는 남기지 않음), 들어온 길(비밀번호·패스키).
   "ALTER TABLE admin_sessions ADD COLUMN pw TEXT NOT NULL DEFAULT ''",
@@ -4124,6 +4126,8 @@ export const FLAGS = {
   // 2.0.0 [RVN-06] COMP-10 마을 돌봄이 바로 쉬기로 다루는 두 가지(CARE_SEVERE)를 그 이름으로 신고해요(전에는 '욕설'로 섞였어요).
   sexual: "성적인 내용",
   illegal: "불법·위험한 내용",
+  // 2.0.0 [RVN-24] 검토 SVC-93: a 근무 태그 (소방·병원·4조 2교대 …) the writer's work is not; the tag is what their calendar says, not proof.
+  tag: "근무 태그가 사실과 달라요",
 };
 
 /** Why the developer hid a post, as its writer's app shows it. */
@@ -4226,7 +4230,7 @@ async function talk(request, env, companyId, grp) {
   return json(r.body, r.status);
 }
 
-/** 2.0.0 [RVN-23] SVC-90 The top posts of a kind of work's plaza read before a time (?1 room, ?2 grp, ?3 before), as talkData pages them. */
+/** 2.0.0 [RVN-24] SVC-90 The top posts of a kind of work's plaza read before a time (?1 room, ?2 grp, ?3 before), as talkData pages them. */
 const PAGE_TOPS = `SELECT id FROM posts WHERE company_id = ?1 AND grp = ?2 AND parent IS NULL AND created_at < ?3
   ORDER BY created_at DESC, rowid DESC LIMIT ${PEOPLE_LIMITS.page}`;
 
@@ -4273,7 +4277,7 @@ async function talkData(request, env, companyId, grp, known = null) {
   const now = Date.now();
   // [COMM-09] Writers this phone chose not to see, from its own list (X-Hide); the server keeps no list.
   const sealed = authorKey(env).then(async (key) => ({ key, hidden: await hiddenAuthors(key, request.headers.get("x-hide")) }));
-  // 2.0.0 [RVN-23] 검토 SVC-90: the posts this answer shows (the page), as SQL over ?1 company and ?2 grp, so what is said about
+  // 2.0.0 [RVN-24] 검토 SVC-90: the posts this answer shows (the page), as SQL over ?1 company and ?2 grp, so what is said about
   // their writers (마을 이름, 프로필, 신고 표시, 내 표) reads the page and not every post the room ever had.
   const pageSql = room && style && before !== null
     ? `SELECT id FROM posts WHERE company_id = ?1 AND grp = ?2 AND (id IN (${PAGE_TOPS}) OR parent IN (${PAGE_TOPS}))`
@@ -5535,11 +5539,11 @@ async function signedRoute(request, env, url, path, method, now, session) {
   if (path === "/plaza/effect") { const v = await plazaEffectAdmin(request, env, path, now, STYLE_ROOMS); if (v) return v; }
   // 1.39 [PLZC-22] 광장 답 모음.
   if (path === "/plaza/picks" || path.startsWith("/plaza/picks/")) {
-    const v = await plazaPicksAdmin(request, env, path, now, STYLE_ROOMS);
-    if (v) {
-      if (request.method !== "GET") await audit(env, now, "plaza_pick", path);
-      return v;
-    }
+    // 2.0.0 [RVN-24] 검토 SVC-96: 활동 기록 says which answer and under what title (before, only the address).
+    const v = await plazaPicksAdmin(request, env, path, now, STYLE_ROOMS,
+      // A pick that left by itself is no admin's doing: written without one, so 활동 기록 shows it as 자동.
+      (action, target, detail) => audit(action === "plaza_pick_gone" ? Object.create(env, { actor: { value: null } }) : env, now, action, target, detail));
+    if (v) return v;
   }
   // 1.36 [VIL-11] 이번 주 이야기 주제 of each kind of work's plaza.
   if (path.startsWith("/village/")) {

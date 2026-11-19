@@ -61,8 +61,9 @@ internal fun PlazaTagLine(tag: PlazaTag, modifier: Modifier = Modifier) {
     if (why) AlertDialog(
         onDismissRequest = { why = false },
         title = { Text("근무 태그") },
-        text = { Text("그분 달력의 근무 설정에서 저절로 붙어요. 직접 적을 수 없어요. 인증은 아니지만, 그 근무로 달력을 쓰고 있다는 표시예요. " +
-            "‘밤낮 n개월’은 서버가 이 휴대폰을 처음 본 때부터 센 값이에요.") },
+        // 2.0.0 [RVN-24] 검토 SVC-93: what the tag stands on (the writer's own calendar), and what to do when it is not so.
+        text = { Text("그분이 달력에 적은 근무 설정에서 저절로 붙어요. 직접 적을 수 없지만 인증은 아니에요. " +
+            "‘밤낮 n개월’은 서버가 이 휴대폰을 처음 본 때부터 센 값이에요. 사실과 다르면 글의 ⋮ › 신고하기에서 ‘근무 태그가 사실과 달라요’를 골라 주세요.") },
         confirmButton = { TextButton(onClick = { why = false }) { Text("닫기") } },
     )
     val words = "📅 " + tag.line() + (tag.now?.let { " · ${it.mark} ${it.words}" } ?: "")

@@ -126,6 +126,9 @@ export const POLL_SPLIT_MIN = 5;
 /**
  * 1.39 [PLZC-31] 근무형태별 투표 결과 of the polls [ids]: Map id → [{f, counts}] (f null: 그 밖의 근무), only groups of POLL_SPLIT_MIN or
  * more, and only where at least one 근무형태 stands on its own. Nobody's own vote shows.
+ * 2.0.0 [RVN-24] 검토 SVC-94: the groups shown always add up to the whole poll (whose counts go with it), so a rest of 1~4 that was
+ * left out could be read as whole − shown. Such a rest takes in the smallest 근무형태 shown (then 5 or more), and a poll with none
+ * left on its own shows no split at all.
  */
 export async function pollByForm(all, env, ids, options) {
   const out = new Map();
@@ -142,10 +145,11 @@ export async function pollByForm(all, env, ids, options) {
     }
     const sum = (a) => a.reduce((x, y) => x + y, 0);
     const named = [...groups].filter(([f, c]) => f && sum(c) >= POLL_SPLIT_MIN).sort((a, b) => sum(b[1]) - sum(a[1]));
-    if (!named.length) continue;
     const rest = Array(size).fill(0);
     for (const [f, c] of groups) if (!named.some(([g]) => g === f)) c.forEach((n, i) => { rest[i] += n; });
-    out.set(id, [...named.map(([f, counts]) => ({ f, counts })), ...(sum(rest) >= POLL_SPLIT_MIN ? [{ f: null, counts: rest }] : [])]);
+    if (sum(rest) > 0 && sum(rest) < POLL_SPLIT_MIN && named.length) named.pop()[1].forEach((n, i) => { rest[i] += n; });
+    if (!named.length) continue;
+    out.set(id, [...named.map(([f, counts]) => ({ f, counts })), ...(sum(rest) > 0 ? [{ f: null, counts: rest }] : [])]);
   }
   return out;
 }

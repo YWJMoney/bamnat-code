@@ -188,7 +188,7 @@ fun FlagPostDialog(post: TalkPost?, invest: Boolean, onDismiss: () -> Unit, onFl
         text = {
             // At 200% text the reasons scroll inside the dialog rather than push its buttons away.
             Column(Modifier.verticalScroll(rememberScrollState())) {
-                FLAG_REASONS.filter { (key, _) -> key != "advice" || invest }.forEach { (key, label) ->
+                FLAG_REASONS.filter { (key, _) -> (key != "advice" || invest) && (key != "tag" || p.tag != null) }.forEach { (key, label) ->
                     Row(Modifier.fillMaxWidth().heightIn(min = 48.dp).toggleable(value = reason == key, role = Role.RadioButton) { reason = key },
                         verticalAlignment = Alignment.CenterVertically) {
                         androidx.compose.material3.RadioButton(selected = reason == key, onClick = null)
@@ -207,9 +207,12 @@ fun FlagPostDialog(post: TalkPost?, invest: Boolean, onDismiss: () -> Unit, onFl
     )
 }
 
-/** The reasons a post can be reported for, as the server keeps them (FLAGS). */
+/**
+ * The reasons a post can be reported for, as the server keeps them (FLAGS). 2.0.0 [RVN-24] 검토 SVC-93: 근무 태그가 사실과 달라요 on a post
+ * that carries one (소방·병원·4조 2교대 …, what the writer's calendar says, not proof).
+ */
 internal val FLAG_REASONS = listOf("abuse" to "욕설·비방", "personal" to "개인 정보가 있어요", "sexual" to "성적인 내용", "illegal" to "불법·위험한 내용",
-    "spam" to "광고·도배", "false" to "일부러 틀린 정보", "advice" to "종목 추천·리딩")
+    "spam" to "광고·도배", "false" to "일부러 틀린 정보", "tag" to "근무 태그가 사실과 달라요", "advice" to "종목 추천·리딩")
 
 /**
  * [VIL-02] 1.36 마을 V2 차단 하나로: opens 마을 › 팔로잉 › 차단, where 광장에서 가린 분 and 장터·프로필에서 차단한 분 are one list.

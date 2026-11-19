@@ -300,11 +300,12 @@ test("[PLZC-33] 광장 효과: sums per plaza, answered share and first answer t
   assert.equal(r.status, 200);
   const s = r.data.items.find((x) => x.room === "style-shift");
   assert.equal(s.questions, 2);
-  assert.equal(s.answeredPct, 50);
+  // 2.0.0 [RVN-24] 검토 SVC-95: a share of fewer than 10 is null (관리자 앱 '아직 적음'); n200-rvn24 has the shares of a full sample.
+  assert.equal(s.answeredPct, null);
   assert.equal(s.firstAnswerMin, 30);
   assert.equal(s.metoo, 1);
   assert.equal(s.newWriters, 1, "the writer of 20 days ago");
-  assert.equal(s.cameBackPct, 100);
-  assert.ok(s.tagged > 0 && s.tagged < 100);
+  assert.equal(s.cameBackPct, null);
+  assert.equal(s.tagged, null);
   assert.equal(r.data.items.find((x) => x.room === "style-shop").posts, 0);
 });
