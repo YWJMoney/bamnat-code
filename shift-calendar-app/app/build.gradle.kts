@@ -310,7 +310,7 @@ dependencies {
     // about 300 KB here, its models and screens come with Play services. No camera permission, nothing sent (D68).
     implementation("com.google.android.gms:play-services-mlkit-document-scanner:16.0.0")
     // [DAYW-07] On-device geofencing for 출퇴근 자동 기록 (off by default); no location leaves the phone.
-    implementation("com.google.android.gms:play-services-location:21.3.0")
+    implementation("com.google.android.gms:play-services-location:21.4.0")
     // [SHFT-08] The Wear OS watch gets the days through the Wearable Data Layer, phone to watch.
     implementation("com.google.android.gms:play-services-wearable:19.0.0")
     // [SPD-26] 1.31 I2 had Cronet from Play services here (play-services-cronet). 2.0.0 [RVN-23] (PC-187): gone, since a Play
