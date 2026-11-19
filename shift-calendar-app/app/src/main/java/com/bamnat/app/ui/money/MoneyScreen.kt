@@ -134,7 +134,7 @@ class MoneyViewModel(
 ) : ViewModel(), MoneyActions {
     private val scope = container.scopeOf(calendarId)
     /** [NAV-01] The month shown here, the calendar's and 근무·급여's too. */
-    val shownMonth: StateFlow<YearMonth> = container.shownMonth.month
+    val shownMonth: StateFlow<YearMonth> = container.shownMonth.others // [RVH-91] HQ-114
     fun showMonth(month: YearMonth) = container.shownMonth.show(month)
     private val money = scope.money
     val book: StateFlow<MoneyBook?> = money.book.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
