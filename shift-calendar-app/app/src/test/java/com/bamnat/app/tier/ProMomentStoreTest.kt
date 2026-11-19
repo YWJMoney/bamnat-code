@@ -69,5 +69,9 @@ class ProMomentStoreTest {
         assertTrue(billingWords(ProReason.GRACE, d, true, null)!!.contains("결제 수단"))
         assertNull(billingWords(ProReason.DAY_PASS, d, false, null))
         assertNull(billingWords(ProReason.SUBSCRIPTION, null, true, null))
+        // 2.0.0 [RVO-15] 검토 PRO-04: before the server read it from Play there is no 결제일 (not "3일 뒤").
+        assertEquals("프로 구독 중 · 결제일 확인 중 · 연 39,000원", billingWords(ProReason.SUBSCRIPTION, d, true, "연 39,000원", known = false))
+        assertEquals("구독을 해지했어요 · 끝나는 날 확인 중", billingWords(ProReason.SUBSCRIPTION, d, false, null, known = false))
+        assertEquals("a trial's end counts from its start", "무료 체험 11월 28일에 끝나요 · 그 뒤 결제돼요", billingWords(ProReason.TRIAL, d, true, null, known = false))
     }
 }

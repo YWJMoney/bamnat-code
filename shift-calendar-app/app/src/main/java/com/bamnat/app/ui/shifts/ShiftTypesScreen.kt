@@ -152,6 +152,14 @@ fun ShiftTypesScreen(
 
     // 2.0.0 [RVP-06] The add button shrinks to its icon while the page scrolls down (검토 UIX-19 떠 있는 단추 규칙).
     val fab = com.bamnat.app.ui.components.rememberFabOpen()
+    val dockAdd = com.bamnat.app.ui.components.addDocks()
+    val addType = {
+        editing = ShiftType(
+            id = 0, name = "", label = "", colorArgb = ShiftPalette[(types?.size ?: 0) % ShiftPalette.size],
+            start = LocalTime.of(9, 0), end = LocalTime.of(18, 0), breakMinutes = 60,
+            alarmEnabled = true, alarms = listOf(AlarmSpec(60)),
+        )
+    }
     Scaffold(
         modifier = Modifier.nestedScroll(fab.connection),
         snackbarHost = { com.bamnat.app.ui.components.AppSnackHost() },
@@ -163,17 +171,11 @@ fun ShiftTypesScreen(
             )
         },
         floatingActionButton = {
-            com.bamnat.app.ui.components.AddFab(
-                "${dayKindNoun(vm.workStyle)} 추가",
-                onClick = {
-                    editing = ShiftType(
-                        id = 0, name = "", label = "", colorArgb = ShiftPalette[(types?.size ?: 0) % ShiftPalette.size],
-                        start = LocalTime.of(9, 0), end = LocalTime.of(18, 0), breakMinutes = 60,
-                        alarmEnabled = true, alarms = listOf(AlarmSpec(60)),
-                    )
-                },
-                open = fab.open,
-            )
+            if (!dockAdd) com.bamnat.app.ui.components.AddFab("${dayKindNoun(vm.workStyle)} 추가", onClick = addType, open = fab.open)
+        },
+        bottomBar = {
+            // 2.0.0 갈래 P 5 (HQ-75·HQ-111·조건 9): the add button is the bar under the page, never over a line ([com.bamnat.app.ui.components.addDocks]).
+            if (dockAdd) com.bamnat.app.ui.components.AddDock("${dayKindNoun(vm.workStyle)} 추가", onClick = addType)
         },
     ) { padding ->
         val list = types
@@ -741,8 +743,7 @@ fun ShiftTypeEditorDialog(
                                 }
                             }
                             Spacer(Modifier.height(4.dp))
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Text("휴게 시간", style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
+                            com.bamnat.app.ui.components.LabelControlRow("휴게 시간") { // [RVH-81] HQ-98
                                 MinutesStepper(
                                     minutes = draft.breakMinutes,
                                     onChange = { draft = draft.copy(breakMinutes = it) },

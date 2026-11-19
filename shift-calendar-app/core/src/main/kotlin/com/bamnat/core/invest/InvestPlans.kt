@@ -1,6 +1,5 @@
 package com.bamnat.core.invest
 
-import com.bamnat.core.holiday.KoreanHolidays
 import java.time.DayOfWeek
 import java.time.LocalDate
 import java.time.LocalDateTime
@@ -11,18 +10,46 @@ import kotlin.math.ceil
 import kotlin.math.roundToLong
 
 /**
- * [INV-08][INV-14] When the investor's alarms and date notices come. Weekly alarms skip days the
- * Korean market is shut (weekends, public holidays, 12월 31일 휴장) unless told not to; a monthly plan
- * on a shut day moves to the next open day, as a broker's 자동 적립 does.
+ * [INV-08][INV-14] When the investor's alarms and date notices come. Weekly alarms skip days their
+ * market is shut ([MarketDays]: 국내 weekends, public holidays, 근로자의 날, 12월 31일; 미국 NYSE holidays; 코인 never)
+ * unless told not to; a monthly plan on a shut day moves to the next open day, as a broker's 자동 적립 does.
  */
 object InvestAlarms {
     /** Dates written down are told about at 08:30 that morning. */
     const val EVENT_NOTICE_MINUTE = 8 * 60 + 30
     private val WEEKDAYS = setOf(DayOfWeek.MONDAY, DayOfWeek.TUESDAY, DayOfWeek.WEDNESDAY, DayOfWeek.THURSDAY, DayOfWeek.FRIDAY)
 
-    fun marketClosed(d: LocalDate): Boolean =
-        d.dayOfWeek == DayOfWeek.SATURDAY || d.dayOfWeek == DayOfWeek.SUNDAY || KoreanHolidays.isHoliday(d) ||
-            (d.monthValue == 12 && d.dayOfMonth == 31)
+    /** The Korean market is shut on [d] ([MarketDays.krClosed]). */
+    fun marketClosed(d: LocalDate): Boolean = MarketDays.krClosed(d)
+
+    /**
+     * 2.0.0 [RVK-52] (검토 MONEY-72·T06b-10): the market an alarm follows. 장 시작·마감 전 are the Korean market's; a plan,
+     * a target or the user's own alarm follows its holding's market (코인 never shuts, 미국 주식 by the NYSE's days).
+     */
+    fun venue(alarm: InvestAlarm): MarketDays.Venue = when (alarm.kind) {
+        AlarmKind.MARKET_OPEN, AlarmKind.MARKET_CLOSE -> MarketDays.Venue.KR
+        else -> MarketDays.venueOf(alarm.market)
+    }
+
+    /** Whether [alarm] passes over [d] because its market is shut. */
+    fun skips(alarm: InvestAlarm, d: LocalDate): Boolean = alarm.skipHolidays && MarketDays.closed(d, venue(alarm))
+
+    /**
+     * The minute of the day [alarm] goes off on [d]: on 수능일 and the year's first trading day the Korean market opens an
+     * hour late (and on 수능일 shuts an hour late), so 장 시작, 마감 전 and a morning plan move with it.
+     */
+    fun minuteOn(alarm: InvestAlarm, d: LocalDate): Int {
+        if (venue(alarm) != MarketDays.Venue.KR) return alarm.minute
+        val late = when (alarm.kind) {
+            AlarmKind.MARKET_OPEN -> MarketDays.krOpenLate(d)
+            AlarmKind.MARKET_CLOSE -> MarketDays.krCloseLate(d)
+            AlarmKind.PLAN -> if (alarm.minute in 9 * 60 until 10 * 60) MarketDays.krOpenLate(d) else 0
+            else -> 0
+        }
+        return (alarm.minute + late).coerceAtMost(23 * 60 + 59)
+    }
+
+    private fun timeOn(alarm: InvestAlarm, d: LocalDate): java.time.LocalTime = minuteOn(alarm, d).let { java.time.LocalTime.of(it / 60, it % 60) }
 
     /** A new alarm of [kind] with the usual time and days: 09:00 장 시작, 15:20 마감 전, the 25th for a plan. */
     fun default(kind: AlarmKind): InvestAlarm = when (kind) {
@@ -36,14 +63,13 @@ object InvestAlarms {
     /** The next time [alarm] goes off strictly after [after]; null when it never will again (or is off). */
     fun next(alarm: InvestAlarm, after: LocalDateTime): LocalDateTime? {
         if (!alarm.enabled) return null
-        val time = java.time.LocalTime.of(alarm.minute / 60, alarm.minute % 60)
-        alarm.once?.let { d -> return d.atTime(time).takeIf { it.isAfter(after) } }
+        alarm.once?.let { d -> return d.atTime(timeOn(alarm, d)).takeIf { it.isAfter(after) } }
         alarm.monthDay?.let { day ->
             var ym = YearMonth.from(after.toLocalDate()).minusMonths(1)
             repeat(26) {
                 var d = ym.atDay(day.coerceIn(1, ym.lengthOfMonth()))
-                if (alarm.skipHolidays) while (marketClosed(d)) d = d.plusDays(1)
-                val at = d.atTime(time)
+                while (skips(alarm, d)) d = d.plusDays(1)
+                val at = d.atTime(timeOn(alarm, d))
                 if (at.isAfter(after)) return at
                 ym = ym.plusMonths(1)
             }
@@ -52,8 +78,8 @@ object InvestAlarms {
         if (alarm.weekdays.isEmpty()) return null
         var d = after.toLocalDate()
         repeat(400) {
-            if (d.dayOfWeek in alarm.weekdays && !(alarm.skipHolidays && marketClosed(d))) {
-                val at = d.atTime(time)
+            if (d.dayOfWeek in alarm.weekdays && !skips(alarm, d)) {
+                val at = d.atTime(timeOn(alarm, d))
                 if (at.isAfter(after)) return at
             }
             d = d.plusDays(1)

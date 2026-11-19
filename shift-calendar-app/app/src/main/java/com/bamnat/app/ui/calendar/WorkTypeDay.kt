@@ -115,6 +115,7 @@ private fun SwapRow(day: ResolvedDay, snapshot: ScheduleSnapshot, vm: CalendarVi
                 .map { it.swapWith.trim() }.distinct().take(6)
         }
         AlertDialog(
+            fields = true, // 2.0.0 [RVH-69] 검토 PC-135: its fields scroll above the keyboard.
             onDismissRequest = { editing = false },
             title = { Text(if (cover) "누구 대신 일했나요?" else "누구와 근무를 바꿨나요?") },
             text = {
