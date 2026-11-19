@@ -547,6 +547,20 @@ abstract class ScreenshotBase {
         }
 
         /**
+         * 2.0.0 [RVH-86] Closes an open menu as the phone's back key does: the key goes to the popup's own window, which the
+         * activity's back ([back]) does not reach.
+         */
+        fun closePopups() {
+            scenario.onActivity { activity ->
+                shownPopups(activity).forEach { p ->
+                    p.dispatchKeyEvent(android.view.KeyEvent(android.view.KeyEvent.ACTION_DOWN, android.view.KeyEvent.KEYCODE_BACK))
+                    p.dispatchKeyEvent(android.view.KeyEvent(android.view.KeyEvent.ACTION_UP, android.view.KeyEvent.KEYCODE_BACK))
+                }
+            }
+            settle()
+        }
+
+        /**
          * [J133-45] Whether [text] comes on screen, waiting while it has not yet: a sheet, a saved row or
          * data from a fake server can land a few frames after the tap on a busy test machine. Returns as
          * soon as it shows, so a passing check costs nothing; only a real miss waits the whole [ms].

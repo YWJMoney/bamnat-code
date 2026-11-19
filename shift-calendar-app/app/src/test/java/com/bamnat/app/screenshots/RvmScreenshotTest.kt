@@ -73,6 +73,8 @@ class RvmScreenshotTest : ScreenshotBase() {
         private val posts: List<com.bamnat.app.recipe.RecipePost> = emptyList(),
         /** [RVM-40] Lists only the works for the kind of work asked (as the server does), all of them with none. */
         private val byStyle: Boolean = false,
+        /** [RVM-63] The first [paged] works as page one, and the next page failing (null: one page, as before). */
+        private val paged: Int? = null,
     ) : RecipeApi {
         private val codes = works.indices.associateBy { "MKT" + (10000 + it) }
         fun code(title: String) = codes.entries.first { works[it.value].title == title }.key
@@ -83,9 +85,11 @@ class RvmScreenshotTest : ScreenshotBase() {
                 kept = 81, official = true, publicData = false, parent = null, at = Instant.parse("2026-11-09T00:00:00Z"), showcase = true, scope = "theme", fx = fx)
         }
         override val enabled = true
-        override suspend fun list(style: WorkStyle?, sort: String, q: String, cursor: Int, kind: String?) =
-            RecipePage(works.indices.filter { (q.isBlank() || q in works[it].title) && (!byStyle || style == null || style in works[it].styles) }
-                .take(12).map(::item), null)
+        override suspend fun list(style: WorkStyle?, sort: String, q: String, cursor: Int, kind: String?): RecipePage {
+            if (paged != null && cursor > 0) throw java.io.IOException("down")
+            return RecipePage(works.indices.filter { (q.isBlank() || q in works[it].title) && (!byStyle || style == null || style in works[it].styles) }
+                .take(paged ?: 12).map(::item), paged)
+        }
         override suspend fun show(code: String, device: String?, version: Int?): RecipeDoc {
             val i = codes.getValue(code)
             return RecipeDoc(item(i), RecipeCodec.hash(works[i]), RecipeCodec.write(works[i]), "public", mine = false)
@@ -902,6 +906,23 @@ class RvmScreenshotTest : ScreenshotBase() {
         val h = app.resources.displayMetrics.heightPixels
         check(n.boundsInWindow.height >= n.size.height - 1 && n.boundsInWindow.bottom <= h) { "마지막 줄이 잘려요: ${n.boundsInWindow} / 높이 $h" }
     }
+
+    /** 2.0.0 [RVM-63] 검토 U08a-02·MKT-02: near the end the next page is read by itself; failing, it says so there with 다시 하기. */
+    private fun pagingFails(): Screen.() -> Unit = {
+        Market(paged = 4).also { c.recipeApi = it }
+        style(WorkStyle.SHIFT)
+        val vm = RecipeListViewModel(c)
+        content { RecipeListScreen(vm, onBack = {}, onOpen = {}, onMake = {}, onMine = {}) }
+        settle()
+        repeat(6) { scrollUp(400, across = 0.5f); settle() }
+        check(vm.state.value.moreError != null) { "끝 가까이에서 다음 쪽을 저절로 읽지 않았어요" }
+        check(vm.state.value.error == null) { "다음 쪽 실패가 맨 위 오류로 갔어요" }
+        check(appears("잠시 뒤 다시 해 주세요")) { "목록 끝에 실패 줄이 없어요" }
+        check(gone("더 보기", exact = true)) { "실패했는데 '더 보기'가 그대로예요" }
+    }
+    @Test fun pagingFailsFolded() = shoot("rvm_107_market_more_failed_folded", FOLDED, pagingFails())
+    @Test fun pagingFailsFoldedDarkBig() = shoot("rvm_108_market_more_failed_folded_dark_200", DARK, 2f, pagingFails())
+    @Test fun pagingFailsUnfolded() = shoot("rvm_109_market_more_failed_unfolded", UNFOLDED, pagingFails())
 
     /** 2.0.0 [RVM-60] RCP-14 / [RVM-61] HQ-148: a theme worn before, opened from 내 서랍 in the first days after install. */
     private fun quietWear(): Screen.() -> Unit = {

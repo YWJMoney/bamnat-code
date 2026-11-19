@@ -329,8 +329,7 @@ box-shadow:var(--shadow);text-decoration:none;color:inherit;min-height:6.5rem;tr
 .composer{position:sticky;bottom:calc(4.4rem + env(safe-area-inset-bottom));background:var(--surface);border:1px solid var(--line);border-radius:var(--r-lg);
 padding:.75rem;box-shadow:var(--shadow)}
 @media (min-width:600px){.composer{bottom:1rem}
-  /* 2.0.0 [RVQ-50] 4e 사진(840·1440 글자 200%): 떠 있는 답 칸이 화면을 다 덮어 문의 글이 보이지 않았어요. 높이를 화면의 절반 남짓으로 막고
-     넘치면 칸 안에서 굴러요. 보내기 줄은 칸 아래에 붙어 있어요. 글자 100%에서는 칸이 그보다 작아 그대로예요. */
+  /* [RVQ-50] 글자 200%에서 답 칸이 화면을 덮지 않게 */
   .composer{max-height:48dvh;overflow:auto;overscroll-behavior:contain}
   .composer .actions{position:sticky;bottom:-.75rem;z-index:2;background:var(--surface);margin:.5rem -.75rem -.75rem;padding:.6rem .75rem;border-top:1px solid var(--line)}}
 /* [J133-40] 순번 720 (1.32 실사용 테스트, 관리자 휴대폰 화면): on a phone the reply box stays in the page, under the talk, instead of
@@ -871,6 +870,7 @@ button.tile{font:inherit;text-align:left;cursor:pointer;color:inherit}button.til
 /* PC 확인 8d290ec3: 휴대폰 폭에서 상태는 두 줄로 다 보이고, 단추는 제목 아래 한 줄에 같은 폭으로. */
 hr.split{border:0;border-top:2px dashed var(--line);margin:1.5rem 0}
 .linkish{background:none;border:0;padding:0;color:var(--accent,#2b6cb0);text-decoration:underline;cursor:pointer;font:inherit}
+.kv dd .ctx-at{display:block;margin-bottom:4px}
 li.flash,.kv dd.flash{outline:2px solid var(--accent,#2b6cb0);outline-offset:2px;transition:outline-color .3s}
 img.photo-big{display:block;width:100%;max-width:512px;height:auto;margin:0 auto;image-rendering:auto;border-radius:8px}
 @media (max-width:640px){.rows.work .row{flex-wrap:wrap}.rows.work .row-side{width:100%;max-width:none;flex-direction:column;align-items:stretch;gap:.4rem}

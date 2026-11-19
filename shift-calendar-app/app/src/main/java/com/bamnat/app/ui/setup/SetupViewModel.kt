@@ -121,7 +121,7 @@ class SetupViewModel(
         val order = saved.pattern(today)
         val patterns = when {
             order == null -> before
-            before.isEmpty() -> listOf(if (calendarId == null) com.bamnat.core.schedule.PatternTimeline.first(order, today) else order)
+            before.isEmpty() -> listOf(if (calendarId == null) com.bamnat.core.schedule.PatternTimeline.firstFor(saved.savedStyle, order, today) else order)
             else -> com.bamnat.core.schedule.PatternTimeline.changeFrom(before, order, today)
         }
         return ScheduleSnapshot(types, patterns, saved.paintedEntries()).takeIf { !it.isEmpty }
@@ -1120,7 +1120,7 @@ class SetupViewModel(
                     // 1.39 [SETUP-20] The first setup of a new install is saved: its tap count waits for 사용 통계.
                     if (calendarId == null && !again) c.setupTaps.finish(d.savedStyle)
                     // [RVG-18] 검토 PC-22 (도약 14): started from a link of next month's 근무표, the calendar opens on that month.
-                    if (d.linkTitle.isNotBlank()) d.openingMonth(today).takeIf { it != java.time.YearMonth.from(today) }?.let(c.shownMonth::show)
+                    if (d.linkTitle.isNotBlank()) d.openingMonth(today).takeIf { it != java.time.YearMonth.from(today) }?.let(c.shownMonth::showOpening) // [RVH-91] HQ-114: the calendar only
                     // [RVG-16] Started from a link as 일근·알바: that kind of work's notices, not the 교대 ones turned on with the link.
                     if (calendarId == null && d.workAs != null && d.workAs != d.style)
                         c.settingsRepository.update { com.bamnat.app.data.RecommendedSettings.apply(it, com.bamnat.core.consent.RecommendedPlan.forStyle(d.workAs).start) }

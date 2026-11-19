@@ -622,3 +622,38 @@ test("[RVA-68] 글에 닫힘 낱말이 없어도 점검 기록 '앱 멈춤' 칸�
   const d = (await call("GET", `/api/admin/inquiries/${a2}`, undefined, owner)).data;
   assert.deepEqual([d.crash.recordName, d.crash.repeat.nth, d.topic], ["멈춤 기록 있음", 2, "app"]);
 });
+
+// ---- 2.0.0 [RVA-69] HQ-150 뒤: 기록 부탁 답은 앱 판에 맞게, 답장으로 온 기록은 관리자 앱에 표시 (시험 자료는 모두 지어낸 값) ----
+import { CRASH_ASK_DRAFT_REPLY, crashAskDraft } from "../src/crash-repeat.js";
+
+test("[RVA-69] 기록 부탁 답: 2.0.0부터는 답장의 '점검 기록도 보내기', 1.39.0까지는 새 문의. 답장으로 기록이 오면 부탁 답은 없어지고 받은 때가 실려요", async (t) => {
+  assert.equal(crashAskDraft("1.39.0 (53)"), CRASH_ASK_DRAFT);
+  assert.equal(crashAskDraft("2.0.0 (54)"), CRASH_ASK_DRAFT_REPLY);
+  assert.equal(crashAskDraft(undefined), CRASH_ASK_DRAFT, "판을 모르면 어느 판에서나 되는 새 문의");
+  // 2.0.0 앱은 운영팀의 마지막 답에 '점검 기록'·'앱 멈춤' 말이 있으면 답장 스위치를 켠 채 열어요(O RVO-28).
+  assert.match(CRASH_ASK_DRAFT_REPLY, /'점검 기록도 보내기'/);
+  assert.match(CRASH_ASK_DRAFT_REPLY, /앱 멈춤/);
+  assert.match(CRASH_ASK_DRAFT_REPLY, /밤낮 운영팀$/);
+  assert.doesNotMatch(CRASH_ASK_DRAFT_REPLY, /보고서 복사|붙여 넣|새 문의|https?:|\/api|AI|자동|서버|관리자|열쇠|코드/);
+
+  const { call } = server({ t });
+  const owner = await signIn(call);
+  const send = async (n, app) => (await call("POST", "/api/inquiries", { v: 1, device: device(n), kind: "bug", text: "앱이 갑자기 닫혀요", info: { app, model: "Test Fold 9", android: "17 (API 37)" } }, from(n))).data.id;
+  const old = await send(73, "1.39.0 (53)");
+  const neu = await send(74, "2.0.0 (54)");
+  const dOld = (await call("GET", `/api/admin/inquiries/${old}`, undefined, owner)).data;
+  const dNew = (await call("GET", `/api/admin/inquiries/${neu}`, undefined, owner)).data;
+  assert.deepEqual([dOld.crash.draft, dOld.crash.reply], [CRASH_ASK_DRAFT, undefined]);
+  assert.deepEqual([dNew.crash.draft, dNew.crash.reply, dNew.diagAt], [CRASH_ASK_DRAFT_REPLY, true, undefined]);
+  const led = (await call("GET", "/api/admin/ledger?view=all", undefined, owner)).data;
+  const row = (id) => led.items.find((r) => r.key === `inquiry:${id}`);
+  assert.deepEqual([row(old).crash.reply, row(neu).crash.reply], [undefined, true]);
+  assert.equal(led.crashDraftReply, CRASH_ASK_DRAFT_REPLY);
+  // 부탁 답대로 2.0.0 답장에 기록을 켜서 보내면 기록이 오고, 부탁 답은 없어지며 받은 때가 실려요. 글을 비우면 앱이 PastedCheck.ONLY_RECORD를 적어요.
+  const r = await call("POST", `/api/inquiries/${neu}/messages`, { text: "점검 기록을 함께 보내요.", info: { diag: "[앱 멈춤]\n가장 최근 기록: 11.19 07:02 · TestCrashException\n남은 기록: 1개" } }, { "x-device": device(74) });
+  assert.equal(r.status, 201, r.text);
+  const after = (await call("GET", `/api/admin/inquiries/${neu}`, undefined, owner)).data;
+  assert.deepEqual([after.crash.record, after.crash.draft, after.crash.reply], ["has", undefined, undefined]);
+  assert.match(after.diagAt, /^\d{4}-\d\d-\d\dT/);
+  assert.equal(after.messages.at(-1).diag, true);
+});

@@ -4,7 +4,7 @@ import { SORTING, autoAnswer, compareVersions, grams, likeness, needsPerson, nee
 import { replyRisk } from "./ledger.js";
 import { billingWordOf, isBillingRecord, replyRiskOf } from "./ask-check.js";
 import { careAppealOf } from "./community-care.js";
-import { CRASH, CRASH_ASK_DRAFT, crashOf, crashRecord, crashRepeats } from "./crash-repeat.js";
+import { CRASH, crashAskDraft, crashOf, crashRecord, crashRepeats, replyCarriesRecord } from "./crash-repeat.js";
 // 1.37 [ADM2-02] 나간 판.
 import { DESK, OUTBOX_DROPPED, broadcastRisk, isOut, shippedVersion } from "./desk.js";
 import { needFromInquiry } from "./growth.js";
@@ -1207,7 +1207,10 @@ export async function adminViews(env, rows, { full = false } = {}) {
       // [ADMIN-12] Who is answering it and what admins told each other; [ADMIN-11] the 개발사항 it is in.
       assignee: row.assignee ? { id: row.assignee, name: row.assignee_name ?? "" } : null,
       notes: (notes.get(row.id) ?? []).map((n) => ({ by: n.by, text: n.text, at: iso(n.at) })),
-      ...(crashes[k] ? { crash: { ...crashes[k], ...(crashes[k].record !== "has" ? { draft: CRASH_ASK_DRAFT } : {}), ...(repeats.has(row.id) ? { repeat: repeats.get(row.id) } : {}) } } : {}),
+      // [RVA-69] 기록 부탁 답은 그 문의의 앱 판에 맞게(2.0.0부터 답장에 기록, 그 전은 새 문의).
+      ...(crashes[k] ? { crash: { ...crashes[k], ...(crashes[k].record !== "has" ? { draft: crashAskDraft(info.app), ...(replyCarriesRecord(info.app) ? { reply: true } : {}) } : {}), ...(repeats.has(row.id) ? { repeat: repeats.get(row.id) } : {}) } } : {}),
+      // [RVA-69] HQ-150: 점검 기록이 답장과 함께 마지막으로 온 때(함께 온 정보 › 알람 점검 옆에).
+      ...(info.diagAt ? { diagAt: iso(info.diagAt) } : {}),
       // 2.0.0 [RVQ-51] 검토 I22bb-04: 답 알림이 보낸 분 폰에 못 갔으면(다시 보내는 중이거나 멈춤).
       push: fail ? { why: fail.why, tries: fail.tries, retry: fail.next_at ? iso(fail.next_at) : null, at: iso(fail.at) } : null,
       ...(env.actor && can(env.actor, "dev") ? { dev: items.filter((d) => d.deleted_at === null || d.deleted_at === undefined)
