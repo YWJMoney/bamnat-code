@@ -17,8 +17,10 @@ import androidx.compose.material.icons.filled.Remove
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.minimumInteractiveComponentSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -162,6 +164,23 @@ fun StepperRow(
             }
         }
     }
+}
+
+/**
+ * 2.0.0 [RVJ-106] 검토 PAYU-25·PAYU-51: the − + (or ‹ ›) of a stepper that is made by hand (a rule's end day, a month, a day): a 48dp
+ * target that TalkBack reads as [description] ("정산 마감일 줄이기"), where the bare glyph had no name and sat at 40dp.
+ */
+@Composable
+fun GlyphStepButton(
+    glyph: String,
+    description: String,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    enabled: Boolean = true,
+    outlined: Boolean = true,
+) {
+    val m = modifier.minimumInteractiveComponentSize().semantics { contentDescription = description }
+    if (outlined) OutlinedButton(onClick, m, enabled = enabled) { Text(glyph) } else TextButton(onClick, m, enabled = enabled) { Text(glyph) }
 }
 
 /** Narrower than this, the words and the stepper (about 200dp) cannot share a line with room for the words. */

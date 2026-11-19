@@ -140,13 +140,17 @@ internal fun defaultCloseDay(month: YearMonth, today: LocalDate, hour: Int, nowM
     return if (at <= nowMillis) day.plusDays(1) else day
 }
 
+/**
+ * 2.0.0 [RVJ-106] 검토 PAYU-25: the shared stepper (48dp, "[label] 줄이기/늘리기" for TalkBack, held to repeat; the words go above it at a
+ * big font), where this was a loose − and + glyph pair with no name. 0 reads as [zero] ("제한 없음").
+ */
 @Composable
 private fun Stepper(label: String, value: Int, onChange: (Int) -> Unit, zero: String, unit: String = "명") {
-    Row(verticalAlignment = Alignment.CenterVertically) {
-        Text(label, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
-        TextButton(onClick = { onChange((value - 1).coerceAtLeast(0)) }, enabled = value > 0) { Text("−") }
-        Text(if (value == 0) zero else "$value$unit", style = MaterialTheme.typography.bodyMedium)
-        TextButton(onClick = { onChange((value + 1).coerceAtMost(30)) }) { Text("+") }
+    com.bamnat.app.ui.components.StepperRow(label) {
+        com.bamnat.app.ui.components.CountStepper(
+            value, onChange, name = label, range = 0..30, valueWidth = 96.dp,
+            format = { if (it == 0) zero else "$it$unit" },
+        )
     }
 }
 

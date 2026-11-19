@@ -1231,9 +1231,9 @@ private fun QuestionStep(
             }
         }
         Row(verticalAlignment = Alignment.CenterVertically) {
-            OutlinedButton(onClick = { s.answer(key) { s.monthlyHours = (s.monthlyHours - 1).coerceAtLeast(100) } }) { Text("−") }
+            com.bamnat.app.ui.components.GlyphStepButton("−", "한 달 일하는 시간 줄이기", onClick = { s.answer(key) { s.monthlyHours = (s.monthlyHours - 1).coerceAtLeast(100) } })
             Text("${s.monthlyHours}시간", style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(horizontal = 16.dp))
-            OutlinedButton(onClick = { s.answer(key) { s.monthlyHours = (s.monthlyHours + 1).coerceAtMost(320) } }) { Text("+") }
+            com.bamnat.app.ui.components.GlyphStepButton("+", "한 달 일하는 시간 늘리기", onClick = { s.answer(key) { s.monthlyHours = (s.monthlyHours + 1).coerceAtMost(320) } })
         }
     }
     answers.forEach { a -> AnswerCard(a.title, a.detail, a.selected, a.pick) }
@@ -1452,10 +1452,10 @@ private fun RuleToggle(title: String, subtitle: String, checked: Boolean, onChan
 @Composable
 internal fun MonthStepper(month: YearMonth, onChange: (YearMonth) -> Unit, modifier: Modifier = Modifier) {
     Row(modifier, verticalAlignment = Alignment.CenterVertically) {
-        OutlinedButton(onClick = { onChange(month.minusMonths(1)) }) { Text("‹") }
+        com.bamnat.app.ui.components.GlyphStepButton("‹", "이전 달", onClick = { onChange(month.minusMonths(1)) })
         Text(Fmt.month(month), style = MaterialTheme.typography.titleMedium,
             modifier = Modifier.padding(horizontal = 16.dp))
-        OutlinedButton(onClick = { onChange(month.plusMonths(1)) }) { Text("›") }
+        com.bamnat.app.ui.components.GlyphStepButton("›", "다음 달", onClick = { onChange(month.plusMonths(1)) })
     }
 }
 

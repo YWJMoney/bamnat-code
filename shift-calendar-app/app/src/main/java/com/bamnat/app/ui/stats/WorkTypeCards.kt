@@ -452,9 +452,9 @@ private fun AddPayDialog(start: LocalDate, onDismiss: () -> Unit, onSave: (Local
                     color = MaterialTheme.colorScheme.onSurfaceVariant)
                 com.bamnat.app.ui.pay.MoneyField("들어온 급여", amount, onChange = { amount = it })
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    TextButton(onClick = { date = date.minusDays(1) }) { Text("‹") }
+                    com.bamnat.app.ui.components.GlyphStepButton("‹", "하루 전", onClick = { date = date.minusDays(1) }, outlined = false)
                     Text(Fmt.shortDate(date), style = MaterialTheme.typography.titleSmall, modifier = Modifier.weight(1f))
-                    TextButton(onClick = { date = date.plusDays(1) }, enabled = date.isBefore(Today.date())) { Text("›") }
+                    com.bamnat.app.ui.components.GlyphStepButton("›", "다음 날", onClick = { date = date.plusDays(1) }, enabled = date.isBefore(Today.date()), outlined = false)
                 }
             }
         },

@@ -395,9 +395,9 @@ internal fun BusinessTaxSheet(
                 AmountField("작년 종합소득세 (11월 중간예납용)", lastTax, { lastTax = it })
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text("기본공제 사람 수 (나 포함)", modifier = Modifier.weight(1f))
-                    TextButton(onClick = { p = p.copy(family = (p.family - 1).coerceAtLeast(1)) }) { Text("−") }
+                    com.bamnat.app.ui.components.GlyphStepButton("−", "기본공제 사람 수 줄이기", onClick = { p = p.copy(family = (p.family - 1).coerceAtLeast(1)) }, outlined = false)
                     Text("${p.family}명")
-                    TextButton(onClick = { p = p.copy(family = (p.family + 1).coerceAtMost(10)) }) { Text("+") }
+                    com.bamnat.app.ui.components.GlyphStepButton("+", "기본공제 사람 수 늘리기", onClick = { p = p.copy(family = (p.family + 1).coerceAtMost(10)) }, outlined = false)
                 }
                 SwitchRow("올해 처음 시작한 사업", p.newBusiness) { p = p.copy(newBusiness = it) }
                 SwitchRow("성실사업자 (표준세액공제 12만 원)", p.sincere) { p = p.copy(sincere = it) }

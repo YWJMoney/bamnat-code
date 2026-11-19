@@ -278,6 +278,10 @@ fun StatsScreen(vm: StatsViewModel, wide: Boolean, onOpenPay: () -> Unit = {},
                     IconButton(onClick = { weekShift++ }) { Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, "다음 주") }
                 }
             }
+            // 2.0.0 [RVJ-105] 검토 U05b-12: a pick past a year is cut to a year, and the screen says so.
+            if (rangeMode == com.bamnat.core.hours.StatsRange.Mode.CUSTOM) com.bamnat.core.hours.StatsRange.cutLine(custom)?.let {
+                Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
             if (picking) StatsRangePicker(range, onPick = { f, t -> customFrom = f.toEpochDay(); customTo = t.toEpochDay(); briefMode = com.bamnat.core.hours.StatsRange.Mode.CUSTOM.name; picking = false },
                 onDismiss = { picking = false })
         }
@@ -594,6 +598,10 @@ private fun WeekRow(week: WeekSummary, limitHours: Int, maxHours: Double, onOpen
         }
         Spacer(Modifier.height(4.dp))
         LimitBar(value = hours, limit = limitHours.toDouble(), max = maxHours)
+        // 2.0.0 [RVJ-105] 검토 U05-12·PAYU-25: past the limit is said in words, not only by the bar's colour (조건 14).
+        val overMinutes = week.totalMinutes - limitHours * 60
+        if (overMinutes > 0) Text("넘음 +${HoursFormat.korean(overMinutes)}", style = MaterialTheme.typography.labelSmall.merge(NumberStyle),
+            color = Tone.Caution.color(), modifier = Modifier.padding(top = 2.dp))
     }
 }
 
