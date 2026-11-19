@@ -305,9 +305,9 @@ dependencies {
     implementation("com.google.android.gms:play-services-location:21.3.0")
     // [SHFT-08] The Wear OS watch gets the days through the Wearable Data Layer, phone to watch.
     implementation("com.google.android.gms:play-services-wearable:19.0.0")
-    // [SPD-26] 1.31 I2: Cronet from Play services (HTTP/3·HTTP/2 to the servers); its network code comes with Play services,
-    // so the app grows by its small API only. Without Play services the requests go through HttpURLConnection as before.
-    implementation("com.google.android.gms:play-services-cronet:18.1.1")
+    // [SPD-26] 1.31 I2 had Cronet from Play services here (play-services-cronet). 2.0.0 [RVN-23] (PC-187): gone, since a Play
+    // services update of its module killed the app on screen; the phone's own android.net.http.HttpEngine (Android 14+) or
+    // HttpURLConnection carries the requests now (company/NetEngine.kt).
     // [MON-03] Play billing 9.1.0 (the Java API, so the Kotlin library stays as it is).
     implementation("com.android.billingclient:billing:9.1.0")
     // 1.36 [PUSH-01] 문의 답 바로 알림: data messages only ({kind: inquiry}, no words), started by hand only when the ids are set.

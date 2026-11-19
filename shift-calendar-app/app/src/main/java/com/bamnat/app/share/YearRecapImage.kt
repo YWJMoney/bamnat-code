@@ -69,7 +69,7 @@ object YearRecapImage {
         p.typeface = bold; p.textSize = 40f; p.color = GOLD
         c.drawText("${recap.year}", PAD, 150f, p)
         p.textSize = 64f; p.color = IVORY
-        c.drawText("내 근무 결산", PAD, 230f, p)
+        c.drawText(recap.heading, PAD, 230f, p)
         p.typeface = Typeface.DEFAULT; p.textSize = 32f; p.color = MUTED
         c.drawText(recap.period, PAD, 285f, p)
 
