@@ -211,7 +211,7 @@ fun HealthReportScreen(vm: HealthReportViewModel, onBack: () -> Unit) {
             Text(
                 "· 야간은 22시~6시에 걸친 근무예요(대근 포함).\n" +
                     "· 짧은 휴식은 앞 근무가 끝나고 다음 근무까지 11시간이 안 되는 경우예요.\n" +
-                    "· 연속 야간은 야간을 며칠 이어서 했는지예요. 달을 넘긴 연속은 끝난 달에 셉니다.\n" +
+                    "· 연속 야간은 야간을 며칠 이어서 했는지예요. 달을 넘긴 연속은 끝난 달에 세요.\n" +
                     "· 달력에 적힌 근무로 계산한 참고용 숫자예요.",
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
             )

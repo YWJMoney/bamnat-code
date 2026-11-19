@@ -202,26 +202,35 @@ private fun TeamGlanceCard(team: Team, calendarId: String, now: YearMonth, onOpe
         TeamCheck.check(team, b, rules, prevBoard?.takeIf { it.cells.isNotEmpty() }, nextBoard?.takeIf { it.cells.isNotEmpty() })
     }
     val danger = signs.count { it.kind == TeamCheck.Kind.RULE || it.kind == TeamCheck.Kind.WEEK_HOURS }
+    val law = signs.count { it.law } // 2.0.0 [RVJ-68] (HQ-107) 주 52시간, the law's; the rest are the team's 기준
     val short = signs.filter { it.kind == TeamCheck.Kind.SHORT }.map { it.date }.distinct().size
     val m = month?.first
     val nm = nextMonth?.first
     val members = b.members.count { it.active }
     val g = ManageDesk.TeamGlance(team.id, team.name, members, m?.state == MonthState.CONFIRMED, m?.version ?: 0, b.empty, danger, short,
-        nm?.state == MonthState.CONFIRMED, nextBoard?.empty ?: 0, painted = b.cells.size, weekLimit = rules.weekLimit)
+        nm?.state == MonthState.CONFIRMED, nextBoard?.empty ?: 0, painted = b.cells.size, weekLimit = rules.weekLimit, law = law)
     androidx.compose.runtime.LaunchedEffect(g) { report(g) }
     if (!show) return
     val today = remember(b, team, Today.date()) { com.bamnat.core.team.TeamToday.of(team, b, Today.date()) }
+    // 2.0.0 [RVJ-73] (PC-176) A month with no cell painted (a team made for next month) is '아직 안 짠 달', said quietly: no 오늘 출근 0명 ·
+    // 빈자리, no 빈칸 150, no 인원 모자란 날 30. They come from the month it is painted.
+    val unpainted = !g.confirmed && g.painted == 0
     SectionCard(title = team.name, trailing = { TextButton(onClick = onOpen) { Text("열기") } }) {
         // 1.39 [FLOW-23] one number first: who is at work today and how many places are empty.
-        if (today != null && members > 0) com.bamnat.app.ui.team.TeamTodayHead(today, Modifier.padding(bottom = 8.dp))
+        if (today != null && members > 0 && !unpainted) com.bamnat.app.ui.team.TeamTodayHead(today, Modifier.padding(bottom = 8.dp))
         StatTiles {
-            StatTile("${now.monthValue}월", if (g.confirmed) "확정 ${g.version}판" else "짜는 중", Modifier.weight(1f),
-                caption = if (g.empty > 0) "빈칸 ${g.empty}" else "다 채움", caution = !g.confirmed && members > 0 && g.painted > 0)
+            StatTile("${now.monthValue}월", if (g.confirmed) "확정 ${g.version}판" else if (unpainted) "아직 안 짬" else "짜는 중", Modifier.weight(1f),
+                // 2.0.0 [RVJ-66] (HQ-103, 조건 6) 짜는 중인 달은 할 일이지 위험이 아니에요(가게 칸 RVJ-50과 같이): 빨간 칸 대신 주의 글.
+                caption = if (unpainted) null else if (g.empty > 0) "빈칸 ${g.empty}" else "다 채움",
+                captionTone = if (!g.confirmed && members > 0 && g.painted > 0) com.bamnat.app.ui.theme.Tone.Caution else com.bamnat.app.ui.theme.Tone.Plain)
             StatTile("${now.plusMonths(1).monthValue}월", if (g.nextConfirmed) "확정 ${nm?.version ?: 0}판" else "짜는 중", Modifier.weight(1f),
                 caption = if (g.nextEmpty > 0) "빈칸 ${g.nextEmpty}" else "다 채움")
         }
-        Text("${members}명 · 위험 $danger · 인원 모자란 날 $short", style = MaterialTheme.typography.bodySmall,
-            color = if (danger > 0) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 6.dp))
+        Text((if (unpainted) listOf("${members}명") else listOfNotNull("${members}명", law.takeIf { it > 0 }?.let { "주 52시간 넘김 $it" },
+            "기준 넘김 ${danger - law}", "인원 모자란 날 $short")).joinToString(" · "),
+            style = MaterialTheme.typography.bodySmall,
+            // [RVJ-66] 위험은 위 할 일 줄 하나가 빨강이에요; 여기는 같은 수를 말로만.
+            color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 6.dp))
     }
 }
 

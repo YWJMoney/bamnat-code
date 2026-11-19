@@ -75,12 +75,18 @@ import com.bamnat.core.recipe.keepMyCellContent
 import com.bamnat.core.work.WorkStyle
 import androidx.compose.ui.semantics.Role
 
+/** The example phone's width in dp: a folded phone's, or a Fold's open width with the studio's '편 화면' ([LocalMockWide]). */
+@Composable
+internal fun mockWidth(): Float = if (LocalMockWide.current) com.bamnat.app.ui.studio.WIDE_W.value else 340f
+
 /** The example app at [scale], drawn at its full size and shrunk (taps still land where they are seen). */
 @Composable
 internal fun ScaledPhone(r: Recipe, style: WorkStyle?, tab: String, onTab: (String) -> Unit, scale: Float, onPick: () -> Unit = {},
                          modifier: Modifier = Modifier, scroll: androidx.compose.foundation.ScrollState? = null) {
-    Box(modifier.size((340 * scale).dp, (560 * scale).dp).clipToBounds(), contentAlignment = Alignment.Center) {
-        Box(Modifier.requiredSize(340.dp, 560.dp).graphicsLayer { scaleX = scale; scaleY = scale }) {
+    // 2.0.0 [RVS-03] U09a-06 (총괄 #520 사진 확인): with '편 화면' the whole open phone is drawn and made smaller, not its middle cut out.
+    val mockW = mockWidth()
+    Box(modifier.size((mockW * scale).dp, (560 * scale).dp).clipToBounds(), contentAlignment = Alignment.Center) {
+        Box(Modifier.requiredSize(mockW.dp, 560.dp).graphicsLayer { scaleX = scale; scaleY = scale }) {
             MockPhone(r, style, tab, onTab, onPick, scroll)
         }
     }
@@ -106,7 +112,7 @@ internal fun CompareCanvas(before: Recipe, after: Recipe, style: WorkStyle?, tab
     val reading = diff || peek
     val framed = remember(before, after) { LookParts.frame(before, after) }
     val scroll = rememberScrollState()
-    val w = (340 * scale).dp
+    val w = (mockWidth() * scale).dp
     val h = (560 * scale).dp
     val shownSplit = if (reading) 1f else split
     val beforeLayer = androidx.compose.ui.graphics.rememberGraphicsLayer()

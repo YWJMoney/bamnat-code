@@ -59,7 +59,6 @@ import com.bamnat.app.ui.money.AmountField
 import com.bamnat.app.ui.money.amountDigits
 import com.bamnat.app.ui.money.toAmount
 import com.bamnat.app.ui.theme.color
-import com.bamnat.app.ui.theme.LocalCalendarColors
 import com.bamnat.core.boss.Insurance
 import com.bamnat.core.boss.StaffAllowance
 import com.bamnat.core.boss.LedgerCsv
@@ -1009,7 +1008,12 @@ private fun PayslipDialog(place: Workplace, l: LedgerLine, month: YearMonth, onD
             }
             HorizontalDivider(Modifier.padding(vertical = 4.dp))
             ValueLine("지급 합계", Fmt.won(slip.gross))
-            slip.deductions.forEach { (n, v) -> ValueLine(n, "-" + Fmt.won(v)) }
+            slip.deductions.forEach { (n, v) ->
+                ValueLine(n, "-" + Fmt.won(v))
+                // 2.0.0 [RVJ-72] (PC-177) The 일용 소득세 line says how it came about: one line + ⓘ, the rest in its ⓘ (조건 4).
+                if (n == com.bamnat.core.boss.Payslip.DAILY_TAX_LABEL) com.bamnat.app.ui.components.Explain("boss:dailyTax",
+                    com.bamnat.core.boss.Payslip.DAILY_TAX_HOW, summary = "일한 날마다 15만 원을 빼고 셈해요.", iconOnly = false, firstInFull = false)
+            }
             ValueLine("실지급액", Fmt.won(slip.net), strong = true)
             Hint(PayrollLedger.NOTICE)
         }

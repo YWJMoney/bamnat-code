@@ -56,6 +56,7 @@ import com.bamnat.core.pay.RuleChange
 import com.bamnat.core.pay.RuleText
 import com.bamnat.core.pay.SlipNames
 import com.bamnat.core.pay.SlipRole
+import com.bamnat.app.ui.theme.bamnat
 import com.bamnat.app.ui.theme.Tone
 import com.bamnat.app.ui.theme.color
 
@@ -360,7 +361,7 @@ private fun PickDialog(
                         else -> "1. 명세서"
                     }, style = MaterialTheme.typography.titleSmall)
                     ScanButtons(onScan = onScan, onEmpty = onEmpty, keepSlips = true)
-                    notice?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error) }
+                    notice?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.bamnat.caution) } // 2.0.0 [RVJ-66] (HQ-103, 조건 6)
                     // [INPUT-04] A payslip copied from the company's app or a message: one tap.
                     com.bamnat.app.ui.components.ClipboardHint("명세서", fits = { PayslipReader.read(it).lines.isNotEmpty() }, onPaste = onPaste)
                     TextButton(onClick = { others = !othersOpen }, modifier = Modifier.heightIn(min = 48.dp)) {

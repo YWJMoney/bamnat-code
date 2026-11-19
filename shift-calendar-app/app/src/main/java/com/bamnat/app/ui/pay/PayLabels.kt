@@ -11,6 +11,13 @@ internal fun PayProfile.wageLabel(): String = when (wageType) {
     WageType.DAILY -> "일당제"
 }
 
+/**
+ * 2.0.0 [RVJ-67] 총괄 PC-156 (회사 설정을 넣은 폰의 급여 머리 줄이 '직접 설정 · 월급제'): which setup the pay is worked out with, for the pay
+ * screen's head. A company's pay way in use reads by its name ('가나다화학 방식 · 월급제'); otherwise the job (병원 간호사, 직접 설정).
+ */
+internal fun PayProfile.whoLabel(way: com.bamnat.app.company.PayWay?): String =
+    "${way?.company?.takeIf { it.isNotBlank() }?.let { "$it 방식" } ?: occupation.label} · ${wageLabel()}"
+
 /** [PAYS-03] What [PayProfile.base] is: "기본급", "시급", "일당". */
 internal fun WageType.baseName(): String = when (this) {
     WageType.MONTHLY -> "기본급"
