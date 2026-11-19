@@ -144,9 +144,14 @@ object TeamReceiveSync {
         prefs(context).edit().remove(tiredKey(teamId)).apply()
     }
 
-    /** The last 7 days as one line: "오늘 4명 · 어제 3명 미만 · …"; null while nobody has said so this week. */
-    fun tiredLine(got: com.bamnat.app.share.TiredGot, today: java.time.LocalDate): String? {
+    /**
+     * The last 7 days as one line: "오늘 4명 · 어제 3명 미만 · …"; null while nobody has said so this week.
+     * 2.0.0 (PC 4차, 폰 시간대 GMT): the box counts by the server's day (KST), so '오늘' is the newest day the server sent, not the
+     * phone's date; [phoneToday] only names the days when the server sent none.
+     */
+    fun tiredLine(got: com.bamnat.app.share.TiredGot, phoneToday: java.time.LocalDate): String? {
         if (got.days.isEmpty()) return null
+        val today = got.days.maxOfOrNull { it.first } ?: phoneToday
         val name = { d: java.time.LocalDate -> when (d) { today -> "오늘"; today.minusDays(1) -> "어제"; else -> "${d.monthValue}/${d.dayOfMonth}" } }
         val shown = got.days.filter { it.second != null }
         val todayPart = got.days.firstOrNull { it.first == today }?.let { (d, n) -> "${name(d)} ${n?.let { "${it}명" } ?: "${got.min}명 미만"}" }

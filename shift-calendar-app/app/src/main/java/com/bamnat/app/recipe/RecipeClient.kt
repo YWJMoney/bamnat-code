@@ -125,6 +125,8 @@ data class RecipeDoc(
     val photosWaiting: Int = 0,
     /** 신고 2번으로 다른 분께 잠시 가려진 사진 수. */
     val photosHeld: Int = 0,
+    /** 2.0.0 [RVQ-42] 검토 I22bb-06 만든 분께만: 이 판부터의 앱 장터에만 보여요(versionCode). */
+    val minApp: Int? = null,
 ) {
     /** The recipe itself, checked again on this phone (S10), as far as this app knows it ([read]). */
     fun recipe(): Recipe = read().recipe
@@ -153,7 +155,9 @@ data class RecipePage(val items: List<RecipeItem>, val next: Int?,
     val raw: String? = null)
 
 /** [RCP-29] What the server said of a recipe sent. */
-data class Sent(val code: String, val version: Int, val hash: String, val state: String, val scope: String)
+data class Sent(val code: String, val version: Int, val hash: String, val state: String, val scope: String,
+    /** 2.0.0 [RVQ-42] 검토 I22bb-06: the app (versionCode) its 장터 shows it to from; null when every app reads it (or an older server). */
+    val minApp: Int? = null)
 
 /** [RCP-35] A post in a recipe's talk. */
 data class RecipePost(
@@ -177,7 +181,36 @@ data class RecipePost(
 
 /** 1.36 [LIM-10] [left] and [limit] only while reports restrict this install; otherwise there is no cap. */
 data class RecipeTalk(val posts: List<RecipePost>, val left: Int?, val mutedUntil: Instant? = null,
-    val limit: com.bamnat.app.company.WriteLimit? = null)
+    val limit: com.bamnat.app.company.WriteLimit? = null,
+    /** 2.0.0 [RVQ-43] 검토 U22-05: older talk is still on the server (the newest 300 came); none from an older server. */
+    val more: Boolean = false)
+
+/**
+ * 2.0.0 [RVQ-46] 검토 U22b-10·I22bb-05: what a shared font says of itself for whoever gets it. [license] is what its sender chose (ofl·apache·
+ * free), [says] what its own words say (ofl·apache), [maker]/[copyright] from its name table (an older server sends none of these).
+ */
+data class FontAbout(val name: String, val license: String? = null, val says: String? = null, val maker: String? = null, val copyright: String? = null) {
+    /** '만든 곳 ○○ · 공개 글꼴(OFL) · 누구나 쓸 수 있어요'; null when the server said nothing of it. */
+    fun credit(): String? {
+        val kind = when (says ?: license) {
+            "ofl" -> "공개 글꼴(OFL) · 누구나 쓸 수 있어요"
+            "apache" -> "공개 글꼴(Apache) · 누구나 쓸 수 있어요"
+            "free" -> "올린 분이 무료 공개 글꼴로 밝혔어요"
+            else -> null
+        }
+        val who = maker ?: copyright?.takeIf { maker == null }
+        return listOfNotNull(who?.let { "만든 곳 $it" }, kind).joinToString(" · ").ifEmpty { null }
+    }
+
+    companion object {
+        fun of(o: JSONObject): FontAbout? {
+            val name = o.optString("name").takeIf { it.isNotEmpty() && it != "null" } ?: return null
+            val c = o.optJSONObject("credit")
+            fun JSONObject?.text(k: String) = this?.optString(k)?.takeIf { it.isNotBlank() && it != "null" }
+            return FontAbout(name, o.text("license"), c.text("says"), c.text("maker"), c.text("copyright"))
+        }
+    }
+}
 
 data class Votes(val likes: Int, val dislikes: Int, val myVote: Int?, val held: Boolean = false)
 
@@ -201,6 +234,17 @@ data class RecipeRequest(
     val askers: Int = 0,
     /** 1.36 누락 점검 N14: 14일 동안 아무도 만들지 않아 개발자에게 넘어간 요청. */
     val told: Boolean = false,
+    /** 2.0.0 [RVQ-44] 검토 U22-06: '만드는 중' since when, and when it opens again for anyone if not finished. */
+    val makingSince: Instant? = null,
+    val reopenAt: Instant? = null,
+    /**
+     * 2.0.0 [RVQ-44] 검토 U22b-08: 완성 waits for the one who asked ([checking]); to them [askCheck] '이 작품이 맞나요?' until [checkBy],
+     * when it counts as done by itself. [confirmed]: they said 맞아요.
+     */
+    val checking: Boolean = false,
+    val askCheck: Boolean = false,
+    val checkBy: Instant? = null,
+    val confirmed: Boolean = false,
 )
 
 /** 1.36 [GRW-05] 모두의 도구: 많이 쓰이고 7일 뒤에도 쓰는 장터 작품(표 수가 아니라 쓴 사람 수로 올라와요). */
@@ -247,6 +291,14 @@ data class MakerPage(
     val limitUntil: java.time.Instant? = null,
     /** PC 확인 보안 6차: the same restriction with who hid what, for its line ([com.bamnat.app.company.WriteLimit.cause]). */
     val limit: com.bamnat.app.company.WriteLimit? = null,
+    /**
+     * 2.0.0 [RVQ-44] 검토 SVC-74·U22b-07: the maker's whole numbers (테마·탭별 작품) and whether more than [recipes] are there (60 a page,
+     * 더 보기 asks for the next [pageNo]); null and false from a server before 2.0.0, which sent the first 60 only.
+     */
+    val themeTotal: Int? = null,
+    val tabTotal: Int? = null,
+    val more: Boolean = false,
+    val pageNo: Int = 0,
 ) {
     val themes: List<RecipeItem> get() = recipes.filter { it.scope != "tab" }
     val tabRecipes: List<RecipeItem> get() = recipes.filter { it.scope == "tab" }
@@ -344,6 +396,8 @@ interface RecipeApi {
     suspend fun flag(device: String, code: String, reason: String)
     suspend fun mine(device: String): MyRecipes
     suspend fun talk(device: String?, code: String): RecipeTalk
+    /** 2.0.0 [RVQ-43] 검토 U22-05: the talk written before [before] (older 300 at most); nothing more from a server that cannot. */
+    suspend fun talkBefore(device: String?, code: String, before: Instant): RecipeTalk = RecipeTalk(emptyList(), null)
     suspend fun talkPost(device: String, code: String, body: String, kind: String, parent: String?, usingDays: Int?): String
     suspend fun talkVote(device: String, post: String, value: Int?, reason: String? = null, opinion: String? = null): Votes
 
@@ -360,6 +414,8 @@ interface RecipeApi {
     /** [what] like · take · done · delete; [on] false takes a like or a 만들게요 back; [code] for done. */
     suspend fun requestAct(device: String, id: String, what: String, on: Boolean = true, code: String? = null) {}
     suspend fun maker(device: String?, id: String): MakerPage = throw CompanyException("not_found")
+    /** 2.0.0 [RVQ-44] 검토 U22b-07: page [page] (0 the first) of the maker's works, 60 a page. */
+    suspend fun maker(device: String?, id: String, page: Int): MakerPage = maker(device, id)
     /** The phone's own maker id, and its face when [face]/[color] are given. */
     suspend fun makerMe(device: String, face: String? = null, color: Long? = null, set: Boolean = false): String = throw CompanyException("offline")
     suspend fun follow(device: String, id: String, on: Boolean) {}
@@ -397,6 +453,8 @@ interface RecipeApi {
     suspend fun fontStandIn(id: String): String? = null
     /** PC 확인 13차: a shared font's name once others may get it, else null (a waiting one's name stays hidden). */
     suspend fun fontName(id: String): String? = null
+    /** 2.0.0 [RVQ-46] 검토 U22b-10·I22bb-05: a shared font's name with '만든 곳 · 써도 되는 범위'; null when it cannot be read. */
+    suspend fun fontAbout(id: String): FontAbout? = fontName(id)?.let { FontAbout(it) }
     /** [MAT-06] 이 글꼴 신고 (라이선스·깨짐·불쾌). */
     suspend fun fontReport(device: String, id: String, why: String) {}
 }
@@ -467,10 +525,12 @@ class RecipeClient(
             },
             photosWaiting = o.optInt("photosWaiting"),
             photosHeld = o.optInt("photosHeld"),
+            minApp = o.optInt("minApp").takeIf { o.optBoolean("mine") && it > 0 },
         )
     }
 
-    private fun sent(o: JSONObject) = Sent(o.getString("code"), o.optInt("version", 1), o.getString("hash"), o.getString("state"), o.optString("scope", "public"))
+    private fun sent(o: JSONObject) = Sent(o.getString("code"), o.optInt("version", 1), o.getString("hash"), o.getString("state"), o.optString("scope", "public"),
+        o.optInt("minApp").takeIf { it > 0 })
 
     override suspend fun publish(device: String, recipe: Recipe, scope: String): Sent = serverCall {
         sent(call("POST", "/api/recipes", JSONObject().put("device", device).put("scope", scope).put("recipe", JSONObject(RecipeCodec.write(recipe)))))
@@ -519,8 +579,13 @@ class RecipeClient(
         call("DELETE", "/api/recipes/$code/versions", device = device).optInt("dropped")
     }
 
-    override suspend fun talk(device: String?, code: String): RecipeTalk = readCall {
-        val o = call("GET", "/api/recipes/$code/talk", device = device)
+    override suspend fun talk(device: String?, code: String): RecipeTalk = readCall { talkOf(call("GET", "/api/recipes/$code/talk", device = device)) }
+
+    override suspend fun talkBefore(device: String?, code: String, before: Instant): RecipeTalk = readCall {
+        talkOf(call("GET", "/api/recipes/$code/talk?before=" + URLEncoder.encode(before.toString(), "UTF-8"), device = device))
+    }
+
+    private fun talkOf(o: JSONObject): RecipeTalk = run {
         RecipeTalk(o.optJSONArray("posts").objects().map { p ->
             RecipePost(
                 p.getString("id"), p.optInt("who"), p.optStringOrNull("nick"), p.optString("body"), Instant.parse(p.getString("at")),
@@ -530,7 +595,7 @@ class RecipeClient(
                 p.optJSONArray("reasons").objects().map { it.optString("reason") to it.optString("text") },
             )
         }, o.optInt("left").takeIf { o.has("left") }, o.optStringOrNull("mutedUntil")?.let(Instant::parse),
-            com.bamnat.app.company.WriteLimit.of(o))
+            com.bamnat.app.company.WriteLimit.of(o), o.optBoolean("more"))
     }
 
     override suspend fun talkPost(device: String, code: String, body: String, kind: String, parent: String?, usingDays: Int?): String = serverCall {
@@ -562,7 +627,12 @@ class RecipeClient(
         call("GET", "/api/recipes/requests" + (style?.let { "?style=${it.name}" } ?: ""), device = device).optJSONArray("items").objects().map { q ->
             RecipeRequest(q.getString("id"), WorkStyle.entries.firstOrNull { it.name == q.optString("style") }, q.optString("body"), q.optInt("likes"),
                 q.optString("state", "waiting"), q.optStringOrNull("code"), Instant.parse(q.getString("at")), q.optBoolean("mine"), q.optBoolean("taking"),
-                q.optBoolean("liked"), q.optInt("askers"), q.optBoolean("told"))
+                q.optBoolean("liked"), q.optInt("askers"), q.optBoolean("told"),
+                makingSince = q.optStringOrNull("makingSince")?.let { runCatching { Instant.parse(it) }.getOrNull() },
+                reopenAt = q.optStringOrNull("reopenAt")?.let { runCatching { Instant.parse(it) }.getOrNull() },
+                checking = q.optBoolean("checking"), askCheck = q.optBoolean("askCheck"),
+                checkBy = q.optStringOrNull("checkBy")?.let { runCatching { Instant.parse(it) }.getOrNull() },
+                confirmed = q.optBoolean("confirmed"))
         }
     }
 
@@ -584,12 +654,18 @@ class RecipeClient(
     }
 
     override suspend fun requestAct(device: String, id: String, what: String, on: Boolean, code: String?) = serverCall {
-        call("POST", "/api/recipes/requests/$id/$what", JSONObject().put("device", device).put("on", on).apply { code?.let { put("code", it) } })
+        // 2.0.0 [RVQ-44] U22b-08: check takes ok (맞아요 true / 아니에요 false), sent as [on].
+        call("POST", "/api/recipes/requests/$id/$what", JSONObject().put("device", device).put("on", on).apply {
+            code?.let { put("code", it) }
+            if (what == "check") put("ok", on)
+        })
         Unit
     }
 
-    override suspend fun maker(device: String?, id: String): MakerPage = readCall {
-        val o = call("GET", "/api/recipes/makers/$id", device = device)
+    override suspend fun maker(device: String?, id: String): MakerPage = maker(device, id, 0)
+
+    override suspend fun maker(device: String?, id: String, page: Int): MakerPage = readCall {
+        val o = call("GET", "/api/recipes/makers/$id" + if (page > 0) "?page=$page" else "", device = device)
         MakerPage(o.getString("maker"), o.optStringOrNull("nick"), o.optStringOrNull("face"), if (o.isNull("color") || !o.has("color")) null else o.optLong("color"),
             o.optBoolean("mine"), o.optJSONArray("recipes").objects().map(::item), o.optInt("likes"), o.optInt("users"), o.optInt("followers"),
             o.optBoolean("following"), o.optJSONArray("badges").objects().map { it.optString("key") to it.optString("name") },
@@ -605,7 +681,9 @@ class RecipeClient(
             trustHeld = o.optJSONObject("trustNext")?.optBoolean("held") == true,
             limitPerDay = o.optJSONObject("limit")?.optInt("perDay"),
             limitUntil = o.optJSONObject("limit")?.optStringOrNull("until")?.let { runCatching { java.time.Instant.parse(it) }.getOrNull() },
-            limit = com.bamnat.app.company.WriteLimit.of(o))
+            limit = com.bamnat.app.company.WriteLimit.of(o),
+            themeTotal = (o.opt("themes") as? Number)?.toInt(), tabTotal = (o.opt("tabs") as? Number)?.toInt(),
+            more = o.optBoolean("more"), pageNo = o.optInt("page"))
     }
 
     override suspend fun followQuiet(device: String, id: String, quiet: Boolean) = serverCall {
@@ -763,6 +841,11 @@ class RecipeClient(
         runCatching { call("GET", "/api/recipes/fonts/$id").optString("name").takeIf { it.isNotEmpty() } }.getOrNull()
     }
 
+    override suspend fun fontAbout(id: String): FontAbout? = readCall {
+        if (!enabled || !com.bamnat.core.recipe.FontCatalog.isUser(id)) return@readCall null
+        runCatching { FontAbout.of(call("GET", "/api/recipes/fonts/$id")) }.getOrNull()
+    }
+
     override suspend fun fontReport(device: String, id: String, why: String) = serverCall {
         call("POST", "/api/recipes/fonts/$id/report", JSONObject().put("device", device).put("why", why)); Unit
     }
@@ -900,6 +983,8 @@ class RecipeClient(
                 // 1.36 [SEC-10] The font's own words say a foundry that sells fonts made it.
                 "sold" -> "이 글꼴은 글꼴 안에 유료 글꼴 회사가 적혀 있어 나눌 수 없어요. OFL 같은 공개 글꼴만 함께 보낼 수 있어요"
                 "not_yet" -> "정식 출시일부터 쓸 수 있어요"
+                // 2.0.0 [RVQ-42] 검토 U22b-05: a work made for a newer app.
+                "update" -> "새 판 밤낮에서 만든 작품이라 이 앱에서는 열 수 없어요. 앱을 업데이트하면 열려요"
                 "name_taken" -> "공식·운영자처럼 보이는 이름은 쓸 수 없어요"
                 "name_like" -> "다른 분 작품과 이름이 거의 같아요. 이름을 바꾸거나 그 작품을 고쳐 만들어 주세요"
                 // 1.39 [FX-17] 서버도 같은 줄: 기능 작품을 남이 보게 올리는 사람은 프로.
