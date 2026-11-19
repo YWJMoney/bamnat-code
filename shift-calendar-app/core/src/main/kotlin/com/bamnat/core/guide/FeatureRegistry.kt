@@ -695,7 +695,7 @@ object FeatureRegistry {
         f("memo.voice", "RVIB-01", "말로 할 일 적기", "할 일 적기 창의 마이크를 누르고 ‘내일 저녁 6시 치과’처럼 말하면 한 줄로 적고 날짜·시각을 읽어요",
             ALL, "할 일 위젯 ＋ › 마이크", at(Place.MEMOS), "음성 입력", "말로 적기", "마이크", under = "memo.quickLine"),
         f("alarm.peek", "RVI-88", "위젯에서 다음 알람 보기", "오늘 위젯의 ⏰를 누르면 다음 알람을 작은 창으로 보여 주고, 그 자리에서 이번만 끄기·다시 켜기를 해요",
-            PAID, "홈 화면 › 오늘 위젯 › ⏰", at(Place.SETTINGS_ALARM, "이번만 끄기"), "위젯 알람", "이번만 끄기", "다음 알람 확인"),
+            PAID, "홈 화면 › 오늘 위젯 › ⏰", at(Place.SETTINGS_ALARM, "다음 알람"), "위젯 알람", "이번만 끄기", "다음 알람 확인"),
         f("alarm.weekLog", "RVI-86", "이번 주 알람 기록", "이번 주 알람마다 제때·몇 분 늦게·기록 없음을 요일별로 보여 줘요",
             PAID, "설정 › 알람 › 알람 점검", at(Place.DIAGNOSTICS), "알람 기록", "알람 늦음", "알람 안 울림", under = "alarm.check"),
         f("alarm.rehearsal", "RVI-91", "조용한 알람 연습", "하루 한 번 낮에 소리 없이 알람이 제때 오는지 재 보고, 늦게 오는 휴대폰이면 밤 전에 알려 줘요",
