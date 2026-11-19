@@ -79,11 +79,31 @@ export async function writeAllowance(d, env, dev, now, rules = WRITE_LIMITS) {
   if (!dev) return null;
   const row = await d.one(env, "SELECT step, since, until, per_day FROM write_limits WHERE device = ? AND until > ?", dev, now);
   if (!row) return null;
-  const strikes = await d.all(env, "SELECT kind, hidden_by FROM write_strikes WHERE device = ? AND confirmed = 1 AND at > ? AND at <= ?",
-    dev, row.since - rules.windowDays * DAY, row.since);
+  // 2.0.0 [RVQ-27] D·총괄 11-19: 같은 것(종류·글)은 줄이 여럿이어도 하나예요(STRIKE_ONE).
+  const strikes = onePerThing(await d.all(env, "SELECT kind, ref, hidden_by FROM write_strikes WHERE device = ? AND confirmed = 1 AND at > ? AND at <= ?",
+    dev, row.since - rules.windowDays * DAY, row.since));
   const op = strikes.filter((x) => x.hidden_by === "operator").length;
   const by = !strikes.length ? null : op === strikes.length ? "operator" : op === 0 ? "reports" : "both";
   return { perDay: row.per_day, until: row.until, step: row.step, by, n: strikes.length, kinds: [...new Set(strikes.map((x) => x.kind))] };
+}
+
+/**
+ * 2.0.0 [RVQ-27] 검토 SVC-58, D·총괄 11-19: 벌점은 가려진 것 하나(종류·글)에 한 번만 세요. 고치기 전 실서버는 같은 글이 다시 가려질 때
+ * '확인 대기' 줄을 또 쌓았고(3.12 시행 11-09부터), 운영자가 두 번 확인하면 두 줄이 다 셌어요. 줄은 지우지 않고(되돌릴 수 있게) 셀 때만
+ * 하나로 봐요. 같은 프로필 소개가 기간 안에 두 번 가려져도 한 번이라 사용자에게 유리한 쪽이에요.
+ */
+export const STRIKE_ONE = "COUNT(DISTINCT kind || '|' || ref)";
+
+/** [STRIKE_ONE]을 줄 목록에: 종류·글마다 첫 줄 하나, 운영자가 가린 줄이 하나라도 있으면 운영자로. */
+function onePerThing(rows) {
+  const by = new Map();
+  for (const r of rows) {
+    const k = `${r.kind}|${r.ref}`;
+    const was = by.get(k);
+    if (!was) by.set(k, r);
+    else if (r.hidden_by === "operator") was.hidden_by = "operator";
+  }
+  return [...by.values()];
 }
 
 /** The restriction as the app reads it (the 쓰기 제한 line). */
@@ -114,7 +134,7 @@ async function weigh(d, env, dev, kind, ref, now, rules, by) {
   if (last && last.until > now) return null;
   // A strike already counted toward a restriction does not count again.
   const from = Math.max(now - rules.windowDays * DAY, last ? last.since : 0);
-  const n = (await d.one(env, "SELECT COUNT(*) AS n FROM write_strikes WHERE device = ? AND confirmed = 1 AND at > ?", dev, from))?.n ?? 0;
+  const n = (await d.one(env, `SELECT ${STRIKE_ONE} AS n FROM write_strikes WHERE device = ? AND confirmed = 1 AND at > ?`, dev, from))?.n ?? 0;
   // [RVD-17] Only within [againDays] after the last restriction ended does one more step up; after that it is [strikes] again.
   const recent = last && (!rules.againDays || now - last.until <= rules.againDays * DAY);
   const need = rules.again && recent && stepAfter(last, now, rules) > 0 ? rules.again : rules.strikes;
@@ -141,10 +161,17 @@ async function weigh(d, env, dev, kind, ref, now, rules, by) {
  * 안내·경고 or the next step). Nothing when none waits (마을 돌봄 off, or it was counted already).
  */
 export async function confirmStrike(d, env, ref, now) {
-  const row = await d.one(env, "SELECT id, device, kind FROM write_strikes WHERE ref = ? AND confirmed = 0 ORDER BY id DESC LIMIT 1", String(ref).slice(0, 80));
+  const key = String(ref).slice(0, 80);
+  const row = await d.one(env, "SELECT id, device, kind FROM write_strikes WHERE ref = ? AND confirmed = 0 ORDER BY id DESC LIMIT 1", key);
   if (!row) return null;
-  await d.run(env, "UPDATE write_strikes SET confirmed = 1 WHERE id = ?", row.id);
-  return weigh(d, env, row.device, row.kind, ref, now, await writeRules(d, env, now), null);
+  // 2.0.0 [RVQ-27] D·총괄 11-19: 같은 사람·종류·글의 대기 줄은 함께 확인해요(겹친 줄이 대기 수에 남거나, 다음 확인에 또 세지 않게).
+  // 이미 센 같은 것이 기간 안에 있으면(고치기 전에 한 번 확인한 것) 새로 세지 않고, 안내·경고도 다시 보내지 않아요.
+  const rules = await writeRules(d, env, now);
+  const had = await d.one(env, "SELECT 1 AS x FROM write_strikes WHERE device = ? AND kind = ? AND ref = ? AND confirmed = 1 AND at > ?",
+    row.device, row.kind, key, now - rules.windowDays * DAY);
+  await d.run(env, "UPDATE write_strikes SET confirmed = 1 WHERE device = ? AND kind = ? AND ref = ? AND confirmed = 0", row.device, row.kind, key);
+  if (had) return null;
+  return weigh(d, env, row.device, row.kind, ref, now, rules, null);
 }
 
 /** A strike for something the operator hid (not reports): the same, said as the operator's. */
@@ -174,7 +201,7 @@ export async function writeLeft(d, env, dev, key, now) {
 /** For the admin app: installs restricted now or in the last 30 days, newest first, with their strikes. */
 export async function restrictions(d, env, now) {
   const rows = await d.all(env, `SELECT l.device, l.step, l.since, l.until, l.per_day, l.times,
-      (SELECT COUNT(*) FROM write_strikes s WHERE s.device = l.device AND s.confirmed = 1) AS strikes
+      (SELECT COUNT(DISTINCT s.kind || '|' || s.ref) FROM write_strikes s WHERE s.device = l.device AND s.confirmed = 1) AS strikes
     FROM write_limits l WHERE l.until > ? ORDER BY l.since DESC LIMIT 100`, now - 30 * DAY);
   return rows.map((r) => ({ who: r.device.slice(0, 12), step: r.step, since: new Date(r.since).toISOString(), until: new Date(r.until).toISOString(),
     perDay: r.per_day, times: r.times, strikes: r.strikes, now: r.until > now }));
@@ -190,7 +217,7 @@ export async function strikeTakenBack(d, env, dev, now, rules = null) {
   const l = await d.one(env, "SELECT since FROM write_limits WHERE device = ? AND until > ?", dev, now);
   if (!l) return null;
   rules ??= await writeRules(d, env, now);
-  const n = (await d.one(env, "SELECT COUNT(*) AS n FROM write_strikes WHERE device = ? AND confirmed = 1 AND at > ? AND at <= ?",
+  const n = (await d.one(env, `SELECT ${STRIKE_ONE} AS n FROM write_strikes WHERE device = ? AND confirmed = 1 AND at > ? AND at <= ?`,
     dev, l.since - rules.windowDays * DAY, l.since))?.n ?? 0;
   if (n >= rules.strikes) return null;
   await d.batch(env, [
