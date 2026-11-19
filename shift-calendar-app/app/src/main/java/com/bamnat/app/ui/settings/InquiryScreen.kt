@@ -457,7 +457,8 @@ private fun OutboxCard(vm: InquiryViewModel, outbox: List<com.bamnat.app.company
                 // Only what a try could send: a refused one waits for 고쳐서 다시 보내기.
                 if (toFix < outbox.size) TextButton(enabled = !sending, onClick = {
                     sending = true
-                    vm.sendQueued { r -> sending = false; said = r.words }
+                    // 2.0.0 [RVN-22] COMP-54 what went and what waits; [PC-217] a day's limit says so in limit words, not in internet words.
+                    vm.sendQueued { r -> sending = false; said = if (r.waiting > 0) (if (r.sent > 0) "${r.sent}개를 보냈어요. " else "") + InquiryViewModel.stillWaiting(com.bamnat.app.company.InquiryOutbox.limited) else r.words }
                 }) { Text("지금 보내기") }
             }
             Text("인터넷이 연결되면 앱을 닫아 두어도 저절로 보내요. 사진은 함께 가지 않아요.", style = MaterialTheme.typography.bodySmall,

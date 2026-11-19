@@ -1078,8 +1078,10 @@ internal fun rememberSettingsEntries(board: Boolean, share: Boolean, style: com.
         com.bamnat.app.ui.guide.rememberFitAdded(calendar))
     val sleepAuto = runCatching { c.flags.on(com.bamnat.core.flags.FlagCatalog.SLEEP_AUTO) }.getOrDefault(false)
     val sleepSound = runCatching { c.flags.on(com.bamnat.core.flags.FlagCatalog.SLEEP_SOUND) }.getOrDefault(false)
-    return remember(board, share, company, style, flowAdded, sleepAuto, sleepSound) {
-        SettingsIndex.entries(board = board, share = share, company = company, style = style, flowAdded = flowAdded, sleepAuto = sleepAuto, sleepSound = sleepSound)
+    // 2.0.0 [RVIB-21] 둘째 구간 알림 is found where the page draws it: with a 근무 종류 of two parts.
+    val gap = rememberHasGap()
+    return remember(board, share, company, style, flowAdded, sleepAuto, sleepSound, gap) {
+        SettingsIndex.entries(board = board, share = share, company = company, style = style, flowAdded = flowAdded, sleepAuto = sleepAuto, sleepSound = sleepSound, gap = gap)
     }
 }
 

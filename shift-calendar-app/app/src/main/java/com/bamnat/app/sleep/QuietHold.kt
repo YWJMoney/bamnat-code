@@ -112,7 +112,8 @@ object QuietHold {
             SleepSchedule.of(snapshot.resolver, at.toLocalDate().minusDays(1), at.toLocalDate(), settings.alarmsEnabled,
                 settings.sleepTargetMinutes, settings.commuteMinutes).work
         }.getOrDefault(emptyList())
-        val atWork = QuietHours.workHoldUntil(at, now, work.map { it.from to it.to })
+        // 2.0.0 [RVIB-21] (결정 19) Each part on its own: news that comes in the 브레이크 타임 is not held to the end of the day.
+        val atWork = QuietHours.workHoldUntil(at, now, work.flatMap { w -> w.parts.map { it.start to it.endInclusive } })
         return listOfNotNull(asleep, atWork).maxOrNull()
     }
 

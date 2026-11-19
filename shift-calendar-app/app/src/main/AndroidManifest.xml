@@ -278,6 +278,11 @@
             android:name=".company.InquiryFixedReceiver"
             android:exported="false" />
 
+        <!-- 2.0.0 [RVIB-21] 둘째 구간 알림 (17:00 다시 시작). -->
+        <receiver
+            android:name=".alarm.GapNoticeReceiver"
+            android:exported="false" />
+
         <!-- 1.38 [LEDH-24] 근무 전 한 줄 예고. -->
         <receiver
             android:name=".money.ShiftPreviewReceiver"

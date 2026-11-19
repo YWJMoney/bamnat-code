@@ -251,7 +251,8 @@ class InquiryViewModel(private val c: AppContainer) : ViewModel() {
         val full = info.copy(diag = diag, pay = pay, photos = photos, public = public,
             studio = if (kind == InquiryKind.STUDIO) c.settingsRepository.current.workStyle?.name else null)
         act({ sent, why -> done(sent, why) }, queueOn = { e ->
-            if (!e.retryable) return@act false
+            // 2.0.0 [PC-217] 하루 한도에 걸린 문의는 기다려도 같은 답이라 줄 세우지 않고, 한도의 말로 알려요(양식에 적은 글은 그대로).
+            if (!queues(e)) return@act false
             val queued = c.inquiryStore.queue(com.bamnat.app.company.QueuedInquiry(requestId, kind, text.trim(), full.copy(photos = emptyList()),
                 Today.instant()))
             if (queued) {
@@ -370,11 +371,21 @@ class InquiryViewModel(private val c: AppContainer) : ViewModel() {
     companion object {
         /** [INQ-05] What [send] says when the question waits to be sent. */
         const val QUEUED = "인터넷이 연결되면 저절로 보내요. 내 문의 맨 위 ‘보내기 대기’에서 볼 수 있어요"
+
+        /** 2.0.0 [PC-217] 인터넷·서버 문제만 보내기 대기로 가요. 한도(rate_limited)는 기다려도 같아서 대기에 넣지 않아요. */
+        fun queues(e: CompanyException): Boolean = e.retryable && e.code != "rate_limited"
+
+        /** 2.0.0 [PC-217] 한도에 걸린 문의 보내기의 말(인터넷 말이 아니라 한도의 말). */
+        fun limitText(e: CompanyException): String = com.bamnat.app.company.RateLimits.of(e, "문의 보내기", "급하면 메일로 보내 주세요.")
+
+        /** 2.0.0 [PC-217] '지금 보내기'가 안 됐을 때의 말: 한도에 걸렸으면 한도의 말, 아니면 인터넷 말. */
+        fun stillWaiting(limited: CompanyException?): String =
+            limited?.let { limitText(it) } ?: "아직 인터넷에 연결되지 않았어요. 연결되면 저절로 보내요"
     }
 
     private fun failure(e: Throwable): String = when ((e as? CompanyException)?.code) {
         "offline" -> "인터넷에 연결되지 않았어요. 연결한 뒤 다시 보내 주세요"
-        "rate_limited" -> com.bamnat.app.company.RateLimits.of(e as CompanyException, "문의 보내기", "급하면 메일로 보내 주세요.")
+        "rate_limited" -> limitText(e as CompanyException)
         "too_many" -> "이 문의에는 더 쓸 수 없어요. 새 문의로 보내 주세요"
         "email", "phone", "account", "amount" -> personalProblem(e.message ?: "")
         "not_found" -> "이 문의는 지워졌거나 가려졌어요"

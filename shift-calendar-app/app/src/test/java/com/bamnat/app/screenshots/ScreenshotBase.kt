@@ -348,9 +348,13 @@ abstract class ScreenshotBase {
             var found: SemanticsNode? = null
             scenario.onActivity { activity ->
                 val root = rootOf(topWindow(activity)) ?: return@onActivity
+                // A no-break space (that keeps '·' with the words before it) reads as a space, as a person sees it: either way
+                // on both sides.
+                val said = text.replace('\u00A0', ' ')
                 val shown = root.semanticsOwner.getAllSemanticsNodes(mergingEnabled = true).filter { n ->
                     val b = n.boundsInWindow
-                    b.width > 1f && b.height > 1f && n.words().any { w -> if (exact) w == text else if (prefix) w.startsWith(text) else text in w }
+                    b.width > 1f && b.height > 1f && n.words().any { raw -> val w = raw.replace('\u00A0', ' ')
+                        if (exact) w == said else if (prefix) w.startsWith(said) else said in w }
                 }
                 found = shown.firstOrNull { it.config.contains(SemanticsActions.OnClick) } ?: shown.firstOrNull()
             }

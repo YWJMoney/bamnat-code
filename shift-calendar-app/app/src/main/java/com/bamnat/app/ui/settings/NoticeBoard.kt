@@ -94,6 +94,11 @@ object NoticeBoard {
             { it.commuteNotice }, { s, on -> s.copy(commuteNotice = on) }, { planned(it) && nights(it) }, Notifications.COMMUTE_CHANNEL_ID),
         Own("leaveTimeNotice", { LEAVE_TIME_ROW }, { "근무가 끝나는 시각에 소리 없이 알려 주고, 더 일하고 나갈 때 ‘지금 퇴근’을 누르면 잔업을 그 시각까지 적어요" },
             { it.leaveTimeNotice }, { s, on -> s.copy(leaveTimeNotice = on) }, { it == WorkStyle.DAY }, Notifications.DAY_CHANNEL_ID),
+        // 2.0.0 [RVIB-21] (결정 19, 설계 4-2절 7번) 둘째 구간 알림: listed only where a 근무 종류 has a 브레이크 타임·비는 시간 ([shown]'s hasGap).
+        // (HQ 사진 검토, 조건 4) The first sentence is the one line said from the second visit on, so it is the whole point, short.
+        Own(GAP_KEY, { GAP_ROW }, { "다시 시작 10분 전에 소리 없이 알려 줘요. ${com.bamnat.core.sleep.TodayFlow.WorkTalk.of(it).gap}이 있는 날만이에요. " +
+                "그때 자는 분은 근무 종류에서 ‘둘째 구간도 알람’을 켜면 알람이 울려요" },
+            { it.gapNotice }, { s, on -> s.copy(gapNotice = on) }, { it != WorkStyle.INVEST }, Notifications.GAP_CHANNEL_ID),
         // 2.0.0 [RVH-41] 검토 T30-76: the same rule said for every kind (자정을 넘겨 끝나면).
         Own("dayCloseNotice", { DAY_CLOSE_ROW }, { "오늘 쓴 돈과 정리할 것을 근무가 끝나고 30분 뒤(쉬는 날은 저녁 9시)에 소리 없이 알려 줘요. 자정을 넘겨 끝나면 다음 날 아침이에요" },
             { it.dayCloseNotice }, { s, on -> s.copy(dayCloseNotice = on) }, not(WorkStyle.INVEST, WorkStyle.BUSINESS), Notifications.MONEY_CHANNEL_ID),
@@ -130,7 +135,11 @@ object NoticeBoard {
      * page hides its switch too, and its words are another kind's (조건 13, 유형 낱말 검사).
      */
     @Suppress("UNUSED_PARAMETER")
-    fun shown(settings: AppSettings, style: WorkStyle?): List<Own> = OWN.filter { it.shows(style) }
+    fun shown(settings: AppSettings, style: WorkStyle?, hasGap: Boolean = false): List<Own> =
+        OWN.filter { it.shows(style) && (it.key != GAP_KEY || hasGap) }
+
+    /** 2.0.0 [RVIB-21] 둘째 구간 알림's key: on the list only with a 근무 종류 of two parts. */
+    const val GAP_KEY = "gapNotice"
 
     /** My rules that send an 알림. */
     fun noticeRules(s: AppSettings): List<LogicRule> = Logic.decode(s.logic).rules.filter { r -> r.acts.any { it.verb == LogicVerb.NOTIFY } }
@@ -191,7 +200,7 @@ fun NoticeBoardCard(startOpen: Boolean = false, modifier: Modifier = Modifier,
     val overlaps = remember(settings, tick) {
         NoticeOverlap.now(Logic.decode(settings.logic), c.recipes.pieces.noticesOn(settings), ruleOn)
     }
-    val own = NoticeBoard.shown(settings, style)
+    val own = NoticeBoard.shown(settings, style, rememberHasGap())
     val onOwn = own.filter { it.get(settings) }
     val offOwn = own.filter { !it.get(settings) }
     val onRules = rules.filter(ruleOn)

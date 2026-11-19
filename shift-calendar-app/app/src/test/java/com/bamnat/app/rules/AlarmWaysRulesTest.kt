@@ -22,6 +22,7 @@ class AlarmWaysRulesTest {
         "alarm/AlarmService.kt" to Way.CLOCK, // a snooze from the ringing screen
         "alarm/BootAlarms.kt" to Way.CLOCK, // the next ring and snooze put back after a restart, before unlock
         "alarm/Receivers.kt" to Way.CLOCK, // 2.0.0 [RVI-02] 다시 울림 from the fallback notice, before unlock: the ringing screen's way
+        "alarm/RingKeeper.kt" to Way.CLOCK, // 2.0.0 [RVIB-28] (PC-188) 울리던 알람의 지킴이: 앱이 죽으면 30초 안에 같은 알람을 다시 울려요
         "alarm/ShiftNap.kt" to Way.CLOCK, // 2.0.0 [RVI-93] 근무 중 쪽잠: it rings, as the 낮잠 timer does
         "memo/MemoScheduleAlarm.kt" to Way.CLOCK, // a memo's schedule that rings (a notice-only one is EXACT)
         "invest/InvestNotices.kt" to Way.CLOCK, // an investor's alarm that rings (a notice-only one is EXACT)
@@ -36,6 +37,7 @@ class AlarmWaysRulesTest {
         "widget/WidgetRefresher.kt" to Way.EXACT, // 2.0.0 [RVI-37] the widgets' new day at midnight (a 1-minute window when refused)
         // Notices for which some minutes do not matter.
         "alarm/AlarmGuard.kt" to Way.ROUGH,
+        "alarm/GapNotice.kt" to Way.ROUGH, // 2.0.0 [RVIB-21] 둘째 구간 알림, 10 minutes before the later part (a 1-minute window)
         "alarm/LeaveTimeNotice.kt" to Way.ROUGH,
         "alarm/TodayShiftNotice.kt" to Way.ROUGH, // 2.0.0 [RVI-97] the lock screen's 오늘 근무 bar drawn again (a 1-minute window)
         "calendar/DateNoticeAlarm.kt" to Way.ROUGH,

@@ -214,6 +214,75 @@ class RvibScreenshotTest : ScreenshotBase() {
         org.junit.Assert.assertFalse(shows(com.bamnat.app.ui.Fmt.dayTitle(com.bamnat.core.time.Today.date()), exact = true))
     }
 
+    /** [RVIB-21] Today's 주간 as a day of two parts, 11:00~15:00 · 17:00~21:00, with no 반차 on it; 15:40, in the stop between. */
+    private fun twoPartsAtTheStop() = runBlocking {
+        // The clock first, so what the calendar works out on the change below is read at 15:40.
+        com.bamnat.core.time.Today.fix(SHOT_TIME.withHour(15).withMinute(40))
+        val repo = c.scheduleRepository
+        val t = repo.shiftTypes.first().first { it.name == "주간" }
+        repo.saveShiftType(t.copy(start = java.time.LocalTime.of(11, 0), end = java.time.LocalTime.of(21, 0),
+            gapStart = java.time.LocalTime.of(15, 0), gapMinutes = 120))
+        repo.setLeave(today, null)
+        c.settingsRepository.update { it.copy(sleepTips = true, calendarOnly = false, viewAsked = true, todayShiftNotice = true) }
+    }
+
+    /**
+     * [RVIB-21] 오늘의 흐름 opened, as a person looks in: what is left until 다시 시작 and the nap that wakes 30 minutes before it.
+     * Folded once, the card says [line]; it stays open for the looks after the first, as it does for a person.
+     */
+    private fun Screen.openFlow(line: String) {
+        if (!shows("다시 시작까지")) {
+            org.junit.Assert.assertTrue(appears(line, exact = true))
+            tapText(line, exact = true)
+            settle()
+        }
+        org.junit.Assert.assertTrue(appears("다시 시작까지"))
+        // Up from under 빠른 입력, as a person scrolls to read it.
+        reveal("다시 시작까지", across = 0.2f)
+        settle()
+    }
+
+    // [RVIB-21] (결정 19) 비는 시간: 오늘의 흐름이 '근무 중' 대신 '비는 시간 · 17:00 다시 시작', 낮잠만.
+    @Test fun twoPartFlow() = try {
+        eight("two_part_flow") { wide ->
+            twoPartsAtTheStop()
+            // The card reads the minute when it is made: away to 메모 and back, as a person coming back at 15:40.
+            tab(2, wide)
+            tab(0, wide)
+            settle()
+            openFlow("비는 시간 · 17:00 다시 시작")
+        }
+    } finally { com.bamnat.core.time.Today.fix(SHOT_TIME) }
+
+    // [RVIB-21] (결정 19) 알바·가게는 같은 사이를 '브레이크 타임'이라고 해요.
+    @Test fun twoPartFlowBreak() = try {
+        eight("two_part_flow_break") { wide ->
+            twoPartsAtTheStop()
+            runBlocking { c.settingsRepository.update { it.copy(workStyle = WorkStyle.HOURLY) } }
+            tab(2, wide)
+            tab(0, wide)
+            settle()
+            openFlow("브레이크 타임 · 17:00 다시 시작")
+        }
+    } finally { com.bamnat.core.time.Today.fix(SHOT_TIME) }
+
+    // [RVIB-21] 설정 › 알림과 잠: 잠금 화면 미리 보기가 두 구간을 한 줄로, '둘째 구간 시작 알림' 줄(두 구간 근무 종류가 있을 때만).
+    @Test fun twoPartSettings() = try {
+        eight("two_part_settings") { wide ->
+            twoPartsAtTheStop()
+            // The look of every day after the first: the first visit says each line in full once ([RVP-08]), the next says its
+            // first sentence with ⓘ. The test's app never closes, so the second visit is made by hand (the order of tests
+            // otherwise decides which rows have been seen).
+            com.bamnat.app.ui.components.ExplainSeen.reset(app)
+            settingsPage("알림과 잠", wide)
+            back()
+            com.bamnat.app.ui.components.ExplainSeen.newVisit()
+            settingsPage("알림과 잠", wide)
+            reveal("둘째 구간 시작 알림", exact = true, across = if (wide) 0.75f else 0.5f)
+            org.junit.Assert.assertTrue(appears("다시 시작 10분 전에 소리 없이 알려 줘요.", exact = true))
+        }
+    } finally { com.bamnat.core.time.Today.fix(SHOT_TIME) }
+
     // [RVIB-16] (PC-125) 가게: 아래 막대에 없는 '잠'이 '나'에.
     @Test fun meSleep() = eight("me_sleep") { _ ->
         runBlocking { c.settingsRepository.update { it.copy(workStyle = WorkStyle.BUSINESS) } }

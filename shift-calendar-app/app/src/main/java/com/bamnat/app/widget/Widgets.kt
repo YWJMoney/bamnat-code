@@ -394,7 +394,8 @@ private fun DayLine(title: String, day: ResolvedDay, big: Boolean, alarm: Widget
                 val end = day.end
                 val leave = day.leave?.takeIf { !it.isFullDay }
                 if (day.isWorkDay && start != null && end != null) {
-                    Text(Fmt.timeRangeShort(start, end) + (leave?.let { " · ${it.label}" } ?: ""), style = small(GlanceTheme.colors.onSurfaceVariant), maxLines = 1)
+                    // 2.0.0 [RVIB-21] (결정 19) A day of two parts shows both parts, not one stretch over the 브레이크 타임.
+                    Text((Fmt.dayHours(day) ?: Fmt.timeRangeShort(start, end)) + (leave?.let { " · ${it.label}" } ?: ""), style = small(GlanceTheme.colors.onSurfaceVariant), maxLines = 2)
                 } else {
                     // 2.0.0 [RVI-66] (PC 통합 1차 N8) '주간 대근' on a day off had no hours under it, as a shift has.
                     day.extras.firstOrNull { it.covered != null }?.let { e ->

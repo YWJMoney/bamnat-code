@@ -38,6 +38,8 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.ui.Alignment
 import androidx.compose.runtime.Composable
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -1646,6 +1648,16 @@ internal const val BACKUP_NUDGE_ROW = "백업 안 한 지 30일 알림"
 internal const val STRETCH_ROW = "연속 근무 경고"
 /** 1.32 [WTYP-16] */
 internal const val LEAVE_TIME_ROW = "퇴근 시각 알림"
+/** 2.0.0 [RVIB-21] 둘째 구간 알림's row, for 설정 찾기. */
+internal const val GAP_ROW = "둘째 구간 시작 알림"
+
+/** 2.0.0 [RVIB-21] Some 근무 종류 of the open calendar has a 브레이크 타임·비는 시간 between two parts. */
+@Composable
+internal fun rememberHasGap(): Boolean {
+    val c = androidx.compose.ui.platform.LocalContext.current.appContainer
+    val flow = remember(c) { c.scheduleRepository.snapshot.map { s -> s.shiftTypes.any { it.hasGap } }.distinctUntilChanged() }
+    return flow.collectAsStateWithLifecycle(false).value
+}
 /** 2.0.0 [RVIB-05] 설정 › 알림 › 메모·할 일. */
 internal const val MEMO_HOLD_ROW = "근무 중 메모 알림 모으기"
 internal const val MEMO_REST_ROW = "쉬는 날 아침 지난 할 일"

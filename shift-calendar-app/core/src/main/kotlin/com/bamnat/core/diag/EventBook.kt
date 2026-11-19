@@ -27,6 +27,11 @@ object DiagEvents {
      */
     const val ALARM_REHEARSAL_SET = "alarm_rehearsal_set"
     const val ALARM_REHEARSAL = "alarm_rehearsal"
+    /**
+     * 2.0.0 [RVIB-28] (PC-188) A ringing alarm was cut by the app going away: its time, how many seconds it was silent, whether it
+     * rang again (resumed=1) and why not (why=over·too_many·stopped). Never anything else.
+     */
+    const val ALARM_CUT = "alarm_cut"
     const val SNOOZE_FIRED = "snooze_fired"
     const val SYSTEM_EVENT = "system_event"
     const val BACKUP_EXPORT = "backup_export"
@@ -110,6 +115,20 @@ object EventBook {
             }
             !superseded
         }
+    }
+
+    /** [RVIB-28] A ring cut by the app going away ([DiagEvents.ALARM_CUT]). */
+    data class Cut(val atMillis: Long, val trigger: Long, val silentSeconds: Long, val resumed: Boolean, val why: String) {
+        /** Cut and not rung again before its 자동으로 끄기 time: the alarm may not have woken anyone. */
+        val lost: Boolean get() = !resumed && why != "over"
+    }
+
+    /** [RVIB-28] Every cut ring in the log, oldest first. */
+    fun cuts(events: List<DiagEvent>): List<Cut> = events.filter { it.name == DiagEvents.ALARM_CUT }.mapNotNull { e ->
+        val t = triggerOf(e.detail) ?: return@mapNotNull null
+        val gap = e.detail.split(' ').firstOrNull { it.startsWith("gap_s=") }?.removePrefix("gap_s=")?.toLongOrNull() ?: 0L
+        val parts = e.detail.split(' ')
+        Cut(e.atMillis, t, gap, parts.contains("resumed=1"), parts.firstOrNull { it.startsWith("why=") }?.removePrefix("why=").orEmpty())
     }
 
     /** [ALRM-01] The week up to [nowMillis] of alarms, from the log. */

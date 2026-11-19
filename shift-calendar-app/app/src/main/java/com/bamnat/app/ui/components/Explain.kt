@@ -130,6 +130,10 @@ object ExplainSeen {
         p.edit().putInt(key, (p.getInt(key, 0) + 1).coerceAtMost(9)).apply()
     }
 
+    /** The app opened again: each explanation seen from here counts one more visit. Tests stand for a new start with it. */
+    @androidx.annotation.VisibleForTesting
+    internal fun newVisit() = thisVisit.clear()
+
     /** 설명 처음처럼 보기: every explanation is said in full again. */
     fun reset(context: Context) {
         prefs(context).edit().clear().apply()
