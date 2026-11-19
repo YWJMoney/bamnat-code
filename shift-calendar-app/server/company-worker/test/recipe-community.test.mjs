@@ -305,7 +305,7 @@ test("[PRF-07] 모음: 내 공개 작품 2~6개, 테마는 하나, 다른 사람
 
 test("[PRF-08][PRF-09][PRF-10] 팔로잉 피드, 작품 통계, 이달의 제작자", async (t) => {
   t.mock.timers.enable({ apis: ["Date"], now: AFTER });
-  const { call } = server({ plaza: true });
+  const { call, DB } = server({ plaza: true });
   const admin = await signIn(call);
   const a = (await up(call, 1, {}, "public")).data.code;
   await up(call, 2, { title: "팔로우 안 한 분 것" }, "public");
@@ -323,7 +323,10 @@ test("[PRF-08][PRF-09][PRF-10] 팔로잉 피드, 작품 통계, 이달의 제작
   assert.equal(stats.week > 0, true);
   // 2.0.0 [RVQ-27] 검토 SVC-59: 이달의 제작자 are the operator's picks; the most put-on makers are candidates in the admin app only.
   assert.deepEqual((await call("GET", "/api/recipes/makers/month?style=SHIFT")).data.items, []);
-  assert.deepEqual((await call("GET", "/api/admin/recipes/makers/month", undefined, admin)).data.candidates.SHIFT.map((x) => [x.maker, x.users]), [[m1, 3]]);
+  // 2.0.0 [RVN-24] SVC-107: 쓰는 분 셋으로는 후보가 아니에요(그달 30명부터).
+  assert.deepEqual((await call("GET", "/api/admin/recipes/makers/month", undefined, admin)).data.candidates.SHIFT, []);
+  DB.db.prepare("UPDATE recipe_counts SET applied = 30 WHERE code = ?").run(a);
+  assert.deepEqual((await call("GET", "/api/admin/recipes/makers/month", undefined, admin)).data.candidates.SHIFT.map((x) => [x.maker, x.users]), [[m1, 30]]);
   await call("POST", "/api/admin/recipes/makers/month", { style: "SHIFT", makers: [m1, m2] }, admin);
   assert.deepEqual((await call("GET", "/api/recipes/makers/month?style=SHIFT")).data.items.map((x) => [x.maker, x.picked, x.bio ?? null]), [[m1, true, "교대 꾸미기"], [m2, true, null]]);
 });

@@ -920,14 +920,39 @@ const monthOf = (ms) => new Date(ms + 9 * HOUR).toISOString().slice(0, 7);
  * phones put on their recipes of that kind this month. Never the operator's own, hidden profiles or those with nothing up.
  */
 /**
- * The makers whose public works of [style] (all kinds when null) the most phones put on this month, as candidates: [{maker, n}].
+ * 이달의 제작자 후보: the makers whose public works the most phones put on in a month.
  * 2.0.0 [RVQ-27] 검토 SVC-59: only the admin app reads this now (이달의 제작자 후보); the public list and 🏅 are the operator's picks.
+ * 2.0.0 [RVN-24] 검토 SVC-107: a maker is a candidate only from [MONTH_FLOOR] 쓰는 분 of the month (on the 1st one put-on made the top three),
+ * and last month's finished count comes too ([monthCounts] with the month before), so the start of a month still has a sure list.
+ * One network counts a few a work a day (RECIPE_LIMITS.appliedPerRecipeNetworkDay); 쓰는 분 come with no phone (처리방침 3.8), so the
+ * maker's own put-ons cannot be told apart and are not left out here.
  */
-export async function monthCandidates(d, env, now, style, limit = 10) {
-  return d.all(env, `SELECT r.maker, SUM(c.applied) AS n FROM recipe_counts c JOIN recipes r ON r.code = c.code
-    WHERE c.day >= ? AND r.state = 'visible' AND r.scope = 'public' AND r.owner != 'operator' AND r.maker IS NOT NULL
-      ${style ? "AND (',' || r.styles || ',') LIKE ?" : ""}
-    GROUP BY r.maker HAVING n > 0 ORDER BY n DESC LIMIT ${Number(limit) || 10}`, `${monthOf(now)}-01`, ...(style ? [`%,${style},%`] : []));
+export const MONTH_FLOOR = 30;
+
+/** The month (YYYY-MM, KST) [by] months before the one of [now]. */
+export function monthBefore(now, by = 1) {
+  const [y, m] = monthOf(now).split("-").map(Number);
+  const k = y * 12 + (m - 1) - by;
+  return `${Math.floor(k / 12)}-${String((k % 12) + 1).padStart(2, "0")}`;
+}
+
+const nextMonth = (month) => { const [y, m] = month.split("-").map(Number); return m === 12 ? `${y + 1}-01` : `${y}-${String(m + 1).padStart(2, "0")}`; };
+
+/** Each maker's 쓰는 분 of [month] by the kinds of work of their works: [{maker, styles, n}], one read for every kind. */
+export async function monthCounts(d, env, month) {
+  return d.all(env, `SELECT r.maker, r.styles, SUM(c.applied) AS n FROM recipe_counts c JOIN recipes r ON r.code = c.code
+    WHERE c.day >= ? AND c.day < ? AND r.state = 'visible' AND r.scope = 'public' AND r.owner != 'operator' AND r.maker IS NOT NULL
+    GROUP BY r.maker, r.styles`, `${month}-01`, `${nextMonth(month)}-01`);
+}
+
+/** The top makers of [rows] (from [monthCounts]) for [style] (all kinds when null), from [floor] up: [{maker, n}]. */
+export function topMakers(rows, style, limit = 10, floor = MONTH_FLOOR) {
+  const by = new Map();
+  for (const r of rows) {
+    if (style && !(`,${r.styles ?? ""},`).includes(`,${style},`)) continue;
+    by.set(r.maker, (by.get(r.maker) ?? 0) + (r.n ?? 0));
+  }
+  return [...by].map(([maker, n]) => ({ maker, n })).filter((x) => x.n >= floor).sort((a, b) => b.n - a.n || a.maker.localeCompare(b.maker)).slice(0, limit);
 }
 
 async function rcMonthMakers(d, env, url) {
@@ -1261,15 +1286,24 @@ export async function communityAdmin(d, request, env, path, url, now, actor = ""
   if (path === "/recipes/makers/month" && method === "GET") {
     const rows = await d.all(env, "SELECT * FROM recipe_month_makers WHERE month = ? ORDER BY style, rank", monthOf(now));
     // 2.0.0 [RVQ-27] 검토 SVC-59: the counted ones are candidates here only (with their name), for the operator to pick.
-    const candidates = {};
-    for (const style of ["ALL", ...RC_STYLE_KEYS]) {
-      const c = await monthCandidates(d, env, now, style === "ALL" ? null : style, 5);
-      const named = c.length ? await d.all(env, `SELECT m.maker, m.face, m.hidden, m.closed, n.nick FROM recipe_makers m LEFT JOIN nicks n ON n.device = m.device
-        WHERE m.maker IN (${c.map(() => "?").join(",")})`, ...c.map((x) => x.maker)) : [];
-      candidates[style] = c.map((x) => { const w = named.find((y) => y.maker === x.maker); return w && !w.hidden && !w.closed ? { maker: x.maker, nick: w.nick ?? null, face: w.face ?? null, users: x.n } : null; })
-        .filter(Boolean).slice(0, 3);
+    // 2.0.0 [RVN-24] 검토 SVC-107: from MONTH_FLOOR 쓰는 분, this month's and last month's finished ones; two reads for every kind
+    // and one for the names (was two a kind).
+    const [thisRows, lastRows] = await Promise.all([monthCounts(d, env, monthOf(now)), monthCounts(d, env, monthBefore(now))]);
+    const styles = ["ALL", ...RC_STYLE_KEYS];
+    const top = (rows) => Object.fromEntries(styles.map((s) => [s, topMakers(rows, s === "ALL" ? null : s, 5)]));
+    const [nowTop, lastTop] = [top(thisRows), top(lastRows)];
+    const ids = [...new Set([...Object.values(nowTop), ...Object.values(lastTop)].flat().map((x) => x.maker))];
+    const named = [];
+    for (let i = 0; i < ids.length; i += 90) {
+      const part = ids.slice(i, i + 90);
+      named.push(...await d.all(env, `SELECT m.maker, m.face, m.hidden, m.closed, n.nick FROM recipe_makers m LEFT JOIN nicks n ON n.device = m.device
+        WHERE m.maker IN (${part.map(() => "?").join(",")})`, ...part));
     }
-    return d.json({ month: monthOf(now), items: rows, candidates });
+    const face = (list) => list.map((x) => { const w = named.find((y) => y.maker === x.maker); return w && !w.hidden && !w.closed ? { maker: x.maker, nick: w.nick ?? null, face: w.face ?? null, users: x.n } : null; })
+      .filter(Boolean).slice(0, 3);
+    const candidates = Object.fromEntries(styles.map((s) => [s, face(nowTop[s])]));
+    const last = Object.fromEntries(styles.map((s) => [s, face(lastTop[s])]));
+    return d.json({ month: monthOf(now), items: rows, candidates, last, lastMonth: monthBefore(now), floor: MONTH_FLOOR });
   }
   if (path === "/recipes/makers/month" && method === "POST") {
     const body = await d.readJson(request, 2048);

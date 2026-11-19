@@ -315,3 +315,40 @@ test("[RVN-24] SVC-106 사람 찾기: an 8-letter mark tells two phones apart th
   const { markRange } = await import("../src/units.js");
   assert.deepEqual(markRange("abcdef"), ["abcdef", "abcdefg"]);
 });
+
+test("[RVN-24] SVC-107 이달의 제작자 후보: from 30 쓰는 분 of the month, and on the 1st last month's finished ones", async (t) => {
+  t.mock.timers.enable({ apis: ["Date"], now: Date.parse("2026-11-30T03:00:00Z") });
+  const { call, DB } = server({ plaza: true });
+  const h = await signIn(call);
+  const from = (n) => ({ "cf-connecting-ip": `198.51.100.${n}` });
+  const work = { format: "bamnat-recipe", v: 1, title: "야간 많은 교대 세트", summary: "야간이 잘 보여요", styles: ["SHIFT"],
+    pieces: [{ kind: "shiftLook", items: [{ name: "주간", role: "day", label: "주", color: 4294940928, emoji: "☀️" }] }] };
+  const up = async (n) => (await call("POST", "/api/recipes", { device: device(n), recipe: { ...work, title: `야간 세트 ${n}` }, scope: "public" }, from(n))).data.code;
+  const a = await up(1);
+  const b = await up(2);
+  assert.notEqual(a, b);
+  const ma = (await call("POST", "/api/recipes/makers/me", { device: device(1) }, from(1))).data.maker;
+  const mb = (await call("POST", "/api/recipes/makers/me", { device: device(2) }, from(2))).data.maker;
+  DB.db.prepare("INSERT INTO recipe_counts (code, day, applied) VALUES (?, '2026-11-29', 40)").run(a);
+  DB.db.prepare("INSERT INTO recipe_counts (code, day, applied) VALUES (?, '2026-11-29', 12)").run(b);
+  // The 1st of the next month: one put-on made the top three before; now it is not a candidate.
+  t.mock.timers.setTime(Date.parse("2026-12-01T03:00:00Z"));
+  assert.equal((await call("POST", `/api/recipes/${b}/applied`, { kind: "applied" }, from(9))).status, 200);
+  const month = async () => (await call("GET", "/api/admin/recipes/makers/month", undefined, h)).data;
+  let d = await month();
+  assert.equal(d.month, "2026-12");
+  assert.deepEqual(d.candidates.SHIFT, [], "one 쓰는 분 on the 1st");
+  assert.equal(d.lastMonth, "2026-11");
+  assert.deepEqual(d.last.SHIFT.map((x) => [x.maker, x.users]), [[ma, 40]], "last month's finished count, from 30 up");
+  assert.deepEqual(d.last.ALL.map((x) => x.maker), [ma]);
+  assert.equal(d.floor, 30);
+  DB.db.prepare("UPDATE recipe_counts SET applied = 29 WHERE code = ? AND day = '2026-12-01'").run(b);
+  assert.deepEqual((await month()).candidates.SHIFT, []);
+  DB.db.prepare("UPDATE recipe_counts SET applied = 30 WHERE code = ? AND day = '2026-12-01'").run(b);
+  d = await month();
+  assert.deepEqual(d.candidates.SHIFT.map((x) => [x.maker, x.users]), [[mb, 30]]);
+  assert.deepEqual(d.candidates.DAY, []);
+  const { monthBefore } = await import("../src/recipe-community.js");
+  assert.equal(monthBefore(Date.parse("2027-01-01T00:00:00Z")), "2026-12");
+  assert.equal(monthBefore(Date.parse("2026-12-31T16:00:00Z")), "2026-12", "KST: already January");
+});

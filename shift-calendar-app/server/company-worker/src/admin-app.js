@@ -5884,7 +5884,9 @@ function adminApp(L, BUILD, M) {
     },
     // 2.0.0 [RVQ-27] 검토 SVC-59: 후보 셋을 그대로 이달의 제작자로.
     "recipe-month-take": async ({ key }) => {
-      const makers = (S.data.recipes?.candidates?.[key] ?? []).map((c) => c.maker);
+      // 2.0.0 [RVN-24] SVC-107: 이달 후보가 없으면(달 초) 화면에 보인 지난달 후보를.
+      const r = S.data.recipes ?? {};
+      const makers = ((r.candidates?.[key] ?? []).length ? r.candidates[key] : r.last?.[key] ?? []).map((c) => c.maker);
       if (!makers.length) return;
       await act(() => api("/recipes/makers/month", "POST", { style: key, makers }), `${makers.length}명 골랐어요`,
         async () => { await act(() => api("/recipes/makers/month", "POST", { style: key, makers: [] }), "되돌렸어요"); load(); });

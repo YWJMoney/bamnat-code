@@ -362,11 +362,16 @@ export function marketViews(A) {
   function recipeMonthView(d, edit) {
     const by = (k) => d.items.filter((i) => i.style === k).map((i) => i.maker);
     // 2.0.0 [RVQ-27] 검토 SVC-59: 🏅와 마을 맨 위 '이달의 제작자'는 여기서 고른 분만. 쓰는 분 수로 센 분은 후보로만 보여요(가짜 설치로 살 수 없게).
-    const cand = (k) => d.candidates?.[k] ?? [];
-    return `<p class="hint">${esc(d.month)}. 근무 유형마다 3명까지 골라 마을 맨 위(팔로우한 분이 없는 분)에 보이고 🏅 표식이 붙어요. 고른 분이 없으면 아무도 보이지 않아요. 이달에 쓰는 분이 많은 만든 분이 후보로 보여요. 프로필을 열어 본 뒤 ‘후보 그대로 고르기’로 한 번에 골라요.</p>
+    // 2.0.0 [RVN-24] 검토 SVC-107: 후보는 그달 쓰는 분 d.floor명부터. 이달 후보가 없으면(달 초) 지난달 끝난 셈의 후보를 보여 주고 그대로 고를 수 있어요.
+    const now = (k) => d.candidates?.[k] ?? [];
+    const last = (k) => d.last?.[k] ?? [];
+    const cand = (k) => (now(k).length ? now(k) : last(k));
+    const who = (list) => list.map((c) => `${esc(c.face ?? "🙂")} ${esc(c.nick ?? "이름 없음")}(${esc(c.maker)}, 쓰는 분 ${c.users})`).join(" · ");
+    const floor = Number(d.floor) || 30;
+    return `<p class="hint">${esc(d.month)}. 근무 유형마다 3명까지 골라 마을 맨 위(팔로우한 분이 없는 분)에 보이고 🏅 표식이 붙어요. 고른 분이 없으면 아무도 보이지 않아요. 그달 쓰는 분이 ${floor}명 이상인 만든 분만 후보로 보여요(달 초에는 지난달 후보). 프로필을 열어 본 뒤 ‘후보 그대로 고르기’로 한 번에 골라요.</p>
       <ul class="rows">${RECIPE_STYLES.map(([k, label]) => `<li><form data-form="recipe-month" data-key="${k}" class="row">
         <span class="row-main"><b>${esc(label)}</b><small>${by(k).length ? esc(by(k).join(", ")) : "고른 분 없음"}</small>
-        ${cand(k).length ? `<small data-candidates>후보: ${cand(k).map((c) => `${esc(c.face ?? "🙂")} ${esc(c.nick ?? "이름 없음")}(${esc(c.maker)}, 쓰는 분 ${c.users})`).join(" · ")}</small>` : ""}
+        ${now(k).length ? `<small data-candidates>후보: ${who(now(k))}</small>` : last(k).length ? `<small data-candidates="last">지난달(${esc(d.lastMonth ?? "")}) 후보: ${who(last(k))}</small>` : ""}
         ${edit ? `<input name="makers" aria-label="${esc(label)} 제작자 id" placeholder="프로필 id 3개까지, 쉼표로" value="${esc(by(k).join(", "))}">` : ""}</span>
         ${edit ? `<span class="row-side"><button class="btn small" type="submit">저장</button>${cand(k).length && !by(k).length ? `<button class="btn small" type="button" data-act="recipe-month-take" data-key="${k}">후보 그대로 고르기</button>` : ""}</span>` : ""}</form></li>`).join("")}</ul>`;
   }
