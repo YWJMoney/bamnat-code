@@ -6,6 +6,8 @@ import { kstDay } from "./usage.js";
 // ---- 1.38 [ADM3-12] 돈 화면: 구독·이용권·체험·해지·환불, 팀·직원 요금제, 광고 실패로 무료로 연 횟수 ----
 //
 // 보고서 3-2항 O1. 서버가 이미 Play와 맞춰 둔 기록(subs·year_passes·day_rewards)만 세요. 새로 모으는 것은 없어요.
+// 2.0.0 [RVQ-48] 검토 SVC-68·U22b-12: '기간 금액'은 새로 시작한 결제만 세서 이름으로는 알 수 없는 어림이었어요. 갱신·체험 뒤 첫 결제·환불은
+// money_events(서버가 Play에 다시 물어 안 것)로 따로 세고, 화면은 새로·체험 뒤·갱신·환불을 줄마다 보여 줘요. 모두 가격표로 곱한 어림이에요.
 // 금액은 '가격표 기준 추정'이에요: Play는 실제 가격을 서버에 알려 주지 않아서, 최고 관리자가 Play Console 가격을 가격표에 적어 두면
 // 그 값으로 곱해요(수수료·세금 전). 실제 돈은 Play Console › 수익 보고서가 정답이에요.
 
@@ -60,21 +62,25 @@ export async function moneyBoard(env, now = Date.now(), days = 28) {
   const n = Math.min(Math.max(Number(days) || 28, 7), 120);
   const start = now - n * DAY;
   const table = await priceTable(env);
-  const [subs, passes, rewards, events] = (await batch(env, [
+  const [subs, passes, rewards, events, paidEvents] = (await batch(env, [
     stmt(env, "SELECT product, base_plan, state, expiry, trial, auto_renew, stopped_at, created_at FROM subs"),
     stmt(env, "SELECT product, state, purchased_at, checked_at FROM year_passes WHERE purchased_at > ?", now - 400 * DAY),
     stmt(env, "SELECT kind, given_at, days FROM day_rewards WHERE given_at >= ?", start),
     stmt(env, `SELECT day, event, SUM(total) AS total FROM usage_events WHERE day >= ? AND event IN ('paywall_view', 'trial_start', 'subscribe', 'theme_free_no_fill',
       'theme_free_timeout', 'theme_free_show_failed', 'theme_free_not_ready', 'theme_free_other', 'plan_view_team', 'plan_view_staff', 'plan_buy_tap') GROUP BY day, event`, kstDay(start)),
+    stmt(env, "SELECT kind, product, plan, at FROM money_events WHERE at >= ?", start),
   ])).map((r) => r.results ?? []);
   const dayList = Array.from({ length: n }, (_, i) => kstDay(now - (n - 1 - i) * DAY));
   const idx = new Map(dayList.map((d, i) => [d, i]));
   const zero = () => new Array(n).fill(0);
-  const series = { started: zero(), trials: zero(), stopped: zero(), passes: zero(), refunds: zero(), amount: zero(), paywall: zero(), adFails: zero() };
+  const series = { started: zero(), trials: zero(), stopped: zero(), passes: zero(), refunds: zero(), amount: zero(), paywall: zero(), adFails: zero(),
+    converted: zero(), renewed: zero() };
+  // [RVQ-48] 금액을 갈래마다: 새로(구독·이용권) · 체험 뒤 첫 결제 · 갱신, 그리고 환불(빼기 전 금액).
+  const parts = { fresh: 0, converted: 0, renewed: 0, refunded: 0 };
   const live = subs.filter((s) => ["ACTIVE", "GRACE"].includes(s.state) && (s.expiry ?? 0) > now);
   const byProduct = new Map();
   const add = (key, field, v = 1) => {
-    const x = byProduct.get(key) ?? { name: key, paid: 0, trials: 0, ending: 0, started: 0, stopped: 0, passes: 0, refunds: 0, amount: 0, price: 0 };
+    const x = byProduct.get(key) ?? { name: key, paid: 0, trials: 0, ending: 0, started: 0, stopped: 0, passes: 0, refunds: 0, amount: 0, price: 0, converted: 0, renewed: 0 };
     x[field] += v;
     byProduct.set(key, x);
     return x;
@@ -97,6 +103,7 @@ export async function moneyBoard(env, now = Date.now(), days = 28) {
         add(name, "started");
         const p = priceOf(table, s.product, s.base_plan);
         series.amount[i] += p;
+        parts.fresh += p;
         add(name, "amount", p);
       }
     }
@@ -112,17 +119,30 @@ export async function moneyBoard(env, now = Date.now(), days = 28) {
     if (p.purchased_at >= start && i !== undefined) {
       series.passes[i] += 1;
       add(name, "passes");
-      if (p.state === "ACTIVE") {
-        const v = priceOf(table, p.product);
-        series.amount[i] += v;
-        add(name, "amount", v);
-      }
+      // [RVQ-48] 환불된 이용권도 산 날의 금액에 들어가고, 환불은 아래 money_events로 따로 빼요(금액이 두 번 빠지지 않게).
+      const v = priceOf(table, p.product);
+      series.amount[i] += v;
+      parts.fresh += v;
+      add(name, "amount", v);
     }
-    // 1년 안에 EXPIRED가 된 이용권은 환불이에요(readPass: purchaseState 1). 알게 된 날(checked_at)로 세요.
-    if (p.state === "EXPIRED" && p.checked_at >= start && p.checked_at < p.purchased_at + 365 * DAY) {
-      const k = idx.get(kstDay(p.checked_at));
-      if (k !== undefined) series.refunds[k] += 1;
+  }
+  // [RVQ-48] 갱신·체험 뒤 첫 결제·환불(Play voidedpurchases나 앱이 알려 준 날).
+  for (const e of paidEvents) {
+    const i = idx.get(kstDay(e.at));
+    if (i === undefined) continue;
+    const name = e.product ? productName(e.product, e.plan) : "알 수 없는 결제";
+    // 서버가 모르는 결제(그 폰이 토큰을 보낸 적 없음)는 상품을 몰라 금액 없이 수만 세요.
+    const v = e.product ? priceOf(table, e.product, e.plan) : 0;
+    if (e.kind === "refund") {
+      series.refunds[i] += 1;
+      parts.refunded += v;
       add(name, "refunds");
+    } else if (e.kind === "renew" || e.kind === "convert") {
+      series[e.kind === "renew" ? "renewed" : "converted"][i] += 1;
+      series.amount[i] += v;
+      parts[e.kind === "renew" ? "renewed" : "converted"] += v;
+      add(name, e.kind === "renew" ? "renewed" : "converted");
+      add(name, "amount", v);
     }
   }
   const ev = {};
@@ -144,7 +164,8 @@ export async function moneyBoard(env, now = Date.now(), days = 28) {
     days: dayList, series, table,
     now: { paid, trials: live.filter((s) => s.trial).length, ending: live.filter((s) => !s.auto_renew).length, passes: passes.filter((p) => p.state === "ACTIVE" && p.purchased_at + 365 * DAY > now).length, monthly },
     period: { started: sum(series.started), trials: sum(series.trials), stopped: sum(series.stopped), passes: sum(series.passes), refunds: sum(series.refunds),
-      amount: sum(series.amount), afterFee: Math.round(sum(series.amount) * (1 - (table.fee ?? 15) / 100)), paywall: ev.paywall_view ?? 0, trialTaps: ev.trial_start ?? 0,
+      converted: sum(series.converted), renewed: sum(series.renewed), parts,
+      amount: sum(series.amount), afterFee: Math.round((sum(series.amount) - parts.refunded) * (1 - (table.fee ?? 15) / 100)), paywall: ev.paywall_view ?? 0, trialTaps: ev.trial_start ?? 0,
       subscribeTaps: ev.subscribe ?? 0, adFails: sum(series.adFails), rewardDays: rewards.reduce((n, r) => n + (r.days ?? 0), 0), planViews: (ev.plan_view_team ?? 0) + (ev.plan_view_staff ?? 0),
       planTaps: ev.plan_buy_tap ?? 0 },
     products: [...byProduct.values()].sort((a, b) => b.paid + b.passes - (a.paid + a.passes)),

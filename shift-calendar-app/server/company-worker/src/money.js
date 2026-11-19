@@ -35,9 +35,10 @@ export const MONEY = {
   linkMs: 10 * 60 * 1000,
   linkCodesPerHour: 10,
   linkTriesPerHour: 10,
-  // 1.36 [SEC-03] Wrong codes from everywhere together in one code's ten minutes: past this, every live code is spent and
-  // tries rest until the window ends. With a 6-digit code, a guessing run spread over many networks then wins at most
-  // 30 in a million, and the owner sees it in the log (link_guess) and makes a new code.
+  // 1.36 [SEC-03] Wrong codes from everywhere together in one code's ten minutes: past this, tries rest until the window ends.
+  // With a 6-digit code, a guessing run spread over many networks then wins at most 30 in a million a window, and the owner
+  // sees it in the log (link_guess). 2.0.0 [RVQ-49] 검토 SVC-73·T22b-07: the live codes are no longer spent then (anyone's 30
+  // wrong tries wiped the family codes the owner had handed out); resting alone keeps the same 30 a window.
   linkWrongPerWindow: 30,
   phonesPerAdmin: 2,
   // 1.37.1 [FAM-01] 가족 프로 이용권: a code the owner makes for a family member's phone, good for an hour, once.
@@ -105,14 +106,19 @@ export async function launchView(env) {
 }
 
 /** [MON-08] A date [months] calendar months after [ms], on the last day of a shorter month when needed. */
+/**
+ * 2.0.0 [RVQ-48] 검토 SVC-69: '한 달'은 한국 달력으로 더해요. UTC로 더하면 한국 시간 새벽(0~9시)에 준 보상이 UTC로는 전날이라,
+ * 3월 1일 새벽에 준 1달이 3월 29일에 끝나는 식으로 말일을 넘을 때 최대 3일 짧았어요(Play 결제 미루기도 같은 셈).
+ */
+const KST_MS = 9 * 60 * 60 * 1000;
 export function addMonths(ms, months) {
-  const d = new Date(ms);
+  const d = new Date(ms + KST_MS);
   const day = d.getUTCDate();
   d.setUTCDate(1);
   d.setUTCMonth(d.getUTCMonth() + months);
   const last = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth() + 1, 0)).getUTCDate();
   d.setUTCDate(Math.min(day, last));
-  return d.getTime();
+  return d.getTime() - KST_MS;
 }
 
 /**
@@ -664,6 +670,35 @@ export async function settleInvites(env, inviter, set, now) {
   }
 }
 
+/**
+ * 2.0.0 [RVQ-49] 검토 U22b-11: [set]으로 저장하면 settleAllInvites가 바로 만들 드릴 보상을 쓰지 않고 세요. 초대만의 상한에 걸리는 묶음은
+ * capped로 따로 세요(달 없이 세는 것). 한 번에 200분까지라 그보다 많으면 more.
+ */
+export async function invitePreview(env, set, now) {
+  const due = await all(env, `SELECT inviter, COUNT(*) AS n FROM invite_uses WHERE status = 'qualified' GROUP BY inviter HAVING COUNT(*) >= ? LIMIT 200`, set.friends);
+  let inviters = 0;
+  let rewards = 0;
+  let capped = 0;
+  for (const d of due) {
+    let groups = Math.min(50, Math.floor(d.n / set.friends));
+    if (d.inviter.startsWith("gone")) {
+      capped += groups;
+      continue;
+    }
+    if (set.capMonths > 0) {
+      const recent = await inviteMonths(env, d.inviter, now - INVITE.capDays * DAY, true);
+      const fit = Math.max(0, Math.floor((set.capMonths - recent) / set.months));
+      capped += Math.max(0, groups - fit);
+      groups = Math.min(groups, fit);
+    }
+    if (groups > 0) {
+      inviters++;
+      rewards += groups;
+    }
+  }
+  return { inviters, rewards, months: rewards * set.months, capped, more: due.length === 200 };
+}
+
 /** [INVITE-08] A lowered number of friends may already be met: settles the inviters it reached. */
 export async function settleAllInvites(env, set, now) {
   const due = await all(env, `SELECT inviter FROM invite_uses WHERE status = 'qualified' GROUP BY inviter HAVING COUNT(*) >= ? LIMIT 200`, set.friends);
@@ -769,6 +804,9 @@ export async function inviteSettingsRoute(request, env, method, now) {
     if (!Number.isInteger(v) || v < lo || v > hi) refuse(key, key);
     return [key, v];
   }));
+  // 2.0.0 [RVQ-49] 검토 U22b-11·SVC-73: 저장하면 조건을 채운 분께 바로 드릴 보상이 생겨요. {dry: true}는 아무것도 쓰지 않고 몇 분께
+  // 몇 건·몇 달인지 돌려줘요(관리자 앱이 저장 전에 한 번 보여 줘요).
+  if (body.dry === true) return json({ ...set, ...(await year()), preview: await invitePreview(env, set, now) });
   await batch(env, Object.entries(INVITE_KEYS).map(([name, key]) =>
     stmt(env, "INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)", key, String(set[name]))));
   await audit(env, now, "invite_settings", "", `${set.friends}명 · ${set.days}일 · ${set.months}개월 · 상한 ${set.capMonths ? `${set.capMonths}개월` : "없음"}`);
@@ -849,8 +887,8 @@ export async function linkPhone(request, env, dev, now) {
   if ((wrong?.count ?? 0) >= MONEY.linkWrongPerWindow) return tooMany("network", (window + 1) * MONEY.linkMs - now);
   const row = await one(env, "SELECT * FROM link_codes WHERE code = ? AND expires > ?", body.code, now);
   if (!row) {
+    // 2.0.0 [RVQ-49] 검토 SVC-73·T22b-07: 창이 차면 쉬기만 해요(위의 tooMany). 살아 있는 코드는 지우지 않아요.
     if (!(await allow(env, wrongKey, MONEY.linkWrongPerWindow - 1, MONEY.linkMs, now))) {
-      await run(env, "DELETE FROM link_codes");
       await audit(env, now, "link_guess", "", String(MONEY.linkWrongPerWindow));
     }
     return json({ error: "code", field: "code" }, 404);
@@ -1107,7 +1145,7 @@ export async function purchase(request, env, dev, now) {
   // [SRV-07] A token already tied to another install stays with it while that install still checks in: a
   // leaked token cannot move the consent record or reward deferrals to someone else's phone. After a week
   // without the first phone (a new phone with the same Google account) it moves, and the log says so.
-  const bound = await one(env, "SELECT device, checked_at FROM subs WHERE hash = ?", hash);
+  const bound = await one(env, "SELECT device, checked_at, trial, expiry FROM subs WHERE hash = ?", hash);
   if (bound && bound.device !== dev) {
     if (now - bound.checked_at < REBIND_AFTER) {
       await audit(env, now, "purchase_rebind_refused", body.product, hash.slice(0, 8));
@@ -1115,6 +1153,7 @@ export async function purchase(request, env, dev, now) {
     }
     await audit(env, now, "purchase_rebind", body.product, hash.slice(0, 8));
   }
+  await paidAgain(env, bound, s, body.product, now);
   await run(env, `INSERT INTO subs (hash, device, token, product, base_plan, state, expiry, trial, auto_renew, created_at, checked_at)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     ON CONFLICT (hash) DO UPDATE SET device = excluded.device, state = excluded.state, expiry = excluded.expiry, trial = excluded.trial,
@@ -1151,7 +1190,7 @@ export function readPass(p) {
 async function yearPass(env, dev, token, now, product = PASS_PRODUCT) {
   const p = readPass(await playCall(env, "GET", `/purchases/products/${product}/tokens/${encodeURIComponent(token)}`));
   const hash = (await sha256(`pass|${token}`)).slice(0, 40);
-  const bound = await one(env, "SELECT device, checked_at FROM year_passes WHERE hash = ?", hash);
+  const bound = await one(env, "SELECT device, checked_at, state FROM year_passes WHERE hash = ?", hash);
   if (bound && bound.device !== dev) {
     if (now - bound.checked_at < REBIND_AFTER) {
       await audit(env, now, "purchase_rebind_refused", product, hash.slice(0, 8));
@@ -1160,6 +1199,8 @@ async function yearPass(env, dev, token, now, product = PASS_PRODUCT) {
     await audit(env, now, "purchase_rebind", product, hash.slice(0, 8));
   }
   if (!p.purchasedAt) return json({ verified: false });
+  // 2.0.0 [RVQ-48] 검토 SVC-68: 환불을 앱이 알려 준 날도 돈 화면의 환불로(Play에서 읽은 것과 겹치지 않게 ACTIVE에서 바뀔 때 한 번).
+  if (bound?.state === "ACTIVE" && p.state === "EXPIRED") await moneyEvent(env, "refund", product, "", now);
   await run(env, `INSERT INTO year_passes (hash, device, order_id, state, purchased_at, created_at, checked_at, product) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
     ON CONFLICT (hash) DO UPDATE SET device = excluded.device, state = excluded.state, checked_at = excluded.checked_at, product = excluded.product`,
   hash, dev, p.orderId, p.state, p.purchasedAt, now, now, product);
@@ -1225,12 +1266,13 @@ export async function stopUnconsentedTrials(env, now) {
  */
 export async function recheckLapsed(env, now) {
   if (!playReady(env)) return 0;
-  const due = await all(env, `SELECT hash, token, product FROM subs WHERE state IN ('ACTIVE', 'GRACE') AND expiry IS NOT NULL
+  const due = await all(env, `SELECT hash, token, product, trial, expiry FROM subs WHERE state IN ('ACTIVE', 'GRACE') AND expiry IS NOT NULL
     AND expiry < ? AND checked_at < ? ORDER BY checked_at LIMIT ?`, now, now - DAY, RECHECK_BATCH);
   let checked = 0;
   for (const r of due) {
     try {
       const s = readSub(await playCall(env, "GET", `/purchases/subscriptionsv2/tokens/${encodeURIComponent(r.token)}`), r.product);
+      await paidAgain(env, r, s, r.product, now);
       await run(env, "UPDATE subs SET state = ?, expiry = ?, auto_renew = ?, checked_at = ? WHERE hash = ?",
         s.state, s.expiry, s.autoRenew ? 1 : 0, now, r.hash);
       checked++;
@@ -1242,6 +1284,67 @@ export async function recheckLapsed(env, now) {
     }
   }
   return checked;
+}
+
+// ---- 2.0.0 [RVQ-48] 검토 SVC-26·SVC-68·U22b-12: 갱신·체험 뒤 첫 결제·환불을 돈 화면이 세게 ----
+//
+// money_events는 무엇(kind)·상품·요금제·때만 적어요(설치·토큰·주문 번호 없음). 갱신과 체험 뒤 첫 결제는 서버가 Play에 다시 물어
+// (recheckLapsed, 앱이 토큰을 보낼 때) 끝나는 날이 앞으로 간 것을 본 때, 환불은 Play의 voidedpurchases를 읽은 때나 앱이 알려 준 때예요.
+export const VOIDED = { every: 6 * HOUR, pages: 10, days: 29 };
+
+/** 돈 화면의 한 일. kind: renew(갱신) · convert(체험 뒤 첫 결제) · refund(환불). */
+export async function moneyEvent(env, kind, product, plan, at) {
+  await run(env, "INSERT INTO money_events (kind, product, plan, at) VALUES (?, ?, ?, ?)", kind, String(product ?? ""), String(plan ?? ""), at);
+}
+
+/** 앞서 본 구독 줄 [was]와 Play의 지금 [s]: 체험에서 유료로 넘어갔거나, 유료 구독의 끝나는 날이 하루 넘게 앞으로 갔으면 결제 한 번. */
+async function paidAgain(env, was, s, product, now) {
+  if (!was || s.state !== "ACTIVE" || s.trial || !s.expiry) return;
+  if (was.trial) return moneyEvent(env, "convert", product, s.basePlan, now);
+  if (was.expiry && s.expiry > was.expiry + DAY) return moneyEvent(env, "renew", product, s.basePlan, now);
+}
+
+/**
+ * 2.0.0 [RVQ-48] 검토 SVC-26: 환불(과 지불 거절)된 결제를 Play의 voidedpurchases로 6시간마다 읽어요. 1년 이용권은 앱이 토큰을 다시
+ * 보낼 때만 상태를 고쳐서, 환불받고 앱을 열지 않으면 서버는 1년 내내 프로로 알았어요(나눔·돈 화면도). Play는 30일 안의 것만 주니
+ * 지난번 읽은 때 하루 앞부터(처음엔 29일 전부터) 쪽마다 이어 읽어요. 이용권은 EXPIRED로, 구독은 환불로만 세요(구독이 끝났는지는
+ * Play 상태로 recheckLapsed가 봐요). 같은 주문은 한 번만 세요.
+ */
+export async function syncVoided(env, now) {
+  if (!playReady(env)) return 0;
+  const last = Number((await one(env, "SELECT value FROM settings WHERE key = 'voided_at'"))?.value) || 0;
+  if (now - last < VOIDED.every) return 0;
+  const from = Math.max(last - DAY, now - VOIDED.days * DAY);
+  let token = "";
+  let n = 0;
+  for (let page = 0; page < VOIDED.pages; page++) {
+    const r = await playCall(env, "GET", `/purchases/voidedpurchases?startTime=${from}&type=1&maxResults=1000${token ? `&token=${encodeURIComponent(token)}` : ""}`);
+    for (const v of Array.isArray(r.voidedPurchases) ? r.voidedPurchases : []) n += await voidOne(env, v, now);
+    token = typeof r.tokenPagination?.nextPageToken === "string" ? r.tokenPagination.nextPageToken : "";
+    if (!token) break;
+  }
+  await run(env, "INSERT OR REPLACE INTO settings (key, value) VALUES ('voided_at', ?)", String(now));
+  if (n) await audit(env, now, "play_voided", "money", String(n));
+  return n;
+}
+
+async function voidOne(env, v, now) {
+  if (typeof v?.purchaseToken !== "string" || !v.purchaseToken || v.purchaseToken.length > 1000) return 0;
+  const at = Math.min(Number(v.voidedTimeMillis) || now, now);
+  const pass = (await sha256(`pass|${v.purchaseToken}`)).slice(0, 40);
+  const p = await one(env, "SELECT product, state FROM year_passes WHERE hash = ?", pass);
+  if (p) {
+    if (p.state === "EXPIRED") return 0;
+    await run(env, "UPDATE year_passes SET state = 'EXPIRED', checked_at = ? WHERE hash = ?", now, pass);
+    await moneyEvent(env, "refund", p.product, "", at);
+    return 1;
+  }
+  // 구독(갱신마다 주문 번호가 달라요)이나 서버가 모르는 결제: 주문 번호(없으면 토큰)로 한 번만, 31일 동안 기억해요.
+  const once = (await sha256(`void|${typeof v.orderId === "string" && v.orderId ? v.orderId : v.purchaseToken}`)).slice(0, 24);
+  if (!(await allow(env, `voided|${once}`, 1, 31 * DAY, now))) return 0;
+  const sub = await one(env, "SELECT product, base_plan FROM subs WHERE hash = ?", (await sha256(`sub|${v.purchaseToken}`)).slice(0, 40));
+  await moneyEvent(env, "refund", sub?.product ?? "", sub?.base_plan ?? "", at);
+  return 1;
 }
 
 /**

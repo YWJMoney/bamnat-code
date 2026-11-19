@@ -85,7 +85,7 @@ import { totpSecret, totpCheck, totpUri } from "./totp.js";
 import { DAY, HOUR } from "./units.js";
 import { bundleInquiries, inboxAnswer, inboxRoute } from "./inbox.js";
 import { DEV, HELD_FOR_PERSON, INQUIRY, INQUIRY_TOPICS, QA, SLA, SLA_SQL, actorName, releaseHeld, rescanBilling, rescanBilling2, adminInquiries, ask, devRoute, expiredInquiries, forgetInquiries, inquiries, page, plainActor, plainText, publicQa, publicRows, readSla, slaKey, slaSetting, slaTargets, templateRoute } from "./inquiries.js";
-import { hasPro, INVITE, MONEY, REWARD_CAP, addMonths, b64url, config, deferFor, installOf, inviteCodeOf, inviteDeadline, invitePage, inviteSettings, inviteSettingsRoute, invites, launchView, familyCode, familyCodeDelete, familyList, familySet, linkCode, money, myPhones, phoneList, phonePreviews, playIntent, playReady, playToken, readSub, recheckLapsed, rewardCounts, rewardWhy, rewardYear, setPhone, stack, stopUnconsentedTrials, storeLink } from "./money.js";
+import { hasPro, INVITE, MONEY, REWARD_CAP, addMonths, b64url, config, deferFor, installOf, inviteCodeOf, inviteDeadline, invitePage, inviteSettings, inviteSettingsRoute, invites, launchView, familyCode, familyCodeDelete, familyList, familySet, linkCode, money, myPhones, phoneList, phonePreviews, playIntent, playReady, playToken, readSub, recheckLapsed, rewardCounts, rewardWhy, rewardYear, setPhone, stack, stopUnconsentedTrials, storeLink, syncVoided } from "./money.js";
 import { EVENTS, NOTICE, PHOTO_REASONS, PHOTO_SCREENS, STARTUP_BUCKETS, SWITCHES, USAGE, checkOps, kstDay, lookupRows, metrics, noticeList, noticeView, opsItems, opsMonth, opsState, paused, photoWrong, photoWrongMetrics, readAction, readAudience, removeNotice, saveNotice, setSwitch, startupMetrics, startupRows, setupRows, SETUP_TAP_BUCKETS, usage } from "./usage.js";
 import { FLAG_CATALOG, FLAG_KEYS, FLAG_STORE_SQL, SWITCH_FLAGS, fixRequestsOpen, fixedAmountsOpen, flagDef, flagEffects, flagOverview, flagRoute, flagStore, flagTick, migrateFlags, roomMoneyFromPolicy, serverEval, storeFrom } from "./flags.js";
 // 1.34 [RCP-28]..[RCP-36] 나눔 판.
@@ -326,7 +326,8 @@ const allHourlySteps = (env) => [
   // 1.40 [RVD-05] 옛 식으로 잘못 찍힌 결제·환불 기록을 한 번 다시 봐요(다 보면 멈춤).
   ["prune", () => prune(env, Date.now()).then(() => rescanBilling(env, Date.now())).then(() => rescanBilling2(env, Date.now()))],
   ["trials", () => stopUnconsentedTrials(env, Date.now())],
-  ["lapsed", () => recheckLapsed(env, Date.now())],
+  // 2.0.0 [RVQ-48] 검토 SVC-26: 환불된 결제(Play voidedpurchases)도 같은 단계에서 6시간마다.
+  ["lapsed", () => recheckLapsed(env, Date.now()).then(() => syncVoided(env, Date.now()))],
   ["rest", () => autoRest(env, Date.now())],
   ["share", () => syncShareSwitch(env)],
   // AM 1.28 [FLAG-25][FLAG-28] flags turning on by date, the launch, the day-before news.
@@ -822,6 +823,9 @@ const SCHEMA = [
   `CREATE TABLE IF NOT EXISTS year_passes (hash TEXT PRIMARY KEY, device TEXT NOT NULL, order_id TEXT NOT NULL DEFAULT '', state TEXT NOT NULL,
     purchased_at INTEGER NOT NULL, created_at INTEGER NOT NULL, checked_at INTEGER NOT NULL)`,
   "CREATE INDEX IF NOT EXISTS year_passes_device ON year_passes (device)",
+  // 2.0.0 [RVQ-48] 검토 SVC-68·U22b-12: 돈 화면의 갱신·체험 뒤 첫 결제·환불(무엇·상품·요금제·때만, 설치·토큰·주문 번호 없음). 400일.
+  "CREATE TABLE IF NOT EXISTS money_events (kind TEXT NOT NULL, product TEXT NOT NULL DEFAULT '', plan TEXT NOT NULL DEFAULT '', at INTEGER NOT NULL)",
+  "CREATE INDEX IF NOT EXISTS money_events_at ON money_events (at)",
   // 1.36 네트워크 한도 (사용자 결정 2026-11-01 "새 휴대폰만 시간 단위로"): when an install was first seen, so only a new one (or one
   // restricted) is held to its network's hourly share. The install's hash only; gone after NEW_DEVICE.keepDays unseen.
   "CREATE TABLE IF NOT EXISTS device_seen (device TEXT PRIMARY KEY, first INTEGER NOT NULL, last INTEGER NOT NULL)",

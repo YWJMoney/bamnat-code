@@ -58,3 +58,27 @@ test("[RVQ-30] SVC-21 남아 있는 문의를 새 기준으로 한 번 더 봐�
   db.prepare("UPDATE inquiries SET billing_at = 1 WHERE id = ?").run(wrong);
   assert.deepEqual(await rescanBilling2(env, Date.now()), { on: 0, off: 0 });
 });
+
+// PC 5차(d43e6036) Q1-500 13: '프로 샀는데 광고가 나와요'(궁금해요·모두의 문의 켬)가 모두의 문의에 나가고 운영 장부가 '환불·결제·보상'으로
+// 잡지 않았고, '야간 수당 청구할 때 쓸 기록을 뽑고 싶어요'는 '청구' 한 낱말로 최고 관리자에게 갔어요. 운영 장부의 돈 기준을 결제 기록 기준과 맞췄어요.
+test("[RVQ-30] PC 5차 Q1-500 13: 결제 기록 글은 모두의 문의에 안 나가고 운영 장부가 돈으로, 수당 청구는 보통 문의", async (t) => {
+  const { askOwnerOf } = await import("../src/ask-check.js");
+  assert.equal(askOwnerOf("프로 샀는데 광고가 나와요")?.key, "money");
+  assert.equal(askOwnerOf("야간 수당 청구할 때 쓸 기록을 뽑고 싶어요"), null);
+  assert.equal(askOwnerOf("휴가 결제 올렸는데 근무표에 안 떠요"), null);
+  assert.equal(askOwnerOf("청구가 두 번 됐어요")?.key, "money");
+  const { call, env } = server({ t });
+  const admin = await signIn(call);
+  const paid = await ask(call, 1, "프로 샀는데 광고가 나와요");
+  const pay = await ask(call, 2, "야간 수당 청구할 때 쓸 기록을 뽑고 싶어요");
+  assert.equal(paid.public, false, "운영자만 봐요");
+  assert.equal(pay.public, true);
+  const shown = (await call("GET", "/api/inquiries/public")).data.inquiries.map((q) => q.id);
+  assert.ok(!shown.includes(paid.id) && shown.includes(pay.id));
+  const owner = (await call("GET", "/api/admin/ledger?view=owner", undefined, admin)).data.items;
+  assert.equal(owner.find((r) => r.id === paid.id)?.answer.why, "환불·결제·보상");
+  assert.equal(owner.find((r) => r.id === pay.id), undefined, "보통 문의");
+  // 예전에 모두의 문의로 올라간 결제 기록도 목록에서 빠져요.
+  env.DB.db.prepare("UPDATE inquiries SET public = 1 WHERE id = ?").run(paid.id);
+  assert.ok(!(await call("GET", "/api/inquiries/public")).data.inquiries.some((q) => q.id === paid.id));
+});

@@ -83,7 +83,9 @@ class RecipeListViewModel(private val c: AppContainer, val calendar: String = Pe
          */
         val otherStyles: Map<String, String> = emptyMap(),
         /** 1.38 (장터 그림 LOW): when the list shown was read, so an offline list says how old it is. */
-        val loadedAt: Long = 0L)
+        val loadedAt: Long = 0L,
+        /** 2.0.0 [RVM-63] 검토 MKT-02·U08a-02: the next page could not be read; said at the end of the list, with 다시 해 보기. */
+        val moreError: String? = null)
     private val _state = MutableStateFlow(State())
     val state: StateFlow<State> = _state.asStateFlow()
 
@@ -144,8 +146,8 @@ class RecipeListViewModel(private val c: AppContainer, val calendar: String = Pe
         val styleNow = if (s.allStyles) null else style
         val key = listOf(styleNow?.name, s.tab.key, s.query.trim(), s.kind).joinToString("|")
         val kept = if (more) null else synchronized(pages) { pages[key] }
-        _state.value = if (kept != null) s.copy(items = kept.items, next = kept.next, loadedAt = kept.at, loading = true, error = null)
-            else s.copy(loading = true, error = null, items = if (more) s.items else emptyList())
+        _state.value = if (kept != null) s.copy(items = kept.items, next = kept.next, loadedAt = kept.at, loading = true, error = null, moreError = null)
+            else s.copy(loading = true, error = if (more) s.error else null, moreError = null, items = if (more) s.items else emptyList())
         loading = viewModelScope.launch {
             try {
                 // 1.39 [MKP-07] 앱을 다시 켠 뒤 처음 여는 장터: the list this phone kept from last time, at once, while it is read again.
@@ -159,7 +161,9 @@ class RecipeListViewModel(private val c: AppContainer, val calendar: String = Pe
                 if (!more) page.raw?.let { raw -> c.appScope.launch { MarketDisk.keepList(c.appContext, key, raw) } }
                 // [PRF-05] 1.36 차단한 분의 작품은 이 폰에서 빼요 (목록은 모든 폰이 같은 캐시).
                 val got = page.items.filter { RecipeClient.fits(it, s.kind) && !c.recipes.hides(it) }
-                val items = if (more) _state.value.items + got else got
+                // 2.0.0 [RVM-63] 검토 MKT-01: a work the server moved up between two pages comes once (two cards under one key stopped
+                // the list and 넘겨 보기).
+                val items = (if (more) _state.value.items + got else got).distinctBy { it.code }
                 val at = com.bamnat.core.time.Today.millis()
                 if (!more) synchronized(pages) { pages[key] = Kept(items, page.next, at); while (pages.size > PAGES) pages.remove(pages.keys.first()) }
                 _state.value = _state.value.copy(items = items, next = page.next, loading = false, loadedAt = at,
@@ -169,7 +173,8 @@ class RecipeListViewModel(private val c: AppContainer, val calendar: String = Pe
             } catch (e: kotlinx.coroutines.CancellationException) {
                 throw e
             } catch (e: Exception) {
-                _state.value = _state.value.copy(loading = false, error = RecipeClient.problem(e))
+                _state.value = if (more) _state.value.copy(loading = false, moreError = RecipeClient.problem(e))
+                    else _state.value.copy(loading = false, error = RecipeClient.problem(e))
             }
         }
     }

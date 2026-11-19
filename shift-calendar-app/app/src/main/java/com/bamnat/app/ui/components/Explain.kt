@@ -54,6 +54,11 @@ fun Explain(
     firstInFull: Boolean = true,
     /** 2.0.0 [RVO-25] (PC-186) For a centred card (the 프로 lock): the line and ⓘ in the middle, the full words centred. */
     centered: Boolean = false,
+    /**
+     * 2.0.0 (HQ-156) 조건 12: how many lines the short form may take. One by default (a line and ⓘ); a short form that is itself a
+     * promise (the invite card's '친구 5명이 7일 쓰면 프로 1개월') wraps at 글자 200% instead of ending in '…'.
+     */
+    summaryLines: Int = 1,
 ) {
     val context = LocalContext.current
     val preview = LocalInspectionMode.current
@@ -75,7 +80,7 @@ fun Explain(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(4.dp, if (centered) Alignment.CenterHorizontally else Alignment.Start),
         ) {
-            if (seen <= 1 || !iconOnly) Text(short, style = style, color = ink, maxLines = 1, overflow = TextOverflow.Ellipsis,
+            if (seen <= 1 || !iconOnly) Text(short, style = style, color = ink, maxLines = summaryLines, overflow = TextOverflow.Ellipsis,
                 modifier = Modifier.weight(1f, fill = false))
             IconButton(onClick = { open = true }) {
                 Icon(Icons.Outlined.Info, contentDescription = "설명 보기", tint = ink, modifier = Modifier.size(20.dp))
