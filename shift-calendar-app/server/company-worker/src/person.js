@@ -39,7 +39,8 @@ export async function personView(env, device, now, { money = false } = {}) {
     stmt(env, "SELECT status, COUNT(*) AS n, SUM(flags) AS flags FROM posts WHERE device = ? GROUP BY status", device),
     stmt(env, "SELECT state, COUNT(*) AS n, SUM(flags) AS flags FROM recipes WHERE owner = ? GROUP BY state", device),
     stmt(env, "SELECT step, since, until, per_day, times FROM write_limits WHERE device = ?", device),
-    stmt(env, "SELECT kind, COUNT(*) AS n, MAX(at) AS last FROM write_strikes WHERE device = ? GROUP BY kind", device),
+    // 2.0.0 [RVQ-27] 가려진 것 하나에 한 번.
+    stmt(env, "SELECT kind, COUNT(DISTINCT ref) AS n, MAX(at) AS last FROM write_strikes WHERE device = ? GROUP BY kind", device),
     stmt(env, "SELECT ok, why, at FROM integrity WHERE device = ?", device),
     stmt(env, "SELECT COUNT(*) AS n FROM members WHERE device = ? AND left = 0", device),
     stmt(env, "SELECT status, COUNT(*) AS n FROM invite_uses WHERE inviter = ? GROUP BY status", device),

@@ -66,6 +66,9 @@ class YearRecapTest {
         // The card's line never says the money.
         assertFalse("만 원" in y.line)
         assertTrue(y.line.startsWith("야간 "))
+        // The 알림함 row says the big number and one more, no money either.
+        assertEquals(2, y.brief.split(" · ").size)
+        assertTrue(y.line.startsWith(y.brief))
         assertEquals("1월 1일~12월 31일", y.period)
         assertTrue(y.worthShowing)
     }
@@ -105,6 +108,8 @@ class YearRecapTest {
         assertEquals(4, field.jobDays)
         assertEquals(2, field.jobHolidayDays) // 5월 5일 어린이날, 6월 3일 지방선거
         assertEquals(YearMonth.of(2026, 6), field.busiestMonth!!.first)
+        // 조건 13: each says what its year was of, in its own word.
+        assertEquals("2026년 내 일감 결산", field.title)
 
         val sales = listOf(DailySales(d(3, 1), 500_000), DailySales(d(7, 7), 900_000), DailySales(d(7, 8), 0))
         val shop = YearRecap.of(2026, d(1, 1), d(12, 31), CalendarFocus.SALES, emptyList(), restCounts = false, sales = sales)
@@ -113,6 +118,8 @@ class YearRecapTest {
         assertEquals(d(7, 7), shop.bestDay)
         // The best day says its date, never what it sold.
         assertTrue(shop.tiles.none { "원" in it.value })
+        assertEquals("2026년 우리 가게 결산", shop.title)
+        assertEquals("2026년 내 근무 결산", YearRecap(2026, d(1, 1), d(12, 31), CalendarFocus.SHIFTS, workDays = 1).title)
         assertTrue(YearRecap.of(2026, d(1, 1), d(12, 31), CalendarFocus.INVEST, emptyList(), restCounts = false).isEmpty)
     }
 

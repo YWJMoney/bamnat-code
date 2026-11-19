@@ -4,6 +4,7 @@ import { SORTING, autoAnswer, compareVersions, grams, likeness, needsPerson, nee
 import { replyRisk } from "./ledger.js";
 import { billingWordOf, isBillingRecord, replyRiskOf } from "./ask-check.js";
 import { careAppealOf } from "./community-care.js";
+import { CRASH, CRASH_ASK_DRAFT, crashOf, crashRepeats } from "./crash-repeat.js";
 // 1.37 [ADM2-02] 나간 판.
 import { DESK, broadcastRisk, isOut, shippedVersion } from "./desk.js";
 import { needFromInquiry } from "./growth.js";
@@ -388,19 +389,37 @@ export async function inquiryView(env, row, admin = false, app = null) {
   const info = readInfo(row.info);
   const context = {};
   for (const [label, key] of INQUIRY_INFO) if (info[key]) context[label] = info[key];
-  const [reasons, notes, items] = (await batch(env, [
+  // 2.0.0 [RVA-63] HQ-124: 닫힘 문의면 멈춤 기록과, 같은 보낸 분이 7일 안에 보낸 닫힘 문의 중 몇 번째인지.
+  const firstText = messages.find((m) => m.sender === "user")?.text;
+  const crash = crashOf(row.kind, firstText, info);
+  const sameDevice = crash && typeof row.device === "string" && !row.device.startsWith("gone");
+  const [reasons, notes, items, mine = []] = (await batch(env, [
     stmt(env, `SELECT reason, COUNT(*) AS n FROM inquiry_marks WHERE inquiry_id = ? AND kind = 'flag'
       GROUP BY reason ORDER BY n DESC, reason`, row.id),
     stmt(env, "SELECT by, text, at FROM inquiry_notes WHERE inquiry_id = ? ORDER BY id", row.id),
     stmt(env, `SELECT d.id, d.title, d.status, (SELECT COUNT(*) FROM dev_links x JOIN inquiries xi ON xi.id = x.inquiry_id WHERE x.item_id = d.id) AS links FROM dev_links l
       JOIN dev_items d ON d.id = l.item_id AND d.deleted_at IS NULL WHERE l.inquiry_id = ? ORDER BY l.at`, row.id),
+    ...(sameDevice ? [stmt(env, `SELECT i.id, i.kind, i.info, i.device, i.created_at,
+        (SELECT m.text FROM inquiry_messages m WHERE m.inquiry_id = i.id AND m.sender = 'user' ORDER BY m.id LIMIT 1) AS first
+      FROM inquiries i WHERE i.device = ? AND i.created_at BETWEEN ? AND ? ORDER BY i.created_at LIMIT 40`,
+      row.device, row.created_at - CRASH.days * DAY, row.created_at + CRASH.days * DAY)] : []),
   ])).map((r) => r.results);
+  let crashView = null;
+  if (crash) {
+    // 운영 장부와 같은 7일 창(지금까지, 오래된 문의는 그 뒤 7일)에서 같은 보낸 분 묶음. 보낸 분 번호는 화면으로 보내지 않아요.
+    const same = mine.map((r) => ({ r, info: readInfo(r.info) })).map(({ r, info: i }) => ({ id: r.id, c: crashOf(r.kind, r.first, i), at: r.created_at, device: r.device, model: i.model, android: i.android, app: i.app }))
+      .filter((x) => x.c).map((x) => ({ ...x, record: x.c.record }));
+    const g = crashRepeats(same, Math.min(Date.now(), row.created_at + CRASH.days * DAY)).find((x) => x.by === "same" && x.ids.includes(row.id));
+    crashView = { ...crash, ...(crash.record !== "has" ? { draft: CRASH_ASK_DRAFT } : {}),
+      ...(g ? { repeat: { nth: g.ids.indexOf(row.id) + 1, n: g.n, first: iso(g.first), last: iso(g.last), noRecord: g.noRecord, ids: g.ids } } : {}) };
+  }
   return {
     ...view, appVersion: info.app ?? null, context, waitingHours: row.status === "open" ? Math.floor((Date.now() - row.updated_at) / HOUR) : null, ...triage(row.kind, messages.find((m) => m.sender === "user")?.text, info),
     flags: row.flags ?? 0, kept: row.kept === 1, reasons: reasons.map((r) => ({ code: r.reason, text: FLAGS[r.reason] ?? r.reason, n: r.n })),
     // [ADMIN-12] Who is answering it and what admins told each other; [ADMIN-11] the 개발사항 it is in.
     assignee: row.assignee ? { id: row.assignee, name: row.assignee_name ?? "" } : null,
     notes: notes.map((n) => ({ by: n.by, text: n.text, at: iso(n.at) })),
+    ...(crashView ? { crash: crashView } : {}),
     ...(env.actor && can(env.actor, "dev") ? { dev: items.map((d) => ({ id: d.id, title: d.title, status: d.status, links: d.links })) } : {}),
   };
 }
@@ -1060,6 +1079,8 @@ export async function inquiryList(env, params, actorId = "") {
       count: r.count,
       waiting: r.last === "user",
       appVersion: info.app ?? null,
+      // 2.0.0 [RVA-63] HQ-124: 닫힘 문의면 '멈춤 기록 있음·없음·점검 기록 없이 옴'.
+      ...(() => { const c = crashOf(r.kind, r.first, info); return c ? { crash: c } : {}; })(),
       createdAt: iso(r.created_at),
       updatedAt: iso(r.updated_at),
       ...triage(r.kind, r.first, info),
