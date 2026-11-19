@@ -478,7 +478,13 @@ private fun ItemSheet(i: DrawerItem, h: Held, onDismiss: () -> Unit, onTry: (Rec
                 Thumb(h, 72.dp)
                 Column(Modifier.weight(1f)) {
                     Text(i.title, style = MaterialTheme.typography.titleMedium, modifier = Modifier.semantics { heading() })
-                    Text(listOfNotNull(i.kind.label, status(h)?.substringAfter(" · ", "")?.ifBlank { null }, i.folder?.let { "📁 $it" }).joinToString(" · "),
+                    // [RVM-61] 총괄 (rvm_98: '수식·규칙·버튼·메 / 모 틀'): 받은 것 says how many pieces (they are listed below), and a line
+                    // breaks only between words.
+                    val got = (h as? Held.Got)?.e?.takeIf { it.replacedAt == null }
+                    val states = remember(got) { got?.let { com.bamnat.app.recipe.RecipeRepository.pieceStates(it) } }
+                    val sub = states?.let { st -> st.count { it.on }.let { on -> if (on == st.size) "조각 ${st.size}개" else "${on}개 쓰는 중" } }
+                        ?: status(h)?.substringAfter(" · ", "")?.ifBlank { null }
+                    Text(keepWhole(listOfNotNull(i.kind.label, sub?.replace(' ', '\u00A0'), i.folder?.let { "📁 $it" }).joinToString(" · ")),
                         style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
                 if (more.isNotEmpty()) Box {
@@ -653,3 +659,8 @@ private fun FolderRename(f: String, onRenamed: (String?) -> Unit) {
 
 /** 2.0.0 [RVM-60] RCP-14 The line under 입기 in the quiet days after install. */
 internal fun quietLine(days: Int): String = "앱을 깐 뒤 ${days}일 동안은 광고 없이 바로 입어요"
+
+/** Letters glued so a line breaks only at spaces (U+2060 between two letters), as MemberWait does. */
+private fun keepWhole(s: String): String = buildString {
+    s.forEachIndexed { i, c -> if (i > 0 && !c.isWhitespace() && !s[i - 1].isWhitespace()) append('\u2060'); append(c) }
+}

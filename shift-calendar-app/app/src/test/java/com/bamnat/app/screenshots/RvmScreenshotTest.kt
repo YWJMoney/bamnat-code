@@ -881,6 +881,8 @@ class RvmScreenshotTest : ScreenshotBase() {
         settle()
         check(appears("조각 3개", exact = true)) { "받은 것 창에 조각 목록이 없어요" }
         check(appears("‘어두운 위젯’이 덮음", exact = true)) { "덮은 작품 이름이 없어요" }
+        // [RVM-61] 총괄 rvm_98: the line under the name is short and says how many are in use (glued so it breaks only between words).
+        check(shownWords().any { it.replace("\u2060", "").replace('\u00A0', ' ') == "받은 것 · 2개 쓰는 중" }) { "이름 아래 줄이 짧지 않아요" }
         check(appears("이 조각만 되돌리기", exact = true)) { "쓰는 조각에 되돌리기가 없어요" }
         // [RVM-61] HQ-148: one filled button; 링크 나누기·묶음에 넣기 under ⋮ 더 보기.
         check(gone("링크 나누기", exact = true)) { "링크 나누기가 아직 단추로 줄지어 있어요" }
@@ -889,6 +891,17 @@ class RvmScreenshotTest : ScreenshotBase() {
     @Test fun gotPiecesFolded() = shoot("rvm_97_got_pieces_folded", FOLDED, gotPieces())
     @Test fun gotPiecesFoldedDarkBig() = shoot("rvm_98_got_pieces_folded_dark_200", DARK, 2f, gotPieces())
     @Test fun gotPiecesUnfolded() = shoot("rvm_99_got_pieces_unfolded", UNFOLDED, gotPieces())
+
+    /** [RVM-61] 총괄: at 200% on a folded phone the sheet scrolls to its last line, whole and above the bottom of the screen. */
+    @Test fun gotPiecesEndShows() = shoot("rvm_106_got_pieces_end_folded_dark_200", DARK, 2f) {
+        gotPieces()(this)
+        val last = "넣기 전으로 돌아가요. 그 사이 적은 기록은 그대로예요"
+        repeat(8) { scrollUp(350, across = 0.5f); settle() }
+        val n = nodes(merged = false).firstOrNull { n -> n.config.getOrNull(androidx.compose.ui.semantics.SemanticsProperties.Text).orEmpty().any { it.text == last } }
+            ?: error("마지막 줄이 없어요")
+        val h = app.resources.displayMetrics.heightPixels
+        check(n.boundsInWindow.height >= n.size.height - 1 && n.boundsInWindow.bottom <= h) { "마지막 줄이 잘려요: ${n.boundsInWindow} / 높이 $h" }
+    }
 
     /** 2.0.0 [RVM-60] RCP-14 / [RVM-61] HQ-148: a theme worn before, opened from 내 서랍 in the first days after install. */
     private fun quietWear(): Screen.() -> Unit = {
@@ -915,6 +928,22 @@ class RvmScreenshotTest : ScreenshotBase() {
     @Test fun quietWearFolded() = shoot("rvm_100_quiet_wear_folded", FOLDED, quietWear())
     @Test fun quietWearFoldedDarkBig() = shoot("rvm_101_quiet_wear_folded_dark_200", DARK, 2f, quietWear())
     @Test fun quietWearUnfolded() = shoot("rvm_102_quiet_wear_unfolded", UNFOLDED, quietWear())
+
+    /** 2.0.0 [RVM-62] MKT-12·U08a-11: a theme's 30 days over, asked when the app opens, with a 나중에 to see. */
+    private fun expiryAsk(): Screen.() -> Unit = {
+        c.wardrobe.adsSeen = com.bamnat.app.recipe.ThemeWardrobe.AdsSeen(on = true, pro = false, installedAt = com.bamnat.core.time.Today.instant().minusSeconds(40 * 86_400L))
+        val three = com.bamnat.core.recipe.BuiltInThemes.of(WorkStyle.SHIFT).take(3)
+        runBlocking { three.forEach { c.wardrobe.wear(it, "builtin:${it.title}", own = false) } }
+        com.bamnat.core.time.Today.fix(com.bamnat.core.time.Today.zoned().plusDays(31))
+        content { Surface(Modifier.fillMaxSize()) { com.bamnat.app.ui.recipe.ThemeExpiryAsk() } }
+        settle()
+        check(appears("나중에", exact = true)) { "기간 끝 창에 보이는 '나중에'가 없어요" }
+        check(appears("아니요, 내 모양으로", exact = true))
+        c.wardrobe.adsSeen = null
+    }
+    @Test fun expiryAskFolded() = shoot("rvm_103_expiry_later_folded", FOLDED, expiryAsk())
+    @Test fun expiryAskFoldedDarkBig() = shoot("rvm_104_expiry_later_folded_dark_200", DARK, 2f, expiryAsk())
+    @Test fun expiryAskUnfolded() = shoot("rvm_105_expiry_later_unfolded", UNFOLDED, expiryAsk())
 
     private companion object {
         const val DARK = "w369dp-h905dp-port-night-420dpi"
