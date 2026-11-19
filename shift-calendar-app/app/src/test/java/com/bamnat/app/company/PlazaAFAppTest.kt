@@ -228,9 +228,9 @@ class PlazaAFAppTest {
                 c.payStore.save(c.payStore.profile.value!!.copy(rules = CompanyRules(nightPremium = 0.7)), keepUndo = false)
                 c.autoShare.check()
                 assertEquals(setOf(SharePart.TIMES), c.companyStore.heldParts)
-                val ask = c.autoShare.ask.value!!
-                assertEquals(setOf(SharePart.PAY), ask.parts)
-                assertEquals(listOf("야간 60% → 70%"), ask.lines)
+                val payAsk = c.autoShare.ask.value!!
+                assertEquals(setOf(SharePart.PAY), payAsk.parts)
+                assertEquals(listOf("야간 60% → 70%"), payAsk.lines)
                 c.autoShare.approve()
                 withTimeout(15_000) { while (c.companyStore.plazaHas == has) delay(20) }
                 val sent = JSONObject(c.companyStore.plazaHas!!)

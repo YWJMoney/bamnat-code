@@ -158,6 +158,8 @@ class N7RiskyPlacesTest {
             takenBack += id
         }
         override suspend fun forgetMine(device: String): Int = 3
+        override suspend fun vote(device: String, company: String, setup: String, ok: Boolean, verified: Boolean, why: String?): VoteResult =
+            throw CompanyException("offline")
     }
 
     private lateinit var before: CompanyApi
@@ -181,7 +183,16 @@ class N7RiskyPlacesTest {
             rules = CompanyRules(nightPremium = 0.5)), keepUndo = false)
         c.companyStore.setApplied(AppliedSetup("c1", "(주)예시정밀", "생산팀", "s1", 2, true, Today.instant()))
         c.companyStore.setShareWays(ShareWays(ShareWay.ASK, ShareWay.ASK, ShareWay.ASK))
-        val now = c.companyShare.exportForServer().toString()
+        // The calendar's first shifts are put in as its database opens: the base is the calendar with them, as the user's is.
+        val now = withTimeout(5_000) {
+            var file = c.companyShare.exportForServer()
+            while (file.optJSONArray("shiftTypes")?.length() == 0) {
+                org.robolectric.Shadows.shadowOf(android.os.Looper.getMainLooper()).idle()
+                delay(10)
+                file = c.companyShare.exportForServer()
+            }
+            file.toString()
+        }
         c.companyStore.autoBase = now
         c.companyStore.markShared(now)
     }
@@ -265,7 +276,7 @@ class N7RiskyPlacesTest {
     @Test fun aKindOfWorksTalkComesBackWithEverySignItShowed() = runBlocking {
         val at = Instant.parse("2026-11-18T03:00:00Z")
         val talk = Talk(listOf(
-            TalkPost("q1", 1, null, false, "야간 끝나고 바로 자요?", at, false, kind = "question", maker = "야간요정",
+            TalkPost("q1", 1, null, false, "야간 끝나고 바로 자요?", at, false, kind = "question", maker = "a1b2c3d4e5f6",
                 poll = Poll(listOf("바로 자요", "조금 있다 자요"), listOf(6, 4), mine = 1,
                     byForm = listOf(PollSplit(WorkForm.TWO_SHIFT, listOf(4, 1)), PollSplit(null, listOf(2, 3)))),
                 first = true, helped = 2, mark = MakerMark.MONTH),

@@ -557,7 +557,7 @@ internal fun mineWords(key: String): Pair<String, com.bamnat.app.NoticeLinks.Tar
     "votes" -> "맞아요·달라요·투표·좋아요" to null
     "flags" -> "신고" to null
     "inquiries" -> "문의" to com.bamnat.app.NoticeLinks.Target.INQUIRY
-    "companies" -> "회사 참여·쓰고 있어요·별명" to null
+    "companies" -> "회사 참여·쓰고 있어요·마을 이름" to null
     "rates" -> "보낸 시세" to null
     "alerts" -> "바로 알림 등록" to null
     "works" -> "마을 작품·프로필·글꼴" to null

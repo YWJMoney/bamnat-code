@@ -1663,7 +1663,7 @@ internal fun MoveFromOtherApp(onDismiss: () -> Unit) {
 @Composable
 internal fun NightLookRow(key: String, onPick: (String) -> Unit) {
     val now = com.bamnat.core.design.NightLook.of(key)
-    ChoiceRow(NIGHT_LOOK_ROW, now.detail, com.bamnat.core.design.NightLook.entries.map { it.key to it.label }, now.key, onPick)
+    ChoiceRow(NIGHT_LOOK_ROW, now.detail, com.bamnat.core.design.NightLook.entries.map { it.key to it.label }, now.key, onSelect = onPick)
 }
 
 internal const val NIGHT_LOOK_ROW = "밤 색"
