@@ -275,7 +275,8 @@ data class WidgetData(
             val result = com.bamnat.core.invest.Portfolio.build(book)
             val days = com.bamnat.core.invest.Portfolio.dailyPnl(result, book.cash)
             return InvestLine(days[today] ?: 0L, book.trades.count { it.date == today && it.side.trade }, result.summary.simpleReturn, days,
-                book.settings.hideAmounts, book.isEmpty)
+                // 2.0.0 [RVK-53] (검토 MONEY-71): either 금액 가리기 hides.
+                book.settings.hideAmounts || container.settingsRepository.current.hideAmounts, book.isEmpty)
         }
     }
 }

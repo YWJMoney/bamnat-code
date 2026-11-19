@@ -51,6 +51,8 @@ class AlarmWaysRulesTest {
         "share/ShareExpiryReminder.kt" to Way.ROUGH,
         "sleep/QuietHold.kt" to Way.ROUGH,
         "tier/TrialNotice.kt" to Way.ROUGH,
+        // 2.0.0 [RVO-14] 프로가 끝나기 전날 저녁(한 시간 늦어도 돼요).
+        "tier/ProEndNotice.kt" to Way.ROUGH,
     )
 
     private val root = File("src/main/java/com/bamnat/app")

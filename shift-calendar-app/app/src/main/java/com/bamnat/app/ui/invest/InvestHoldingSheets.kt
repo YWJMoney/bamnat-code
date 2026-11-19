@@ -336,7 +336,7 @@ internal fun HoldingStorySheet(state: InvestState, key: String, accountId: Long?
     InvestSheetFrame(title = h?.title ?: steps.firstNotNullOfOrNull { it.trade?.title } ?: key, onDismiss = onDismiss, onSave = null) {
         if (h != null) {
             Text(
-                if (h.held) "지금 ${InvestFmt.quantity(h.quantity)}${market.unit} · 평균 ${InvestFmt.average(h.averagePrice, market)}" else "다 팔았어요",
+                if (h.held) "지금 ${InvestFmt.quantity(h.quantity, hide)}${market.unit} · 평균 ${InvestFmt.average(h.averagePrice, market, hide)}" else "다 팔았어요",
                 style = MaterialTheme.typography.titleMedium,
             )
             Text(
@@ -367,10 +367,10 @@ private fun StoryStep(s: HoldingStory.Step, market: Market, state: InvestState, 
     val c = s.cash
     val what = when {
         t != null -> when (t.side) {
-            Side.BUY, Side.SELL -> "${t.side.label} ${InvestFmt.quantity(t.quantity)}$unit × ${InvestFmt.price(t.price, t.market)}"
+            Side.BUY, Side.SELL -> "${t.side.label} ${InvestFmt.quantity(t.quantity, hide)}$unit × ${InvestFmt.price(t.price, t.market, hide)}"
             Side.SPLIT -> ratioParts(t.quantity).let { (a, b) -> "분할·병합 ${a}$unit → ${b}$unit" }
-            Side.IN -> "입고 ${InvestFmt.quantity(t.quantity)}$unit" + if (t.price > 0) " × ${InvestFmt.price(t.price, t.market)}" else " (무상)"
-            Side.OUT -> "출고 ${InvestFmt.quantity(t.quantity)}$unit"
+            Side.IN -> "입고 ${InvestFmt.quantity(t.quantity, hide)}$unit" + if (t.price > 0) " × ${InvestFmt.price(t.price, t.market, hide)}" else " (무상)"
+            Side.OUT -> "출고 ${InvestFmt.quantity(t.quantity, hide)}$unit"
         }
         c != null -> c.kind.label + if (c.tax > 0) " (세금 ${InvestFmt.won(c.tax, hide)})" else ""
         else -> ""
@@ -408,7 +408,7 @@ private fun StoryStep(s: HoldingStory.Step, market: Market, state: InvestState, 
             }
         }
         Text(
-            if (s.quantity > EPS) "보유 ${InvestFmt.quantity(s.quantity)}$unit · 평균 ${InvestFmt.average(s.average, market)}" else "보유 없음",
+            if (s.quantity > EPS) "보유 ${InvestFmt.quantity(s.quantity, hide)}$unit · 평균 ${InvestFmt.average(s.average, market, hide)}" else "보유 없음",
             style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
         notes.forEach { Text(it, style = MaterialTheme.typography.bodyMedium) }

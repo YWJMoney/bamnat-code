@@ -76,9 +76,12 @@ object InvestStats {
         val dividendsBy = cash.filter { it.kind == CashKind.DIVIDEND && it.symbol.isNotBlank() }
             .groupBy { holdingKey(it.symbol, "") }.mapValues { (_, l) -> l.sumOf { it.amount - it.tax } }
         val keys = (trades.map { it.key } + dividendsBy.keys).distinct()
+        // 2.0.0 [RVK-54] (검토 MONEY-76): grouped once, not a walk of every trade for every symbol.
+        val tradesBy = trades.groupBy { it.key }
+        val salesBy = sales.groupBy { it.key }
         val bySymbol = keys.map { k ->
-            val ts = trades.filter { it.key == k }
-            val ss = sales.filter { it.key == k }
+            val ts = tradesBy[k].orEmpty()
+            val ss = salesBy[k].orEmpty()
             SymbolPnl(k, names[k] ?: ts.firstOrNull()?.title ?: k, ts.firstOrNull()?.market ?: Market.OTHER,
                 ss.sumOf { it.pnlWon }.roundToLong(), dividendsBy[k] ?: 0L, ts.size, ss.count { it.win }, ss.size)
         }.sortedWith(compareByDescending<SymbolPnl> { abs(it.total) }.thenBy { it.name })
@@ -91,7 +94,8 @@ object InvestStats {
             if (ss.isEmpty()) null else TagPnl(label, ss.size, ss.count { it.win }, ss.sumOf { it.pnlWon }.roundToLong())
         }
         val daily = Portfolio.dailyPnl(result, book.cash).filterKeys(inRange)
-        val byWeekday = DayOfWeek.entries.associateWith { d -> daily.filterKeys { it.dayOfWeek == d }.values.sum() }
+        val byDay = daily.entries.groupBy({ it.key.dayOfWeek }, { it.value })
+        val byWeekday = DayOfWeek.entries.associateWith { d -> byDay[d].orEmpty().sum() }
         val (winStreak, lossStreak) = streaks(daily)
         val held = sales.mapNotNull { it.holdingDays }
         return PeriodStats(
@@ -134,11 +138,8 @@ object InvestStats {
 
     /** [INV-06] Each month of [year]: what it earned (sales and payouts). */
     fun monthly(book: InvestBook, result: PortfolioResult, year: Int): List<Pair<YearMonth, Long>> {
-        val daily = Portfolio.dailyPnl(result, book.cash)
-        return (1..12).map { m ->
-            val ym = YearMonth.of(year, m)
-            ym to daily.filterKeys { YearMonth.from(it) == ym }.values.sum()
-        }
+        val byMonth = Portfolio.dailyPnl(result, book.cash).entries.filter { it.key.year == year }.groupBy({ it.key.monthValue }, { it.value })
+        return (1..12).map { m -> YearMonth.of(year, m) to byMonth[m].orEmpty().sum() }
     }
 
     /** Longest runs of days in a row (trading days with a result, in date order) that made and lost money. */

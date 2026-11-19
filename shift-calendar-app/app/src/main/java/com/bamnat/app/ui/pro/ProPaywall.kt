@@ -22,6 +22,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
@@ -120,6 +121,8 @@ internal fun ProPaywallContent(c: AppContainer, onClose: () -> Unit) {
                     // 2.0.0 [RVO-07] (검토 PRO-05) 결제 단추가 있는 곳의 고지는 프로 화면과 같은 부품: 한 줄 + 모두 보기(청약철회·판매자까지).
                     PayNotice(plans, shownPass(gate, playPass)?.price)
                     TextButton(onClick = { onClose(); goPro() }) { Text("자세한 안내와 해지 방법") }
+                    // 2.0.0 [RVO-27] HQ-109: 결제 단추가 있는 장에도 약관·처리방침·사업자 정보를 프로 화면과 같은 조용한 한 줄로.
+                    PolicyLinks()
                 }
             }
             // 2.0.0 [RVO-13] 검토 HQ-48: 돈을 내지 않고 여는 길도 장마다 한 줄로(프로 화면의 초대 카드로 가요).
@@ -163,6 +166,23 @@ internal fun PlanRows(c: AppContainer, plans: List<Plan>, onMessage: (String) ->
     val proState by c.proStore.state.collectAsStateWithLifecycle()
     val gate by c.featureGate.state.collectAsStateWithLifecycle()
     val monthly = plans.firstOrNull { !it.yearly }
+    // 2.0.0 [RVO-15] 검토 PRO-07: 프로 already open until a day by something else runs on beside a subscription; said above the plans,
+    // and a subscription asks once (the 1년 이용권 row already waits for the last 30 days, and hides for someone subscribed).
+    val overlap = overlapWords(gate.access, Today.zone())
+    var asking by remember { mutableStateOf<Plan?>(null) }
+    if (overlap != null) Text(overlap, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+    fun go(plan: Plan) {
+        val activity = context.findActivity()
+        // [RVO-01] 미리 보기는 결제하지 않아요.
+        if (previewNoPay(gate)) onMessage(PREVIEW_NO_PAY)
+        else if (activity == null || !c.billing.buy(activity, plan)) onMessage("Play 결제 화면을 열지 못했어요. 잠시 뒤 다시 해 주세요.")
+    }
+    asking?.let { plan ->
+        com.bamnat.app.ui.components.ConfirmDialog(
+            title = "구독하면 기간이 겹쳐요", message = OVERLAP_ASK, confirmLabel = "그래도 구독",
+            onDismiss = { asking = null }, onConfirm = { asking = null; go(plan) },
+        )
+    }
     plans.sortedByDescending { it.yearly }.forEachIndexed { i, plan ->
         Column(Modifier.fillMaxWidth().padding(vertical = 4.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
             Text(plan.priceWords + (if (plan.yearly) " (1년마다)" else " (매달)") + if (plan.yearly) " · 추천" else "",
@@ -179,14 +199,9 @@ internal fun PlanRows(c: AppContainer, plans: List<Plan>, onMessage: (String) ->
             // 1.39 [FLOW-25] the free month said as money and a date, before the one big button.
             if (trial) Text(trialHead(Today.date(), plan.priceWords), style = MaterialTheme.typography.labelLarge,
                 color = MaterialTheme.colorScheme.primary)
-            val buy = {
-                val activity = context.findActivity()
-                // [RVO-01] 미리 보기는 결제하지 않아요.
-                if (previewNoPay(gate)) onMessage(PREVIEW_NO_PAY)
-                else if (activity == null || !c.billing.buy(activity, plan)) onMessage("Play 결제 화면을 열지 못했어요. 잠시 뒤 다시 해 주세요.")
-            }
+            val buy = { if (overlap != null && !previewNoPay(gate)) asking = plan else go(plan) }
             // 2.0.0 [RVO-07] (검토 PRO-13 "월 4,990원로 구독") 조사를 낱말에 맞게.
-            val words = if (trial) "1개월 무료로 시작 (연 요금제)" else "${plan.priceWords}${com.bamnat.app.ui.Fmt.ro(plan.priceWords)} 구독"
+            val words = subscribeWords(plan.priceWords, trial)
             // 2.0.0 [RVO-01] (PC-54 미리 보기로 처음 본 요금제 창: 채운 단추가 둘) 채운 단추는 맨 위 추천 하나, 나머지는 테두리 단추(조건 2).
             if (i == 0) Button(onClick = buy, modifier = Modifier.fillMaxWidth()) { Text(words) }
             else OutlinedButton(onClick = buy, modifier = Modifier.fillMaxWidth()) { Text(words) }
@@ -196,6 +211,28 @@ internal fun PlanRows(c: AppContainer, plans: List<Plan>, onMessage: (String) ->
     }
     // With no yearly plan from Play the pass still shows, after the plans.
     if (plans.none { it.yearly }) YearPassRow(c, null, onMessage)
+}
+
+/** 2.0.0 [RVO-15] 검토 PRO-07: the question before a subscription that would run beside 프로 already open. */
+const val OVERLAP_ASK = "그 기간에도 구독 요금이 나가요. 끝나는 날 가까이에 구독해도 끊기지 않아요."
+
+/**
+ * 2.0.0 [RVO-15] 검토 PRO-07: 프로 this phone already has until a day from something other than a subscription (1년 이용권, 보상 이용권,
+ * 감사 기간, 팀·직원 요금제, 나눠 받은 프로, 관리자 휴대폰), said above the plans; null when a subscription would not overlap anything.
+ */
+internal fun overlapWords(access: com.bamnat.core.tier.Access, zone: java.time.ZoneId): String? {
+    fun by(what: String) = "$what${com.bamnat.app.ui.Fmt.ro(what)} 프로를 써요"
+    val now = when (access.reason) {
+        com.bamnat.core.tier.ProReason.PASS_1Y -> by("1년 이용권")
+        com.bamnat.core.tier.ProReason.PASS -> by("보상 이용권")
+        com.bamnat.core.tier.ProReason.THANKS -> by("감사 기간")
+        com.bamnat.core.tier.ProReason.WORK_PLAN -> by("팀·직원 요금제")
+        com.bamnat.core.tier.ProReason.SHARED -> "나눠 받은 프로를 써요"
+        com.bamnat.core.tier.ProReason.ADMIN -> return "관리자 휴대폰이라 이미 프로예요. 구독하면 요금만 나가요."
+        else -> return null
+    }
+    val day = access.until?.let { lastDay(it, zone) } ?: return "지금 $now. 구독하면 기간이 겹쳐요."
+    return "${day.monthValue}월 ${day.dayOfMonth}일까지 $now. 지금 구독하면 그 기간과 겹쳐요."
 }
 
 /**
@@ -264,3 +301,10 @@ fun ProWelcomeCard(modifier: Modifier = Modifier) {
         }
     }
 }
+
+/**
+ * 2.0.0 [RVO-07] (검토 PRO-13 "월 4,990원로 구독") A plan's button, the particle fitting Play's own price words; [RVO-25] 통합 4차 PC
+ * O31 (에뮬레이터에는 Play 가격이 오지 않아 못 봄): kept by a test with the prices Play gives.
+ */
+internal fun subscribeWords(priceWords: String, trial: Boolean): String =
+    if (trial) "1개월 무료로 시작 (연 요금제)" else "$priceWords${com.bamnat.app.ui.Fmt.ro(priceWords)} 구독"

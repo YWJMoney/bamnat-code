@@ -113,6 +113,10 @@ object Notifications {
     const val PRO_ID = 7203
     /** 840·841: a yearly renewal or a 1년 이용권 ending in 7 days. */
     const val PRO_END_ID = 7209
+    /** 2.0.0 [RVO-14] (I11bb-02) 프로가 저절로 끝나기 전날 저녁: 그다음부터 멈추는 것. */
+    const val PRO_STOP_ID = 7210
+    /** 2.0.0 [RVO-14] (PRO-29·U11b-10) 끄기 미션의 7일이 끝나기 전날 저녁. */
+    const val MISSION_END_ID = 7211
     const val BACKUP_ID = 7204
     const val PLAZA_ID = 7205
     /** [J133-24] 문의에 답이 왔어요, at once while a question waits. */

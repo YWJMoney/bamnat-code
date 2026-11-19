@@ -53,12 +53,14 @@ internal fun AutoBackupRows(vm: SettingsViewModel) {
         title = AUTO_BACKUP_ROW,
         pro = true, proLocked = !open, // [TIER-06]
         subtitle = "고른 파일(구글 드라이브도 돼요)에 하루 한 번 암호 건 백업을 덮어쓰고, 다시 읽어 확인해요",
-        checked = state.on && open,
+        // 2.0.0 [RVO-17] 검토 SET-11·U11a-08 '끄기는 누구나, 켜기만 프로': stopped because 프로 ended, the switch stays as the user left
+        // it with the line why ([statusLine]), and turning it off needs no 프로 (as 앱 잠금 resting, RVL-09).
+        checked = state.on,
     ) { want ->
         when {
+            !want -> confirmOff = true
             !open -> openPro(com.bamnat.app.tier.Feature.AUTO_BACKUP)
-            want -> asking = true
-            else -> confirmOff = true
+            else -> asking = true
         }
     }
     if (state.on) {

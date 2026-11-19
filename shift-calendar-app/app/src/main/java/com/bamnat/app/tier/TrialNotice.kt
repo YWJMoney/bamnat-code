@@ -115,7 +115,8 @@ object EndNotice {
         val sub = state.sub
         val subscribed = sub?.play()?.entitled(now) == true
         if (subscribed && sub != null) {
-            return sub.expiry?.takeIf { sub.basePlan == com.bamnat.app.billing.ProductIds.YEARLY && sub.autoRenew && !sub.trial }?.let { it to false }
+            // 2.0.0 [RVO-15] 검토 PRO-04: not from the phone's 3-day hold (it moved at every open, and the notice went at every open).
+            return sub.knownEnd()?.takeIf { sub.basePlan == com.bamnat.app.billing.ProductIds.YEARLY && sub.autoRenew && !sub.trial }?.let { it to false }
         }
         return state.yearPassUntil?.takeIf { now < it }?.let { it to true }
     }

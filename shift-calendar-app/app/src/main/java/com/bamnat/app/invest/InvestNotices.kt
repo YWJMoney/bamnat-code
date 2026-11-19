@@ -147,18 +147,25 @@ object InvestNotices {
         reschedule(context, plans, after)
     }
 
+    /**
+     * 2.0.0 [RVK-53] (검토 MONEY-71): 금액 가리기 is one switch. The app's own (설정 · 가계부 눈) and an investor calendar's
+     * (투자 눈) both hide, so a notice reads the book as hidden when either is on.
+     */
+    fun hidden(c: AppContainer, book: InvestBook): InvestBook =
+        if (!book.settings.hideAmounts && c.settingsRepository.current.hideAmounts) book.copy(settings = book.settings.copy(hideAmounts = true)) else book
+
     internal suspend fun handle(context: Context, c: AppContainer, atMillis: Long, now: Long = Today.millis()) {
         if (atMillis == 0L || now - atMillis > STALE_AFTER_MILLIS) return
         val at = AlarmScheduler.millisToLocal(atMillis)
         val ringing = mutableListOf<String>()
         for (cal in c.investCalendars()) {
-            val book = c.invest(cal.id).now()
+            val book = hidden(c, c.invest(cal.id).now())
             val named = if (c.calendars.calendars.value.size > 1) cal.name else null
             for (a in InvestAlarms.dueAt(book.alarms, at)) {
                 post(context, cal.id, named, a, book, at.toLocalDate())
                 if (a.ring) ringing += a.title
             }
-            InvestAlarms.eventsAt(withReports(book, book.events, at.toLocalDate()), at).forEach { postEvent(context, cal.id, named, it) }
+            InvestAlarms.eventsAt(withReports(book, book.events, at.toLocalDate()), at).forEach { postEvent(context, cal.id, named, it, book.settings.hideAmounts) }
         }
         if (ringing.isEmpty()) return
         val ring = RingRequest(
@@ -171,9 +178,9 @@ object InvestNotices {
     /** What the alarm's notice says under its title: when, and for a plan what it buys. */
     fun describe(a: InvestAlarm, book: InvestBook, today: LocalDate): String {
         val draft = InvestPlans.draft(a, book, today)
-        val what = listOfNotNull(
-            // [INV-17] 금액 가리기 holds on the lock screen too.
-            a.amount?.takeIf { !book.settings.hideAmounts }?.let { com.bamnat.app.ui.Fmt.wonShort(it) + "원어치" },
+        // [INV-17] 금액 가리기 holds on the lock screen too; 2.0.0 [RVK-53] (검토 MONEY-71) and so do how many and the target price.
+        val what = if (book.settings.hideAmounts) emptyList() else listOfNotNull(
+            a.amount?.let { com.bamnat.app.ui.Fmt.wonShort(it) + "원어치" },
             draft.quantity?.let { "${Portfolio.quantityText(it)}${a.market.unit}" + if (a.quantity == null) " 예상" else "" },
             a.targetPrice?.let { "목표가 ${Portfolio.quantityText(it)}" },
         )
@@ -208,14 +215,16 @@ object InvestNotices {
         Notifications.post(context, id, builder.build(), alarmTag(calendarId))
     }
 
-    private fun postEvent(context: Context, calendarId: String, calendarName: String?, e: InvestEvent) {
+    private fun postEvent(context: Context, calendarId: String, calendarName: String?, e: InvestEvent, hide: Boolean = false) {
+        // 2.0.0 [RVK-53] (검토 MONEY-71): a 신고 reminder's text holds the year's gain and tax; hidden, it says where to look.
+        val text = if (e.id < 0) (if (hide) "눌러서 투자 탭에서 볼 수 있어요" else e.memo) else listOf(e.label, e.memo).filter { it.isNotBlank() }.joinToString(" · ")
         val n = NotificationCompat.Builder(context, Notifications.INVEST_CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_notification)
             .setCategory(NotificationCompat.CATEGORY_REMINDER)
             // [INV-41] A 신고 reminder (id below zero) says what it is in its title and the sum in its text.
             .setContentTitle(listOfNotNull(calendarName, if (e.id < 0) e.title else "오늘 ${e.kind.label}").joinToString(" · "))
-            .setContentText(if (e.id < 0) e.memo else listOf(e.label, e.memo).filter { it.isNotBlank() }.joinToString(" · "))
-            .setStyle(NotificationCompat.BigTextStyle().bigText(if (e.id < 0) e.memo else listOf(e.label, e.memo).filter { it.isNotBlank() }.joinToString(" · ")))
+            .setContentText(text)
+            .setStyle(NotificationCompat.BigTextStyle().bigText(text))
             .setContentIntent(Notifications.open(context, NoticeLinks.Target.INVEST, REQUEST_OPEN + EVENT_BASE, calendarId))
             .setAutoCancel(true)
             .build()
@@ -230,17 +239,19 @@ object InvestNotices {
         if (calendarId != PersonalCalendar.MAIN && c.calendars.get(calendarId) == null) return@withLock
         val repo = c.invest(calendarId)
         val book = repo.now()
+        val hide = hidden(c, book).settings.hideAmounts
         val alarm = book.alarms.firstOrNull { it.id == alarmId } ?: return@withLock
         val today = Today.date()
         // A tap that got in anyway (two at once) finds today's trade from this alarm and writes no second one.
         if (book.trades.any { it.alarmId == alarmId && it.date == today }) return@withLock
-        saveDraft(context, repo, book, alarm, today, calendarId)
+        saveDraft(context, repo, book, alarm, today, calendarId, hide)
     }
 
     /** One 바로 기록 at a time, so two taps cannot both read the book before either saves. */
     private val saving = Mutex()
 
-    private suspend fun saveDraft(context: Context, repo: InvestRepository, book: InvestBook, alarm: InvestAlarm, today: LocalDate, calendarId: String) {
+    private suspend fun saveDraft(context: Context, repo: InvestRepository, book: InvestBook, alarm: InvestAlarm, today: LocalDate, calendarId: String,
+        hide: Boolean = book.settings.hideAmounts) {
         val d = InvestPlans.draft(alarm, book, today)
         if (!InvestPlans.canSaveAtOnce(d)) return
         val account = d.accountId?.takeIf { book.account(it)?.hidden == false } ?: repo.ensureAccount()
@@ -257,7 +268,7 @@ object InvestNotices {
         val n = NotificationCompat.Builder(context, Notifications.INVEST_CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_notification)
             .setContentTitle("${alarm.name.ifBlank { alarm.symbol }} ${d.side.label} 기록했어요")
-            .setContentText("${Portfolio.quantityText(qty)}${d.market.unit} × ${Portfolio.quantityText(price)} · 눌러서 고칠 수 있어요")
+            .setContentText(if (hide) "눌러서 고칠 수 있어요" else "${Portfolio.quantityText(qty)}${d.market.unit} × ${Portfolio.quantityText(price)} · 눌러서 고칠 수 있어요")
             .setContentIntent(Notifications.open(context, NoticeLinks.Target.INVEST, REQUEST_OPEN + SAVED_BASE, calendarId))
             .setAutoCancel(true)
             .setTimeoutAfter(10 * 60 * 1000L)

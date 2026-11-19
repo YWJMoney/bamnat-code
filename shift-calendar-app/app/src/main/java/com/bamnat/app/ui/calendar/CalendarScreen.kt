@@ -1609,7 +1609,7 @@ fun CalendarScreen(
             // 2.0.0 [RVP-43] HQ-50·HQ-48 (갈래 O): the 알림함's 권유 says the invite card's own name and promise, and goes to 프로, where that
             // card stands first on a phone without 프로.
             val inviteRules = context.appContainer.invites.store.state.collectAsStateWithLifecycle().value.rules
-            if (paint == null && viewingReceived == null) add(Notice("inviteNudge", "친구를 초대하면 무료로 써요", line = inviteRules.words(),
+            if (paint == null && viewingReceived == null) add(Notice("inviteNudge", "친구를 초대하면 무료로 써요", line = com.bamnat.core.tier.InviteRules.promise(inviteRules),
                 section = com.bamnat.app.inbox.InboxSection.SUGGEST, kind = "invite.friend", action = "보기",
                 // Seen once it is tapped; its X rests it two weeks, as the card's 닫기 did (a 권유 is not back the next day).
                 onAction = {
