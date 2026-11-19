@@ -329,6 +329,8 @@ export async function applySort(request, env, now) {
 
 /** 1.39 [LOOP-12] 정리함 줄이 들었던 더미(Claude가 결과에 같이 적어요). 모르면 "". */
 const pileOf = (a) => (typeof a?.pile === "string" && PILES.includes(a.pile) ? a.pile : "");
+/** 2.0.0 [RVQ-34] 검토 I22a-02: Claude의 판정 꼬리표(없으면 undefined, 기본 보류). */
+const checkOf = (a) => a?.check;
 
 /** The 정리함 steps themselves, shared by applySort and 1.37 [ADM2-08] the 결과 block's 문의 lines; a Response when not allowed. */
 async function sortActions(env, actions, now, { typed = false } = {}) {
@@ -355,7 +357,7 @@ async function sortActions(env, actions, now, { typed = false } = {}) {
       done.created.push({ id: item, title });
       for (const id of ids) {
         if (await link(env, item, id, now, name)) done.linked++;
-        const r = a.text ? await inboxAnswer(env, id, a.text, now, name, pileOf(a), { confirmed: a.confirmed === true, typed }) : false;
+        const r = a.text ? await inboxAnswer(env, id, a.text, now, name, pileOf(a), { confirmed: a.confirmed === true, typed, check: checkOf(a) }) : false;
         if (r === "held") done.held++;
         else if (r) done.replied++;
       }
@@ -376,7 +378,7 @@ async function sortActions(env, actions, now, { typed = false } = {}) {
     if (a.do === "link" || a.do === "reopen" || (a.do === "reply" && a.item)) {
       if (await link(env, devId(a.item), id, now, name)) done.linked++;
     }
-    const said = (a.do === "reply" || a.do === "reopen") && a.text ? await inboxAnswer(env, id, a.text, now, name, pileOf(a), { confirmed: a.confirmed === true, typed }) : false;
+    const said = (a.do === "reply" || a.do === "reopen") && a.text ? await inboxAnswer(env, id, a.text, now, name, pileOf(a), { confirmed: a.confirmed === true, typed, check: checkOf(a) }) : false;
     if (said === "held") done.held++;
     else if (said) {
       done.replied++;
@@ -418,9 +420,10 @@ export async function needsPersonWhy(env, id) {
 /**
  * An answer on question [id] by [by], the question then 답함 (taken by whoever answered when nobody held it).
  * 2.0.0 [RVA-51] 검토 I24b-03: 모든 길이 같은 문(sendGate)을 지나요. 걸리면 '사람이 보내야 해요' 보류 답으로 멈추고 "held"를 돌려줘요.
+ * [check]: 2.0.0 [RVQ-34] Claude의 판정 꼬리표(열쇠로 보낸 답에만).
  * [confirmed]: 사람이 미리 보기에서 까닭을 보고 '그래도 보내기'를 누른 것(결과 붙여 넣기 risky)이라 문을 지나가요.
  */
-export async function inboxAnswer(env, id, text, now, by, pile = "", { confirmed = false, typed = false } = {}) {
+export async function inboxAnswer(env, id, text, now, by, pile = "", { confirmed = false, typed = false, check = undefined } = {}) {
   const t = plainText(text, INQUIRY.text, "text", true);
   const machine = !env.actor || env.actor.auto || by === "자동 정리";
   // 열쇠는 holdReply 안에서 같은 문을 지나요(걸리면 사람이 보내기, 아니면 10분 보류).
@@ -434,7 +437,7 @@ export async function inboxAnswer(env, id, text, now, by, pile = "", { confirmed
   if (confirmed && !machine) {
     const h = await one(env, "SELECT id FROM held_replies WHERE inquiry_id = ? AND text = ? AND until >= ?", id, t, HELD_FOR_PERSON);
     if (h) {
-      await run(env, "UPDATE held_replies SET until = ? WHERE id = ?", now, h.id);
+      await run(env, "UPDATE held_replies SET until = ?, approved = 1 WHERE id = ?", now, h.id);
       await audit(env, now, "inquiry_reply_approve", id, by);
       await releaseHeld(env, now);
       return true;
@@ -444,13 +447,30 @@ export async function inboxAnswer(env, id, text, now, by, pile = "", { confirmed
   if (await one(env, `SELECT 1 AS x FROM inquiry_messages WHERE inquiry_id = ? AND sender = 'admin' AND text = ?
       UNION ALL SELECT 1 FROM held_replies WHERE inquiry_id = ? AND text = ? LIMIT 1`, id, t, id, t)) return false;
   // 1.38 [DESK-09] Claude 열쇠의 답은 10분 보류. 1.39 [LOOP-12] 정리함 더미(pile)를 같이 적어 '믿을수록 더 맡기기'를 세요.
-  if (env.actor?.key) return (await one(env, "SELECT id FROM inquiries WHERE id = ?", id)) ? holdReply(env, { id }, t, { pile }, now) : false;
+  // 2.0.0 [RVQ-34] 검토 I22a-02: Claude의 판정 꼬리표(check)를 함께 넘겨요.
+  if (env.actor?.key) return (await one(env, "SELECT id FROM inquiries WHERE id = ?", id)) ? holdReply(env, { id }, t, { pile, check }, now) : false;
   const r = await run(env, "UPDATE inquiries SET status = 'answered', updated_at = ?, assignee = COALESCE(assignee, ?), assignee_name = CASE WHEN assignee IS NULL THEN ? ELSE assignee_name END WHERE id = ?",
     now, env.actor?.id ?? null, by, id);
   if (!r.meta.changes) return false;
   await run(env, "INSERT INTO inquiry_messages (inquiry_id, sender, text, by, at) VALUES (?, 'admin', ?, ?, ?)", id, t, by, now);
   // 1.36 [PUSH-01]
   await fcmTell(env, [id], now);
+  return true;
+}
+
+/**
+ * 2.0.0 [RVQ-34] 검토 SVC-31: 사람 없이 가는 안내(스튜디오 부탁이 나왔어요 등)도 문의 답 규칙을 거쳐요: 사람이 봐야 할 문의·글은 바로 가지
+ * 않고 사람이 '지금 보내기'를 누르는 보류 답으로 올라가요(결정함·장부의 '사람 확인 대기'). 같은 답은 두 번 가지 않아요. 갔거나 올렸으면 참.
+ */
+export async function autoAnswerOrHold(env, id, text, now) {
+  if (await inboxAnswer(env, id, text, now, "자동 정리")) return true;
+  const t = plainText(text, INQUIRY.text, "text", true);
+  if (!(await one(env, "SELECT id FROM inquiries WHERE id = ?", id))) return false;
+  if (await one(env, "SELECT 1 AS x FROM held_replies WHERE inquiry_id = ? AND text = ?", id, t)) return true;
+  const why = (await needsPerson(env, id)) || replyRisk(t);
+  if (!why) return false;
+  await run(env, "INSERT INTO held_replies (inquiry_id, text, by, actor_id, close, template, at, until, pile) VALUES (?, ?, '자동 정리', NULL, 0, NULL, ?, ?, '')", id, t, now, HELD_FOR_PERSON);
+  await audit(env, now, "inquiry_reply_held", id, `사람이 보내기(${why})`);
   return true;
 }
 

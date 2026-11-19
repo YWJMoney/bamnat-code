@@ -249,6 +249,9 @@ export default {
     try {
       const res = await route(request, env, ctx);
       status = res?.status ?? 200;
+      // 2.0.0 [RVQ-34] 검토 SVC-32: 던지지 않고 500을 돌려준 답도 '서버 오류'로 세고 주소별로 묶어요(전에는 응답 속도의 오류에만 있고 묶음엔
+      // 없어 까닭을 찾을 수 없었어요). 쉬는 기능의 503과 바깥 서버가 안 닿은 502·504는 오류가 아니라 따로 세요.
+      if (status >= 500 && env.DB) await countServerAnswer(env, new URL(request.url).pathname, status).catch(() => {});
       return res;
     } catch (e) {
       if (e instanceof Refuse) {
@@ -416,7 +419,7 @@ export function dropInquiries(env, where, ...params) {
   const of = `inquiry_id IN (SELECT id FROM inquiries WHERE ${where})`;
   return [
     // 2.0.0 [RVQ-16] 보내려고 잠깐 둔 답도 문의와 함께(문의가 없으면 보낼 곳도 없어요).
-    ...["inquiry_messages", "inquiry_marks", "inquiry_notes", "dev_links", "inquiry_photos", "held_replies"].map((t) => stmt(env, `DELETE FROM ${t} WHERE ${of}`, ...params)),
+    ...["inquiry_messages", "inquiry_marks", "inquiry_notes", "dev_links", "inquiry_photos", "held_replies", "ship_outbox"].map((t) => stmt(env, `DELETE FROM ${t} WHERE ${of}`, ...params)),
     stmt(env, `DELETE FROM inquiries WHERE ${where}`, ...params),
   ];
 }
@@ -7699,6 +7702,14 @@ export function inquiryStats(rows, sla, dayList, now) {
 }
 
 /** [ADMUX-16] One more request the worker could not answer (500) on today's Korean day; kept 400 days. */
+/** 2.0.0 [RVQ-34] 검토 SVC-32: 돌려준 5xx 하나. 500은 오류(날마다 센 수와 묶음), 503은 쉬는 중 거절, 502·504는 바깥 서버. */
+export async function countServerAnswer(env, path, status) {
+  if (status === 500) {
+    await countError(env);
+    await recordError(env, path, { message: "던진 오류 없이 돌려준 서버 오류", stack: "" }).catch(() => countFailure(env, "errfail"));
+  } else await countFailure(env, status === 503 ? "busy503" : "far5xx");
+}
+
 async function countError(env) {
   const now = Date.now();
   await env.DB.prepare(`INSERT INTO counters (key, count, expires) VALUES (?1, 1, ?2)

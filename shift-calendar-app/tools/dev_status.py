@@ -14,7 +14,7 @@
 
 칸(쓰는 것만): id(d로 시작하는 서버 개발사항 번호) 또는 track(추적 번호, 예 LOOP-17) 하나는 꼭,
 title, status(todo·doing·check·done·rejected), size(fix·polish·feature), route(server·remote·flag·app·hotfix),
-remote("kind@번호"), flag, events, tierAsk(free·pro·pass·trial·later, Claude의 제안일 뿐), tierWhy,
+remote("kind@번호"), flag, events, good(up·down, 잴 이벤트가 늘면·줄면 좋음), tierAsk(free·pro·pass·trial·later, Claude의 제안일 뿐), tierWhy,
 publicTitle(앱 '지금 알려진 문제'에 보일 쉬운 제목, 60자), known(true·false), styles(보일 근무 유형 목록, 없으면 모두), test, check, pr,
 news(앱 업데이트 소식 한 줄, 80자), shipReply(판이 나간 날 묶인 문의에 가는 답), reason(반려 이유),
 miss(2.0.0 [RVR-26] 시험이 왜 못 잡았나, 200자: PC 확인·문의로 찾은 문제는 done 전에 test와 함께 꼭).
@@ -36,8 +36,8 @@ GRADLE = ROOT / "gradle.properties"
 # 2.0.0 [RVR-10] (검토 TEST-15·U60-05) 판이 합쳐진 것: 1.39.1은 따로 내지 않고 2.0.0으로(사용자 2026-11-12), 1.40은 2.0.0이 됐어요.
 MERGED = {"1.39.1": "2.0.0", "1.40.0": "2.0.0"}
 
-KEYS = {"id", "track", "title", "status", "size", "route", "remote", "flag", "events", "tierAsk", "tierWhy", "publicTitle",
-        "known", "styles", "test", "check", "pr", "news", "shipReply", "reason", "miss"}
+KEYS = {"id", "track", "title", "status", "size", "route", "remote", "flag", "events", "good", "tierAsk", "tierWhy", "publicTitle",
+        "known", "styles", "test", "check", "pr", "news", "shipReply", "reason", "miss", "reopen"}
 STATUS = {"todo", "doing", "check", "done", "rejected"}
 SIZES = {"fix", "polish", "feature"}
 ROUTES = {"server", "remote", "flag", "app", "hotfix"}
@@ -118,10 +118,18 @@ def check_item(n, x):
         say("route flag에는 flag 이름이 있어야 해요")
     if "events" in x and not (isinstance(x["events"], list) and all(isinstance(e, str) and EVENT.match(e) for e in x["events"]) and len(x["events"]) <= 8):
         say("events는 소문자 이름 8개까지의 목록이에요")
+    # 2.0.0 [RVQ-34] 검토 SVC-20: 잴 이벤트가 늘면 좋은지(up) 줄면 좋은지(down). 없으면 숫자만으로 '좋아졌어요'를 붙이지 않아요.
+    if "good" in x and x["good"] not in ("up", "down"):
+        say("good은 up(늘면 좋음)이나 down(줄면 좋음)이에요")
+    if "good" in x and not x.get("events"):
+        say("good은 잴 이벤트(events)와 함께 적어요")
     if "tierAsk" in x and not one_of(x["tierAsk"], TIERS):
         say("tierAsk는 free·pro·pass·trial·later 중 하나예요")
     if "styles" in x and not (isinstance(x["styles"], list) and all(one_of(v, STYLES) for v in x["styles"])):
         say("styles는 SHIFT·DAY·HOURLY·FIELD·BUSINESS·INVEST 중에서 고른 목록이에요(빈 목록 = 모두)")
+    # 2.0.0 [HQ-78] 서버는 동기화로 상태를 뒤로 돌리지 않아요(done → doing). 정말 다시 연 줄만 reopen: true.
+    if "reopen" in x and (x["reopen"] is not True or x.get("status") not in ("todo", "doing", "check")):
+        say("reopen은 true만, 다시 연 줄(todo·doing·check)에만 적어요")
     if "known" in x and not isinstance(x["known"], bool):
         say("known은 true나 false예요")
     if "pr" in x and not (isinstance(x["pr"], int) and x["pr"] > 0):
@@ -159,6 +167,28 @@ def check_item(n, x):
                 if pat.search(v):
                     say(f"{k}에 {what}가 있어요. 문의 원문·개인정보는 서버에만 둬요")
     return out
+
+
+# 2.0.0 [HQ-78] 통합 브랜치에 올릴 때도 서버로 보내요(.github/workflows/dev-status.yml의 push.branches). 맨 위 CLAUDE.md 1-000항의 통합
+# 브랜치 이름이 바뀌었는데 workflow를 잊으면 판 하나 동안 서버 개발사항이 멈춰요(2.0.0: 574줄 가운데 536줄).
+WORKFLOW = ROOT.parent / ".github" / "workflows" / "dev-status.yml"
+ROOT_RULES = ROOT.parent / "CLAUDE.md"
+INTEGRATION = re.compile(r"통합 브랜치\s*`(claude/[A-Za-z0-9._/-]+)`")
+
+
+def workflow_branch_problems(rules=None, workflow=None) -> list[str]:
+    """The integration branch named first in the top CLAUDE.md that dev-status.yml does not push from (nothing when either is missing)."""
+    rules, workflow = Path(rules or ROOT_RULES), Path(workflow or WORKFLOW)
+    if not rules.exists() or not workflow.exists():
+        return []
+    m = INTEGRATION.search(rules.read_text(encoding="utf-8"))
+    if not m:
+        return []
+    branches = re.search(r"^\s*branches:\s*\[(.*?)\]", workflow.read_text(encoding="utf-8"), re.M)
+    named = {b.strip().strip("'\"") for b in branches.group(1).split(",")} if branches else set()
+    if m.group(1) in named:
+        return []
+    return [f"{workflow.name}의 push.branches에 지금 통합 브랜치 {m.group(1)}가 없어요(맨 위 CLAUDE.md 1-000항). 통합에 올린 개발 상태가 서버로 가지 않아요"]
 
 
 def check_all(items):
@@ -429,6 +459,7 @@ def main(argv=None):
         if BUILT_FILE.read_text(encoding="utf-8") != built_text(items):
             errors.append("server/company-worker/src/dev-built.js가 개발 상태 파일과 달라요: python3 tools/dev_status.py build")
         errors += missing_tests(items)
+        errors += workflow_branch_problems()
         miss_errors, miss_warns = miss_rules(items, pcs)
         errors += miss_errors
         for e in errors:
