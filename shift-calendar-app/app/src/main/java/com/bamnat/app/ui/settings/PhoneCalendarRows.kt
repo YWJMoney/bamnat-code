@@ -58,7 +58,8 @@ internal fun PhoneCalendarRows(vm: SettingsViewModel) {
         SwitchRow(
             title = if (list.size == 1) PHONE_CALENDAR_ROW else "${cal.name} → 휴대폰 캘린더",
             pro = true, proLocked = !open, // [TIER-06]
-            subtitle = "'${if (cal.isMain) "밤낮 근무" else "밤낮 · ${cal.name}"}' 캘린더를 휴대폰에 만들어 구글·삼성 캘린더에 근무가 보여요. " +
+            // 총괄 HQ-130: what it does first ('구글·삼성 캘린더에 …'), so the folded line says it at 글자 200%.
+            subtitle = "구글·삼성 캘린더에 근무가 보여요. '${if (cal.isMain) "밤낮 근무" else "밤낮 · ${cal.name}"}' 캘린더를 휴대폰에 만들고 " +
                 "근무를 바꾸면 따라 바뀌고, 끄면 그 캘린더를 지워요. 휴대폰 밖으로 보내지 않아요",
             checked = on && open,
         ) { want ->

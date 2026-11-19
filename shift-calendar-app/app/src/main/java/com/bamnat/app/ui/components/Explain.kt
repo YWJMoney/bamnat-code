@@ -3,6 +3,7 @@ package com.bamnat.app.ui.components
 import android.content.Context
 import androidx.compose.animation.animateContentSize
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.size
@@ -22,10 +23,12 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalInspectionMode
 import androidx.compose.ui.semantics.onClick
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
+import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import java.util.Collections
@@ -64,22 +67,36 @@ fun Explain(
     val style = MaterialTheme.typography.bodySmall
     when {
         seen == 0 && firstInFull || open || short == text -> Text(text, style = style, color = ink, modifier = modifier.animateContentSize())
-        else -> Row(
-            modifier.fillMaxWidth().semantics(mergeDescendants = true) {
-                stateDescription = "접힘"
-                onClick("설명 펼치기") { open = true; true }
-            },
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(4.dp),
-        ) {
-            if (seen <= 1 || !iconOnly) Text(short, style = style, color = ink, maxLines = 1, overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.weight(1f, fill = false))
-            IconButton(onClick = { open = true }) {
-                Icon(Icons.Outlined.Info, contentDescription = "설명 보기", tint = ink, modifier = Modifier.size(20.dp))
+        else -> BoxWithConstraints(modifier.fillMaxWidth()) {
+            // 총괄 HQ-130 (글자 200% 접은 폭에서 요약이 여덟 글자쯤에서 잘려 '다시 시작 10분 …'만 남았어요, 조건 4·12): with big letters, or
+            // when one line would show less than half of the summary, it takes two lines (still '…' past them, the rest under ⓘ).
+            val density = LocalDensity.current
+            val measurer = rememberTextMeasurer()
+            val whole = remember(short, style, density) { measurer.measure(short, style, maxLines = 1, softWrap = false).size.width }
+            val room = with(density) { (maxWidth - INFO_ROOM).toPx() }
+            val lines = if (density.fontScale >= TWO_LINES_FONT_SCALE || room < whole / 2f) 2 else 1
+            Row(
+                Modifier.fillMaxWidth().semantics(mergeDescendants = true) {
+                    stateDescription = "접힘"
+                    onClick("설명 펼치기") { open = true; true }
+                },
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(4.dp),
+            ) {
+                if (seen <= 1 || !iconOnly) Text(short, style = style, color = ink, maxLines = lines, overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f, fill = false))
+                IconButton(onClick = { open = true }) {
+                    Icon(Icons.Outlined.Info, contentDescription = "설명 보기", tint = ink, modifier = Modifier.size(20.dp))
+                }
             }
         }
     }
 }
+
+/** HQ-130: from this text size up, the folded explanation takes two lines. */
+private const val TWO_LINES_FONT_SCALE = 1.5f
+/** HQ-130: what stands beside the summary (ⓘ's 48dp and the gap). */
+private val INFO_ROOM = 52.dp
 
 /** [RVP-08] The first sentence of an explanation, for its one-line form. */
 internal fun firstSentence(text: String): String {
