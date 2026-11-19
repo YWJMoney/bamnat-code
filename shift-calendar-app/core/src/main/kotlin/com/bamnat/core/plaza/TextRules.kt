@@ -68,7 +68,7 @@ object TextRules {
         Triple("이번 달 야간 수당 32만 원 받았어요", "amount", null),
         Triple("연봉 300000000원", "amount", null),
         Triple("3억 = 300000000원", "amount", null),
-        Triple("시급 10,030원", "amount", null),
+        Triple("시급 12,500원", "amount", null),
         Triple("문의는 010-1234-5678로", "phone", "phone"),
         Triple("02 123 4567로 전화 주세요", "phone", "phone"),
         Triple("+82 10 1234 5678", "phone", "phone"),

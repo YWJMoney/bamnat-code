@@ -224,10 +224,9 @@ class GuideStore private constructor(context: Context) {
         const val TURN_SLIP_DONE = 2
         private const val LIST_ID = "guide.checklist"
 
-        @Volatile private var instance: GuideStore? = null
+        /** One per app ([PerApp]: a test's new app reads its own settings, not an earlier test's). */
+        private val one = PerApp { GuideStore(it) }
 
-        fun get(context: Context): GuideStore = instance ?: synchronized(this) {
-            instance ?: GuideStore(context).also { instance = it }
-        }
+        fun get(context: Context): GuideStore = one.of(context)
     }
 }
