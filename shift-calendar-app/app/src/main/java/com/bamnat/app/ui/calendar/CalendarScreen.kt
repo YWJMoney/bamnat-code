@@ -2324,7 +2324,8 @@ fun CalendarScreen(
             rules = vm.rulesFor(snap, m.atDay(1), settings.rules), onRules = { rulesOpen = true }, weekStart = settings.weekStart)
     }
     if (rulesOpen) {
-        RestRulesSheet(settings.rules, vm.rotation(snap, visibleMonth.atDay(1)), onDismiss = { rulesOpen = false }) { r ->
+        RestRulesSheet(settings.rules, vm.rotation(snap, visibleMonth.atDay(1)), onDismiss = { rulesOpen = false },
+            nights = settings.workStyle == null || settings.workStyle == com.bamnat.core.work.WorkStyle.SHIFT) { r ->
             vm.setRestRules(r); rulesOpen = false
         }
     }

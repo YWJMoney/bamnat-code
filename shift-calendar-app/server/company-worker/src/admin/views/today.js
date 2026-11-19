@@ -237,19 +237,21 @@ export function todayViews(A) {
    * per item: what and where on the left, the deadline and the buttons on the right.
    */
   function todoCard(d, shown = new Set()) {
-    const c = d?.counts ?? {};
     const editInq = can("inquiries", "edit");
+    const now = Date.parse(d.now);
+    const kst = new Date(now + 9 * 3600e3);
+    const todayEnd = Date.UTC(kst.getUTCFullYear(), kst.getUTCMonth(), kst.getUTCDate() + 1) - 9 * 3600e3;
+    const hide = snoozed();
+    const inView = (x, v) => (v === "all" ? true : v === "mine" ? x.mine : x.due && Date.parse(x.due) < (v === "today" ? todayEnd : todayEnd + 6 * 864e5));
+    // 2.0.0 [RVA-71] PC-208: '내일 볼게요'로 숨긴 줄은 보기 칩 숫자에서도 빼요(머리의 '할 일 N'과 같게).
+    const c = { ...(d?.counts ?? {}) };
+    for (const x of d.items) if (hide[`${x.type}:${x.id}`]) for (const v of ["today", "week", "mine", "all"]) if (inView(x, v) && c[v] > 0) c[v] -= 1;
     // 2.0.0 [RVA-36] '차례로 답하기'(큐 모드)는 위 큰 카드의 채운 단추 하나로 옮겼어요.
     const head = `<div class="card-head"><h2>할 일</h2></div>
       <p class="waiting" id="waiting" data-hub="today">${waitingItems("today")}</p>
       <div class="segmented" role="group" aria-label="할 일 보기">${seg("inbox-view", "today", S.inboxView, "오늘까지", c.today)}${seg("inbox-view", "week", S.inboxView, "이번 주", c.week)}
         ${seg("inbox-view", "mine", S.inboxView, "내 것", c.mine)}${seg("inbox-view", "all", S.inboxView, "모두", c.all)}</div>`;
-    const now = Date.parse(d.now);
-    const kst = new Date(now + 9 * 3600e3);
-    const todayEnd = Date.UTC(kst.getUTCFullYear(), kst.getUTCMonth(), kst.getUTCDate() + 1) - 9 * 3600e3;
-    const hide = snoozed();
-    const list = d.items.filter((x) => !hide[`${x.type}:${x.id}`]).filter((x) => (S.inboxView === "all" ? true : S.inboxView === "mine" ? x.mine
-      : x.due && Date.parse(x.due) < (S.inboxView === "today" ? todayEnd : todayEnd + 6 * 864e5)));
+    const list = d.items.filter((x) => !hide[`${x.type}:${x.id}`]).filter((x) => inView(x, S.inboxView));
     const hidden = Object.keys(hide).length;
     const again = hidden ? `<p class="meta">내일로 미룬 ${hidden}개는 숨겼어요. <button class="btn small ghost" data-act="inbox-unsnooze">다시 보기</button></p>` : "";
     if (!list.length) {

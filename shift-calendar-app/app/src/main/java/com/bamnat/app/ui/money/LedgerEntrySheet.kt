@@ -449,8 +449,9 @@ fun EntryDialog(
                     if (kind == MoneyKind.TRANSFER) {
                         // fc374a23 PC 확인 (카드값 이체 때 '어디로'가 비어 순자산이 그냥 줄어요): 카드값 goes to a card by itself —
                         // the one most used. Another one can still be picked.
+                        val cardBill = categoryRole(MoneyKind.TRANSFER, category) == com.bamnat.core.money.CategoryRole.CARD
                         androidx.compose.runtime.LaunchedEffect(category, account) {
-                            if (toAccount == null && category == "카드값") {
+                            if (toAccount == null && cardBill) {
                                 val credit = com.bamnat.core.money.AccountType.CREDIT
                                 // PC 확인 46200ae4 (카드로 쓴 뒤 첫 카드값 이체에 카드가 '어디서'에 들어감): a card picked as 어디서
                                 // (the last account used) is where the money goes; 어디서 becomes the bank most used.
@@ -519,7 +520,7 @@ fun EntryDialog(
                 }
                 when {
                     kind == MoneyKind.TRANSFER -> Hint("내 돈을 옮긴 거라 들어온 돈·나간 돈에는 넣지 않아요. 카드값도 여기에 적어요.")
-                    kind == MoneyKind.INCOME && category == MoneyCategories.SALARY -> Hint("실제로 받은 급여를 적으면 그달은 예상 급여 대신 이 금액으로 계산해요.")
+                    kind == MoneyKind.INCOME && categoryRole(kind, category) == com.bamnat.core.money.CategoryRole.SALARY -> Hint("실제로 받은 급여를 적으면 그달은 예상 급여 대신 이 금액으로 계산해요.")
                 }
                 HorizontalDivider()
                 Row(

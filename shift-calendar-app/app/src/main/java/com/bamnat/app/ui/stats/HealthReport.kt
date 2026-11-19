@@ -58,6 +58,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.withContext
 import java.time.LocalDate
 import kotlin.math.roundToInt
@@ -133,7 +134,9 @@ internal fun HealthYearCard(snapshot: ScheduleSnapshot, calendarId: String? = nu
 }
 
 class HealthReportViewModel(container: AppContainer, val calendarId: String) : ViewModel() {
+    // 2.0.0 [RVH-94] 검토 PC-212: a year's 건강 지표 counts the months the app was in use ([FactsSince]).
     val snapshot: StateFlow<ScheduleSnapshot?> = container.scopeOf(calendarId).schedule.snapshot
+        .map { s -> s?.let { FactsSince.of(container.installedAt, it) } }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
 }
 

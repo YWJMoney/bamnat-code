@@ -157,7 +157,7 @@ object LookImages {
         cache.get(id!!)?.let { return it }
         return withContext(Dispatchers.IO) {
             val f = file(context, id)
-            if (!f.isFile) null else SafeBitmaps.decodeFile(f.path) // 1.36 [SEC-04]?.also { cache.put(id, it) }
+            if (!f.isFile) null else SafeBitmaps.decodeFile(f.path)?.also { cache.put(id, it) } // 1.36 [SEC-04]; 2.0.0 [RVM-67] RCP-11: the cache line was in the comment, so nothing was kept
         }
     }
 
