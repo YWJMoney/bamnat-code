@@ -390,7 +390,8 @@ class MoneyViewModel(
             val kept = runCatching { container.recordsTrash.keepLines(calendarId, list.map { it.id }, detail) }.getOrNull()
             money.deleteAll(list)
             val text = if (list.size == 1) "‘${list.single().title}’ 기록을 지웠어요" else "기록 ${list.size}건을 지웠어요"
-            _undo.tryEmit(UndoMessage(text + if (kept != null && list.size > 1) ". 최근 지운 기록에 30일 있어요" else "", long = list.size > 1) {
+            // 2.0.0 [RVK-61] A line goes without asking now, so its bar stays as long as a long list's and says where it is kept.
+            _undo.tryEmit(UndoMessage(text + if (kept != null) ". 최근 지운 기록에 30일 있어요" else "", long = true) {
                 money.saveAll(list)
                 kept?.let { container.recordsTrash.forget(listOf(it.id)) }
             })
