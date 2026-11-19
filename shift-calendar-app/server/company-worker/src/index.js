@@ -87,7 +87,7 @@ import { bundleInquiries, inboxAnswer, inboxRoute } from "./inbox.js";
 import { DEV, HELD_FOR_PERSON, INQUIRY, INQUIRY_TOPICS, QA, SLA, SLA_SQL, actorName, releaseHeld, rescanBilling, rescanBilling2, adminInquiries, ask, devRoute, expiredInquiries, forgetInquiries, inquiries, page, plainActor, plainText, publicQa, publicRows, readSla, slaKey, slaSetting, slaTargets, templateRoute } from "./inquiries.js";
 import { hasPro, INVITE, MONEY, REWARD_CAP, addMonths, b64url, config, deferFor, installOf, inviteCodeOf, inviteDeadline, invitePage, inviteSettings, inviteSettingsRoute, invites, launchView, familyCode, familyCodeDelete, familyList, familySet, linkCode, money, myPhones, phoneList, phonePreviews, playIntent, playReady, playToken, readSub, recheckLapsed, rewardCounts, rewardWhy, rewardYear, setPhone, stack, stopUnconsentedTrials, storeLink } from "./money.js";
 import { EVENTS, NOTICE, PHOTO_REASONS, PHOTO_SCREENS, STARTUP_BUCKETS, SWITCHES, USAGE, checkOps, kstDay, lookupRows, metrics, noticeList, noticeView, opsItems, opsMonth, opsState, paused, photoWrong, photoWrongMetrics, readAction, readAudience, removeNotice, saveNotice, setSwitch, startupMetrics, startupRows, setupRows, SETUP_TAP_BUCKETS, usage } from "./usage.js";
-import { FLAG_CATALOG, FLAG_KEYS, FLAG_STORE_SQL, SWITCH_FLAGS, fixRequestsOpen, fixedAmountsOpen, flagDef, flagEffects, flagOverview, flagRoute, flagStore, flagTick, migrateFlags, serverEval, storeFrom } from "./flags.js";
+import { FLAG_CATALOG, FLAG_KEYS, FLAG_STORE_SQL, SWITCH_FLAGS, fixRequestsOpen, fixedAmountsOpen, flagDef, flagEffects, flagOverview, flagRoute, flagStore, flagTick, migrateFlags, roomMoneyFromPolicy, serverEval, storeFrom } from "./flags.js";
 // 1.34 [RCP-28]..[RCP-36] 나눔 판.
 import { CODE as RECIPE_CODE, RECIPE_COLUMNS, lookOf as recipeLookOf, RECIPE_SCHEMA, RECIPE_TABLE, forgetRecipes, makerId, pruneRecipes, recipeAdmin, recipeRoute } from "./recipes.js";
 import { INTEGRITY_SCHEMA, integrityGate, integrityMode, integrityRoute, integrityState } from "./integrity.js";
@@ -119,6 +119,7 @@ import { PASSKEY_SCHEMA, passkeyCheck, passkeyMine, passkeyStart } from "./passk
 import { canaryStats, countFailure, deployInfo, flushWatch, jobRow, pruneWatch, recordError, recordRequest, recordRowErrors, rowTroubleQuery, rowTroubleRows, runJobs, serverVersions } from "./ops-watch.js";
 import { FIVE_STEPS, hourlyAgo, hourlyWatch } from "./incident.js";
 import { RETENTION, deviceColumns, forgetSweep, retentionPrune } from "./retention.js";
+import { TEXT_RULES } from "./text-rules.js";
 import { sealLegacyTotp, totpOf, totpSealed } from "./seal.js";
 import { GROWTH_COLUMNS, GROWTH_SCHEMA, growthAdmin, growthRoute, growthTick, needSolved } from "./growth.js";
 export { INQUIRY_TOPICS, addMonths, inviteCodeOf, playIntent, readSub, recheckLapsed, stack, stopUnconsentedTrials, storeLink, EVENTS, PHOTO_REASONS, PHOTO_SCREENS, STARTUP_BUCKETS, lookupRows, setupRows, SETUP_TAP_BUCKETS, readAction, readAudience, startupRows, FLAG_CATALOG, FLAG_KEYS, flagOverview, flagTick };
@@ -169,6 +170,7 @@ export const LIMITS = {
 // [PLAZA-10] firstMonths: the pass for a company's or department's first setup with its pay; at most firstCapYear a year.
 // 2.0.0 [RVN-17] 검토 COMP-14 roomMoney: 회사 방·유형별 방의 글에 금액을 받을지(1) 막을지(0). 보고서 11장 결정 11의 추천(받기)은 운영 규칙
 // 4항('금액은 임금표에만')을 고쳐 게시하는 날 관리자 앱 › 광장 › 채택 규칙 › 광장 방 글의 금액 한 값으로 켜요. 앱도 이 값을 따라요(/api/terms).
+// 켜 두어도 처리방침 3.14 게시일 + 7일(운영 규칙 3판 시행일) 전에는 받지 않아요(roomMoneyOn, flags.js roomMoneyFromPolicy).
 const DEFAULTS = { adoptPoints: 3, rewardMonths: 3, adoptAgree: 75, adoptPersons: 3, amendPersons: 3, autoReward: 1, rewardCapMonths: 3, rewardCapDays: 90,
   firstMonths: 1, firstCapYear: 3, askMonths: 3, roomMoney: 0 };
 
@@ -253,7 +255,8 @@ export default {
     } catch (e) {
       if (e instanceof Refuse) {
         status = e.status;
-        return json({ error: e.code, field: e.field }, e.status);
+        // [RVN-17] 계좌번호 says "amount" to an app before 2.0.0 (textCode).
+        return json({ error: textCode(e.code, request), field: e.field }, e.status);
       }
       status = 500;
       console.error(e && e.stack ? e.stack : String(e));
@@ -1593,29 +1596,47 @@ export function normName(s) {
     .replace(/[^\p{L}\p{N}]/gu, "");
 }
 
-const PERSONAL = [
-  ["email", /[^\s@]+@[^\s@]+\.[a-z]{2,}/i],
-  ["phone", /(\+?82[\s.-]?0?|0)\d{1,2}[\s.-]?\d{3,4}[\s.-]?\d{4}/],
-  ["amount", /\d[\d,.]*\s*(원|만\s*원|천\s*원|억\s*원|won\b|krw\b)|[일이삼사오육칠팔구십백천]+\s*만\s*원|\d{1,3}(,\d{3})+|\d{5,}/i],
-];
+/**
+ * 2.0.0 [RVN-22] 검토 I10bb-03: what typed text may not hold, from the one table core TextRules writes (text-rules.js), so the
+ * phone's check before sending and the server's are the same. personal() is the ordinary check (메일·계좌번호·전화번호·금액);
+ * [RVN-17] COMP-14 contact() a room's post once 방 글에 금액 받기 is on: amounts go, a way to reach someone or to send money does not
+ * (계좌번호: 처리방침 3.14 N몫 ①, roomMoney를 켜기 전에 더함).
+ */
+const compileRules = (rules) => rules.map((r) => ({ code: r.code, re: new RegExp(r.source, `${r.flags}g`), digits: r.digits }));
+const PERSONAL = compileRules(TEXT_RULES.personal);
+const CONTACT = compileRules(TEXT_RULES.contact);
 
-/** Why a text cannot be shared: it holds an email, a phone number or an amount of money. */
-export function personal(text) {
-  for (const [code, re] of PERSONAL) if (re.test(text)) return code;
+function firstRule(rules, text) {
+  const s = String(text ?? "");
+  for (const r of rules) {
+    for (const m of s.matchAll(r.re)) {
+      const d = (m[0].match(/\d/g) ?? []).length;
+      if (!r.digits || (d >= r.digits[0] && d <= r.digits[1])) return r.code;
+    }
+  }
   return null;
 }
 
-/**
- * 2.0.0 [RVN-17] 검토 COMP-14: a room's post (회사 방·유형별 방) with amounts taken, only a way to reach someone held back. The phone number
- * is a real one's shape (휴대폰 010·011…, 지역 02·031…, +82), not any run of digits, so '3억 = 300000000원' is not a phone number.
- */
-const CONTACT = [
-  ["email", /[^\s@]+@[^\s@]+\.[a-z]{2,}/i],
-  ["phone", /(?<!\d)(\+?82[\s.-]?0?|0)(1[016789]|2|[3-6][1-5]|70)[\s.-]?\d{3,4}[\s.-]?\d{4}(?!\d)/],
-];
+/** Why a text cannot be shared: it holds an email, an account number, a phone number or an amount of money. */
+export function personal(text) {
+  return firstRule(PERSONAL, text);
+}
+
 export function contact(text) {
-  for (const [code, re] of CONTACT) if (re.test(text)) return code;
-  return null;
+  return firstRule(CONTACT, text);
+}
+
+/**
+ * 2.0.0 [RVN-17] The word "account" (계좌번호) is new: the apps before 2.0.0 know only email·phone·amount and would say '보내지
+ * 못했어요. 잠시 뒤 다시 해 주세요' to it (and a question waiting to be sent would try again). An app that knows it says so with
+ * the header X-Text-Codes: account (2.0.0 [RVN-22]); to any other the server answers "amount", the word that already made those
+ * apps say to take the number out (most account numbers were refused as "amount" before, a run of five digits).
+ */
+export const TEXT_CODES_HEADER = "x-text-codes";
+export function textCode(code, request) {
+  if (code !== "account") return code;
+  const knows = String(request?.headers?.get?.(TEXT_CODES_HEADER) ?? "").split(",").some((w) => w.trim() === "account");
+  return knows ? code : "amount";
 }
 
 // ---- a setup: what a report may hold (company-setup.js, 2.0.0 [RVD-25]) ----
@@ -1897,10 +1918,26 @@ function diffLines(before, after) {
 
 /** What the app tells someone before they send: the points a setup needs and the reward once it is adopted. */
 async function terms(env) {
-  const { adoptPoints, rewardMonths, adoptAgree, firstMonths, roomMoney } = await settings(env);
+  const s = await settings(env);
   // [PLAZA-10] firstMonths: what a company's first setup with its pay earns, said on the app's 나누기 card.
-  // 2.0.0 [RVN-17] COMP-14 roomMoney: whether a room's post may hold an amount, so the app checks as the server does (1.39 apps never read it).
-  return { threshold: adoptPoints, rewardMonths, agree: adoptAgree, firstMonths, roomMoney: roomMoney === 1 };
+  // 2.0.0 [RVN-17] COMP-14 roomMoney: whether a room's post may hold an amount now, so the app checks as the server does (1.39 apps
+  // never read it); the switch and the 3.14 7일 줄 both (roomMoneyOn, which reads 처리방침 일정 only with the switch on).
+  return { threshold: s.adoptPoints, rewardMonths: s.rewardMonths, agree: s.adoptAgree, firstMonths: s.firstMonths, roomMoney: await roomMoneyOn(env, Date.now(), s) };
+}
+
+/**
+ * 2.0.0 [RVN-17] 검토 COMP-14 Whether a room's post takes amounts now: 관리자 앱 › 광장 방 글 › '방 글에 금액 받기' on, and the 처리방침
+ * 3.14·운영 규칙 3판 7일 줄 come (게시일 + 7일, 한국 날짜). Off by the switch, the 처리방침 일정 is not read.
+ */
+export async function roomMoneyOn(env, now = Date.now(), s = null) {
+  if ((s ?? (await settings(env))).roomMoney !== 1) return false;
+  const from = await roomMoneyFrom(env);
+  return Boolean(from) && kstDay(now) >= from;
+}
+
+/** The day 방 글에 금액 받기 may start (3.14 게시일 + 7일), or null before 3.14 is in 처리방침 일정. */
+async function roomMoneyFrom(env) {
+  return roomMoneyFromPolicy((await one(env, "SELECT value FROM settings WHERE key = 'policy_overrides'"))?.value);
 }
 
 /**
@@ -2662,8 +2699,9 @@ async function roomPost(request, env, body, ctx) {
   if (!place) return json({ error: "not_found" }, 404);
   const text = str(body.body, LIMITS.post, "body", { empty: false, lines: true, code: "body" }).trim();
   if (text.length < 2) refuse("body", "body");
-  // 2.0.0 [RVN-17] COMP-14 With roomMoney on, a room's post may say an amount; a way to reach someone never.
-  const money = (await settings(env)).roomMoney === 1;
+  // 2.0.0 [RVN-17] COMP-14 With roomMoney on (and the 3.14 7일 줄 come), a room's post may say an amount; a way to reach someone
+  // or to send money (계좌번호) never.
+  const money = await roomMoneyOn(env);
   const why = money ? contact(text) : personal(text);
   if (why) refuse(why, "body");
   if (place.id === "style-invest" && INVEST_ADVICE.test(text)) refuse("invest_advice", "body");
@@ -2832,7 +2870,9 @@ async function communityAppeal(request, env) {
   const dev = await deviceHash(device);
   const net = await network(request, env, now);
   const make = async (text) => {
-    if (personal(text) === "email" || personal(text) === "phone") return { error: personal(text), status: 400 };
+    // [RVN-22] 해명에는 금액은 적어도 되고, 메일·전화번호·계좌번호는 받지 않아요.
+    const why = personal(text);
+    if (why === "email" || why === "phone" || why === "account") return { error: textCode(why, request), status: 400 };
     const hit = await overLimit(env, now, [["device", `inquiry|${dev}`, 5, DAY], ...(await networkCheck(env, dev, net, "inquiry", 200, now))]);
     if (hit) return { error: "rate_limited", status: 429 };
     const id = randomId(22);
@@ -6764,9 +6804,12 @@ function nightFrom(got, now) {
 
 /** [ADMUX-37] What the screens share and rarely changes: the 채택 settings, the answer targets and the reason words. */
 async function basics(env) {
-  const [settings, sla] = await batch(env, [env.DB.prepare(`SELECT key, value FROM settings WHERE key IN (${SETTING_KEYS})`), env.DB.prepare(SLA_SQL)]);
+  const [settings, sla, policy] = await batch(env, [env.DB.prepare(`SELECT key, value FROM settings WHERE key IN (${SETTING_KEYS})`), env.DB.prepare(SLA_SQL),
+    env.DB.prepare("SELECT value FROM settings WHERE key = 'policy_overrides'")]);
   return { settings: readSettings(settings.results), sla: readSla(sla.results), doubt: DOUBT, reasons: REASONS, answers: ANSWERS,
-    hideReasons: HIDE_REASONS, flagReasons: FLAGS };
+    hideReasons: HIDE_REASONS, flagReasons: FLAGS,
+    // 2.0.0 [RVN-17] COMP-14 the day 방 글에 금액 받기 may start (처리방침 3.14 게시일 + 7일), for the switch's line.
+    roomMoneyFrom: roomMoneyFromPolicy(policy.results?.[0]?.value) };
 }
 
 // AN 1.28 끝
