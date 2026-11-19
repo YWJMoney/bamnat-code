@@ -85,6 +85,12 @@ class FakeCloud:
                 self.views[vid] = list(self.new_bindings) + [{"type": "plain_text", "name": k, "text": v} for k, v in given.items()]
                 Path(extra_env["WRANGLER_OUTPUT_FILE_PATH"]).write_text(json.dumps({"type": "version-upload", "version_id": vid}) + "\n",
                                                                          encoding="utf-8")
+            elif args[:1] == ["deploy"]:
+                # 2.0.0 [RVQ-57] 방을 처음 만드는 배포: 올리면서 바로 100%.
+                self.configs.append((Path(cwd) / "wrangler.deploy.toml").read_text(encoding="utf-8"))
+                self.views[NEW_ID] = list(self.new_bindings) + [{"type": "durable_object_namespace", "name": "TEAM_ROUND", "class_name": "TeamRound"}]
+                self.serving = [(NEW_ID, 100.0)]
+                self.deploys.append(["deploy"])
             elif args[:2] == ["versions", "deploy"]:
                 split = [a.split("@") for a in args[2:] if "@" in a and a.endswith("%")]
                 self.serving = [(v, float(p.rstrip("%"))) for v, p in split]
@@ -295,6 +301,64 @@ class DeployFlowTest(unittest.TestCase):
         self.assertEqual([(OLD_ID, 100.0)], self.cloud.serving)
         self.assertEqual(["0 * * * *"], self.cloud.schedules)
         self.assertIn("되돌림", self.printed)
+
+    # ---------- 2.0.0 [RVQ-57] 방(Durable Object) ----------
+
+    ROOMS = TOML + '''[[durable_objects.bindings]]
+name = "TEAM_ROUND"
+class_name = "TeamRound"
+
+[[migrations]]
+tag = "v1-team-round"
+new_sqlite_classes = ["TeamRound"]
+'''
+
+    def ship_rooms(self, mode="deploy", make_rooms=False):
+        self.build()
+        (self.out / "company/wrangler.toml").write_text(self.ROOMS, encoding="utf-8")
+        out = io.StringIO()
+        d.os.environ["CLOUDFLARE_API_TOKEN"] = "test-token-not-real"
+        try:
+            with contextlib.redirect_stdout(out):
+                d.ship(["company"], self.out, mode, "0123456789abcdef", "시험", False, make_rooms)
+        finally:
+            d.os.environ.pop("CLOUDFLARE_API_TOKEN", None)
+            self.printed = out.getvalue()
+        return self.printed
+
+    def test_a_room_the_live_version_lacks_is_left_out_of_an_ordinary_deploy(self):
+        out = self.ship_rooms()
+        self.assertNotIn("durable_objects", self.cloud.configs[0])
+        self.assertNotIn("migrations", self.cloud.configs[0])
+        self.assertIn("빼고 올려요", out)
+        self.assertEqual([(NEW_ID, 100.0)], self.cloud.serving)
+        self.assertEqual([], self.cloud.commands(d.WRANGLER + ["deploy"]))
+
+    def test_make_rooms_deploys_once_with_the_migration_and_checks_health(self):
+        out = self.ship_rooms(make_rooms=True)
+        self.assertEqual([], self.cloud.uploads, "nothing uploaded ahead (wrangler deploy serves at once)")
+        self.assertEqual([["deploy"]], self.cloud.deploys)
+        self.assertIn("[[migrations]]", self.cloud.configs[0])
+        self.assertIn("[[durable_objects.bindings]]", self.cloud.configs[0])
+        self.assertEqual([(NEW_ID, 100.0)], self.cloud.serving)
+        self.assertIn("방 만들기", out)
+        self.assertIn("배포 끝", out)
+        self.assertNotIn("카나리 끝", out)
+
+    def test_make_rooms_in_check_mode_sends_nothing(self):
+        out = self.ship_rooms("check", make_rooms=True)
+        self.assertEqual([], self.cloud.uploads)
+        self.assertEqual([], self.cloud.deploys)
+        self.assertIn("check에서 올리지 않아요", out)
+
+    def test_once_the_room_is_live_only_the_past_migration_is_left_out(self):
+        room = {"type": "durable_object_namespace", "name": "TEAM_ROUND", "class_name": "TeamRound"}
+        self.cloud.views[OLD_ID] = OLD_BINDINGS + [room]
+        self.cloud.new_bindings = OLD_BINDINGS + [room]
+        self.ship_rooms()
+        self.assertIn("[[durable_objects.bindings]]", self.cloud.configs[0])
+        self.assertNotIn("[[migrations]]", self.cloud.configs[0])
+        self.assertEqual([(NEW_ID, 100.0)], self.cloud.serving)
 
 
 if __name__ == "__main__":

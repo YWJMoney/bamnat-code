@@ -81,6 +81,7 @@
 // when it expires.
 
 import { SERVER_VERSION } from "./version.js";
+import { pushReady, sendPush } from "./push.js";
 // 2.0.0 [RVD-28] SD-08: 근무 종류 한 규칙표, written by core ShiftRulesExportTest (the company server reads the same file).
 import { SHIFT_RULES } from "./shift-rules.js";
 
@@ -382,7 +383,7 @@ async function route(request, env) {
   if (teamPage) {
     if (teamPage[3] === "/report" && request.method === "POST") return teamReport(request, env, teamPage[1], teamPage[2]);
     // 1.39 [IOS-06] Who opens the team pages, by kind of phone: a number per day only, never kept with the link.
-    if (request.method === "GET" && !teamPage[3] && !previewBot(request)) count(env, `team_${platformOf(request.headers.get("user-agent") || "")}`);
+    if (request.method === "GET" && !teamPage[3] && !previewBot(request) && !request.headers.get("x-live")) count(env, `team_${platformOf(request.headers.get("user-agent") || "")}`);
     const down = await teamDown(env, teamPage[1], teamPage[2]);
     // (route's own `page` below is a match, so the page is made outside it.)
     if (down) return teamDownPage(down);
@@ -399,6 +400,12 @@ async function route(request, env) {
   if (askApi && request.method === "GET") return askRead(request, env, askApi[1]);
   if (askApi && request.method === "PUT") return askChange(request, env, askApi[1]);
   if (askApi && request.method === "DELETE") return askDelete(request, env, askApi[1]);
+  // 2.0.0 [RVQ-57] 검토 I22c-02: 방 라운드 페이지의 실시간(WebSocket)과 웹 알림 켜기·끄기, 그 두 파일.
+  const live = path.match(/^\/([aw])\/([A-Za-z0-9]{22})\/(live|push)$/);
+  if (live && live[3] === "live" && request.method === "GET") return teamLive(request, env, live[1] === "a" ? "ask" : "swap", live[2]);
+  if (live && live[3] === "push" && request.method === "POST") return teamPushSet(request, env, live[1] === "a" ? "ask" : "swap", live[2]);
+  if (path === "/team-live.js" && request.method === "GET") return staticFile(TEAM_LIVE_JS, "text/javascript");
+  if (path === "/team-sw.js" && request.method === "GET") return staticFile(TEAM_SW_JS, "text/javascript", { "service-worker-allowed": "/" });
   const askPage = path.match(/^\/a\/([A-Za-z0-9]{22})(\/pick|\/note)?$/);
   if (askPage && !askPage[2] && (request.method === "GET" || request.method === "HEAD")) return askView(env, askPage[1], url.searchParams.get("d"), null, 200, null, null, opened(request));
   if (askPage && askPage[2] && request.method === "POST") return askPost(request, env, askPage[1], askPage[2].slice(1));
@@ -590,6 +597,11 @@ export function platformOf(ua) {
 
 /** [SRV-08] The key the company server's switch writes while new links rest. */
 const CREATE_OFF = "flag:create_off";
+/**
+ * 2.0.0 [RVQ-57] 검토 I22c-02: 앱 없는 팀원의 웹 알림(브라우저가 주는 알림 주소를 그 라운드 방에 둠)은 처리방침 3.15가 적은 뒤에만.
+ * 회사 서버의 깃발 team.push(3.15 시행일에 저절로 켜짐)가 이 키로 와요. 없으면 '알림 받기' 단추도, 받는 길도, 보내기도 없어요.
+ */
+const TEAM_PUSH = "flag:team_push";
 
 const REMOVED_TEXT = "이 근무표 링크는 신고를 받아 운영 규칙에 따라 내려졌어요. 공유한 분이 앱에서 새 링크를 만들 수 있어요.";
 
@@ -728,9 +740,16 @@ async function admin(request, env, url) {
   if (path === "/flags" && request.method === "PUT") {
     let body = {};
     try { body = JSON.parse((await request.text()).slice(0, 256)); } catch { /* nothing */ }
-    if (body.createOff === true) await kvPut(env, CREATE_OFF, "1");
-    else await kvDel(env, CREATE_OFF);
-    return json({ createOff: body.createOff === true });
+    // 2.0.0 [RVQ-57]: each switch only when it is in the body (the company server sends createOff every time, teamPush from 2.0.0).
+    if ("createOff" in body) {
+      if (body.createOff === true) await kvPut(env, CREATE_OFF, "1");
+      else await kvDel(env, CREATE_OFF);
+    }
+    if ("teamPush" in body) {
+      if (body.teamPush === true) await kvPut(env, TEAM_PUSH, "1");
+      else await kvDel(env, TEAM_PUSH);
+    }
+    return json({ createOff: Boolean(await env.SHARES.get(CREATE_OFF)), teamPush: Boolean(await env.SHARES.get(TEAM_PUSH)) });
   }
   return json({ error: "not_found" }, 404);
 }
@@ -1156,11 +1175,34 @@ const partsOf = (values, partOf) => {
   return parts;
 };
 
-/** One round's room: {m:<i>: the member's own value}. Each request runs alone against what the room holds. */
+/** 2.0.0 [RVQ-57] What a round's room needs to speak for itself (알림의 제목, 마감 하루 전, 비울 때). Nothing about a member. */
+function roundMeta(kind, record) {
+  const mo = Number(String(record.month ?? "").slice(5, 7));
+  return {
+    kind, expiresAt: record.expiresAt,
+    title: kind === "ask" ? `${record.team} ${mo ? `${mo}월 ` : ""}근무 신청` : `${record.team} 근무 바꾸기`,
+    closesAt: kind === "ask" ? record.rules?.closesAt ?? null : null,
+  };
+}
+
+/** Open pages in one room at once (each a browser tab); more wait for the next open. */
+const LIVE_MAX = 200;
+/** A member's 알림 주소 as the browser gives it: an https address of a push service and its two keys. */
+const PUSH_SUB = { endpoint: 1024, key: 128 };
+const DAY_MS = 24 * 3600 * 1000;
+
+/**
+ * One round's room: {m:<i>: the member's own value}. Each request runs alone against what the room holds.
+ * 2.0.0 [RVQ-57] 검토 I22c-02 실시간: an open page keeps a WebSocket here (hibernating, so a quiet room costs nothing) and hears
+ * "changed" when anyone's press, the leader's change or the end changes what it shows. 웹 알림 (깃발 team.push, 처리방침 3.15): a member
+ * who turned it on is kept as `p:<i>` (the browser's push address, its keys and their own page) and hears three things only: someone
+ * asked them to swap or answered their ask, the leader decided their ask, and the round closed, opened again or closes tomorrow.
+ */
 export class TeamRound {
-  constructor(state) {
+  constructor(state, env = {}) {
     this.state = state;
     this.storage = state.storage;
+    this.env = env;
   }
 
   async values() {
@@ -1178,45 +1220,285 @@ export class TeamRound {
     }
     await this.storage.put(entries);
     if (expiresAt && (await this.storage.getAlarm()) == null) await this.storage.setAlarm(Date.parse(expiresAt) + 60 * 1000);
+    this.tell();
+  }
+
+  /** Every open page hears that what it shows changed; each then reads its own page again. */
+  tell(what = "changed") {
+    for (const ws of this.state.getWebSockets?.() ?? []) {
+      try { ws.send(what); } catch { /* a page that went away */ }
+    }
+  }
+
+  /** The round's words, kept so the alarm can speak (the reminder a day before 마감) and moved to the next thing it waits for. */
+  async meta(meta) {
+    if (!meta) return (await this.storage.get?.("meta")) ?? null;
+    const was = (await this.storage.get?.("meta")) ?? {};
+    const next = { ...meta, dueSent: was.dueSent === meta.closesAt ? was.dueSent : null };
+    await this.storage.put({ meta: next });
+    await this.plan(next);
+    return next;
+  }
+
+  /** The next alarm: the reminder a day before 마감 while it is to come and someone may hear it, else the round's end. */
+  async plan(meta) {
+    const end = meta?.expiresAt ? Date.parse(meta.expiresAt) + 60 * 1000 : null;
+    const due = meta?.closesAt != null && meta.dueSent !== meta.closesAt ? meta.closesAt - DAY_MS : null;
+    const at = due != null && due > Date.now() && (end == null || due < end) ? due : end;
+    if (at != null) await this.storage.setAlarm(at);
+  }
+
+  async pushOn() {
+    return Boolean(this.env?.SHARES && (await this.env.SHARES.get(TEAM_PUSH)) && pushReady(this.env));
+  }
+
+  /** Sends [message] to these members' browsers (those who turned 알림 on); one the push service no longer knows is let go. */
+  async notify(list, message) {
+    if (!list.length || !(await this.pushOn())) return;
+    const keys = pushReady(this.env);
+    const subs = await this.storage.list({ prefix: "p:" });
+    const sends = [];
+    for (const i of new Set(list.map(String))) {
+      const sub = subs.get(`p:${i}`);
+      if (!sub) continue;
+      sends.push(sendPush(keys, sub, { title: message.title, body: message.body, url: sub.url, tag: `team-${message.tag ?? "round"}` }, Date.now())
+        .then((status) => (status === 404 || status === 410 ? this.storage.delete(`p:${i}`) : null)));
+    }
+    const all = Promise.all(sends);
+    if (this.state.waitUntil) this.state.waitUntil(all); else await all;
   }
 
   async fetch(request) {
+    // The page's WebSocket: accepted here so the room can be put to sleep between presses.
+    if (request.headers.get("upgrade")?.toLowerCase() === "websocket") {
+      if ((this.state.getWebSockets?.() ?? []).length >= LIVE_MAX) return new Response("busy", { status: 503 });
+      const pair = new WebSocketPair();
+      this.state.acceptWebSocket(pair[1]);
+      return new Response(null, { status: 101, webSocket: pair[0] });
+    }
     let b;
     try { b = await request.json(); } catch { return json({ error: "bad_json" }, 400); }
     if (b?.op === "drop") {
+      this.tell("gone");
       await this.storage.deleteAll();
       await this.storage.deleteAlarm();
+      return json({ ok: true });
+    }
+    if (b?.op === "pushing") return json({ on: Boolean(await this.storage.get?.(`p:${b.i}`)) });
+    if (b?.op === "push") {
+      if (!b.sub) await this.storage.delete(`p:${b.i}`);
+      else if (await this.pushOn()) {
+        await this.storage.put({ [`p:${b.i}`]: b.sub });
+        if (!(await this.meta())) await this.meta(b.meta);
+      } else return json({ error: "off" }, 403);
+      return json({ on: Boolean(b.sub) });
+    }
+    if (b?.op === "round") {
+      const meta = await this.meta(b.meta);
+      this.tell();
+      if (b.was !== b.open) {
+        const who = [...(await this.storage.list({ prefix: "p:" })).keys()].map((k) => k.slice(2));
+        await this.notify(who, { title: meta.title, tag: "round", body: b.open ? (meta.kind === "ask" ? "신청이 다시 열렸어요. 눌러서 골라 주세요." : "바꾸기가 다시 열렸어요.") : (meta.kind === "ask" ? "신청이 마감됐어요. 리더가 근무표를 만들면 링크로 보내 줘요." : "리더가 바꾸기를 닫았어요.") });
+      }
       return json({ ok: true });
     }
     const values = await this.values();
     const expiresAt = b?.record?.expiresAt ?? b?.expiresAt ?? null;
     if (b?.op === "all") return json({ values });
     if (b?.op === "seen") {
-      if (!values[b.i]?.seenAt) await this.keep(values, { [b.i]: { ...(values[b.i] ?? {}), seenAt: b.at } }, expiresAt);
+      if (!values[b.i]?.seenAt) {
+        values[b.i] = { ...(values[b.i] ?? {}), seenAt: b.at };
+        await this.storage.put({ [`m:${b.i}`]: values[b.i] });
+        if (expiresAt && (await this.storage.getAlarm()) == null) await this.storage.setAlarm(Date.parse(expiresAt) + 60 * 1000);
+      }
       return json({ values });
     }
     if (b?.op === "ask") {
+      if (!(await this.meta())) await this.meta(roundMeta("ask", b.record));
       const out = askApply(b.record, b.m, values, b.input);
       await this.keep(values, out.changed, expiresAt);
       return json({ said: out.said, values });
     }
     if (b?.op === "swap") {
+      if (!(await this.meta())) await this.meta(roundMeta("swap", b.record));
       const out = swapApply(b.record, b.p, values, b.input, b.now);
       await this.keep(values, out.changed, expiresAt);
+      if (out.said?.ok && b.input?.what === "ask") await this.notify([b.input.q], { title: roundMeta("swap", b.record).title, tag: "ask", body: "바꾸기 요청이 하나 왔어요. 눌러서 답해 주세요." });
+      if (out.said?.ok && b.input?.what === "reply") await this.notify([b.input.from], { title: roundMeta("swap", b.record).title, tag: "reply", body: "요청한 바꾸기에 답이 왔어요." });
       return json({ said: out.said, status: out.status, values });
     }
     if (b?.op === "decide") {
       const changed = swapDecide(values, b.decide, b.now);
       await this.keep(values, changed, expiresAt);
+      if (changed) await this.notify(Object.keys(changed), { title: b.meta?.title ?? "근무 바꾸기", tag: "decide", body: "리더가 바꾸기 요청을 확인했어요. 눌러서 결과를 봐 주세요." });
       return json({ values });
     }
     return json({ error: "op" }, 400);
   }
 
+  async webSocketMessage(ws, message) {
+    if (message === "ping") ws.send("pong");
+  }
+
+  async webSocketClose(ws, code) {
+    try { ws.close(code === 1005 || code === 1006 ? 1000 : code); } catch { /* already closed */ }
+  }
+
   async alarm() {
+    const meta = await this.meta();
+    // The reminder a day before 마감, once for that 마감, to those who turned 알림 on and have not asked yet.
+    if (meta?.closesAt != null && meta.dueSent !== meta.closesAt && Date.now() >= meta.closesAt - DAY_MS && Date.now() < meta.closesAt) {
+      const values = await this.values();
+      const who = [...(await this.storage.list({ prefix: "p:" })).keys()].map((k) => k.slice(2)).filter((i) => !values[i]?.wishes?.length);
+      await this.notify(who, { title: meta.title, tag: "due", body: "신청 마감이 내일이에요. 아직 고르지 않았다면 지금 골라 주세요." });
+      const next = { ...meta, dueSent: meta.closesAt };
+      await this.storage.put({ meta: next });
+      await this.plan(next);
+      return;
+    }
+    if (meta?.expiresAt && Date.now() < Date.parse(meta.expiresAt)) return this.plan(meta);
+    this.tell("gone");
     await this.storage.deleteAll();
   }
 }
+
+/** 2.0.0 [RVQ-57] The live part of a room round's page: the one script, the line it shows when a change waits, and 알림 when it may. */
+async function liveSlot(env, room, kind, key, i) {
+  const pushKey = (await env.SHARES.get(TEAM_PUSH)) ? pushReady(env)?.publicKey : null;
+  const on = pushKey ? (await roomCall(room, { op: "pushing", i })).on : false;
+  const push = pushKey ? `<p class="live-push" hidden><button type="button" class="get line" data-on="${on ? "1" : ""}">${on ? "알림 끄기" : "알림 받기"}</button> <span class="small muted">${on ? "요청·답·마감 소식이 이 브라우저로 와요" : "요청·답·마감 소식만 이 브라우저로 받아요"}</span></p>` : "";
+  return `<div id="live" data-live="/${kind}/${key}/live" data-push="${esc(pushKey ?? "")}" data-base="/${kind}/${key}" hidden></div>
+<p class="live-bar panel" hidden role="status">다른 분이 고른 것이 있어요. <button type="button" class="get line">새로 보기</button></p>${push}
+<script src="/team-live.js" defer></script>`;
+}
+
+async function teamFound(env, kind, key) {
+  const found = kind === "ask" ? await askFind(env, key) : await swapFind(env, key);
+  if (!found) return null;
+  const room = roomOf(env, kind, found.id, found.record);
+  return room ? { ...found, room, i: kind === "ask" ? found.m : found.p } : null;
+}
+
+/** GET /a|w/<key>/live: the page's WebSocket into its round's room (a room round only). */
+async function teamLive(request, env, kind, key) {
+  if (request.headers.get("upgrade")?.toLowerCase() !== "websocket") return json({ error: "upgrade" }, 426);
+  const found = await teamFound(env, kind, key);
+  if (!found) return json({ error: "not_found" }, 404);
+  return found.room.fetch(new Request("https://team-round/live", { headers: { upgrade: "websocket" } }));
+}
+
+/** POST /a|w/<key>/push {sub: PushSubscription JSON} or {off: true}: this member's 알림 (깃발 team.push, 처리방침 3.15). */
+async function teamPushSet(request, env, kind, key) {
+  if (!(await allow(env, request, "ap", LIMITS.askPerHour))) return json({ error: "rate_limited" }, 429);
+  const found = await teamFound(env, kind, key);
+  if (!found) return json({ error: "not_found" }, 404);
+  let body;
+  try { body = JSON.parse((await request.text()).slice(0, 4096)); } catch { return json({ error: "bad_json" }, 400); }
+  if (body?.off === true) return json(await roomCall(found.room, { op: "push", i: found.i, sub: null }));
+  if (!(await env.SHARES.get(TEAM_PUSH)) || !pushReady(env)) return json({ error: "off" }, 403);
+  const s = body?.sub;
+  const b64 = (v) => typeof v === "string" && v.length <= PUSH_SUB.key && /^[A-Za-z0-9_-]+=*$/.test(v);
+  let endpoint = null;
+  try { endpoint = new URL(s?.endpoint); } catch { /* not an address */ }
+  if (!endpoint || endpoint.protocol !== "https:" || s.endpoint.length > PUSH_SUB.endpoint || !b64(s?.keys?.p256dh) || !b64(s?.keys?.auth)) return json({ error: "bad_sub" }, 400);
+  const sub = { endpoint: s.endpoint, p256dh: s.keys.p256dh, auth: s.keys.auth, url: `/${kind === "ask" ? "a" : "w"}/${key}` };
+  return json(await roomCall(found.room, { op: "push", i: found.i, sub, meta: roundMeta(kind, found.record) }));
+}
+
+function staticFile(body, type, extra = {}) {
+  return new Response(body, { headers: { "content-type": `${type}; charset=utf-8`, "cache-control": "public, max-age=3600", "x-content-type-options": "nosniff", ...extra } });
+}
+
+/**
+ * 2.0.0 [RVQ-57] The one script of a room round's page. Without it (or without WebSocket) the page is as before: it reads the room
+ * when opened. With it: a change by anyone reads the page again in place (where it was scrolled), unless a line is being written,
+ * then a quiet line offers it. 알림 받기 appears only when the server offers it and this browser can.
+ */
+export const TEAM_LIVE_JS = `(() => {
+  const box = document.getElementById("live");
+  if (!box || !("WebSocket" in window)) return;
+  const path = box.dataset.live, base = box.dataset.base, pushKey = box.dataset.push;
+  let ws, tries = 0, wait = null, last = 0;
+  const writing = () => {
+    const a = document.activeElement;
+    if (a && (a.tagName === "INPUT" || a.tagName === "TEXTAREA") && a.type !== "hidden") return true;
+    return [...document.querySelectorAll("main input:not([type=hidden]), main textarea")].some((i) => i.value !== i.defaultValue);
+  };
+  const bar = () => document.querySelector(".live-bar");
+  async function refresh(force) {
+    if (!force && writing()) { const b = bar(); if (b) b.hidden = false; return; }
+    const res = await fetch(location.pathname + location.search, { headers: { "x-live": "1" }, cache: "no-store" }).catch(() => null);
+    if (!res || !res.ok) { if (res && res.status === 404) location.reload(); return; }
+    const next = new DOMParser().parseFromString(await res.text(), "text/html").querySelector("main");
+    const now = document.querySelector("main");
+    if (!next || !now) return;
+    const y = window.scrollY;
+    now.replaceWith(next);
+    window.scrollTo(0, y);
+    wire();
+  }
+  function later() {
+    clearTimeout(wait);
+    const gap = Math.max(800, 3000 - (Date.now() - last));
+    wait = setTimeout(() => { last = Date.now(); refresh(false); }, gap);
+  }
+  function open() {
+    ws = new WebSocket((location.protocol === "https:" ? "wss://" : "ws://") + location.host + path);
+    ws.onopen = () => { tries = 0; };
+    ws.onmessage = (e) => { if (e.data === "gone") location.reload(); else if (e.data === "changed") later(); };
+    ws.onclose = () => { if (++tries <= 6 && !document.hidden) setTimeout(open, Math.min(30000, 1000 * 2 ** tries)); };
+  }
+  function wire() {
+    const b = bar();
+    if (b) b.querySelector("button").onclick = () => { b.hidden = true; refresh(true); };
+    const p = document.querySelector(".live-push");
+    if (!p || !pushKey || !("serviceWorker" in navigator) || !("PushManager" in window) || !("Notification" in window)) return;
+    p.hidden = false;
+    const btn = p.querySelector("button"), note = p.querySelector("span");
+    btn.onclick = async () => {
+      btn.disabled = true;
+      try {
+        if (btn.dataset.on) {
+          await fetch(base + "/push", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ off: true }) });
+          btn.dataset.on = ""; btn.textContent = "알림 받기"; note.textContent = "알림을 껐어요";
+        } else {
+          if ((await Notification.requestPermission()) !== "granted") { note.textContent = "브라우저에서 알림을 허용해야 받을 수 있어요"; return; }
+          const reg = await navigator.serviceWorker.register("/team-sw.js", { scope: "/" });
+          await navigator.serviceWorker.ready;
+          const raw = atob(pushKey.replace(/-/g, "+").replace(/_/g, "/") + "=".repeat((4 - pushKey.length % 4) % 4));
+          const sub = (await reg.pushManager.getSubscription()) || await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: Uint8Array.from(raw, (c) => c.charCodeAt(0)) });
+          const res = await fetch(base + "/push", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ sub: sub.toJSON() }) });
+          if (!res.ok) { note.textContent = "지금은 알림을 켤 수 없어요. 잠시 뒤에 다시 해 주세요"; return; }
+          btn.dataset.on = "1"; btn.textContent = "알림 끄기"; note.textContent = "알림을 켰어요. 요청·답·마감 소식이 와요";
+        }
+      } catch { note.textContent = "이 브라우저에서는 알림을 켤 수 없어요"; } finally { btn.disabled = false; }
+    };
+  }
+  wire();
+  open();
+  document.addEventListener("visibilitychange", () => {
+    if (document.hidden || (ws && ws.readyState <= 1)) return;
+    tries = 0; open(); refresh(false);
+  });
+})();
+`;
+
+/** 2.0.0 [RVQ-57] The team pages' service worker: shows a round's 알림 and opens the member's own page when it is pressed. */
+export const TEAM_SW_JS = `self.addEventListener("push", (e) => {
+  let d = {};
+  try { d = e.data ? e.data.json() : {}; } catch { d = {}; }
+  e.waitUntil(self.registration.showNotification(d.title || "밤낮 팀", { body: d.body || "", tag: d.tag, data: { url: d.url || "/" }, icon: "/apple-touch-icon.png" }));
+});
+self.addEventListener("notificationclick", (e) => {
+  e.notification.close();
+  const url = new URL((e.notification.data && e.notification.data.url) || "/", self.location.origin);
+  if (url.origin !== self.location.origin) return;
+  e.waitUntil(self.clients.matchAll({ type: "window" }).then((list) => {
+    const same = list.find((c) => new URL(c.url).pathname === url.pathname);
+    return same ? same.focus() : self.clients.openWindow(url.href);
+  }));
+});
+`;
 
 const askPart = (v) => (v.wishes?.length ? v.wishes.map(({ d, k, s, at }) => ({ d, k, ...(s != null ? { s } : {}), at })) : null);
 const askWishesOf = (parts) => Object.entries(parts).flatMap(([m, list]) => list.map((w) => ({ m: Number(m), ...w })));
@@ -1337,8 +1619,12 @@ async function askChange(request, env, id) {
     if (body.closesAt !== null && !Number.isFinite(body.closesAt)) return json({ error: "bad_round" }, 400);
     record.rules.closesAt = body.closesAt;
   }
+  const was = askOpen(record);
   if (typeof body?.closed === "boolean") record.closed = body.closed;
   await put(env, askKey(id), record);
+  // 2.0.0 [RVQ-57]: open pages see it at once; members who turned on 알림 hear that it closed or opened again; the reminder follows the new 마감.
+  const room = roomOf(env, "ask", id, record);
+  if (room) await roomCall(room, { op: "round", meta: roundMeta("ask", record), was, open: askOpen(record) });
   return new Response(null, { status: 204 });
 }
 
@@ -1525,7 +1811,8 @@ async function askView(env, key, day, said, status = 200, known = null, mineKnow
 <p class="rule">${esc(rule)}</p>${saidHtml}${monthList(widestWord(mine.wishes.map(label)))}<div class="cal"><div class="grid">${heads}${cells.join("")}</div></div>${panel}
 <h2>내 신청 ${mine.wishes.length}일</h2>${list}<h2>리더에게 한 줄</h2>${note}
 <p class="foot muted">신청한 날·종류·한 줄·신청한 시각만 리더에게 가요. 다른 사람에게는 날마다 몇 명이 신청했는지만 보여요${rules.showNames ? "(리더가 이름도 보이게 했어요)" : ""}. 위치·전화번호·기기 정보는 보내지 않아요. 근무표가 확정되면 리더가 근무표 링크를 보내 줘요.</p>${spreadSlot("request")}`;
-  return html(page(`${record.team} ${mo}월 근무 신청`, body + teamFoot("a", key), "밤낮", "request"), status);
+  const liveHtml = room ? await liveSlot(env, room, "a", key, m) : "";
+  return html(page(`${record.team} ${mo}월 근무 신청`, liveHtml + body + teamFoot("a", key), "밤낮", "request"), status, Boolean(room));
 }
 
 // ---- 1.38 [P3-X-01] 결원 메우기 (and the other yes/no asks of a team) ----
@@ -2199,10 +2486,13 @@ async function swapChange(request, env, id, url) {
   if (decide.some((x) => !Number.isInteger(x?.p) || x.p < 0 || x.p >= record.people.length || !Number.isInteger(x?.d) || (x.state !== "done" && x.state !== "denied"))) {
     return json({ error: "bad_swap" }, 400);
   }
+  const wasClosed = (await env.SHARES.get(swapKey(id), "json"))?.closed === true;
   await put(env, swapKey(id), record);
   const room = roomOf(env, "swap", id, record);
   if (room) {
-    if (decide.length) await roomCall(room, { op: "decide", decide, now: new Date().toISOString(), expiresAt: record.expiresAt });
+    if (decide.length) await roomCall(room, { op: "decide", decide, now: new Date().toISOString(), expiresAt: record.expiresAt, meta: roundMeta("swap", record) });
+    // 2.0.0 [RVQ-57]: a new board or a close shows on open pages at once (a decide tells them itself).
+    else await roomCall(room, { op: "round", meta: roundMeta("swap", record), was: !wasClosed, open: !record.closed });
     return new Response(null, { status: 204 });
   }
   const values = {};
@@ -2361,7 +2651,8 @@ async function swapView(env, key, said, status = 200, known = null, human = true
   const body = `<h1>${esc(record.team)} ${m}월 근무 바꾸기</h1><p class="muted">${esc(me)}님 · 근무 규칙(쉬는 시간·주 52시간)에 맞는 사람만 보여요</p>${saidHtml}${inHtml}${sentHtml}
 <h2>바꿀 수 있는 날</h2>${pickHtml}
 <p class="foot muted">고른 날·상대·답과 누른 시각만 리더에게 가요. 위치·전화번호·기기 정보는 보내지 않아요.</p>${spreadSlot("swap")}`;
-  return html(page(`${record.team} 근무 바꾸기`, body + teamFoot("w", key), "밤낮", "swap"), status);
+  const liveHtml = room ? await liveSlot(env, room, "w", key, p) : "";
+  return html(page(`${record.team} 근무 바꾸기`, liveHtml + body + teamFoot("w", key), "밤낮", "swap"), status, Boolean(room));
 }
 
 function groupCode() {
@@ -3133,7 +3424,7 @@ function json(data, status = 200) {
   });
 }
 
-function html(body, status = 200) {
+function html(body, status = 200, live = false) {
   return new Response(body, {
     status,
     headers: {
@@ -3143,7 +3434,7 @@ function html(body, status = 200) {
       "referrer-policy": "no-referrer",
       "x-content-type-options": "nosniff",
       // [SRV-05] The only form is the page's own 신고, sent back to this address.
-      "content-security-policy": "default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'",
+      "content-security-policy": `default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'${live ? "; script-src 'self'; connect-src 'self'; worker-src 'self'; img-src 'self'" : ""}`,
     },
   });
 }
@@ -3565,6 +3856,7 @@ main{max-width:720px;margin:0 auto;padding:24px 16px 48px}h1{font-size:22px;marg
 .spread{position:relative;margin-top:28px;background:var(--card);border:1px solid var(--line);border-radius:14px;padding:14px}.spread p{margin:0 0 4px}.spread .t{font-weight:700;padding-right:34px}
 .spread .x{position:absolute;top:4px;right:4px;margin:0}.spread .x button{width:44px;height:44px;border:none;background:none;color:var(--muted);font-size:22px;cursor:pointer}
 .spread .get{display:inline-block;margin:8px 0 4px;padding:10px 16px;border-radius:999px;background:var(--today);color:#15192B;font-weight:700;text-decoration:none;min-height:44px;box-sizing:border-box}.spread a{color:var(--fg)}
+.live-bar{position:sticky;top:8px;z-index:5;margin:0 0 12px;box-shadow:0 2px 10px rgba(0,0,0,.14)}.live-push{margin:0 0 12px}.live-bar button,.live-push button{min-height:44px;padding:9px 15px;border-radius:999px;border:1px solid var(--muted);background:none;color:var(--fg);font-size:15px;cursor:pointer}
 .feed p{margin:4px 0}.feed .get{display:inline-block;padding:10px 16px;border-radius:999px;background:var(--today);color:#15192B;font-weight:700;text-decoration:none;min-height:44px;box-sizing:border-box}.get.line{background:none;color:var(--fg);border:1px solid var(--muted);padding:9px 15px}.addr{user-select:all;word-break:break-all}
 </style></head><body><main>${body}</main></body></html>`;
 }

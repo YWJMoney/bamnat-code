@@ -124,6 +124,18 @@ class DeployWorkerTest(unittest.TestCase):
         share = (Path(__file__).resolve().parent.parent / "server/share-worker/wrangler.toml").read_text(encoding="utf-8")
         self.assertEqual(d.config_problems(share, "share"), [])
 
+    def test_rooms_config(self):
+        # 2.0.0 [RVQ-57] 방 바인딩과 migration은 받는 칸이고, 표째로 뺄 수 있어요.
+        text = (Path(__file__).resolve().parent.parent / "server/share-worker/wrangler.toml").read_text(encoding="utf-8")
+        self.assertEqual(d.config_problems(text, "share"), [])
+        self.assertEqual(d.room_names(text), ["TEAM_ROUND"])
+        out = d.drop_tables(text, d.ROOM_TABLES)
+        self.assertEqual(d.room_names(out), [])
+        self.assertFalse([line for line in out.splitlines() if line.strip() in d.ROOM_TABLES])
+        self.assertIn('binding = "SHARES"', out)
+        import tomllib
+        tomllib.loads(out)
+
     def test_failing_test_names(self):
         tap = "ok 1 - a\nnot ok 2 - login counts at once # TODO\n  ---\nnot ok 3 - test/accounts.test.mjs\n# fail 1\n"
         self.assertEqual(d.failing_tests(tap), ["login counts at once"])
@@ -236,7 +248,7 @@ class DeployWorkerTest(unittest.TestCase):
     def test_both_rolls_back_the_first_when_the_second_fails(self):
         order = []
 
-        def fake_stage(w, src, work, sha, reason, allow_older):
+        def fake_stage(w, src, work, sha, reason, allow_older, make_rooms=False):
             order.append(f"upload {w}")
             return d.Ready(w, f"old-{w}", f"new-{w}", "2.0.0", "2.0.0", "")
 

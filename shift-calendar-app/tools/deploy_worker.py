@@ -201,7 +201,33 @@ def crons_of(config_text: str) -> list[str] | None:
 CONFIG_KEYS = {
     "name", "main", "compatibility_date", "compatibility_flags", "workers_dev", "keep_vars", "placement", "triggers",
     "version_metadata", "d1_databases", "kv_namespaces", "vars", "observability", "limits", "upload_source_maps",
+    # 2.0.0 [RVQ-57] 검토 I22c-02: 공유 서버의 팀 방(Durable Object TeamRound)과 그 종류를 만드는 migration.
+    "durable_objects", "migrations",
 }
+
+
+def room_names(text: str) -> list[str]:
+    """2.0.0 [RVQ-57] 설정이 잇는 방(Durable Object) 바인딩 이름."""
+    try:
+        cfg = tomllib.loads(text)
+    except tomllib.TOMLDecodeError:
+        return []
+    return [str(b.get("name")) for b in (cfg.get("durable_objects") or {}).get("bindings", []) if b.get("name")]
+
+
+def drop_tables(text: str, headers: tuple[str, ...]) -> str:
+    """2.0.0 [RVQ-57] 설정에서 이 머리([[migrations]] 같은)의 표를 다음 표 머리까지 빼요(주석은 그대로)."""
+    out, skip = [], False
+    for line in text.splitlines(keepends=True):
+        head = line.strip()
+        if head.startswith("["):
+            skip = head in headers
+        if not skip:
+            out.append(line)
+    return "".join(out)
+
+
+ROOM_TABLES = ("[[durable_objects.bindings]]", "[[migrations]]")
 
 
 def config_problems(text: str, worker: str) -> list[str]:
@@ -666,15 +692,17 @@ def build(workers: list[str], out: Path, prev: Path | None, skips=()) -> None:
 # ---------- 2. ship (토큰 있음, main의 이 도구 + build가 만든 파일만) ----------
 
 class Ready:
-    """올리고 대조까지 끝난 판(아직 손님 안 받음)."""
+    """올리고 대조까지 끝난 판(아직 손님 안 받음). rooms: 방을 처음 만드는 판(올리지 않고 go_live에서 wrangler deploy로)."""
 
-    def __init__(self, worker: str, old_id: str, new_id: str, new_ver: str, live_ver: str | None, config_text: str):
+    def __init__(self, worker: str, old_id: str, new_id: str | None, new_ver: str, live_ver: str | None, config_text: str,
+                 rooms: list[str] | None = None, old_bindings: list[dict] | None = None):
         self.worker, self.old_id, self.new_id, self.new_ver, self.live_ver, self.config_text = worker, old_id, new_id, new_ver, live_ver, config_text
+        self.rooms, self.old_bindings = rooms or [], old_bindings or []
         self.crons_before: list[str] | None = None
         self.deployed = False
 
 
-def stage_upload(worker: str, src: Path, work: Path, sha: str, reason: str, allow_older: bool) -> Ready:
+def stage_upload(worker: str, src: Path, work: Path, sha: str, reason: str, allow_older: bool, make_rooms: bool = False) -> Ready:
     w = WORKERS[worker]
     base = (os.environ.get(w["health_env"]) or w["health_base"]).rstrip("/")
     name = ["--name", w["name"]]
@@ -695,6 +723,15 @@ def stage_upload(worker: str, src: Path, work: Path, sha: str, reason: str, allo
     if problems:
         raise Stop("build가 넘긴 wrangler.toml에 받지 않는 칸이 있어요: " + ", ".join(problems), stage="설정")
     config_text = fill_config(raw, w["fill"], old)
+    # 2.0.0 [RVQ-57] 방(Durable Object): Cloudflare는 방 종류를 만드는 migration을 `versions upload`로 받지 않아요(`wrangler deploy`만).
+    # 앞 판에 그 방이 없으면 보통 배포는 방 없이 올려요(코드는 방이 없으면 전처럼 KV로 돌아요). 방은 make_rooms 배포 한 번으로 만들고,
+    # 그 뒤로는 방이 앞 판에 있으니 이미 지난 migration만 빼고 올려요.
+    new_rooms = [n for n in room_names(raw) if n not in binding_names(old)]
+    if new_rooms and not make_rooms:
+        config_text = drop_tables(config_text, ROOM_TABLES)
+        say(f"- 방 {', '.join(new_rooms)}은 아직 없어 이번에는 빼고 올려요(코드는 방 없이 전처럼 돌아요). 방은 make_rooms 배포 한 번으로 만들어요")
+    else:
+        config_text = drop_tables(config_text, ("[[migrations]]",)) if not new_rooms else config_text
     (work / "wrangler.deploy.toml").write_text(config_text, encoding="utf-8")
     shutil.copyfile(src / "worker.js", work / "worker.js")
 
@@ -707,6 +744,10 @@ def stage_upload(worker: str, src: Path, work: Path, sha: str, reason: str, allo
     if why:
         raise Stop(why, stage="판 이름")
     say(f"- 판 이름 {new_ver} (지금 {live_ver or '알 수 없음'}{', --allow-older' if allow_older else ''})")
+
+    if new_rooms and make_rooms:
+        say(f"- **방 만들기 배포**: {', '.join(new_rooms)}. 미리 올리지 않고 확인 단계에서 `wrangler deploy`로 바로 100%예요(카나리 없음)")
+        return Ready(worker, old_id, None, new_ver, live_ver, config_text, rooms=new_rooms, old_bindings=old)
 
     # 5·6. 올리기와 바인딩 대조
     def upload(extra_vars: dict[str, str]) -> tuple[str, list[dict]]:
@@ -788,30 +829,48 @@ def go_live(r: Ready, work: Path, sha: str, reason: str) -> None:
     w = WORKERS[r.worker]
     base = (os.environ.get(w["health_env"]) or w["health_base"]).rstrip("/")
     name = ["--name", w["name"]]
-    run(WRANGLER + ["versions", "deploy", f"{r.new_id}@100%", "--yes", "--message", f"{r.new_ver} {sha[:8]} {reason}"[:100]] + name, work, stage="확인")
-    r.deployed = True
     problems = []
+    if r.rooms:
+        # 2.0.0 [RVQ-57] 방을 처음 만드는 한 번: migration과 함께 바로 100%. 새 판 번호는 배포 상태에서 읽고, 앞 판 바인딩이 모두 이어졌는지 봐요.
+        run(WRANGLER + ["deploy", "worker.js", "--config", "wrangler.deploy.toml", "--no-bundle", "--keep-vars", "--tag", sha[:12],
+                        "--message", f"{r.new_ver} {sha[:8]} 방 만들기 {reason}"[:100]], work, stage="방 만들기")
+        r.deployed = True
+        try:
+            serving = current_versions(wrangler_json(["deployments", "status"] + name, work))
+            r.new_id = serving[0][0] if len(serving) == 1 else None
+            lost = missing_bindings(r.old_bindings, find_bindings(wrangler_json(["versions", "view", r.new_id] + name, work))) if r.new_id else {}
+            if not r.new_id:
+                problems.append(f"방 만들기 뒤 배포 상태를 읽지 못했어요: {serving}")
+            elif lost:
+                problems.append(f"새 판에 앞 판 바인딩이 빠져요: {lost}")
+        except Exception as e:  # noqa: BLE001 - 무엇이 어긋나도 되돌려 봐요
+            problems.append(f"방 만들기 확인 중 오류: {e}")
+    else:
+        run(WRANGLER + ["versions", "deploy", f"{r.new_id}@100%", "--yes", "--message", f"{r.new_ver} {sha[:8]} {reason}"[:100]] + name, work, stage="확인")
+        r.deployed = True
     try:
-        want = crons_of(r.config_text)
-        if want is not None:
-            have = schedules(r.worker)
-            if have != sorted(want):
-                r.crons_before = have
-                now = schedules(r.worker, want)
-                say(f"- 정기 작업 맞춤: {have} → {now} (되돌릴 때 앞 값으로)")
-        for i in range(5):
-            time.sleep(10)
-            ok, note = healthy(r.worker, base, r.new_ver)
-            if not ok:
-                problems.append(f"{i + 1}번째: {note}")
-        serving = current_versions(wrangler_json(["deployments", "status"] + name, work))
-        if serving != [(r.new_id, 100.0)]:
-            problems.append(f"배포 상태가 새 판 100%가 아니에요: {serving}")
+        if not problems:
+            want = crons_of(r.config_text)
+            if want is not None:
+                have = schedules(r.worker)
+                if have != sorted(want):
+                    r.crons_before = have
+                    now = schedules(r.worker, want)
+                    say(f"- 정기 작업 맞춤: {have} → {now} (되돌릴 때 앞 값으로)")
+            for i in range(5):
+                time.sleep(10)
+                ok, note = healthy(r.worker, base, r.new_ver)
+                if not ok:
+                    problems.append(f"{i + 1}번째: {note}")
+            serving = current_versions(wrangler_json(["deployments", "status"] + name, work))
+            if serving != [(r.new_id, 100.0)]:
+                problems.append(f"배포 상태가 새 판 100%가 아니에요: {serving}")
     except Exception as e:  # noqa: BLE001 - 배포 뒤 무엇이 어긋나도 되돌려요
         problems.append(f"확인 중 오류: {e}")
     if problems:
         undo(r, work, "확인")
-        raise Stop("배포 뒤 확인 실패, 앞 판으로 되돌렸어요: " + " / ".join(problems), stage="확인")
+        raise Stop("배포 뒤 확인 실패, 앞 판으로 되돌렸어요: " + " / ".join(problems)
+                   + (" (방 종류와 그 안의 것은 남아요. 방을 쓰던 라운드는 다시 올린 뒤 보여요)" if r.rooms else ""), stage="확인")
     say(f"- **배포 끝**: {w['name']} {r.new_ver} `{r.new_id[:8]}`, health 5번 모두 맞음. 되돌릴 판 `{r.old_id[:8]}`")
 
 
@@ -852,7 +911,7 @@ def undo(r: Ready, work: Path, why: str) -> None:
     say(f"- {w['name']} **앞 판 `{r.old_id[:8]}`으로 되돌림**(배포 상태 앞 판 100% 확인{', 정기 작업 앞 값' if r.crons_before is not None else ''}, {note})")
 
 
-def ship(workers: list[str], src: Path, mode: str, sha: str, reason: str, allow_older: bool) -> None:
+def ship(workers: list[str], src: Path, mode: str, sha: str, reason: str, allow_older: bool, make_rooms: bool = False) -> None:
     """올리기·대조는 모든 Worker 먼저(손님 안 받음), 그다음 차례로 배포. 뒤의 것이 실패하면 앞에서 배포한 것도 되돌려요(RVQ-02 (라))."""
     account()
     with tempfile.TemporaryDirectory(prefix="bamnat-ship-") as tmp:
@@ -861,14 +920,16 @@ def ship(workers: list[str], src: Path, mode: str, sha: str, reason: str, allow_
             work = Path(tmp) / w
             work.mkdir()
             say(f"#### {WORKERS[w]['name']}")
-            ready.append((stage_upload(w, src / w, work, sha, reason, allow_older), work))
+            ready.append((stage_upload(w, src / w, work, sha, reason, allow_older, make_rooms), work))
         if mode == "check":
+            if any(r.rooms for r, _ in ready):
+                say("- 방 만들기 배포는 check에서 올리지 않아요(`wrangler deploy`는 올리는 즉시 손님을 받아요)")
             say("- check 모드: 여기서 멈춰요(손님은 앞 판 그대로)")
             return
         done: list[tuple[Ready, Path]] = []
         try:
             for r, work in ready:
-                if r.worker == "company":
+                if r.worker == "company" and not r.rooms:
                     canary(r, work, sha)
                 go_live(r, work, sha, reason)
                 done.append((r, work))
@@ -892,6 +953,7 @@ def main() -> None:
     ap.add_argument("--sha", default=os.environ.get("GITHUB_SHA", "local"))
     ap.add_argument("--reason", default="")
     ap.add_argument("--allow-older", action="store_true")
+    ap.add_argument("--make-rooms", action="store_true", help="2.0.0 [RVQ-57] 방(Durable Object)을 처음 만드는 한 번의 배포")
     ap.add_argument("--skip-test", action="append", default=[], help="build: '시험 이름|까닭|YYYY-MM-DD' (RVR-17, 기한 14일 안)")
     a = ap.parse_args()
     workers = ["company", "share"] if a.worker == "both" else [a.worker]
@@ -910,7 +972,7 @@ def main() -> None:
             if not a.src:
                 ap.error("--from")
             say(f"### 서버 {a.mode} {a.sha[:8]}")
-            ship(workers, a.src, a.mode, a.sha, re.sub(r"\s+", " ", a.reason).strip(), a.allow_older)
+            ship(workers, a.src, a.mode, a.sha, re.sub(r"\s+", " ", a.reason).strip(), a.allow_older, a.make_rooms)
         else:
             ap.error("--check-ref 또는 --phase")
     except Stop as e:
