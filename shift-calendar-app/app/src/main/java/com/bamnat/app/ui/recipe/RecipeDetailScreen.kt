@@ -1098,30 +1098,23 @@ internal fun TryFunctionsButton(kinds: List<PieceKind>, enabled: Boolean, start:
     note?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error) }
 }
 
-/** [TRY-06] What the 기능 did while tried, on the page they were tried from (until closed). */
+/**
+ * [TRY-06] What the 기능 did while tried, on the page they were tried from (until closed). 2.0.0 [RVM-56] 총괄 HQ-122 (조건 3·4): the
+ * app's one 안내 카드 ([NudgeCard], 끝남의 ✓): '‘제목’ 써 보기를 끝냈어요' as its line, the counts as its second, and what went back
+ * (RVM-54 U09b-04) opened by its one text button, X to close. It was a teal card of its own with 닫기 in words and a three-line first
+ * sentence (six at 200%).
+ */
 @Composable
 internal fun TriedCard(line: String, details: List<String> = emptyList(), onClose: () -> Unit) {
-    // 2.0.0 [RVM-54] 검토 U09b-04: what went back is one tap away under the line (folded, so the card stays one line until asked).
     var open by androidx.compose.runtime.saveable.rememberSaveable(line) { mutableStateOf(false) }
-    androidx.compose.material3.Surface(color = MaterialTheme.colorScheme.secondaryContainer, shape = MaterialTheme.shapes.medium,
-        modifier = Modifier.fillMaxWidth()) {
-        Column(Modifier.padding(start = 14.dp, top = 6.dp, bottom = 6.dp, end = 4.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(line, style = MaterialTheme.typography.bodySmall, modifier = Modifier.weight(1f))
-                TextButton(onClick = onClose, modifier = Modifier.heightIn(min = 48.dp)) { Text("닫기") }
-            }
-            if (details.isNotEmpty()) {
-                if (open) details.forEach { d ->
-                    Text("· $d", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSecondaryContainer,
-                        modifier = Modifier.padding(end = 10.dp, bottom = 2.dp))
-                }
-                TextButton(onClick = { open = !open }, modifier = Modifier.heightIn(min = 48.dp),
-                    contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 0.dp)) {
-                    Text(if (open) "접기" else "되돌린 것 보기")
-                }
-            }
-        }
-    }
+    val cut = line.indexOf(". ")
+    val head = if (cut > 0) line.substring(0, cut) else line
+    val rest = if (cut > 0) line.substring(cut + 2) else null
+    val shown = listOfNotNull(rest) + if (open) details.map { "· $it" } else emptyList()
+    com.bamnat.app.ui.components.NudgeCard(head, tone = com.bamnat.app.ui.theme.Tone.Good,
+        detail = shown.joinToString("\n").ifEmpty { null },
+        action = if (details.isEmpty()) null else if (open) "접기" else "되돌린 것 보기", onAction = { open = !open },
+        onClose = onClose, closeLabel = "써 보기 끝 안내 닫기")
 }
 
 /** [RVM-08] PC-66: the 넣기 step and the line about it, kept on the bottom edge of 작품 상세. */

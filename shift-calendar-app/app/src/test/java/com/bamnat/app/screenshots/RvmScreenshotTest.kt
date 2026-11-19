@@ -779,6 +779,23 @@ class RvmScreenshotTest : ScreenshotBase() {
     @Test fun tryOnFoldedBig() = shoot("rvm_89_tryon_folded_200", FOLDED, 2f, tryOn("야간 회복 스테이션"))
 
     /**
+     * 2.0.0 [RVM-57] 총괄 11-19: a 입어 보기 asked from a card whose page never came (here, 30 seconds and more ago) does not open that
+     * work's 입어 보기 by itself the next time its page opens. Before, the first tryOn shot of a run, after a list shot that tapped a
+     * card's 입어 보기 with nowhere to go, opened on 입어 보기 at once and failed on '예시로 보기'.
+     */
+    @Test fun aTryAskedLongAgoDoesNotOpenByItself() = shoot("rvm_96_try_ask_lapsed", FOLDED) {
+        var now = 0L
+        com.bamnat.app.recipe.RecipeLinks.clock = { now }
+        try {
+            com.bamnat.app.recipe.RecipeLinks.tryNext = Market().code("야간 회복 스테이션")
+            now += (com.bamnat.app.recipe.RecipeLinks.ASK_MILLIS + 1) * 1_000_000L
+            tryOn("야간 회복 스테이션")()
+        } finally {
+            com.bamnat.app.recipe.RecipeLinks.clock = System::nanoTime
+        }
+    }
+
+    /**
      * 2.0.0 [RVM-54] 검토 U09b-04: 기능까지 써 보기를 끝낸 카드는 'N건 되돌렸어요'만 말했어요. 이제 한 줄은 그대로이고, '되돌린 것 보기'를 누르면
      * 원래대로 돌린 조각, 뺀 단추·규칙, 내가 바꾼 것을 둔 것, 내 단추·규칙이 적은 것은 건드리지 않았다는 줄이 보여요.
      */
@@ -798,7 +815,9 @@ class RvmScreenshotTest : ScreenshotBase() {
         check(appears("뺀 단추·규칙: 야식 기록, 야간 끝 수당", exact = false))
         check(appears("써 보는 동안 직접 바꾼 1곳은 그대로 뒀어요", exact = false))
         check(appears("내 단추·규칙이 적은 것은 건드리지 않았어요", exact = false))
-        check(appears("접기", exact = true) && appears("닫기", exact = true))
+        check(appears("접기", exact = true))
+        // 2.0.0 [RVM-56] HQ-122: the app's one 안내 카드, its line '‘제목’ 써 보기를 끝냈어요' alone (the counts under it).
+        check(appears("‘야식 관리판’ 써 보기를 끝냈어요", exact = true))
     }
     @Test fun triedCardFolded() = shoot("rvm_90_tried_card_folded", FOLDED, triedCard())
     @Test fun triedCardFoldedDarkBig() = shoot("rvm_91_tried_card_folded_dark_200", DARK, 2f, triedCard())
@@ -818,7 +837,6 @@ class RvmScreenshotTest : ScreenshotBase() {
         content { com.bamnat.app.ui.recipe.UndoLeftSheet(c, items) {} }
         settle()
         check(appears("그대로 둔 것 3개", exact = true))
-        check(appears("근무 설정에서 지울 수 있어요", exact = false))
         tapText("이것도 되돌리기", exact = true)
         settle()
         check(appears("내가 바꾼 값은 사라지고 넣기 전 값이 돼요", exact = false)) { "한 번 묻고" }
@@ -827,6 +845,9 @@ class RvmScreenshotTest : ScreenshotBase() {
         settle()
         check(took == 1) { "돌리기를 눌러야 돌려요" }
         check(appears("넣기 전으로 돌렸어요", exact = true))
+        // At 200% on the folded width the third line is under the fold of the sheet: reached by scrolling it, as a person would.
+        check(scrolledTo("근무 설정에서 지울 수 있어요")) { "쓰는 날이 있는 근무는 어디서 지우는지 말해요" }
+        scrollUp(400)
     }
     @Test fun undoLeftFolded() = shoot("rvm_93_undo_left_folded", FOLDED, undoLeft())
     @Test fun undoLeftFoldedDarkBig() = shoot("rvm_94_undo_left_folded_dark_200", DARK, 2f, undoLeft())

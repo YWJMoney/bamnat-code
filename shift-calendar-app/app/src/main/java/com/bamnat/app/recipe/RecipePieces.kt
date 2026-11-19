@@ -1082,7 +1082,7 @@ class RecipePieces(private val c: AppContainer) {
                     }
                     val n = put(t, listOf("start", "end", "break", "breakStart", "off").filter(::untouched))
                     if (n != t) schedule.saveShiftType(n)
-                    if (mineKeys.isNotEmpty()) keptItems += Kept("‘${t.label}’ 근무 시간", MINE) {
+                    if (mineKeys.isNotEmpty()) keptItems += Kept("‘${t.name}’ 근무 시간", MINE) {
                         schedule.snapshot.first().shiftTypes.firstOrNull { it.id == t.id }?.let { x -> put(x, mineKeys).takeIf { it != x }?.let { schedule.saveShiftType(it) } }
                     }
                 }
@@ -1096,8 +1096,8 @@ class RecipePieces(private val c: AppContainer) {
                             if (typesAfter != null && (changed || used)) {
                                 kept++
                                 // A shift a day, a 대근 or the 근무 순서 uses goes only from its own settings (where its days are asked about).
-                                keptItems += if (used) Kept("‘${t.label}’ 근무", "달력에서 쓰는 날이 있어 남겼어요 · 근무 설정에서 지울 수 있어요", null)
-                                else Kept("‘${t.label}’ 근무", MINE) { if (schedule.shiftTypeUse(id).let { u -> u.days == 0 && !u.inPattern && u.covers == 0 }) schedule.deleteShiftTypeUndoable(id) }
+                                keptItems += if (used) Kept("‘${t.name}’ 근무", "달력에서 쓰는 날이 있어 남겼어요 · 근무 설정에서 지울 수 있어요", null)
+                                else Kept("‘${t.name}’ 근무", MINE) { if (schedule.shiftTypeUse(id).let { u -> u.days == 0 && !u.inPattern && u.covers == 0 }) schedule.deleteShiftTypeUndoable(id) }
                                 return@runCatching
                             }
                             schedule.deleteShiftTypeUndoable(id)

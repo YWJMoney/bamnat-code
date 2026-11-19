@@ -62,7 +62,8 @@ private enum class Step { ASK, DONE, FAILED }
 internal fun UndoLeftSheet(c: AppContainer, items: List<RecipePieces.Kept>, onDismiss: () -> Unit) {
     val rows = remember(items) { mutableStateMapOf<Int, Step>() }
     val scope = rememberCoroutineScope()
-    AppSheet(onDismissRequest = onDismiss) {
+    // Opened whole: a half-open sheet at 200% showed the title and one line, and the rest only by dragging it up.
+    AppSheet(onDismissRequest = onDismiss, sheetState = androidx.compose.material3.rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
         Column(Modifier.padding(start = 16.dp, end = 16.dp, bottom = 24.dp).verticalScroll(rememberScrollState()),
             verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text("그대로 둔 것 ${items.size}개", style = MaterialTheme.typography.titleMedium, modifier = Modifier.semantics { heading() })
