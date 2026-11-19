@@ -155,7 +155,7 @@ function freezeSeen(r, auto, now) {
   return changed;
 }
 
-function viewOf(r, auto) {
+function releaseViewOf(r, auto) {
   const steps = RELEASE_STEPS.map((s) => {
     const mine = r.steps[s.key] ?? {};
     const a = auto[s.key];
@@ -196,8 +196,8 @@ export async function releaseView(env, v, now = Date.now(), sh = null) {
 }
 
 async function viewFor(env, r, now, sh) {
-  if (r.doneAt) return viewOf(r, frozen(r));
-  return viewOf(r, autoState(r.version, r, now, sh ?? (await autoShared(env))));
+  if (r.doneAt) return releaseViewOf(r, frozen(r));
+  return releaseViewOf(r, autoState(r.version, r, now, sh ?? (await autoShared(env))));
 }
 
 /** 점검표 목록: 판이 높은 것 먼저. 2.0.0 [RVN-24] SVC-102·106: 점검표 줄은 한 번에, 자동 단계는 열린 점검표가 있을 때 한 번만 읽어요. */
@@ -248,11 +248,11 @@ export async function releaseRoute(request, env, path, method, now) {
     // 생기면 끝난 때(done_at)와 굳힌 것을 지워 '열린 점검표' 수에 다시 들어가요.
     const auto = autoState(r.version, r, now, sh);
     freezeSeen(r, auto, now);
-    const live = viewOf({ ...r, doneAt: null }, auto);
+    const live = releaseViewOf({ ...r, doneAt: null }, auto);
     const doneAt = settleCheck(r, live, now);
     await run(env, "UPDATE release_runs SET steps = ?, done_at = ? WHERE version = ?", JSON.stringify(r.steps), doneAt, m[1]);
     await audit(env, now, "release_step", m[1], `${step.name} ${body.done === true ? "끝" : body.skip === true ? "건너뜀" : body.done === false ? "되돌림" : "메모"}`);
-    return json(doneAt ? viewOf({ ...r, doneAt }, frozen(r)) : live);
+    return json(doneAt ? releaseViewOf({ ...r, doneAt }, frozen(r)) : live);
   }
   return null;
 }
@@ -297,7 +297,7 @@ export async function releaseTick(env, now = Date.now()) {
     const judged = await healthVerdict(env, r, now, sh);
     const auto = autoState(r.version, r, now, sh);
     const froze = freezeSeen(r, auto, now);
-    const live = viewOf({ ...r, doneAt: null }, auto);
+    const live = releaseViewOf({ ...r, doneAt: null }, auto);
     const doneAt = settleCheck(r, live, now);
     if (!judged && !froze && !doneAt) continue;
     changed++;
