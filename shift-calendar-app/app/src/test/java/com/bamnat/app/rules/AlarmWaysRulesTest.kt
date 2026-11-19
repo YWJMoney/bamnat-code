@@ -37,6 +37,7 @@ class AlarmWaysRulesTest {
         // Notices for which some minutes do not matter.
         "alarm/AlarmGuard.kt" to Way.ROUGH,
         "alarm/LeaveTimeNotice.kt" to Way.ROUGH,
+        "boss/BossFilingNotice.kt" to Way.ROUGH, // 2.0.0 [RVJ-96] 신고·지급 기한 3일 전 아침 9시(몇 분 늦어도 돼요)
         "alarm/TodayShiftNotice.kt" to Way.ROUGH, // 2.0.0 [RVI-97] the lock screen's 오늘 근무 bar drawn again (a 1-minute window)
         "calendar/DateNoticeAlarm.kt" to Way.ROUGH,
         "commute/CommuteRecorder.kt" to Way.ROUGH,
