@@ -193,6 +193,11 @@ fun CompanyFindScreen(
                     keyboardActions = KeyboardActions(onSearch = { keyboard?.hide() }),
                     modifier = Modifier.fillMaxWidth().focusRequester(focusRequester),
                 )
+                // 2.0.0 [RVN-24] 검토 I10ac-02: before a name is typed, the companies and public rows with my calendar's order.
+                val same by vm.same.collectAsStateWithLifecycle()
+                if (!typed) same?.let { w ->
+                    SameWorkRows(w, onCompany = { id -> keyboard?.hide(); onOpen(id) }, onRow = { row -> keyboard?.hide(); providing = row })
+                }
                 // AS 1.29 [SRCH-10] Companies already on screen while the server is still asked: say where it stands.
                 val stage by vm.stage.collectAsStateWithLifecycle()
                 stage?.let { SearchStageLine(it, nothingYet = false) }
@@ -1126,3 +1131,24 @@ private const val FOCUS_SETTLE_MS = 120L
 
 /** 2.0.0 [RVN-17] 총괄 사진 검토: the use button's name while this calendar is held by another company (what it does). */
 internal const val HELD_USE = "근무주기만 넣기"
+
+/**
+ * 2.0.0 [RVN-24] 검토 I10ac-02 내 달력이 회사를 찾아 주기: "이름을 몰라도" — the companies whose 대표 주기 and the public rows whose
+ * order is the one on my calendar, found on the phone. A company opens its page; a public row its sheet.
+ */
+@Composable
+internal fun SameWorkRows(w: CompanyFindViewModel.SameWork, onCompany: (String) -> Unit, onRow: (PublicCycle) -> Unit) {
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Text("내 근무 순서와 같은 곳", style = MaterialTheme.typography.titleSmall, modifier = Modifier.semantics { heading() })
+        Text("달력에 넣은 근무 순서로 폰 안에서 찾았어요", style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant)
+        w.companies.forEach { h ->
+            val pay = h.lead?.pay == true || h.lead?.payWay != null
+            BrowseRow(title = h.name, line = "같은 회사 분들이 맞춘 근무표" + if (pay) " · 급여 방식도 있어요" else "", onClick = { onCompany(h.id) })
+        }
+        w.rows.forEach { r ->
+            BrowseRow(title = listOf(r.company, r.site).filter { it.isNotEmpty() }.joinToString(" · "),
+                line = "${r.formName} · ${PublicCycles.BADGE}", onClick = { onRow(r) })
+        }
+    }
+}

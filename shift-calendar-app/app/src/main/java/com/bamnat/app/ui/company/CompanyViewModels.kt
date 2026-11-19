@@ -148,7 +148,45 @@ class CompanyFindViewModel(
         again.value++
     }
 
+    /**
+     * 2.0.0 [RVN-24] 검토 I10ac-02 내 달력이 회사를 찾아 주기: companies (their 대표 주기 by the whole list the phone read) and public
+     * rows with the same order as this calendar's 근무 순서, three at most, the companies with a pay way first. Worked out on the
+     * phone; null when the calendar has no 교대 order to go by.
+     */
+    data class SameWork(val companies: List<CompanyHit>, val rows: List<com.bamnat.core.plaza.PublicCycle>)
+
+    private val _same = MutableStateFlow<SameWork?>(null)
+    val same: StateFlow<SameWork?> = _same.asStateFlow()
+
+    init {
+        viewModelScope.launch(kotlinx.coroutines.Dispatchers.Default) {
+            _same.value = runCatching { sameWork() }.getOrNull()
+            // The whole list may come a moment later (warmCompanies above).
+            c.companySearch.warmed()
+            runCatching { sameWork() }.getOrNull()?.let { _same.value = it }
+        }
+    }
+
+    private suspend fun sameWork(): SameWork? {
+        val repo = c.calendars.repository(calendar)
+        val today = com.bamnat.core.time.Today.date()
+        val rotation = repo.patterns.first().filterIsInstance<com.bamnat.core.model.WorkPattern.Rotation>()
+            .firstOrNull { it.endDate?.isBefore(today) != true } ?: return null
+        val types = repo.shiftTypes.first().associateBy { it.id }
+        val mine = com.bamnat.core.plaza.CalendarCycles.codes(rotation.steps, types) ?: return null
+        val times = com.bamnat.core.plaza.CalendarCycles.times(rotation.steps, types)
+        val companies = if (!server) emptyList() else c.companySearch.withOrders().filter { h ->
+            val l = h.lead ?: return@filter false
+            com.bamnat.core.plaza.CalendarCycles.nameCodes(l.steps ?: return@filter false, l.offs)
+                ?.let { com.bamnat.core.plaza.CalendarCycles.same(mine, it) } == true
+        }.sortedWith(compareByDescending<CompanyHit> { it.lead?.pay == true || it.lead?.payWay != null }.thenByDescending { it.users }).take(2)
+        val rows = com.bamnat.core.plaza.CalendarCycles.publicRows(mine, com.bamnat.core.plaza.PublicCycles.all, times, max = SAME_MAX - companies.size)
+        return SameWork(companies, rows).takeIf { companies.isNotEmpty() || rows.isNotEmpty() }
+    }
+
     private companion object {
+        /** [I10ac-02] How many companies and rows 내 근무와 같은 곳 shows. */
+        const val SAME_MAX = 3
         /** [SPD-15] How long a list stays before its first companies are read ahead (not each letter's list). */
         const val PREFETCH_AFTER_MS = 400L
     }
