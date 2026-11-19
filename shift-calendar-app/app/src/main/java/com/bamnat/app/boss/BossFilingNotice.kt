@@ -82,7 +82,7 @@ object BossFilingNotice {
             // The months [BossFilings.upcoming] reads, each worked out once (the same window as the card's).
             val first = YearMonth.from(today).minusMonths(3)
             val ledgers = (0..4).associate { i -> first.plusMonths(i.toLong()).let { m -> m to store.ledgerOf(place, m) } }
-            val dues = BossFilings.upcoming(place, staff, today) { m -> ledgers[m] ?: com.bamnat.core.boss.PayrollLedger.month(place, staff, m, emptyList()) }
+            val dues = BossFilings.upcoming(place, staff, today, { m -> ledgers[m] ?: com.bamnat.core.boss.PayrollLedger.month(place, staff, m, emptyList()) })
             val say = BossFilings.toRemind(dues, done, Filed.told(context), today)
             if (say.isEmpty()) return@forEach
             val title = BossFilings.remindTitle(place.name, say, today)
@@ -92,7 +92,7 @@ object BossFilingNotice {
                 .setCategory(NotificationCompat.CATEGORY_REMINDER)
                 .setContentTitle(title)
                 .setContentText(lines.joinToString(" · "))
-                .setStyle(NotificationCompat.BigTextStyle().bigText(lines.joinToString("\n") + "\n'했어요'를 누른 것은 다시 알리지 않아요. 설정 › 알림과 잠 › $ROW에서 끌 수 있어요."))
+                .setStyle(NotificationCompat.BigTextStyle().bigText(lines.joinToString("\n") + "\n'했어요'를 누른 것은 다시 알리지 않아요. 설정 › 알림과 잠 › ${ROW}에서 끌 수 있어요."))
                 // [RVJ-100] 검토 T05-05: each 가게's notice opens that 가게's 대장 (its own request, so one does not take the other's).
                 .setContentIntent(Notifications.open(context, NoticeLinks.Target.MANAGE, openRequest(place.id), payload = "$OPENS@${place.id}"))
                 .setAutoCancel(true)
