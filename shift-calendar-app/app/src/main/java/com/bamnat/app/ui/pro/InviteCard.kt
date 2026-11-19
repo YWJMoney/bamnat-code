@@ -164,7 +164,7 @@ internal fun InviteCard(c: AppContainer, onMessage: (String) -> Unit, short: Boo
         // AG 1.27 [INVITE-09] 리뷰 2026-10-25: each five different friends, not one friend's days.
         // 2.0.0 [RVO-27] HQ-144 (조건 4): the buyer's card says the one-line promise and keeps how a friend counts behind ⓘ (it was six lines).
         if (!short) com.bamnat.app.ui.components.Explain(key = "invite_rules", text = InviteRules.details(terms),
-            summary = "${InviteRules.promise(terms)}.", iconOnly = false, firstInFull = false)
+            summary = "${InviteRules.promise(terms)}.", iconOnly = false, firstInFull = false, summaryLines = 3)
         else if (more) Text(InviteRules.details(terms), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         if (view?.code != null && (!short || more)) {
             // 2.0.0 [RVD-14] 확인 뒤 들어와요. [RVO-13] PC-114: at the year's cap the one line says both, never '모두 받았어요' over months still waiting.

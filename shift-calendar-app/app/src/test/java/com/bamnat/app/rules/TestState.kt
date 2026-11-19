@@ -34,6 +34,9 @@ object TestState {
         com.bamnat.app.ui.pro.ProOffer.close()
         com.bamnat.app.ui.settings.InquiryLinks.take()
         com.bamnat.app.ui.settings.SettingsLinks.target.value?.let { com.bamnat.app.ui.settings.SettingsLinks.consume(it) }
+        // (HQ-156) H's two (the in-app review hold, the turn slip question) came in beside this list; TestStateTest names what is missing.
+        com.bamnat.app.review.InAppReview.resetForTest()
+        com.bamnat.app.ui.calendar.TurnSlipAsk.resetForTest()
         clears++
     }
 
