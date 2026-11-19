@@ -1256,6 +1256,8 @@ class AppContainer(context: Context) {
             // 1.32 [WTYP-11][WTYP-16][WTYP-29] One job for the new dated notices: 희망 오프 마감 and 코인 12월 31일 (the next
             // of them), and 퇴근 시각 알림, which follows the roster and its switch.
             keep("datenotices") {
+                // 2.0.0 [RVIB-28] (PC-188) A ring the app died in, never rung again (stopped by force): told to 알람 점검, once.
+                runCatching { com.bamnat.app.alarm.RingKeeper.settle(appContext) { n, d -> telemetry.event(n, d) } }
                 launch { com.bamnat.app.calendar.DateNoticeAlarm.follow(this@AppContainer) }
                 // 1.37 [LEDH-09] 퇴근 뒤 가계부 정리 알림 follows the same roster and its own switch, in the same job (시작 예산).
                 combine(scheduleRepository.snapshot, settingsRepository.settings.map { listOf(it.leaveTimeNotice, it.dayCloseNotice, it.workStyle,

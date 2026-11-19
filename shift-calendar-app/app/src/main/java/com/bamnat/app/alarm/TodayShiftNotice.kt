@@ -37,22 +37,16 @@ object TodayShiftNotice {
             return false
         }
         val style = container.settingsRepository.current.workStyle
-        val (dayLine, nextLine) = lines(snapshot.resolver, today, style)
         // 2.0.0 [RVI-97] (검토 I03c-03) During work on Android 16: how far through it, how long to its end (a bar, and a chip in the
-        // status bar), drawn again every 15 minutes while the screen is on. Older phones keep the two lines as they were.
+        // status bar), drawn again every 5 minutes while the screen is on. Older phones keep the two lines as they were.
         val now = Today.dateTime()
         val work = listOf(today.minusDays(1), today).flatMap { com.bamnat.core.sleep.SleepSchedule.work(snapshot.resolver.resolve(it)) }
         val going = if (android.os.Build.VERSION.SDK_INT >= 36) com.bamnat.core.schedule.ShiftProgress.of(work, now) else null
         // 2.0.0 [RVIB-21] (결정 19) A day of two parts: the bar fills to the 브레이크 타임·비는 시간, then rests there with when work starts
         // again, and is drawn again when the next part starts (every part's start and end, not only the day's first start).
-        val stop = com.bamnat.core.schedule.ShiftProgress.stopOf(work, now)
-        scheduleTick(context, going?.let { com.bamnat.core.schedule.ShiftProgress.nextDraw(it, now) }
+        scheduleTick(context, going?.let { com.bamnat.core.schedule.ShiftProgress.nextDraw(it, now, stepMinutes = 5) }
             ?: com.bamnat.core.schedule.ShiftProgress.changes(work, now).firstOrNull())
-        val talk = com.bamnat.core.sleep.TodayFlow.WorkTalk.of(style)
-        val title = going?.let { com.bamnat.core.schedule.ShiftProgress.left(it, if (it.pausesAtEnd) "${talk.gap}까지" else talk.untilEnd) }
-            ?: stop?.let { "${talk.gap} · ${hm(it.endInclusive.toLocalTime())} 다시 시작" }
-            ?: dayLine
-        val text = if (going != null || stop != null) "$dayLine · $nextLine" else nextLine
+        val (title, text) = words(snapshot.resolver, today, now, style, going)
         // 1.39 [NTC-02] 겹친 규칙 알림의 나머지 한 줄 (이달 쓴 돈 …): this notice says it, so there is one notice, not two.
         val extra = folded(context, today)
         fun base() = NotificationCompat.Builder(context, Notifications.TODAY_CHANNEL_ID)
@@ -134,6 +128,36 @@ object TodayShiftNotice {
     fun cancel(context: Context) {
         NotificationManagerCompat.from(context).cancel(ID)
         scheduleTick(context, null)
+    }
+
+    /**
+     * The notice's title and text at [now]. 2.0.0 [RVIB-30] (PC-198, 통합 5차: 자정 넘어 야간 근무 중에 제목은 '퇴근까지 6시간 49분'인데
+     * 본문은 '오늘 휴무 · 내일 휴무') Work begun yesterday and still going is told as now's work, "지금 야간 근무 중 · 07:00 퇴근", and
+     * what comes after it from there ('퇴근 뒤 휴무', or today's later shift), never today's 휴무 beside a running shift. [going] is the
+     * bar's work (Android 16 and later); older phones read the same words without the bar.
+     */
+    internal fun words(
+        resolver: ScheduleResolver, today: LocalDate, now: java.time.LocalDateTime, style: com.bamnat.core.work.WorkStyle?,
+        going: com.bamnat.core.schedule.ShiftProgress.Now?,
+    ): Pair<String, String> {
+        val (dayLine, nextLine) = lines(resolver, today, style)
+        val talk = com.bamnat.core.sleep.TodayFlow.WorkTalk.of(style)
+        val yesterday = com.bamnat.core.sleep.SleepSchedule.work(resolver.resolve(today.minusDays(1)))
+        val todays = com.bamnat.core.sleep.SleepSchedule.work(resolver.resolve(today))
+        val stop = com.bamnat.core.schedule.ShiftProgress.stopOf(yesterday + todays, now)
+        val carried = yesterday.filter { !now.isBefore(it.from) && now.isBefore(it.to) }.minByOrNull { it.to }
+        val goingTitle = going?.let { com.bamnat.core.schedule.ShiftProgress.left(it, if (it.pausesAtEnd) "${talk.gap}까지" else talk.untilEnd) }
+        val stopTitle = stop?.let { "${talk.gap} · ${hm(it.endInclusive.toLocalTime())} 다시 시작" }
+        if (carried != null) {
+            val name = carried.name.takeIf { it.isNotBlank() && !talk.on.startsWith(it) }
+            val nowLine = "지금 ${listOfNotNull(name, talk.on).joinToString(" ")} · ${hm(carried.to.toLocalTime())} ${talk.untilEnd.removeSuffix("까지")}"
+            val after = if (todays.any { !it.from.isBefore(carried.to) }) dayLine
+                else "${talk.afterEnd} ${describe(resolver.resolve(today), style)}"
+            val title = goingTitle ?: stopTitle
+            return if (title != null) title to "$nowLine · $after" else nowLine to after
+        }
+        val title = goingTitle ?: stopTitle ?: dayLine
+        return title to if (going != null || stop != null) "$dayLine · $nextLine" else nextLine
     }
 
     /** "오늘 주간 07:00~19:00" over "내일 야간 19:00~07:00". */

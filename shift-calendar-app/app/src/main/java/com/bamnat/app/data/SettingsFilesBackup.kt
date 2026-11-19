@@ -314,6 +314,8 @@ class SettingsFilesBackup(
             "alarm_state" to "알람 예약 상태는 설정에서 다시 만들어요",
             "alarm_guard" to "알람 지킴이가 오늘 알린 문제(하루 한 번 알리기 위한 표시)일 뿐이에요", // [ALRM-27]
             "boot_alarms" to "알람 예약 상태는 설정에서 다시 만들어요",
+            // 2.0.0 [RVIB-28] (PC-188)
+            "ring_keeper" to "지금 울리는 알람 하나, 앱이 꺼져도 이어 울리게 이 휴대폰에만 둬요",
             "alarms_off" to "‘오늘 남은 알람 모두 끄기’는 이 휴대폰의 오늘 하루 것",
             // [ALRM-21] 1.35.
             "alarm_soon" to "‘이번 알람 끄기’는 이 휴대폰에 곧 울릴 알람 하나의 것",

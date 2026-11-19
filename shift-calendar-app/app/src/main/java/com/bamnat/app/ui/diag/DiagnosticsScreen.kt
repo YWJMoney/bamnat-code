@@ -162,8 +162,10 @@ internal fun alarmChecks(container: AppContainer, context: Context): List<AlarmC
         }
         if (audio != null) add(AlarmCheck("알람 소리 크기", audio.getStreamVolume(android.media.AudioManager.STREAM_ALARM) > 0,
             "휴대폰의 알람 소리가 0이라 울려도 들리지 않아요(진동만 와요).", "70%로 올리기", Fix.AlarmVolume))
+        // 2.0.0 [RVIB-29] (PC-189) Not only late: without it Android lets no alarm start its ringing screen and sound from the
+        // background (the loud notice rings instead), and from 안드로이드 17 it is what lets an alarm's sound play from behind.
         if (Build.VERSION.SDK_INT >= 31) add(AlarmCheck("정확한 알람", container.alarmScheduler.canScheduleExact(),
-            "허용하지 않으면 알람이 몇 분 늦을 수 있어요.", "허용하러 가기", Fix.Open(Intent(Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM, pkg))))
+            "허용하지 않으면 알람이 몇 분 늦거나 알람 화면 없이 알림 소리로만 울릴 수 있어요.", "허용하러 가기", Fix.Open(Intent(Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM, pkg))))
         if (Build.VERSION.SDK_INT >= 34) add(AlarmCheck("잠금 화면 알람", Notifications.canUseFullScreen(context),
             "허용하면 화면이 꺼져 있어도 알람 화면이 바로 떠요.", "허용하러 가기", Fix.Open(Intent(Settings.ACTION_MANAGE_APP_USE_FULL_SCREEN_INTENT, pkg))))
         // [ALRM-07] 1.25 AB: the other reasons a ringing screen does not show on the lock screen.
@@ -294,8 +296,13 @@ class DiagnosticsViewModel(private val container: AppContainer) : ViewModel() {
             add("다음 알람: " + (next?.let { "${stamp(it.triggerAtMillis)} · ${it.plan.shiftName.ifBlank { "이 날 알람" }} · " +
                 if (it.exact) "정확" else "근사(정확한 알람 권한 없음)" } ?: "없음"))
             add("다시 울림: " + (snoozeAt.value?.let(::stamp) ?: "없음"))
-            val missed = EventBook.possiblyMissed(events, now)
+            // 2.0.0 [RVIB-28] (PC-188) A ring the app died in and could not ring again is a possible miss too; one rung again is said
+            // with how long it was silent.
+            val cuts = EventBook.cuts(events).filter { it.atMillis >= now - 30L * DAY_MILLIS }
+            val missed = (EventBook.possiblyMissed(events, now) + cuts.filter { it.lost }.map { it.trigger }).distinct().sorted()
             add("놓쳤을 수 있는 알람: " + if (missed.isEmpty()) "없음" else missed.joinToString { stamp(it) })
+            val again = cuts.filter { it.resumed }
+            if (again.isNotEmpty()) add("끊겼다 다시 울린 알람: " + again.joinToString { "${stamp(it.trigger)} (${it.silentSeconds}초 끊김)" })
             // [ALRM-01] M 4-1: how late alarms were over 30 days, and whether the system holds the next one.
             val lates = events.filter { it.name == com.bamnat.core.diag.DiagEvents.ALARM_FIRED && it.atMillis >= now - 30L * DAY_MILLIS }
                 .mapNotNull { EventBook.lateSeconds(it.detail) }
