@@ -100,7 +100,7 @@ internal fun TaxCard(
                         PayTaxLines(view, onTaxWay)
                         ledgerNet?.let { net ->
                             Muted("가계부 수입에 넣는 급여")
-                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            androidx.compose.foundation.layout.FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                                 com.bamnat.app.ui.components.FilterChip(selected = !net, onClick = { onLedgerNet(false) }, label = { Text("그달 일한 세전") })
                                 com.bamnat.app.ui.components.FilterChip(selected = net, onClick = { onLedgerNet(true) }, label = { Text("지급일 실수령") })
                             }
