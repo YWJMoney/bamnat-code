@@ -39,10 +39,9 @@ class ShopPendingStore private constructor(private val dir: File) {
     }
 
     companion object {
-        @Volatile private var instance: ShopPendingStore? = null
+        /** One per app ([com.bamnat.app.data.PerApp]: a test's new app has its own folder). */
+        private val one = com.bamnat.app.data.PerApp { ShopPendingStore(File(it.noBackupFilesDir, "shop_pending")) }
 
-        fun get(context: Context): ShopPendingStore = instance ?: synchronized(this) {
-            instance ?: ShopPendingStore(File(context.applicationContext.noBackupFilesDir, "shop_pending")).also { instance = it }
-        }
+        fun get(context: Context): ShopPendingStore = one.of(context)
     }
 }
