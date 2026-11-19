@@ -64,7 +64,7 @@ import { glance } from "./glance.js";
 import { OBS_BADGE_SQL, observeRoute, observeTick, SIGNAL_FLOW_SQL, signalFlowFrom } from "./observe.js";
 import { marketHealthRoute } from "./market-health.js";
 import { draftMap, draftRoute, draftsFor, groupDraftKey, mergeDraftKey, rewardDraftKey, settleDraft } from "./claude-drafts.js";
-import { similarCompanies, skipSimilar } from "./company-similar.js";
+import { findSimilar, similarCompanies, skipSimilar } from "./company-similar.js";
 import { adminLib } from "./admin-lib.js";
 import { pushReady, sendPush } from "./push.js";
 // AX 1.30 [ADMX-02] 판 차이 (src/plaza-diff.js) and [ADMX-01][ADMX-06][ADMX-07][ADMX-08][ADMX-10] the developer app's
@@ -82,7 +82,7 @@ import { PG_HELD, PG_REASONS, pgShown, pgGuard, pgChanges } from "./plaza-guard.
 // R131 1.31 [ADMX-16] 두 번째 확인 (TOTP).
 import { totpSecret, totpCheck, totpUri } from "./totp.js";
 // R131 1.31 [SRV-20] I6: parts of this file in their own files (the bundle puts them back in one).
-import { DAY, HOUR } from "./units.js";
+import { DAY, HOUR, deviceMark } from "./units.js";
 import { bundleInquiries, inboxAnswer, inboxRoute } from "./inbox.js";
 import { DEV, HELD_FOR_PERSON, INQUIRY, INQUIRY_TOPICS, QA, SLA, SLA_SQL, actorName, releaseHeld, rescanBilling, rescanBilling2, adminInquiries, ask, devRoute, expiredInquiries, forgetInquiries, inquiries, inquiryView, page, plainActor, plainText, publicQa, publicRows, readSla, slaKey, slaSetting, slaTargets, templateRoute } from "./inquiries.js";
 import { hasPro, INVITE, MONEY, REWARD_CAP, addMonths, b64url, config, deferFor, installOf, inviteCodeOf, inviteDeadline, invitePage, inviteSettings, inviteSettingsRoute, invites, launchView, familyCode, familyCodeDelete, familyList, familySet, linkCode, money, myPhones, phoneList, phonePreviews, playIntent, playReady, playToken, readSub, recheckLapsed, rewardCounts, rewardWhy, rewardYear, setPhone, stack, stopUnconsentedTrials, storeLink } from "./money.js";
@@ -330,6 +330,7 @@ const allHourlySteps = (env) => [
   ["alerts", () => alertTick(env, Date.now())],
   ["digest", () => digestTick(env, Date.now())], // R131 1.31 [ADMX-14], 1.38 [ADM3-30] 아침·저녁
   ["growth", () => growthTick(env, Date.now())], // 1.36 [GRW-02][GRW-03][GRW-05]
+  ["similar", () => findSimilar(env, Date.now())], // 2.0.0 [RVN-24] 검토 SVC-106: 비슷한 회사 짝을 미리 찾아 둬요(화면은 읽기만).
   ["held", () => releaseHeld(env, Date.now())], // 1.38 [DESK-09]
   // 1.39 [LOOP-01][LOOP-02][LOOP-03][LOOP-06] Play 트랙 읽기, 보류 끝난 출시 안내, 업데이트 없이 고친 것이 닿았는지.
   ["play", () => playTick(env, Date.now())],
@@ -7524,7 +7525,7 @@ async function rateList(env, url) {
     counts: Object.fromEntries(counts.map((x) => [x.status, x.n])),
     rates: items.map((r) => ({ id: r.id, job: r.job, jobName: JOBS[r.job] ?? r.job, region: r.region, regionName: REGIONS[r.region] ?? "전국",
       trade: r.trade, unit: r.unit, unitName: RATE_UNITS[r.unit]?.name ?? r.unit, year: r.year, amount: r.amount, note: r.note,
-      agree: r.agree, disagree: r.disagree, writer: r.device.slice(0, 6), at: iso(r.created_at), decidedAt: r.decided_at ? iso(r.decided_at) : null })),
+      agree: r.agree, disagree: r.disagree, writer: deviceMark(r.device), at: iso(r.created_at), decidedAt: r.decided_at ? iso(r.decided_at) : null })),
   };
 }
 
@@ -7628,7 +7629,7 @@ async function postList(env, url) {
       // PC 확인 5c21f3bb: a question's poll choices too, so a 신고 on it can be judged by what was asked.
       ...(p.poll ? { poll: (() => { try { return JSON.parse(p.poll); } catch { return null; } })() } : {}),
       ...(p.attach ? { attach: p.attach } : {}),
-      writer: p.device.slice(0, 6),
+      writer: deviceMark(p.device),
       at: iso(p.created_at),
       status: p.status,
       kept: p.kept === 1,

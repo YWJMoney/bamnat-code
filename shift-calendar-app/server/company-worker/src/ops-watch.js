@@ -310,7 +310,8 @@ export async function canaryStats(env, ids, minutes, now = Date.now()) {
 /** 이름 있는 정기 작업 단계(매시 17분 작업의 순서대로). 화면은 이 이름으로 보여요. */
 export const JOB_NAMES = {
   prune: "오래된 기록 지우기", trials: "동의 없는 체험 멈추기", lapsed: "끝난 구독 다시 확인", rest: "D1 한도 전 쉬기", share: "공유 서버 스위치 맞추기",
-  flags: "기능 날짜·출시 알림", alerts: "주의 알림 보내기", digest: "아침·저녁 요약 알림", growth: "스튜디오 요구 정리", held: "보류 끝난 Claude 답 보내기",
+  flags: "기능 날짜·출시 알림", alerts: "주의 알림 보내기", digest: "아침·저녁 요약 알림", growth: "스튜디오 요구 정리", similar: "비슷한 회사 미리 찾기",
+  held: "보류 끝난 Claude 답 보내기",
   play: "Play 출시 트랙 읽기", ship: "자동 출시 안내 보내기", live: "업데이트 없이 고친 것 닿음 보기", effect: "출시 2주 뒤 효과 판정",
   watch: "응답 속도 모으기·정리", reviews: "스토어 리뷰 가져오기", backup: "하루 백업", incident: "사고 살피기", requests: "데이터 요청 기한 알림",
   // 2.0.0 [RVQ-12] 검토 SRV-14: 5분 작업도 단계마다.

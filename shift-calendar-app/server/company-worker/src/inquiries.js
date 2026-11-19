@@ -1,5 +1,5 @@
 import { FLAGS, LIMITS, PHOTO, Refuse, admin, all, audit, authorKey, authorToken, batch, can, deviceHash, deviceId, dropInquiries, hiddenAuthors, history, iso, item, json, list, me, network, networkCheck, notifyAdmins, one, overLimit, personal, photoFile, queue, randomId, readJson, readPhotos, refuse, run, stmt } from "./index.js";
-import { DAY, HOUR } from "./units.js";
+import { DAY, HOUR, deviceMark } from "./units.js";
 import { SORTING, autoAnswer, compareVersions, grams, likeness, needsPerson, needsPersonWhy, version } from "./inbox.js";
 import { replyRisk } from "./ledger.js";
 import { billingWordOf, isBillingRecord, replyRiskOf } from "./ask-check.js";
@@ -1017,7 +1017,8 @@ export async function inquiryList(env, params, actorId = "") {
   // AT 1.29 [ADMCP-02] One kind (문제 신고만), copied or not yet (복사함), and one sending phone (같은 기기).
   const kind = INQUIRY.kinds.includes(params.get("kind")) ? params.get("kind") : null;
   const copied = ["no", "yes"].includes(params.get("copied")) ? params.get("copied") : "";
-  const sender = /^[0-9a-f]{6}$/.test(params.get("sender") ?? "") ? params.get("sender") : "";
+  // 2.0.0 [RVN-24] 검토 SVC-106: 표시는 8자, 전에 적어 둔 6자도 받아요.
+  const sender = /^[0-9a-f]{6,8}$/.test(params.get("sender") ?? "") ? params.get("sender") : "";
   // 1.36 [INQ-07] 결제·환불 기록만.
   const billing = params.get("billing") === "1" ? 1 : 0;
   const now = Date.now();
@@ -1035,7 +1036,7 @@ export async function inquiryList(env, params, actorId = "") {
       AND (?6 = 0 OR (i.status = 'open' AND i.updated_at < ?6))
       AND (?7 IS NULL OR i.kind = ?7)
       AND (?8 = '' OR (?8 = 'no' AND i.copied_at IS NULL) OR (?8 = 'yes' AND i.copied_at IS NOT NULL))
-      AND (?9 = '' OR substr(i.device, 1, 6) = ?9)
+      AND (?9 = '' OR substr(i.device, 1, length(?9)) = ?9)
       AND (?10 = 0 OR i.billing_at IS NOT NULL)
     ORDER BY i.status = 'open' DESC, i.updated_at DESC LIMIT 1000`, status, q, like, who, actorId, late, kind, copied, sender, billing),
   stmt(env, "SELECT status, COUNT(*) AS n FROM inquiries GROUP BY status"),
@@ -1122,7 +1123,7 @@ export const todayStart = (now) => Date.parse(`${kstDay(now)}T00:00:00+09:00`);
  */
 export const copyFields = (row) => ({
   copied: row.copied_at ? { at: iso(row.copied_at), by: row.copied_by ?? "" } : null,
-  sender: String(row.device ?? "").slice(0, 6),
+  sender: deviceMark(row.device), // 2.0.0 [RVN-24] SVC-106: 8자
 });
 
 /** At most this many questions in one copy, like the other bulk steps (DEV.bulk). */

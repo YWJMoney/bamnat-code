@@ -170,7 +170,7 @@ export function opsViews(A) {
     const make = `<details class="card" data-key="req-new"${S.opened.get("req-new") ? " open" : ""}><summary><b>요청 적기</b><span class="meta">문의 번호나 기기 표시(6자리)로</span></summary>
       <form data-form="request-new"><div class="fieldset"><label for="rq-kind">종류</label><select id="rq-kind" name="kind">${kinds.map(([k, v]) => `<option value="${k}">${esc(v.name)} · ${v.days}일</option>`).join("")}</select></div>
       <div class="fieldset"><label for="rq-inq">문의 번호(선택)</label><input id="rq-inq" name="inquiry" maxlength="32" autocomplete="off" value="${esc(S.requestFrom ?? "")}"></div>
-      <div class="fieldset"><label for="rq-mark">기기 표시(선택)</label><input id="rq-mark" name="mark" maxlength="6" pattern="[0-9a-f]{6}" autocomplete="off"></div>
+      <div class="fieldset"><label for="rq-mark">기기 표시(선택)</label><input id="rq-mark" name="mark" maxlength="8" pattern="[0-9a-f]{6,8}" autocomplete="off"></div>
       <div class="fieldset"><label for="rq-sum">무엇을 바라는지</label><textarea id="rq-sum" name="summary" maxlength="300" rows="2" required></textarea></div>
       <div class="fieldset"><label for="rq-at">받은 날(선택, 비우면 지금)</label><input id="rq-at" name="openedAt" type="date"></div>
       <div class="actions"><button class="btn primary" type="submit">적기</button></div></form></details>`;

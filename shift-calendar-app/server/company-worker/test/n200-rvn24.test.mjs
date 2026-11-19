@@ -261,3 +261,57 @@ test("[RVN-24] SVC-105 the hourly job writes 공유 서버 배포 when the share
   const rows = (await DB.prepare("SELECT action, target, detail FROM audit WHERE action = 'share_deployed'").all()).results;
   assert.deepEqual(rows.map((r) => [r.target, r.detail]), [["2.0.1", "2.0.0 → 2.0.1"]]);
 });
+
+test("[RVN-24] SVC-106 비슷한 회사: the hourly job finds the pairs once, the screen and '다른 회사예요' only read them, a new company is looked at again", async (t) => {
+  t.mock.timers.enable({ apis: ["Date"], now: NOW });
+  const { call, DB } = server();
+  const h = await signIn(call);
+  const { findSimilar, similarCompanies } = await import("../src/company-similar.js");
+  const add = (id, name, norm, at) => DB.prepare("INSERT INTO companies (id, name, norm, created_at) VALUES (?, ?, ?, ?)").bind(id, name, norm, at).run();
+  await add("cmpAAAAAAAA1", "LG전자 칠러공장", "lg전자칠러공장", NOW - 3 * DAY);
+  await add("cmpAAAAAAAA2", "LG전자 평택칠러공장", "lg전자평택칠러공장", NOW - 2 * DAY);
+  assert.equal(await findSimilar({ DB }, NOW), 1);
+  // The screen reads what was found: it does not compare again (no write to company_similar).
+  const before = (await DB.prepare("SELECT value FROM settings WHERE key = 'company_similar'").first()).value;
+  t.mock.timers.tick(60_000);
+  let r = await call("GET", "/api/admin/companies/similar", undefined, h);
+  assert.equal(r.data.pairs.length, 1, JSON.stringify(r.data));
+  assert.equal((await DB.prepare("SELECT value FROM settings WHERE key = 'company_similar'").first()).value, before);
+  // A company made after the last look: the next screen looks again.
+  await add("cmpBBBBBBBB1", "한빛물류 센터", "한빛물류센터", Date.now());
+  await add("cmpBBBBBBBB2", "한빛물류", "한빛물류", Date.now());
+  r = await call("GET", "/api/admin/companies/similar", undefined, h);
+  assert.equal(r.data.pairs.length, 2);
+  // '다른 회사예요' takes that pair out without comparing again.
+  const kept = (await DB.prepare("SELECT value FROM settings WHERE key = 'company_similar'").first()).value;
+  const skip = await call("POST", "/api/admin/companies/similar/skip", { a: "cmpBBBBBBBB1", b: "cmpBBBBBBBB2" }, h);
+  assert.equal(skip.status, 200, JSON.stringify(skip.data));
+  assert.equal(skip.data.pairs.length, 1);
+  assert.equal((await DB.prepare("SELECT value FROM settings WHERE key = 'company_similar'").first()).value, kept);
+  // A merged company drops out of the cached pair.
+  await DB.prepare("UPDATE companies SET merged_into = 'cmpAAAAAAAA1' WHERE id = 'cmpAAAAAAAA2'").run();
+  assert.equal((await similarCompanies({ DB }, 12, Date.now())).pairs.length, 0);
+});
+
+test("[RVN-24] SVC-106 사람 찾기: an 8-letter mark tells two phones apart that share 6, a written 6 still finds one, and the search is a range", async (t) => {
+  t.mock.timers.enable({ apis: ["Date"], now: NOW });
+  const { call, DB } = server();
+  const h = await signIn(call);
+  await call("GET", "/api/terms");
+  const a = "abcdef12" + "0".repeat(56);
+  const b = "abcdef34" + "0".repeat(56);
+  const c = "123456aa" + "0".repeat(56);
+  for (const [id, d] of [["qAAAAAAAAAAAA1", a], ["qAAAAAAAAAAAA2", b], ["qAAAAAAAAAAAA3", c]]) {
+    await DB.prepare("INSERT INTO inquiries (id, device, kind, info, status, created_at, updated_at) VALUES (?, ?, 'bug', '{}', 'open', ?, ?)").bind(id, d, NOW, NOW).run();
+  }
+  const find = (mark) => call("GET", `/api/admin/person?mark=${mark}`, undefined, h);
+  assert.equal((await find("abcdef")).status, 409, "six letters match two phones");
+  const one = await find("abcdef34");
+  assert.equal(one.status, 200, JSON.stringify(one.data));
+  assert.equal(one.data.mark, "abcdef34");
+  assert.equal((await find("123456")).data.mark, "123456aa", "a six written down before still finds the one phone");
+  assert.equal((await find("abcdef3")).status, 200);
+  assert.equal((await find("zzzzzz")).status, 404);
+  const { markRange } = await import("../src/units.js");
+  assert.deepEqual(markRange("abcdef"), ["abcdef", "abcdefg"]);
+});

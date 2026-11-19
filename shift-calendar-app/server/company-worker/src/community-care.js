@@ -5,7 +5,7 @@
 // - opinion: 의견 쉬기 N일. 남이 보는 글(광장 글·답글, 토론 글, 작품 이야기, 요청, 안좋아요 의견, 급여 정보 댓글·보완 요청)을 못 써요.
 // - community: 마을 쉬기 N일. 위에 더해 마을의 모든 쓰기와 투표. `muted`(reason 'care')도 함께 써서 지금 있는 쓰기 길이 그대로 막혀요.
 // 읽기, 테마 입기, 내 앱, 문의하기(이의 제기)는 언제나 그대로예요. 설치 해시만 두고, 끝난 지 180일 뒤 지워요.
-import { DAY } from "./units.js";
+import { DAY, markRange } from "./units.js";
 
 export const CARE = {
   /** 운영자가 고르는 쉬기 기간(일). 운영 규칙 6항의 30일 안. */
@@ -266,11 +266,12 @@ export async function careTarget(d, env, q) {
   }
   const mark = s("mark").toLowerCase();
   if (/^[0-9a-f]{6,64}$/.test(mark)) {
-    const like = `${mark}%`;
+    // 2.0.0 [RVN-24] 검토 SVC-106: LIKE 대신 범위(색인을 타요).
+    const range = markRange(mark);
     const rows = await d.all(env, `SELECT DISTINCT device FROM (
-      SELECT device FROM posts WHERE device LIKE ?1 UNION SELECT owner AS device FROM recipes WHERE owner LIKE ?1
-      UNION SELECT device FROM inquiries WHERE device LIKE ?1 UNION SELECT device FROM write_limits WHERE device LIKE ?1
-      UNION SELECT device FROM care_notes WHERE device LIKE ?1) LIMIT 3`, like);
+      SELECT device FROM posts WHERE device >= ?1 AND device < ?2 UNION SELECT owner AS device FROM recipes WHERE owner >= ?1 AND owner < ?2
+      UNION SELECT device FROM inquiries WHERE device >= ?1 AND device < ?2 UNION SELECT device FROM write_limits WHERE device >= ?1 AND device < ?2
+      UNION SELECT device FROM care_notes WHERE device >= ?1 AND device < ?2) LIMIT 3`, ...range);
     if (!rows.length) return { missing: true };
     if (rows.length > 1) return { ambiguous: rows.length };
     return { device: rows[0].device };
