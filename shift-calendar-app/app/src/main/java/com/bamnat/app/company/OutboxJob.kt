@@ -147,6 +147,9 @@ class OutboxJob : JobService() {
  * Photos do not wait; the form says so.
  */
 object InquiryOutbox {
+    /** 2.0.0 [PC-217] The refusal by the day's limit that stopped the last [flush], so '지금 보내기' says it in limit words. */
+    @Volatile var limited: CompanyException? = null
+
     /** Sends what waits, oldest first; true when nothing is left. */
     suspend fun flush(c: AppContainer): Boolean {
         if (!c.inquiryApi.enabled) return c.inquiryStore.outbox.value.isEmpty()
@@ -168,7 +171,7 @@ object InquiryOutbox {
                 onSent()
                 c.telemetry.event(com.bamnat.core.stats.UsageEvent.INQUIRY.key)
             } catch (e: CompanyException) {
-                if (e.retryable) return false
+                if (e.retryable) { if (e.code == "rate_limited") limited = e; return false }
                 // Refused for what it says (a phone number, too long): it would be refused again, so it stays for the user to fix.
                 c.inquiryStore.refused(q.requestId, e.code)
             }
