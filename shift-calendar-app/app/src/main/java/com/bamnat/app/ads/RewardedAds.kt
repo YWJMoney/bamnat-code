@@ -41,7 +41,9 @@ import com.bamnat.core.time.Today
  * In the alarm check's 등급 미리 보기 no ad is ever loaded: the button shows, cannot be pressed and says why.
  */
 @Composable
-fun LeaseAdOption(feature: com.bamnat.app.tier.Feature?, gate: Gate, modifier: Modifier = Modifier, onOpened: () -> Unit = {}) {
+fun LeaseAdOption(feature: com.bamnat.app.tier.Feature?, gate: Gate, modifier: Modifier = Modifier, onOpened: () -> Unit = {},
+    /** 2.0.0 [RVO-25] (PC-186) False leaves the grey note out; the 프로 lock card says it under its ⓘ ([leaseNote]). */
+    withNote: Boolean = true) {
     if (feature == null || gate.tier >= Tier.PRO) return
     val small = MaterialTheme.typography.labelSmall
     val dim = MaterialTheme.colorScheme.onSurfaceVariant
@@ -52,11 +54,11 @@ fun LeaseAdOption(feature: com.bamnat.app.tier.Feature?, gate: Gate, modifier: M
         return
     }
     val label = "광고 보고 ${bundle.label} 7일 열기"
-    val note = "광고 한 편을 끝까지 보면 7일 열려요(${bundle.gives}). 광고가 안 와도 그냥 열려요. 하루 두 편까지예요(밤 12시에 다시 세요)."
+    val note = if (withNote) adNote(bundle) else ""
     if (gate.preview) {
         Column(modifier) {
             OutlinedButton(onClick = {}, enabled = false, modifier = Modifier.fillMaxWidth()) { Text(label) }
-            Text("$note 미리 보기에서는 광고가 나오지 않아요.", style = small, color = dim, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth())
+            if (withNote) Text("$note $PREVIEW_NO_AD", style = small, color = dim, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth())
         }
         return
     }
@@ -78,9 +80,8 @@ fun LeaseAdOption(feature: com.bamnat.app.tier.Feature?, gate: Gate, modifier: M
                         android.widget.Toast.LENGTH_SHORT).show()
                     onOpened()
                 }
-            }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text("처음 7일 무료로 열기") }
-            Text("${bundle.label} 묶음(${bundle.gives})을 처음 쓰는 날부터 7일 광고 없이 써요. 그 뒤에는 광고 한 편으로 7일씩 열려요.",
-                style = small, color = dim, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth())
+            }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { com.bamnat.app.ui.pro.WholeWords("처음 7일 무료로 열기") }
+            if (withNote) Text(firstWeekNote(bundle), style = small, color = dim, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth())
         }
         return
     }
@@ -89,7 +90,8 @@ fun LeaseAdOption(feature: com.bamnat.app.tier.Feature?, gate: Gate, modifier: M
             modifier = modifier.fillMaxWidth())
         // 1.36.1 (사용자 2026-11-04 "광고 제한에 걸리면 기능도 다음날 사용가능하게, 00시 기준"): closing the sheet now is not a 'no'
         // (ProOfferHost counts one only while the ad can be watched), and the button comes back at 00:00 (FeatureGate's clock).
-        FeatureLease.capped(leases, today) -> Text("오늘 광고 두 편을 다 봤어요. 밤 12시가 지나면 다시 광고로 열 수 있어요.", style = small, color = dim,
+        // 2.0.0 [RVO-18] 검토 PRO-14·U11b-09: an open without an ad (none came) counts too, so it says 'opened twice', not 'watched two'.
+        FeatureLease.capped(leases, today) -> Text(CAPPED_WORDS + " 밤 12시가 지나면 다시 광고로 열 수 있어요.", style = small, color = dim,
             textAlign = TextAlign.Center, modifier = modifier.fillMaxWidth())
         !FeatureLease.canWatch(leases, bundle, now, today) -> Text(
             "세 번 닫으셔서 ${bundle.label} 광고는 쉬고 있어요" + (leases.quietUntil[bundle]?.let { " · ${com.bamnat.app.ui.pro.untilWords(it)}부터 다시 보여요" } ?: ""),
@@ -110,7 +112,8 @@ fun LeaseAdOption(feature: com.bamnat.app.tier.Feature?, gate: Gate, modifier: M
                 onReward = { opened(FeatureLease.Why.AD, null, "") },
                 onQuit = {},
                 onOffline = { opened(FeatureLease.Why.NO_AD, "offline", "인터넷이 없어 광고 없이 열었어요") },
-                onNoAd = { why -> opened(FeatureLease.Why.NO_AD, why, "광고가 오지 않아 그냥 열었어요") },
+                onNoAd = { why -> opened(FeatureLease.Why.NO_AD, why,
+                    if (why == com.bamnat.app.recipe.ThemeWardrobe.QUIET) "처음 며칠은 광고 없이 열어요" else "광고가 오지 않아 그냥 열었어요") },
                 modifier = modifier,
                 // The bundle counts its own grant (FeatureLease.granted) and says 'two today' above.
                 shared = false)
@@ -146,7 +149,7 @@ fun ThemeAdButton(label: String, note: String, onReward: () -> Unit, onQuit: () 
     val allowed = AdRules.rewardedOffer(adsRow, gate.tier >= Tier.PRO, AdIds.rewarded.isNotBlank(), null, Today.date())
     if (shared && adsRow && gate.tier < Tier.PRO && FeatureLease.capped(gate.leases, Today.date())) {
         Column(modifier) {
-            Text("오늘 광고 두 편을 다 봤어요. 밤 12시가 지나면 다시 할 수 있어요. 프로는 광고 없이 바로 돼요.",
+            Text(CAPPED_WORDS + " 밤 12시가 지나면 다시 할 수 있어요. 프로는 광고 없이 바로 돼요.",
                 style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, textAlign = TextAlign.Center,
                 modifier = Modifier.fillMaxWidth())
             onCappedLater?.let { later ->
@@ -156,12 +159,36 @@ fun ThemeAdButton(label: String, note: String, onReward: () -> Unit, onQuit: () 
         return
     }
     val rewarded: () -> Unit = { if (shared) c.featureGate.countThemeAd(); onReward() }
+    // 2.0.0 [RVM-60] 검토 RCP-14: in the first days after install the ads SDK never starts, so no ad can come. Asked here anyway (묶음
+    // 열기, 그림 묶음), it goes ahead at once and says so, instead of '광고를 준비하는 중…' for 15 seconds. The same days as after the wait.
+    if (adsRow && gate.tier < Tier.PRO && AdRules.quiet(adsRow, false, c.wardrobe.adsSeen?.installedAt ?: c.installedAt, Today.instant(),
+            c.remoteConfig.current.adQuietDays)) {
+        Column(modifier) {
+            OutlinedButton(onClick = { onNoAd(com.bamnat.app.recipe.ThemeWardrobe.QUIET) },
+                modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text(label.removePrefix("광고 보고 ")) }
+            Text("앱을 깐 뒤 ${c.remoteConfig.current.adQuietDays}일 동안은 광고 없이 바로 돼요", style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth())
+        }
+        return
+    }
+    // 2.0.0 [RVO-18] 검토 PRO-01: the sheet or screen closed while the ad was on its way (or the app went behind): the ad that comes
+    // after is dropped, with no reward, toast or 'no ad' open. [cancel] ends the wait in progress, from here or from '그만두기'.
+    val lifecycle = androidx.lifecycle.compose.LocalLifecycleOwner.current.lifecycle
+    var cancel by remember { mutableStateOf<(() -> Unit)?>(null) }
+    androidx.compose.runtime.DisposableEffect(Unit) { onDispose { cancel?.invoke() } }
+    // 2.0.0 [RVO-18] 검토 U11b-08: past [AD_LATE_MS] it says the ad is late, with a way to stop waiting.
+    var late by remember { mutableStateOf(false) }
+    androidx.compose.runtime.LaunchedEffect(loading) {
+        late = false
+        if (loading) { kotlinx.coroutines.delay(AD_LATE_MS); late = true }
+    }
 
     fun play(activity: android.app.Activity) {
         var tries = 0
         var done = false
         val handler = android.os.Handler(android.os.Looper.getMainLooper())
-        val slow = Runnable { if (!done) { done = true; loading = false; onNoAd("timeout") } }
+        val slow = Runnable { if (!done) { done = true; cancel = null; loading = false; onNoAd("timeout") } }
+        cancel = { done = true; handler.removeCallbacks(slow); cancel = null; loading = false }
         handler.postDelayed(slow, AD_WAIT_MS)
         fun load() {
             tries++
@@ -169,8 +196,11 @@ fun ThemeAdButton(label: String, note: String, onReward: () -> Unit, onQuit: () 
                 override fun onAdLoaded(ad: RewardedAd) {
                     if (done) return
                     done = true
+                    cancel = null
                     handler.removeCallbacks(slow)
                     loading = false
+                    // In front no more (home, another app): not shown over whatever is there now; the button can be pressed again.
+                    if (!lifecycle.currentState.isAtLeast(androidx.lifecycle.Lifecycle.State.RESUMED)) return
                     var earned = false
                     ad.fullScreenContentCallback = object : com.google.android.gms.ads.FullScreenContentCallback() {
                         override fun onAdDismissedFullScreenContent() { com.bamnat.app.review.InAppReview.hush(); if (earned) rewarded() else onQuit() }
@@ -183,10 +213,10 @@ fun ThemeAdButton(label: String, note: String, onReward: () -> Unit, onQuit: () 
                 override fun onAdFailedToLoad(error: LoadAdError) {
                     if (done) return
                     when (error.code) {
-                        AdRequest.ERROR_CODE_NETWORK_ERROR -> { done = true; handler.removeCallbacks(slow); loading = false; onOffline() }
+                        AdRequest.ERROR_CODE_NETWORK_ERROR -> { done = true; cancel = null; handler.removeCallbacks(slow); loading = false; onOffline() }
                         AdRequest.ERROR_CODE_NO_FILL, AdRequest.ERROR_CODE_MEDIATION_NO_FILL ->
-                            if (tries < 2) load() else { done = true; handler.removeCallbacks(slow); loading = false; onNoAd("no_fill") }
-                        else -> { done = true; handler.removeCallbacks(slow); loading = false; onNoAd("other") }
+                            if (tries < 2) load() else { done = true; cancel = null; handler.removeCallbacks(slow); loading = false; onNoAd("no_fill") }
+                        else -> { done = true; cancel = null; handler.removeCallbacks(slow); loading = false; onNoAd("other") }
                     }
                 }
             })
@@ -200,22 +230,70 @@ fun ThemeAdButton(label: String, note: String, onReward: () -> Unit, onQuit: () 
                 val activity = context.findActivity()
                 if (!adsRow) { onNoAd("flag_off"); return@OutlinedButton }
                 if (!allowed || activity == null || c.ads.consent.value == false) { onNoAd("not_ready"); return@OutlinedButton }
+                if (c.ads.ready.value) { loading = true; play(activity); return@OutlinedButton }
+                // 2.0.0 [RVO-18] 검토 PRO-02: in the quiet first days after install (or wherever) the ads SDK does not start at all
+                // (AdRules.sdkMayStart, as MainActivity), so no ad can come: it opens at once instead of 15 s of '준비하는 중'.
+                if (!AdRules.sdkMayStart(adsRow, gate.allows(com.bamnat.app.tier.Feature.NO_ADS), c.installedAt, Today.instant(), c.remoteConfig.current.adQuietDays)) {
+                    onNoAd("not_ready"); return@OutlinedButton
+                }
                 loading = true
-                if (c.ads.ready.value) { play(activity); return@OutlinedButton }
+                // 2.0.0 [RVN-23] (PC-187): the ads SDK starts only now, on this press, right before the wait (it is a module Google
+                // Play services loads into the app, and a phone that never asks for an ad should not carry it).
+                c.ads.prepare(activity)
                 // 1.35 [J135-18] Tapped right after the app opened, the ads SDK may still be starting: wait for it (as long as a slow ad
                 // may take) instead of giving the days with no ad at once. Only a phone that may not have ads at all skips the wait.
-                scope.launch {
+                val waiting = scope.launch {
                     val up = withTimeoutOrNull(AD_WAIT_MS) { c.ads.ready.first { it } } != null
+                    cancel = null
                     if (up) play(activity) else { loading = false; onNoAd("not_ready") }
                 }
+                cancel = { waiting.cancel(); cancel = null; loading = false }
             },
             enabled = !loading,
             modifier = Modifier.fillMaxWidth(),
-        ) { Text(if (loading) "광고를 준비하는 중…" else label) }
-        Text(note, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, textAlign = TextAlign.Center,
+        ) { com.bamnat.app.ui.pro.WholeWords(if (loading) "광고를 준비하는 중…" else label) }
+        if (loading && late) {
+            // 2.0.0 [RVO-18] 검토 U11b-08: '그만두기' stops waiting, quietly and with nothing given (the ad that comes after is dropped);
+            // the button is there again to try later.
+            com.bamnat.app.ui.components.SideOrBelow(Modifier.fillMaxWidth(), minStart = 140.dp,
+                start = { Text(AD_LATE_WORDS, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) },
+                end = { androidx.compose.material3.TextButton(onClick = { cancel?.invoke() }) { Text("그만두기") } })
+        } else if (note.isNotEmpty()) Text(note, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, textAlign = TextAlign.Center,
             modifier = Modifier.fillMaxWidth())
     }
 }
 
 /** [FREE-10] How long an ad may take to come before it counts as 시간 초과. */
 private const val AD_WAIT_MS = 15_000L
+
+/** 2.0.0 [RVO-18] 검토 U11b-08: from this long the wait says it is late and can be stopped. */
+private const val AD_LATE_MS = 3_000L
+internal const val AD_LATE_WORDS = "광고가 늦어요. 조금만요"
+
+/**
+ * 2.0.0 [RVO-18] 검토 PRO-14·U11b-09: today's two are used, said as two opens (an ad that did not come opened it too), not two ads
+ * watched. Followed by when it comes back.
+ */
+internal const val CAPPED_WORDS = "오늘은 광고로 두 번 열었어요."
+
+private const val PREVIEW_NO_AD = "미리 보기에서는 광고가 나오지 않아요."
+
+private fun adNote(bundle: com.bamnat.core.tier.FeatureLease.Bundle): String =
+    "광고 한 편을 끝까지 보면 7일 열려요(${bundle.gives}). 광고가 안 와도 그냥 열려요. 하루 두 편까지예요(밤 12시에 다시 세요)."
+
+private fun firstWeekNote(bundle: com.bamnat.core.tier.FeatureLease.Bundle): String =
+    "${bundle.label} 묶음(${bundle.gives})을 처음 쓰는 날부터 7일 광고 없이 써요. 그 뒤에는 광고 한 편으로 7일씩 열려요."
+
+/**
+ * 2.0.0 [RVO-25] (PC-186) The grey words [LeaseAdOption] says under its button, for a card that keeps them under ⓘ
+ * (withNote = false): the free first week's, else the ad's (with the preview's line). Null when there is no button to explain.
+ */
+fun leaseNote(feature: com.bamnat.app.tier.Feature, gate: Gate): String? {
+    if (gate.tier >= Tier.PRO) return null
+    val bundle = gate.bundle(feature) ?: return null
+    return when {
+        gate.canTry(feature) -> firstWeekNote(bundle)
+        gate.preview -> "${adNote(bundle)} $PREVIEW_NO_AD"
+        else -> adNote(bundle)
+    }
+}

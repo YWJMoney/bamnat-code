@@ -60,7 +60,7 @@ object InvestMonthNotice {
                 .setSmallIcon(R.drawable.ic_notification)
                 .setCategory(NotificationCompat.CATEGORY_REMINDER)
                 .setContentTitle(listOfNotNull(cal.name.takeIf { many }, "${month.monthValue}월 투자 요약").joinToString(" · "))
-                .setContentText(m.text(book.settings.hideAmounts))
+                .setContentText(m.text(InvestNotices.hidden(c, book).settings.hideAmounts))
                 .setContentIntent(Notifications.open(context, NoticeLinks.Target.INVEST, REQUEST_OPEN, cal.id))
                 .setAutoCancel(true)
                 .build()

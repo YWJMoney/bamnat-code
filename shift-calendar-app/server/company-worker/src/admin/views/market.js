@@ -5,7 +5,8 @@ export function marketViews(A) {
 
   // [RCP-39] 1.34 나눔 판.
   // 1.35 [RCX-28] 첫 3개 검토 is gone: 신고됨 comes first; 검토 대기 holds only what waited before (and goes when empty).
-  const RECIPE_TABS = [["flagged", "신고됨"], ["again", "돌려준 뒤 다시 올라온 것"], ["visible", "새로 올라온 것"], ["waiting", "출시 대기"], ["hidden", "가린 것"], ["retired", "판 정리로 내림"], ["health", "장터 건강"], ["queue", "전에 기다리던 것"], ["official", "공식·공개 자료"],
+  // 2.0.0 [RVQ-39] 검토 SVC-53·U22b-02: 보류된 표 (한 네트워크에서 넘쳐 어디에도 세지 않고 기다리는 좋아요·안좋아요).
+  const RECIPE_TABS = [["flagged", "신고됨"], ["again", "돌려준 뒤 다시 올라온 것"], ["votes", "보류된 표"], ["visible", "새로 올라온 것"], ["waiting", "출시 대기"], ["hidden", "가린 것"], ["retired", "판 정리로 내림"], ["health", "장터 건강"], ["queue", "전에 기다리던 것"], ["official", "공식·공개 자료"],
     ["showcase", "보여주기"], ["picks", "이번 주 고른 것"], ["images", "사진 검토"], ["requests", "요청 판"], ["tools", "기본 도구 후보"], ["makers", "프로필 신고"], ["month", "이달의 제작자"], ["fonts", "나눈 글꼴"]];
   const RECIPE_STYLES = [["ALL", "모두"], ["SHIFT", "교대"], ["DAY", "일근"], ["HOURLY", "알바"], ["FIELD", "현장"], ["BUSINESS", "자영업"], ["INVEST", "투자"]];
   const RECIPE_FLAGS = { personal: "개인 정보", fake: "사칭·거짓", harm: "해롭거나 불쾌", spam: "광고·도배", copy: "베낌", other: "그 밖" };
@@ -50,6 +51,14 @@ export function marketViews(A) {
       return `${(r.pieces ?? []).map((p) => esc((RECIPE_PIECES[p.kind] ?? p.kind) + (p.kind === "ledger" && ledgerWords(p) ? ` (${ledgerWords(p)})` : ""))).join(" · ")}${r.inputs?.length ? ` · 정할 칸 ${r.inputs.length}개` : ""}`;
     } catch { return ""; }
   }
+  /**
+   * 2.0.0 [RVQ-39] 검토 SVC-57: 출시 대기·판 정리 목록(1,200줄)은 본문 없이 와요. 조각 이름과 정할 칸 수만 적고, 본문은 '본문 보기'로
+   * 작품 하나를 열어 봐요.
+   */
+  function recipeRowParts(r) {
+    if (r.body) return recipeParts(r.body);
+    return `${(r.pieces ?? []).map((k) => esc(RECIPE_PIECES[k] ?? k)).join(" · ")}${r.inputs ? ` · 정할 칸 ${r.inputs}개` : ""}`;
+  }
 
   // 1.36 장터 네 구간 (앱 마을 › 장터 칩과 같은 이름). 1.39 [MKC-01] 테마 · 탭별 작품 · 도구(부품·규칙·단추).
   const RECIPE_SECTIONS = { theme: "테마", tab: "탭별 작품", part: "도구 · 부품", logic: "도구 · 규칙·단추" };
@@ -59,6 +68,20 @@ export function marketViews(A) {
    * 2.0.0 [RVA-48] 검토 ADMX-08·I24a-04(도약 42): 장터 목록은 50개씩 이어 받아요. 찾기·구간은 서버가 걸러요(받은 것 안에서만 찾던 것).
    */
   const RECIPE_PAGE = 50;
+
+  /**
+   * 2.0.0 [RVA-65] 처리방침 3.14 문장표 7번(SX-03) 장터 작품 '입은 뒤' 숫자. 서버(Q1)가 wear 칸에 상태만 실어요: off(깃발 꺼짐) ·
+   * few(넣은 분 20명 미만) · ok(최근 30일 비율 offSoon·textBack, 0~1). 넣은 분 수·낱개 수·폰별 값은 오지 않고 화면도 비율만 보여요.
+   * 목록 줄에는 ok만(짧게, 조건 4), 작품 하나 보기에는 빈 상태 둘도 한 줄로. 눈여겨볼 작품(watch)만 주의 pill, 빨강 없음(조건 6).
+   */
+  const pct = (x) => `${Math.round(Number(x) * 100)}%`;
+  function wearLine(w, full) {
+    if (!w?.state) return "";
+    if (w.state === "ok") return `<small class="wear">넣은 뒤(30일) · 30분 안에 다시 뺌 ${pct(w.offSoon)} · 글자 크기 되돌림 ${pct(w.textBack)}${w.watch ? ' <span class="pill warn">잘 안 읽히는지 봐요</span>' : ""}</small>`;
+    if (!full) return "";
+    return `<small class="wear">${w.state === "few" ? "넣은 뒤 숫자: 넣은 분이 20명이 되면 비율이 보여요."
+      : "넣은 뒤 숫자: 처리방침 3.14 시행 뒤, 사용 통계를 켠 분에게서 모여요."}</small>`;
+  }
   function recipeListPath(t, offset = 0) {
     const q = (S.recipeQuery ?? "").trim();
     const sec = S.recipeSection ?? "all";
@@ -80,8 +103,10 @@ export function marketViews(A) {
       ? [["all", "모든 구간", paged ? d.sections.all : d.items.length], ...Object.entries(RECIPE_SECTIONS).map(([k, label]) => [k, label, paged ? d.sections[k] ?? 0 : d.items.filter((r) => r.section === k).length])] : null;
     const secChips = secCounts ? `<div class="chips" role="group" aria-label="구간">${secCounts.map(([k, label, n]) =>
       `<button type="button" class="chip pick" data-act="recipe-section" data-key="${k}" aria-pressed="${sec === k}">${esc(label)} ${n}</button>`).join("")}</div>` : "";
+    const held = d?.held ?? S.recipeHeld ?? null;
+    if (d?.held) S.recipeHeld = d.held;
     const chips = listHead(`<div class="segmented" role="group" aria-label="보기">${RECIPE_TABS.map(([k, label]) =>
-      `<button type="button" class="seg" data-act="recipe-tab" data-key="${k}" aria-pressed="${tab === k}">${esc(label)}</button>`).join("")}</div>`,
+      `<button type="button" class="seg" data-act="recipe-tab" data-key="${k}" aria-pressed="${tab === k}">${esc(k === "votes" && held?.votes ? `${label} ${held.votes}` : label)}</button>`).join("")}</div>`,
       listTab && tab !== "one" ? `<input id="search" type="search" placeholder="이름·코드·만든 분으로 찾기" value="${esc(S.recipeQuery ?? "")}" autocomplete="off" enterkeyhint="search" aria-label="레시피 찾기">` : "",
       { scroll: true, filters: secChips, active: sec !== "all" ? 1 : 0, busy: Boolean(S.recipeQuery) });
     const month = m ? `<p class="list-note">${esc(m.month)} · 새 레시피 ${m.made}개 · ${Object.entries(m.actions ?? {}).map(([k, n]) => `${esc(RECIPE_ACTS[k] ?? k)} ${n}`).join(" · ") || "처리 없음"}</p>` : "";
@@ -110,6 +135,8 @@ export function marketViews(A) {
       waiting: "앱 업데이트와 함께 장터에 나올 운영자 작품이에요. 아직 아무에게도 안 보여요. 묶음마다 ‘지금 공개’하거나 공개할 때를 예약해요. ‘이 판부터’를 적은 작품은 공개한 뒤에도 그 판 이상 앱에만 보여서, 업데이트한 분부터 바로 보고 옛 앱에는 안 보여요.",
       // 2.0.0 [RVQ-26] 검토 SVC-52
       again: "돌려준 작품을 만든 분이 내용을 고쳐 새 판으로 다시 올린 것이에요. 이미 장터에 보여요. 괜찮으면 '괜찮아요', 아직이면 다시 돌려주거나 가려요. 공개 범위만 바꾼 것은 돌려준 채로 남아 여기 오지 않아요.",
+      // 2.0.0 [RVQ-39] 검토 SVC-53·U22b-02·T22b-01
+      votes: "한 네트워크에서 한 시간에 한 작품 30표(모든 작품 합쳐 300표)를 넘어 어디에도 세지 않고 기다리는 좋아요·안좋아요예요. 묶음은 그 시간의 같은 네트워크예요(누구인지는 몰라요, 번호는 작품마다 따로 매겨요). 병원·공장 와이파이처럼 여럿이 함께 누른 것 같으면 '세기', 한 사람이 설치를 바꿔 누른 것 같으면 '버리기'. 하루가 지나면 3일 넘게 쓴 설치의 표는 저절로 세고, 30일이 지나면 버려요.",
       showcase: "장터로 이런 것까지 된다는 걸 보여 주는 레시피예요. 근무 유형마다 마을 › 장터 맨 위 ‘이런 것도 만들 수 있어요’에 크게 보여요. 아래에서 showcase-recipes.json을 붙여 넣거나, 장터의 좋은 레시피를 ‘보여주기에 넣기’로 더해요.",
     }[tab];
     const q = (S.recipeQuery ?? "").trim().toLowerCase();
@@ -121,8 +148,10 @@ export function marketViews(A) {
     // ⋯ 안의 단추: 주된 것(상태마다 하나) 말고 나머지.
     // 2.0.0 [RVQ-26] 검토 SVC-52: '다시 올라온 것'은 볼 일 둘(괜찮아요·다시 돌려주기)이 줄에 보이고, ⋯ 맨 위에 가리기.
     const again = tab === "again";
+    const votes = tab === "votes";
     const rowMore = (r) => {
       const items = [
+        votes && r.heldVotes?.length > 1 ? `<button class="btn small danger" data-act="recipe-held" data-id="${r.code}" data-key="drop">보류된 표 모두 버리기</button>` : "",
         again ? `<button class="btn small" data-act="recipe-do" data-id="${r.code}" data-key="hide">가리기</button>` : "",
         r.state === "pending" && !again ? `<button class="btn small" data-act="recipe-return" data-id="${r.code}">돌려주기</button>` : "",
         r.official ? `<button class="btn small" data-act="recipe-do" data-id="${r.code}" data-key="unofficial">공식 빼기</button>` : `<button class="btn small" data-act="recipe-do" data-id="${r.code}" data-key="official">공식 표시</button>`,
@@ -133,23 +162,31 @@ export function marketViews(A) {
       ].filter(Boolean).join("");
       return moreMenu(r.title, items);
     };
-    const mainAct = (r) => again ? `<button class="btn small" data-act="recipe-do" data-id="${r.code}" data-key="approve">괜찮아요</button><button class="btn small" data-act="recipe-return" data-id="${r.code}">다시 돌려주기</button>`
+    // [RVQ-39] 조건 2: 묶음이 하나면 그 줄의 세기·버리기가 곧 전부라 '모두 세기'를 따로 두지 않아요.
+    const mainAct = (r) => votes ? (r.heldVotes?.length > 1 ? `<button class="btn small" data-act="recipe-held" data-id="${r.code}" data-key="release">모두 세기 (${r.heldVotes.length}묶음)</button>` : "")
+      : again ? `<button class="btn small" data-act="recipe-do" data-id="${r.code}" data-key="approve">괜찮아요</button><button class="btn small" data-act="recipe-return" data-id="${r.code}">다시 돌려주기</button>`
       : r.state === "pending" ? `<button class="btn small" data-act="recipe-do" data-id="${r.code}" data-key="approve">올리기</button>`
       : r.state === "waiting" ? `<button class="btn small" data-act="recipe-do" data-id="${r.code}" data-key="show">이것만 지금 공개</button>`
         : r.state === "hidden" ? `<button class="btn small" data-act="recipe-do" data-id="${r.code}" data-key="show">다시 보이기</button>`
           : `<button class="btn small" data-act="recipe-do" data-id="${r.code}" data-key="hide">가리기</button>`;
     const rows = shown.length ? `<ul class="rows recipe-rows">${shown.map((r) => `<li><div class="row"><span class="row-main">
         <b>${esc(r.cover?.emoji ?? "")} ${esc(r.title)}</b>${r.section ? ` <span class="pill">${esc(RECIPE_SECTIONS[r.section] ?? r.section)}</span>` : ""} <small>${r.tabs?.length ? `${r.tabs.map((t) => esc(RECIPE_TAB_WORDS[t] ?? t)).join("·")} · ` : ""}${esc(r.code)} · v${r.version} · ${esc(r.nick ?? "이름 없음")}${r.late ? ' · <span class="pill warn">하루 넘음</span>' : ""}</small>
-        ${r.summary ? `<small>${esc(r.summary)}</small>` : ""}<small>${recipeParts(r.body)}</small>
+        ${r.summary ? `<small>${esc(r.summary)}</small>` : ""}<small>${recipeRowParts(r)}</small>
+        ${(r.heldVotes ?? []).map((h) => { const m = /^(\d\d)-(\d\d) (\d\d)·(\d+)$/.exec(h.group ?? ""); const name = m ? `${+m[1]}월 ${+m[2]}일 ${m[3]}시 · 묶음 ${m[4]}` : "묶음 모름"; return `<div class="held-group"><small>${esc(name)} · 좋아요 ${h.likes} · 안좋아요 ${h.dislikes}</small>${edit && h.group ? `<span class="held-acts">
+          <button class="btn small" data-act="recipe-held" data-id="${r.code}" data-key="release" data-group="${esc(h.group)}" aria-label="${esc(name)}의 ${h.n}표 세기">세기</button>
+          <button class="btn small ghost" data-act="recipe-held" data-id="${r.code}" data-key="drop" data-group="${esc(h.group)}" aria-label="${esc(name)}의 ${h.n}표 버리기">버리기</button></span>` : ""}</div>`; }).join("")}
         ${r.parent ? `<small>고친 판 · 원본 <button type="button" class="linkish" data-act="recipe-find" data-id="${esc(r.parent)}">${esc(r.parent)}</button></small>` : ""}
-        <small>좋아요 ${r.likes} · 안좋아요 ${r.dislikes} · 쓰는 분 ${r.users}${r.flags?.length ? ` · ${recipeFlagCount(r.flags)}` : ""}</small>
+        <small>좋아요 ${r.likes} · 안좋아요 ${r.dislikes} · 쓰는 분 ${r.users}${r.flags?.length ? ` · ${recipeFlagCount(r.flags)}` : ""}</small>${wearLine(r.wear, tab === "one")}
         ${r.batch || r.releaseAt || r.minApp ? `<small>${[r.batch ? `묶음 ${esc(r.batch)}` : "", r.releaseAt ? `공개 예약 ${esc(new Date(r.releaseAt).toLocaleString("ko-KR"))}` : "", r.minApp ? `앱 판 ${r.minApp} 이상만` : ""].filter(Boolean).join(" · ")}</small>` : ""}
         ${r.quiet ? `<small data-quiet>운영자에게만 온 신고: ${[r.quiet.fresh ? `새 기기 ${r.quiet.fresh}` : "", r.quiet.net ? `같은 회선 ${r.quiet.net}` : ""].filter(Boolean).join(" · ")} (가리기에 세지 않아요)</small>` : ""}
         ${r.note ? `<small>돌려준 메모: ${esc(r.note)}</small>` : ""}${r.hidden ? `<small>가린 이유: ${esc({ admin: "운영자가 가림", flags: "신고가 쌓여 저절로 가림", retired: "판 정리로 내림 · 넣은 분은 계속 써요" }[r.hidden] ?? r.hidden)}${r.retiredBelow ? ` · 앱 판 ${r.retiredBelow} 미만에는 계속 보여요` : ""}</small>` : ""}
-        <details><summary>본문 보기</summary><pre class="mono">${esc(JSON.stringify(JSON.parse(r.body), null, 1))}</pre></details></span>
+        ${r.body ? `<details><summary>본문 보기</summary><pre class="mono">${esc(JSON.stringify(JSON.parse(r.body), null, 1))}</pre></details>`
+          : `<button type="button" class="linkish" data-act="recipe-open" data-id="${r.code}" aria-label="${esc(r.title)} 본문 보기">본문 보기</button>`}</span>
         ${edit ? `<span class="row-side row-acts">${mainAct(r)}${rowMore(r)}</span>` : ""}</div></li>`).join("")}</ul>
       ${foundN > shown.length ? `<div class="more"><button class="btn" data-act="recipe-more">더 보기 <span class="meta">${shown.length}/${foundN}</span></button></div>` : ""}`
       : q ? empty("찾는 레시피가 없어요", "이름·코드·만든 분 이름으로 찾아요.") : empty("여기 있는 레시피가 없어요", tab === "queue" ? "검토를 기다리는 레시피가 없어요." : "");
+    // [RVQ-39] U22b-02: 다른 보기에서도 보류된 표가 있으면 한 줄로 알려요.
+    const heldLine = held?.votes && !votes ? `<p class="list-note">보류된 표 ${held.votes}개 · 작품 ${held.works}개 <button type="button" class="linkish" data-act="recipe-tab" data-key="votes">보기</button></p>` : "";
     const release = tab === "waiting" ? recipeReleaseView(S.data.recipeRelease, edit) + materialsView(S.data.materials, edit)
       : tab === "retired" && edit ? recipeRetireView(S.recipeRetire) : "";
     const upload = edit && (tab === "official" || tab === "showcase" || tab === "waiting") ? `<form data-form="recipe-upload" class="card"><h3>${tab === "showcase" ? "보여주기 레시피 올리기" : tab === "waiting" ? "출시 작품 올리기" : "시작 레시피·공개 자료 올리기"}</h3>
@@ -175,7 +212,7 @@ export function marketViews(A) {
     // 설명은 목록 아래 접힌 한 줄(첫 문장), 이달 숫자와 처리 기록도 아래로.
     const [lead, ...restHelp] = String(help ?? "").split(/(?<=요\.) /);
     const tip = restHelp.length ? `<details class="tip" data-key="recipe-how-${tab}"><summary>${esc(lead)}</summary><p class="hint">${esc(restHelp.join(" "))}</p></details>` : lead ? `<p class="list-note">${esc(lead)}</p>` : "";
-    return `${chips}${back}${photo}${tab === "one" ? "" : release}${rows}<div class="list-foot">${tip}${tab === "one" ? "" : month}</div>${upload}${tab === "one" ? "" : log}`;
+    return `${chips}${back}${photo}${tab === "one" ? "" : heldLine}${tab === "one" ? "" : release}${rows}<div class="list-foot">${tip}${tab === "one" ? "" : month}</div>${upload}${tab === "one" ? "" : log}`;
   }
 
   /**
@@ -405,7 +442,8 @@ export function marketViews(A) {
       `<span class="pill ${l.why === "glyphs" ? "ok" : "warn"}">${esc(likeWhy[l.why] ?? "비슷한")} 글꼴을 나누는 중: ${esc(l.name)} · ${esc(bytesDiff(l.diff))}</span>`).join(" ")}</small>` : "";
     return `${sub}<p class="hint">${state === "pending" ? "다른 분께 가기 전에 보는 글꼴이에요. 글꼴 안의 이름·만든 곳·라이선스 글이 보낸 분이 고른 라이선스와 맞는지 봐요. 맞으면 나누기, 유료 글꼴이거나 알 수 없으면 내리기를 눌러요." : "글꼴 이름으로 찾아 라이선스(OFL·Apache·무료 공개)가 맞는지 봐요. 맞으면 다시 올리기, 상용 글꼴이면 내리기를 눌러요."}</p>
       <ul class="rows">${d.items.map((f) => `<li><div class="row"><span class="row-main"><b>${esc(f.name)}</b>
-        <small>보낸 분이 고른 것: ${esc(f.licenseName ?? f.license)} · ${(f.bytes / 1048576).toFixed(1)}MB · ${reportLine(f)} · ${esc(ago(f.at))}</small>
+        <small>보낸 분이 고른 것: ${esc(f.licenseName ?? f.license)} · ${(f.bytes / 1048576).toFixed(1)}MB · ${reportLine(f)} · ${esc(ago(f.at))}${f.owners > 1 ? ` · 같은 파일을 보낸 분 ${f.owners}명` : ""}</small>
+        ${f.credit && (f.credit.maker || f.credit.copyright) ? `<small>받는 분께 보이는 줄: ${esc([f.credit.maker && `만든 곳 ${f.credit.maker}`, f.licenseName].filter(Boolean).join(" · "))}</small>` : '<small>받는 분께는 보낸 분이 고른 라이선스만 보여요(글꼴 안에 만든 곳이 없어요)</small>'}
         ${own(f)}
         <small class="mono">${esc(f.id)}</small></span>
         ${edit ? `<span class="row-side">${f.state !== "ok" ? `<button class="btn small" data-act="recipe-font" data-id="${f.id}" data-key="ok">${f.state === "pending" ? "나누기" : "다시 올리기"}</button>` : ""}
@@ -415,11 +453,26 @@ export function marketViews(A) {
   /** [RCX-04] 1.35 요청 판: what people asked to be made; hide one that breaks the rules. Who wrote it is never shown. */
   function recipeRequestsView(d, edit) {
     if (!d.items.length) return empty("요청이 없어요", "앱의 ‘이런 레시피 있었으면’에서 올린 요청이 여기 보여요.");
-    const states = { waiting: "기다리는 중", making: "만드는 중", done: "완성" };
+    // 2.0.0 [RVQ-44] 검토 SVC-29·SVC-62·U22-06·I22bb-01: 완성 확인(요청한 분의 '맞아요', 7일 답 없으면 저절로), 만드는 중 며칠째·다시 열리는 날.
+    const states = { waiting: "기다리는 중", making: "만드는 중", check: "완성 확인 기다림", done: "완성" };
     const style = Object.fromEntries(RECIPE_STYLES);
-    return `<ul class="rows">${d.items.map((q) => `<li><div class="row"><span class="row-main"><b>${esc(q.body)}</b>
-        <small>${q.style === "ALL" ? "모든 유형" : esc(style[q.style] ?? q.style)} · ${esc(states[q.state] ?? q.state)}${q.askers ? ` · 스튜디오 요구 ${q.askers}명` : ""} · 좋아요 ${q.likes}${q.code ? ` · ${esc(q.code)}` : ""} · ${esc(ago(q.at))}${q.hidden ? ' · <span class="pill warn">가림</span>' : ""}</small></span>
-        ${edit ? `<span class="row-side"><button class="btn small" data-act="recipe-request" data-id="${q.id}" data-key="${q.hidden ? "show" : "hide"}">${q.hidden ? "다시 보이기" : "가리기"}</button></span>` : ""}</div></li>`).join("")}</ul>`;
+    const day = (iso) => new Date(iso).toLocaleDateString("ko-KR", { month: "long", day: "numeric", timeZone: "Asia/Seoul" });
+    const since = (iso) => `D+${Math.max(0, Math.floor((Date.now() - Date.parse(iso)) / 86400000))}`;
+    const when = (q) => q.state === "making" && q.makingSince ? ` · ${since(q.makingSince)} · ${day(q.reopenAt)}에 다시 열려요`
+      : q.state === "check" && q.checkBy ? ` · ${q.operator ? "운영자가 확인해요" : "요청한 분이 확인해요"} · ${day(q.checkBy)}에 저절로 완성`
+        : q.state === "done" && q.checked === 1 ? " · 요청한 분이 맞다고 함" : q.state === "done" && q.checked === 2 ? " · 답이 없어 저절로 완성" : "";
+    const side = (q) => {
+      const check = q.state === "check" && q.operator ? `<button class="btn small" data-act="recipe-request" data-id="${q.id}" data-key="check-ok">맞아요</button>
+        <button class="btn small ghost" data-act="recipe-request" data-id="${q.id}" data-key="check-no">아니에요</button>` : "";
+      const hide = `<button class="btn small" data-act="recipe-request" data-id="${q.id}" data-key="${q.hidden ? "show" : "hide"}">${q.hidden ? "다시 보이기" : "가리기"}</button>`;
+      // 조건 2: 맞아요·아니에요가 있으면 가리기는 ⋯ 안으로.
+      return check ? `${check}${moreMenu(q.body.slice(0, 30), hide)}` : hide;
+    };
+    const checking = d.items.filter((q) => q.state === "check" && q.operator).length;
+    return `${checking ? `<p class="list-note">스튜디오 요구로 올라온 요청 ${checking}개가 완성 확인을 기다려요. 작품이 그 요구를 풀었는지 보고 '맞아요'를 눌러요.</p>` : ""}
+      <ul class="rows">${d.items.map((q) => `<li><div class="row"><span class="row-main"><b>${esc(q.body)}</b>
+        <small>${q.style === "ALL" ? "모든 유형" : esc(style[q.style] ?? q.style)} · ${esc(states[q.state] ?? q.state)}${esc(when(q))}${q.askers ? ` · 스튜디오 요구 ${q.askers}명` : ""} · 좋아요 ${q.likes}${q.code ? ` · <button type="button" class="linkish" data-act="recipe-open" data-id="${esc(q.code)}">${esc(q.code)} 열기</button>` : ""} · ${esc(ago(q.at))}${q.hidden ? ' · <span class="pill warn">가림</span>' : ""}</small></span>
+        ${edit ? `<span class="row-side">${side(q)}</span>` : ""}</div></li>`).join("")}</ul>`;
   }
 
 

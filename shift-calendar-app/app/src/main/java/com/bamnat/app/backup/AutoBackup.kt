@@ -11,8 +11,10 @@ import com.bamnat.app.NoticeLinks
 import com.bamnat.app.R
 import com.bamnat.app.alarm.Notifications
 import com.bamnat.app.data.BackupException
+import com.bamnat.app.data.BackupManager
 import com.bamnat.app.tier.Feature
 import com.bamnat.core.backup.BackupCrypto
+import com.bamnat.core.backup.BackupGenerations
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -36,12 +38,19 @@ import com.bamnat.core.time.Today
  * The password is not kept: the key it gives (PBKDF2, as [BackupCrypto]) is, wrapped by the phone's key
  * store ([KeyBox]), so the daily run needs no password and the file still opens with it on any phone.
  * None of this goes into a backup: the file's permission and the key belong to this phone.
+ *
+ * 2.0.0 [RVL-52] (검토 U12-06·I12a-03) Or a folder the user picked: a file a day named by its date (밤낮-자동백업-2026-11-12.bamnat),
+ * the newest [BackupGenerations.KEEP] kept, so a record deleted by mistake is still in last week's file. A file made today that does not
+ * read back whole is taken away again, and the old ones go only after today's is checked. One file overwritten every day stays for
+ * places with no folders to pick (Google Drive's picker gives files).
+ * 2.0.0 [RVL-51] (검토 U12-05·DATA-17) When 프로 ends it waits, says so once on the day it would have run, and [saveOnce] still saves by hand.
  */
 class AutoBackup(
     private val c: AppContainer,
     private val keys: () -> KeyBox,
     private val clock: () -> Instant = Today::instant,
-    private val zone: () -> ZoneId = ZoneId::systemDefault,
+    private val zone: () -> ZoneId = Today::zone,
+    private val folders: (Uri) -> BackupFolder = { folderOf(c, it) },
 ) {
     private val prefs = c.appContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
     private val lock = Mutex()
@@ -55,6 +64,10 @@ class AutoBackup(
         val failingSince: Instant? = null,
         val error: String? = null,
         val running: Boolean = false,
+        /** 2.0.0 [RVL-52] A folder of dated files, not one file. */
+        val folder: Boolean = false,
+        /** 2.0.0 [RVL-52] The dated files in the folder after the last good backup, at most [BackupGenerations.KEEP]. */
+        val kept: Int = 0,
     )
 
     sealed interface Result {
@@ -74,15 +87,17 @@ class AutoBackup(
         lastOk = prefs.getLong(K_OK, 0).takeIf { it > 0 }?.let(Instant::ofEpochMilli),
         failingSince = prefs.getLong(K_FAILING, 0).takeIf { it > 0 }?.let(Instant::ofEpochMilli),
         error = prefs.getString(K_ERROR, null),
+        folder = prefs.getBoolean(K_FOLDER, false),
+        kept = prefs.getInt(K_KEPT, 0),
     )
 
     val on: Boolean get() = _state.value.on
 
     /**
-     * Turns it on with [uri] (a file the user just made with the system's file picker) and [password],
-     * and makes the first backup at once. The password is cleared here.
+     * Turns it on with [uri] (a file the user just made with the system's file picker, or with [folder] a folder from its folder
+     * picker) and [password], and makes the first backup at once. The password is cleared here.
      */
-    suspend fun turnOn(uri: Uri, password: CharArray): Result {
+    suspend fun turnOn(uri: Uri, password: CharArray, folder: Boolean = false): Result {
         val salt = BackupCrypto.newSalt()
         val key = try {
             withContext(Dispatchers.Default) { BackupCrypto.deriveKey(password, salt, ITERATIONS) }
@@ -99,7 +114,7 @@ class AutoBackup(
         val old = prefs.getString(K_URI, null)
         hold(uri)
         prefs.edit().clear()
-            .putString(K_URI, uri.toString()).putString(K_NAME, nameOf(uri))
+            .putString(K_URI, uri.toString()).putString(K_NAME, nameOf(uri, folder)).putBoolean(K_FOLDER, folder)
             .putString(K_SALT, B64.encodeToString(salt)).putInt(K_ITER, ITERATIONS).putString(K_KEY, B64.encodeToString(wrapped))
             .commit()
         if (old != null && old != uri.toString()) release(Uri.parse(old))
@@ -109,12 +124,13 @@ class AutoBackup(
         return runNow()
     }
 
-    /** [uri] in place of the file it wrote to, with the same password; backs up there at once. */
-    suspend fun moveTo(uri: Uri): Result {
+    /** [uri] in place of the file (or with [folder] the folder) it wrote to, with the same password; backs up there at once. */
+    suspend fun moveTo(uri: Uri, folder: Boolean = false): Result {
         if (!on) return Result.Off
         val old = prefs.getString(K_URI, null)
         hold(uri)
-        prefs.edit().putString(K_URI, uri.toString()).putString(K_NAME, nameOf(uri)).remove(K_FAILING).remove(K_ERROR).commit()
+        prefs.edit().putString(K_URI, uri.toString()).putString(K_NAME, nameOf(uri, folder)).putBoolean(K_FOLDER, folder)
+            .remove(K_KEPT).remove(K_FAILING).remove(K_ERROR).commit()
         if (old != null && old != uri.toString()) release(Uri.parse(old))
         _state.value = load()
         return runNow()
@@ -142,13 +158,25 @@ class AutoBackup(
     suspend fun runIfDue(): Result? = if (due() && !com.bamnat.app.recipe.FunctionTrial.busy(c.appContext)) runNow() else null // [TRY-06] not while a work is tried
 
     /** Writes the backup now, whatever the time since the last. */
-    suspend fun runNow(): Result = lock.withLock {
+    suspend fun runNow(): Result = backup(byHand = false)
+
+    /**
+     * 2.0.0 [RVL-51] (검토 U12-05) One backup by hand to the same place with the same password, also while 프로 has ended: a backup
+     * saved by hand is everyone's (백업 저장), only the daily one waits for 프로.
+     */
+    suspend fun saveOnce(): Result = backup(byHand = true)
+
+    private suspend fun backup(byHand: Boolean): Result = lock.withLock {
         if (!on) return@withLock Result.Off
-        if (!c.featureGate.allows(Feature.AUTO_BACKUP)) return@withLock Result.Locked
+        val open = c.featureGate.allows(Feature.AUTO_BACKUP)
+        if (!open && !byHand) {
+            stopped()
+            return@withLock Result.Locked
+        }
         _state.value = _state.value.copy(running = true)
         val now = clock()
         val result = try {
-            withContext(Dispatchers.IO) { write() }.let { Result.Ok(now, it) }
+            withContext(Dispatchers.IO) { write(now) }.let { Result.Ok(now, it) }
         } catch (e: kotlinx.coroutines.CancellationException) {
             _state.value = _state.value.copy(running = false)
             throw e
@@ -172,8 +200,16 @@ class AutoBackup(
         } catch (e: Exception) {
             Result.Failed("백업을 만들지 못했어요")
         }
-        record(now, result)
+        record(now, result, open)
         result
+    }
+
+    /** 2.0.0 [RVL-51] (검토 DATA-17) The day it would have run without 프로: a notice once, not every day, until it runs again with 프로. */
+    private fun stopped() {
+        if (prefs.getBoolean(K_STOPPED, false)) return
+        prefs.edit().putBoolean(K_STOPPED, true).commit()
+        c.telemetry.event("auto_backup", "stopped")
+        postStopped(c.appContext)
     }
 
     private class Verify : IOException("verify")
@@ -184,8 +220,9 @@ class AutoBackup(
      * back as a SHA-256 of what came, and opened from the cache file. Before, the whole file was held in memory three or four times
      * over (made, read back, opened, unzipped), and a phone with many photos ran out of memory.
      */
-    private suspend fun write(): Int {
-        val uri = Uri.parse(prefs.getString(K_URI, null) ?: throw FileNotFoundException())
+    private suspend fun write(now: Instant): Int {
+        val where = Uri.parse(prefs.getString(K_URI, null) ?: throw FileNotFoundException())
+        val folder = if (prefs.getBoolean(K_FOLDER, false)) folders(where) else null
         val salt = B64.decode(prefs.getString(K_SALT, null) ?: throw KeyBox.KeyGone())
         val iterations = prefs.getInt(K_ITER, ITERATIONS)
         val key = keys().unwrap(B64.decode(prefs.getString(K_KEY, null) ?: throw KeyBox.KeyGone()))
@@ -195,32 +232,61 @@ class AutoBackup(
             work.mkdirs()
             val file = java.io.File(work, "backup.bamnat")
             // [REL-15] A sealed file of format 3, its photos as files inside.
-            val made = java.security.MessageDigest.getInstance(SUM)
-            java.security.DigestOutputStream(java.io.BufferedOutputStream(java.io.FileOutputStream(file), BUFFER), made).use { out ->
+            val sum = java.security.MessageDigest.getInstance(SUM)
+            java.security.DigestOutputStream(java.io.BufferedOutputStream(java.io.FileOutputStream(file), BUFFER), sum).use { out ->
                 c.backupManager.exportFileWithKey(out, key, salt, iterations)
             }
-            val size = file.length()
-            overwrite(uri, file)
-            val back = java.security.MessageDigest.getInstance(SUM)
-            val read = c.appContext.contentResolver.openInputStream(uri)?.use { input ->
-                var n = 0L
-                val buf = ByteArray(BUFFER)
-                while (true) {
-                    val got = input.read(buf)
-                    if (got < 0) break
-                    back.update(buf, 0, got)
-                    n += got
-                }
-                n
-            } ?: throw FileNotFoundException()
-            if (read != size || !java.security.MessageDigest.isEqual(made.digest(), back.digest())) throw Verify()
-            // The file opens and every part of it checks out (the user's file is the same bytes, by the sum just taken).
-            runCatching { c.backupManager.verifyWithKey(file, key) }.getOrElse { if (it is OutOfMemoryError) throw it else throw Verify() }
-            return size.toInt()
+            val made = sum.digest()
+            if (folder == null) {
+                put(where, file, made, key)
+                return file.length().toInt()
+            }
+            // [RVL-52] Today's dated file in the folder: made now, or written over by a second backup the same day.
+            val today = BackupGenerations.nameFor(now.atZone(zone()).toLocalDate())
+            val (uri, new) = folder.open(today, BackupManager.FILE_MIME)
+            try {
+                put(uri, file, made, key)
+            } catch (e: Throwable) {
+                // A file made just now that is not whole would push a good one out of the seven: it goes again.
+                if (new) runCatching { folder.delete(today) }
+                throw e
+            }
+            prefs.edit().putInt(K_KEPT, prune(folder)).commit()
+            return file.length().toInt()
         } finally {
             key.fill(0)
             work.deleteRecursively()
         }
+    }
+
+    /** Copies [file] (its SHA-256 [made]) over [uri], reads [uri] back to the same sum, and opens [file] with [key]. */
+    private fun put(uri: Uri, file: java.io.File, made: ByteArray, key: ByteArray) {
+        overwrite(uri, file)
+        val back = java.security.MessageDigest.getInstance(SUM)
+        val read = c.appContext.contentResolver.openInputStream(uri)?.use { input ->
+            var n = 0L
+            val buf = ByteArray(BUFFER)
+            while (true) {
+                val got = input.read(buf)
+                if (got < 0) break
+                back.update(buf, 0, got)
+                n += got
+            }
+            n
+        } ?: throw FileNotFoundException()
+        if (read != file.length() || !java.security.MessageDigest.isEqual(made, back.digest())) throw Verify()
+        // The file opens and every part of it checks out (the user's file is the same bytes, by the sum just taken).
+        runCatching { c.backupManager.verifyWithKey(file, key) }.getOrElse { if (it is OutOfMemoryError) throw it else throw Verify() }
+    }
+
+    /**
+     * 2.0.0 [RVL-52] Takes away our dated files past the newest seven, once today's is checked; the user's own files in the folder are
+     * never touched ([BackupGenerations.dateOf] knows only ours). How many of ours are left.
+     */
+    private fun prune(folder: BackupFolder): Int {
+        val names = runCatching { folder.list() }.getOrElse { return prefs.getInt(K_KEPT, 0) }
+        val gone = BackupGenerations.toDelete(names).filter { runCatching { folder.delete(it) }.getOrDefault(false) }.toSet()
+        return BackupGenerations.kept(names).count { it.first !in gone }
     }
 
     /**
@@ -247,10 +313,14 @@ class AutoBackup(
         }
     }
 
-    private fun record(now: Instant, r: Result) {
+    private fun record(now: Instant, r: Result, open: Boolean) {
         val e = prefs.edit().putLong(K_TRIED, now.toEpochMilli())
         when (r) {
-            is Result.Ok -> e.putLong(K_OK, r.at.toEpochMilli()).remove(K_FAILING).remove(K_ERROR).remove(K_NOTICED)
+            is Result.Ok -> {
+                e.putLong(K_OK, r.at.toEpochMilli()).remove(K_FAILING).remove(K_ERROR).remove(K_NOTICED)
+                // [RVL-51] Running again with 프로; a save by hand while it waits does not bring the notice back the next day.
+                if (open) e.remove(K_STOPPED)
+            }
             is Result.Failed -> {
                 e.putString(K_ERROR, r.why)
                 if (!prefs.contains(K_FAILING)) e.putLong(K_FAILING, now.toEpochMilli())
@@ -299,7 +369,7 @@ class AutoBackup(
         }
     }
 
-    private fun nameOf(uri: Uri): String? = runCatching {
+    private fun nameOf(uri: Uri, folder: Boolean): String? = if (folder) runCatching { folders(uri).name }.getOrNull() else runCatching {
         c.appContext.contentResolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)?.use { cur ->
             if (cur.moveToFirst()) cur.getString(0) else null
         }
@@ -311,6 +381,10 @@ class AutoBackup(
     }
 
     companion object {
+        /** A folder from the system's folder picker; a plain directory (never from the picker) is the tests' stand-in for one. */
+        fun folderOf(c: AppContainer, uri: Uri): BackupFolder =
+            if (uri.scheme == "file") FileFolder(java.io.File(uri.path!!)) else TreeFolder(c.appContext.contentResolver, uri)
+
         /** What the file picker suggests. */
         const val FILE_NAME = "밤낮-자동백업.bamnat" // [J133-36] 순번 716
         const val FAIL_DAYS = 3L
@@ -333,6 +407,11 @@ class AutoBackup(
         private const val K_FAILING = "failing"
         private const val K_ERROR = "error"
         private const val K_NOTICED = "noticed"
+        /** 2.0.0 [RVL-52] A folder of dated files, and how many of ours were in it after the last good backup. */
+        private const val K_FOLDER = "folder"
+        private const val K_KEPT = "kept"
+        /** 2.0.0 [RVL-51] Said once that it waits for 프로. */
+        private const val K_STOPPED = "stopped"
 
         private const val OPEN_REQUEST = 4402
 
@@ -348,5 +427,21 @@ class AutoBackup(
                 .build()
             Notifications.post(context, Notifications.BACKUP_ID, notification)
         }
+
+        /** 2.0.0 [RVL-51] (검토 U12-05·DATA-17) Once, on the day the daily backup would have run without 프로; it opens the row's 지금 한 번 저장. */
+        fun postStopped(context: Context) {
+            val why = "프로 기간이 끝나 매일 자동 백업을 쉬고 있어요. 눌러서 지금 한 번 저장할 수 있어요"
+            val notification = NotificationCompat.Builder(context, Notifications.BACKUP_CHANNEL_ID)
+                .setSmallIcon(R.drawable.ic_notification)
+                .setContentTitle(STOPPED_TITLE)
+                .setContentText(why)
+                .setStyle(NotificationCompat.BigTextStyle().bigText(why))
+                .setContentIntent(Notifications.open(context, NoticeLinks.Target.BACKUP, OPEN_REQUEST))
+                .setAutoCancel(true)
+                .build()
+            Notifications.post(context, Notifications.BACKUP_ID, notification)
+        }
+
+        const val STOPPED_TITLE = "매일 자동 백업을 쉬고 있어요"
     }
 }

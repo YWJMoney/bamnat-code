@@ -58,21 +58,24 @@ object DayNotices {
         wanted: Wanted,
         targetMinutes: Int = SleepPlan.DEFAULT_TARGET_MINUTES,
         commuteMinutes: Int = SleepPlan.COMMUTE_MINUTES.toInt(),
+        /** 2.0.0 [RVH-75] 검토 TYPE-08: the briefing in the words of the work ([SleepPlan.Words]). */
+        style: com.bamnat.core.work.WorkStyle? = null,
     ): List<Notice> {
         if (!wanted.any) return emptyList()
         val today = now.toLocalDate()
         val plan = SleepSchedule.of(resolver, today.minusDays(1), today.plusDays(LOOK_AHEAD_DAYS), alarmsOn, targetMinutes, commuteMinutes)
-        return of(plan, wanted)
+        return of(plan, wanted, style)
     }
 
     /** The notices [plan] gives, earliest first. */
-    fun of(plan: SleepSchedule, wanted: Wanted): List<Notice> {
+    fun of(plan: SleepSchedule, wanted: Wanted, style: com.bamnat.core.work.WorkStyle? = null): List<Notice> {
+        val words = SleepPlan.Words.of(style)
         val out = mutableListOf<Notice>()
         val work = plan.work
         for ((i, w) in work.withIndex()) {
             val prev = work.getOrNull(i - 1)
             val next = work.getOrNull(i + 1)
-            if (wanted.briefing) briefing(plan, w, prev)?.let(out::add)
+            if (wanted.briefing) briefing(plan, w, prev, words)?.let(out::add)
             if (wanted.commute && w.overnight && (next == null || Duration.between(w.to, next.from).toMinutes() >= NO_DRIVE_MINUTES)) {
                 val sleep = plan.sleepAfter(w)
                 out += Notice(Kind.COMMUTE, w.to, w.to.plusMinutes(COMMUTE_SHOWN_MINUTES), "${w.name} 수고했어요",
@@ -91,7 +94,7 @@ object DayNotices {
     }
 
     /** One briefing for [w]: the day before an early start, or the afternoon of work that runs overnight. */
-    private fun briefing(plan: SleepSchedule, w: SleepSchedule.Work, prev: SleepSchedule.Work?): Notice? {
+    private fun briefing(plan: SleepSchedule, w: SleepSchedule.Work, prev: SleepSchedule.Work?, words: SleepPlan.Words): Notice? {
         if (w.early) {
             val s = plan.sleeps.firstOrNull { it.before == w && it.after == null } ?: return null
             val cut = s.from.minusHours(SleepPlan.CAFFEINE_GAP_HOURS)
@@ -124,10 +127,10 @@ object DayNotices {
         val text = listOfNotNull(
             nap?.takeIf { it.to.isAfter(at) }?.let { "${span(it.from, it.to)} 낮잠" },
             sleep?.let { "커피는 ${hm(it.from.minusHours(SleepPlan.CAFFEINE_GAP_HOURS))}까지" },
-            sleep?.let { "퇴근 후 ${span(it.from, it.to)} " + if (it.short) "잘 수 있어요" else "잘 시간" },
+            sleep?.let { "${words.afterWork} ${span(it.from, it.to)} " + if (it.short) "잘 수 있어요" else "잘 시간" },
         ).joinToString(" · ")
         return Notice(Kind.BRIEFING, at, w.from, "${dayWord(w.from.toLocalDate(), at.toLocalDate())}${w.name} ${span(w.from, w.to)}",
-            text.ifEmpty { "${hm(w.from)}부터 근무예요" }, key("brief", w))
+            text.ifEmpty { "${hm(w.from)}부터 ${words.work}${words.ye}" }, key("brief", w))
     }
 
     /** The notices due at [firedAt], the moment their alarm was set for, that still have something to say at [now]. */

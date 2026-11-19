@@ -367,6 +367,10 @@ data class InvestBook(
     val settings: InvestSettings = InvestSettings(),
 ) {
     val isEmpty: Boolean get() = trades.isEmpty() && cash.isEmpty()
+    /** 2.0.0 [RVK-52] The markets this investor trades or plans in, for '오늘은 … 쉬는 날' (a coin-only investor is told nothing). */
+    val venues: Set<MarketDays.Venue> get() =
+        (trades.map { it.market } + alarms.filter { it.kind == AlarmKind.PLAN || it.kind == AlarmKind.TARGET }.map { it.market })
+            .mapTo(mutableSetOf(), MarketDays::venueOf)
     val activeAccounts: List<InvestAccount> get() = accounts.filter { !it.hidden }.sortedWith(compareBy({ it.sortOrder }, { it.id }))
     fun account(id: Long?): InvestAccount? = accounts.firstOrNull { it.id == id }
     fun quote(key: String): Quote? = quotes.firstOrNull { it.key == key }

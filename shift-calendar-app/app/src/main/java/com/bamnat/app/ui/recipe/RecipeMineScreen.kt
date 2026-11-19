@@ -72,7 +72,15 @@ fun RecipeMineScreen(vm: RecipeMineViewModel, onBack: () -> Unit, onOpen: (Strin
     // 1.35 자유도 점검: 되돌리기 asks first too (what it puts back and what it keeps).
     var undoing by remember { mutableStateOf<Pair<String, () -> Unit>?>(null) }
     // PC 확인 20ab0254: cleared after it was shown; cleared first, the key changed and took the snackbar down at once.
-    LaunchedEffect(message) { message?.let { snack.showSnackbar(it); vm.shown() } }
+    LaunchedEffect(message) {
+        val m = message ?: return@LaunchedEffect
+        // 2.0.0 [RVM-55] 검토 U09b-02: a 되돌리기 that left something as I made it has 보기.
+        val left = vm.left
+        val r = snack.showSnackbar(m, actionLabel = UndoLeft.SEE.takeIf { left.isNotEmpty() },
+            duration = if (left.isNotEmpty()) androidx.compose.material3.SnackbarDuration.Long else androidx.compose.material3.SnackbarDuration.Short)
+        vm.shown()
+        if (r == androidx.compose.material3.SnackbarResult.ActionPerformed) UndoLeft.show(left)
+    }
     Scaffold(
         snackbarHost = { com.bamnat.app.ui.components.AppSnackHost() },
         topBar = { TopAppBar(title = { Text("내 것 · 올린·받은·만들던 작품", maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis) }, navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "뒤로") } }) },
@@ -126,7 +134,9 @@ fun RecipeMineScreen(vm: RecipeMineViewModel, onBack: () -> Unit, onOpen: (Strin
                             when {
                                 e.undoneAt != null -> Muted("되돌렸어요")
                                 e.replacedAt == com.bamnat.app.data.RecipeBackup.RESTORED -> Muted("백업에서 돌아왔어요 · 되돌리기는 넣은 휴대폰에서만 돼요")
-                                e.replacedAt != null -> Muted("다른 작품이 그 자리에 들어갔어요")
+                                // 2.0.0 [RVM-59] 검토 U09b-03: which work took its place, and where its pieces are seen one by one.
+                                e.replacedAt != null -> Muted(com.bamnat.app.recipe.RecipeRepository.coveredBy(e)?.let { "‘$it’${com.bamnat.app.ui.Fmt.iga(it)} 그 자리에 들어갔어요 · 조각별로는 마을 › 테마(내 서랍)에서 봐요" }
+                                    ?: "다른 작품이 그 자리에 들어갔어요")
                                 vm.canUndo(e) -> TextButton(onClick = { undoing = e.title to { vm.undo(e.id) } }) { Text("되돌리기 (넣은 지 7일 안)") }
                                 else -> Muted("7일이 지나 그대로 쓰고 있어요")
                             }

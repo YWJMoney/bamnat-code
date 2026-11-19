@@ -492,7 +492,7 @@ class CalendarViewModel(private val container: AppContainer) : ViewModel(), Mone
      */
     fun sleepTips(snapshot: ScheduleSnapshot, date: LocalDate, settings: AppSettings): List<SleepPlan.Tip> =
         SleepPlan.tips(SleepSchedule.of(snapshot.resolver, date, date.plusDays(1), settings.alarmsEnabled && calendarAlarmsOn.value,
-            settings.sleepTargetMinutes, settings.commuteMinutes), date)
+            settings.sleepTargetMinutes, settings.commuteMinutes), date, settings.workStyle)
 
     /** 1.38 [P3-01] The flag book as it stands, so a Phase 3 row turned on shows without reopening the day. */
     val flagStates: StateFlow<Map<String, com.bamnat.core.flags.FlagState>> = container.flags.byKey
@@ -511,7 +511,7 @@ class CalendarViewModel(private val container: AppContainer) : ViewModel(), Mone
     fun todayFlow(snapshot: ScheduleSnapshot, settings: AppSettings, log: List<SleepEntry>, now: LocalDateTime, shiftNapUntil: Long? = null): TodayFlow.Card =
         // [CAL-13] An added calendar kept from ringing shows no alarm in the day's flow.
         TodayFlow.of(now, snapshot.resolver, settings.alarmsEnabled && calendarAlarmsOn.value, log, settings.sleepTargetMinutes, settings.commuteMinutes,
-            settings.restCheck, settings.strictRest, rules = rulesFor(snapshot, now.toLocalDate(), settings.rules),
+            settings.restSigns, settings.strictRest, rules = rulesFor(snapshot, now.toLocalDate(), settings.rules),
             // [SLP-16] The way-home card speaks from the user's own sleeps after night work.
             afterNightMinutes = com.bamnat.core.sleep.SleepInsights.afterNightAverage(log, snapshot.resolver, now.toLocalDate()),
             since = container.recordsTrash.styleChangedOn(activeCalendar.value.id),
@@ -1258,10 +1258,20 @@ class CalendarViewModel(private val container: AppContainer) : ViewModel(), Mone
         )
     }
 
-    /** 1.40 [SPREAD-37] The 연말 결산 card is closed for this part of the window (12월, then once more in 1월). */
-    fun closeYearRecap(today: LocalDate) {
+    /**
+     * 1.40 [SPREAD-37] The 연말 결산 notice is closed for this part of the window (12월, then once more in 1월); the mark it had before,
+     * for [reopenYearRecap].
+     */
+    fun closeYearRecap(today: LocalDate): Int {
+        val before = container.settingsRepository.current.yearRecapSeen
         val key = com.bamnat.core.work.YearRecap.key(today)
         container.settingsRepository.update { s -> if (s.yearRecapSeen >= key) s else s.copy(yearRecapSeen = key) }
+        return before
+    }
+
+    /** 2.0.0 (조건 10): the 결산 notice's X taken back. */
+    fun reopenYearRecap(before: Int) {
+        container.settingsRepository.update { it.copy(yearRecapSeen = before) }
     }
 
     /** [CAL-46] The month's "내 기록" card is not shown again. */
@@ -1645,7 +1655,7 @@ class CalendarViewModel(private val container: AppContainer) : ViewModel(), Mone
             val before = schedule.setDayAlarms(date, alarms)
             // [CAL-10] Hand-set alarms replace the shift's; a wrong save is one tap from how it was.
             val text = when {
-                alarms == null -> "${Fmt.monthDay(date)} 알람을 근무 알람으로 되돌렸어요"
+                alarms == null -> "${Fmt.monthDay(date)} 알람을 평소 알람으로 되돌렸어요"
                 alarms.isEmpty() -> "${Fmt.monthDay(date)}은 알람이 울리지 않아요"
                 else -> "${Fmt.monthDay(date)} 알람 ${alarms.size}개를 정했어요"
             }
@@ -1792,7 +1802,7 @@ class CalendarViewModel(private val container: AppContainer) : ViewModel(), Mone
         val money = money
         container.appScope.launch {
             money.delete(job)
-            _messages.tryEmit(UndoMessage("‘${job.title}’ 일감을 지웠어요") { money.save(job) })
+            _messages.tryEmit(UndoMessage("‘${job.title}’ 일감을 지웠어요") { money.restore(job) })
         }
     }
 
