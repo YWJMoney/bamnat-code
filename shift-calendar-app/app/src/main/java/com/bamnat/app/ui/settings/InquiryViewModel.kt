@@ -234,7 +234,8 @@ class InquiryViewModel(private val c: AppContainer) : ViewModel() {
     fun problem(text: String): String? = when {
         text.length > InquiryClient.TEXT_MAX -> "${InquiryClient.TEXT_MAX}자까지 쓸 수 있어요"
         // 2.0.0 [RVN-22] 검토 I10bb-03: the very letters too ("‘010-1234-5678’ · 전화번호는 적지 말아 주세요"), from the server's own table.
-        else -> CompanyText.personalHit(text)?.let { CompanyText.stopLine(it, ::personalProblem) }
+        // The order number the app itself puts in an inquiry is not a phone number (InquiryClient.withoutOrder).
+        else -> CompanyText.personalHit(InquiryClient.withoutOrder(text))?.let { CompanyText.stopLine(it, ::personalProblem) }
     }
 
     /** [INQ-05] Questions waiting to be sent, shown at the top of 내 문의. */

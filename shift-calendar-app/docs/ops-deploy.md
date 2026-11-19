@@ -16,6 +16,18 @@
 3. 요약이 맞으면 같은 값으로 `mode: deploy`. 회사 서버는 10% 카나리 10분 → 100% → health 5번, 하나라도 어긋나면 앞 판·정기 작업까지 되돌려요.
 4. 끝나면 사용자에게 한 줄: 판, 배포 번호, 되돌릴 판(그리고 넘긴 시험이 있으면 그것도, 아래).
 
+## Durable Object 첫 배포 (`migrate-check`·`migrate`, 2.0.0 RVD-33)
+
+Durable Object 클래스를 새로 만드는 판(설정에 실서버보다 새 `[[migrations]]`가 있는 판)은 `versions upload`로 못 올라가요. 보통 `check`·`deploy`는 그런 판을 올리기
+전에 멈추고 '다음에 할 일'로 이 길을 알려 줘요.
+
+1. `target`을 `company`나 `share` **하나**로(both는 gate가 멈춰요), `mode: migrate-check`. 실서버 migration 태그와 설정을 맞춰 보고, 지금 붙은 연결(사용자 도메인·route·
+   workers.dev·미리보기 URL)을 요약에 남기고, `wrangler deploy --dry-run`까지만 해요. 손님은 앞 판 그대로예요.
+2. 요약이 맞으면 같은 값으로 `mode: migrate`. `wrangler deploy` 한 번(카나리 없음), 이어서 배포 상태·바인딩·migration 태그·붙은 연결이 그대로인지·health 5번을 봐요.
+3. **되돌릴 수 없어요.** 올린 판이 새 되돌리기 바닥이고(Cloudflare가 그 앞 판으로 되돌리기를 막아요), 실패해도 앞 판으로 되돌리지 않고 크게 알려요. 고친 판은 보통 `deploy`로 올려요.
+4. 그 뒤 판은 보통 `check` → `deploy`로 올라가요. 설정에 같은 클래스 이름·바인딩·migration 태그를 계속 가져가야 해요(없으면 '앞 판 바인딩이 빠져요'로 멈춰요).
+   `deleted_classes`·`renamed_classes`·`transferred_classes`는 방 데이터를 지우거나 옮기니 이 도구로 하지 않아요.
+
 ## 시험에서 멈췄을 때 (2.0.0 RVR-25, 검토 U60-02)
 
 build가 서버 시험에서 멈추면 요약 맨 위에 실패한 시험 이름·줄이 나오고, `explain` 일이 **어제 main의 날짜 시험**(`date-watch.yml`, 매일 06:17 KST)

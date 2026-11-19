@@ -359,11 +359,12 @@ export function marketViews(A) {
   /** [RCX-08] 1.35 이번 주 고른 것: up to three codes for each kind of work; last week's stay until a new pick. */
   function recipePicksView(d, edit) {
     const by = (k) => d.items.filter((i) => i.style === k).map((i) => i.code);
-    return `<p class="hint">${esc(d.week)} 주. 근무 유형마다 레시피 3개까지 골라 광장 맨 위에 보여요. 새로 고르기 전까지 지난주 것이 그대로 보여요. 광장에 보이는 레시피의 코드(8자)를 넣어요.</p>
-      <ul class="rows">${RECIPE_STYLES.map(([k, label]) => `<li><form data-form="recipe-picks" data-key="${k}" class="row">
+    // 2.0.0 [RVA-72] PC-209(조건 1·4): 설명은 줄 아래 접힌 한 줄로.
+    const how = `<details class="tip" data-key="recipe-picks-how"><summary>${esc(d.week)} 주. 근무 유형마다 레시피 3개까지 골라 광장 맨 위에 보여요.</summary><p class="hint">새로 고르기 전까지 지난주 것이 그대로 보여요. 광장에 보이는 레시피의 코드(8자)를 넣어요.</p></details>`;
+    return `<ul class="rows">${RECIPE_STYLES.map(([k, label]) => `<li><form data-form="recipe-picks" data-key="${k}" class="row">
         <span class="row-main"><b>${esc(label)}</b><small>${by(k).length ? esc(by(k).join(", ")) : "이번 주 고른 것 없음"}</small>
-        ${edit ? `<input name="codes" aria-label="${esc(label)} 레시피 코드" placeholder="코드 3개까지, 쉼표로" value="${esc(by(k).join(", "))}">` : ""}</span>
-        ${edit ? `<span class="row-side"><button class="btn small" type="submit">저장</button></span>` : ""}</form></li>`).join("")}</ul>`;
+        ${edit ? `<input name="codes" aria-label="${esc(label)} 레시피 코드" placeholder="코드 3개, 쉼표로" value="${esc(by(k).join(", "))}">` : ""}</span>
+        ${edit ? `<span class="row-side"><button class="btn small" type="submit">저장</button></span>` : ""}</form></li>`).join("")}</ul><div class="list-foot">${how}</div>`;
   }
 
   /** [RCX-15] 1.35 그림 표지: shown to others only after a look here. */
@@ -372,17 +373,16 @@ export function marketViews(A) {
   function recipeImagesView(d, edit) {
     const c = d.counts ?? {};
     const rules = d.rules ?? { lookFirst: 3, flagsToHold: 2 };
-    const head = `<p class="hint">세 겹으로 봐요. ① 올릴 때 자동 검사(설정되어 있으면) ② 새싹은 첫 ${rules.lookFirst}장만 여기서 보고, 그 뒤와 이웃·단골은 바로 보여요 ③ 신고 ${rules.flagsToHold}번이면 먼저 가려져 여기로 와요.
-      얼굴·개인정보·성적인 사진·남의 저작물이면 가리기(쓰기 제한 한 번), 괜찮으면 보이기(신고는 비워요).</p>
-      <p class="meta">새싹 첫 사진 ${c.pending ?? 0} · 먼저 가린 것 ${c.held ?? 0}</p>`;
-    if (!d.items.length) return `${head}${empty("볼 사진이 없어요", "새싹의 첫 사진, 자동 검사에 걸린 사진, 신고로 먼저 가린 사진이 여기 와요.")}`;
+    const head = `<p class="meta">새싹 첫 사진 ${c.pending ?? 0} · 먼저 가린 것 ${c.held ?? 0}</p>`;
+    const how = `<div class="list-foot"><details class="tip" data-key="recipe-images-how"><summary>사진은 세 겹으로 봐요.</summary><p class="hint">① 올릴 때 자동 검사(설정되어 있으면) ② 새싹은 첫 ${rules.lookFirst}장만 여기서 보고, 그 뒤와 이웃·단골은 바로 보여요 ③ 신고 ${rules.flagsToHold}번이면 먼저 가려져 여기로 와요. 얼굴·개인정보·성적인 사진·남의 저작물이면 가리기(쓰기 제한 한 번), 괜찮으면 보이기(신고는 비워요).</p></details></div>`;
+    if (!d.items.length) return `${head}${empty("볼 사진이 없어요", "새싹의 첫 사진, 자동 검사에 걸린 사진, 신고로 먼저 가린 사진이 여기 와요.")}${how}`;
     return `${head}<ul class="rows">${d.items.map((i) => `<li><div class="row"><span class="row-main">
         <img src="data:image/webp;base64,${esc(i.data)}" alt="올린 사진" width="128" height="128" class="cover-img">
         <b>${i.whyName ? `<span class="pill ${i.state === "held" ? "bad" : "warn"}">${esc(i.whyName)}</span>` : ""}${i.state === "held" ? ' <span class="pill">다른 분께 가려짐</span>' : ""}</b>
         <small>${i.uses?.length ? `${i.uses.map((u, k) => `${k ? "" : "작품 "}${esc(u.title)} (<button type="button" class="linkish" data-act="recipe-open" data-id="${esc(u.code)}" data-key="${esc(i.id)}" aria-label="작품 ${esc(u.title)} 열기">${esc(u.code)} 열기</button>)`).join(" · ")}${i.uses.length > 1 ? ` · 같은 사진 ${i.uses.length}곳` : ""}` : "아직 작품에 쓰이지 않음"} · 올린 분 ${esc(i.trustName ?? "새싹")}</small>
         <small>${i.flags ? `신고 ${i.flags}번 (${Object.entries(i.reasons ?? {}).map(([k, n]) => `${esc(PHOTO_FLAG_NAMES[k] ?? k)} ${n}`).join(", ")}) · ` : ""}자동 검사 ${esc({ pass: "통과", block: "걸림" }[i.checked] ?? (rules.checkOn ? "안 함(늦거나 답이 분명하지 않음)" : "안 함(검사 모델 설정 전)"))} · ${Math.round(i.bytes / 1024)}KB · ${esc(ago(i.at))}</small></span>
         ${edit ? `<span class="row-side"><button class="btn small" data-act="recipe-image" data-id="${i.id}" data-key="ok">보이기</button>
-          <button class="btn small danger" data-act="recipe-image" data-id="${i.id}" data-key="hide">가리기</button></span>` : ""}</div></li>`).join("")}</ul>`;
+          <button class="btn small danger" data-act="recipe-image" data-id="${i.id}" data-key="hide">가리기</button></span>` : ""}</div></li>`).join("")}</ul>${how}`;
   }
 
   /** [PRF-06] 1.36 프로필 신고: 사칭·나쁜 소개. 3건이면 소개가 먼저 가려져요. Who reported is never shown. */
@@ -412,12 +412,13 @@ export function marketViews(A) {
     const cand = (k) => (now(k).length ? now(k) : last(k));
     const who = (list) => list.map((c) => `${esc(c.face ?? "🙂")} ${esc(c.nick ?? "이름 없음")}(${esc(c.maker)}, 쓰는 분 ${c.users})`).join(" · ");
     const floor = Number(d.floor) || 30;
-    return `<p class="hint">${esc(d.month)}. 근무 유형마다 3명까지 골라 마을 맨 위(팔로우한 분이 없는 분)에 보이고 🏅 표식이 붙어요. 고른 분이 없으면 아무도 보이지 않아요. 그달 쓰는 분이 ${floor}명 이상인 만든 분만 후보로 보여요(달 초에는 지난달 후보). 프로필을 열어 본 뒤 ‘후보 그대로 고르기’로 한 번에 골라요.</p>
-      <ul class="rows">${RECIPE_STYLES.map(([k, label]) => `<li><form data-form="recipe-month" data-key="${k}" class="row">
+    // 2.0.0 [RVA-72] PC-209(조건 1·4): 설명은 줄 아래 접힌 한 줄(첫 문장 + 자세히)로, 첫 줄이 화면 위 25% 안에서 시작해요.
+    const how = `<details class="tip" data-key="recipe-month-how"><summary>${esc(d.month)}. 근무 유형마다 3명까지 골라 마을 맨 위에 🏅와 함께 보여요.</summary><p class="hint">팔로우한 분이 없는 분에게 보여요. 고른 분이 없으면 아무도 보이지 않아요. 그달 쓰는 분이 ${floor}명 이상인 만든 분만 후보로 보여요(달 초에는 지난달 후보). 프로필을 열어 본 뒤 ‘후보 그대로 고르기’로 한 번에 골라요.</p></details>`;
+    return `<ul class="rows">${RECIPE_STYLES.map(([k, label]) => `<li><form data-form="recipe-month" data-key="${k}" class="row">
         <span class="row-main"><b>${esc(label)}</b><small>${by(k).length ? esc(by(k).join(", ")) : "고른 분 없음"}</small>
         ${now(k).length ? `<small data-candidates>후보: ${who(now(k))}</small>` : last(k).length ? `<small data-candidates="last">지난달(${esc(d.lastMonth ?? "")}) 후보: ${who(last(k))}</small>` : ""}
-        ${edit ? `<input name="makers" aria-label="${esc(label)} 제작자 id" placeholder="프로필 id 3개까지, 쉼표로" value="${esc(by(k).join(", "))}">` : ""}</span>
-        ${edit ? `<span class="row-side"><button class="btn small" type="submit">저장</button>${cand(k).length && !by(k).length ? `<button class="btn small" type="button" data-act="recipe-month-take" data-key="${k}">후보 그대로 고르기</button>` : ""}</span>` : ""}</form></li>`).join("")}</ul>`;
+        ${edit ? `<input name="makers" aria-label="${esc(label)} 제작자 id" placeholder="id 3개, 쉼표로" value="${esc(by(k).join(", "))}">` : ""}</span>
+        ${edit ? `<span class="row-side"><button class="btn small" type="submit">저장</button>${cand(k).length && !by(k).length ? `<button class="btn small" type="button" data-act="recipe-month-take" data-key="${k}">후보 그대로 고르기</button>` : ""}</span>` : ""}</form></li>`).join("")}</ul><div class="list-foot">${how}</div>`;
   }
 
   /**
@@ -428,7 +429,7 @@ export function marketViews(A) {
     const state = d.state ?? "pending";
     const names = { pending: "확인 기다림", reported: "신고로 내려감", hidden: "내린 것", ok: "나누는 중" };
     const whys = { license: "라이선스가 의심돼요", broken: "글자가 깨져요", bad: "불쾌한 모양" };
-    const sub = `<div class="chips" role="group" aria-label="글꼴 상태">${Object.entries(names).map(([k, label]) =>
+    const sub = `<div class="chips one-line" role="group" aria-label="글꼴 상태">${Object.entries(names).map(([k, label]) =>
       `<button type="button" class="chip pick" data-act="font-state" data-key="${k}" aria-pressed="${state === k}">${esc(label)} ${d.counts?.[k] ?? 0}</button>`).join("")}</div>`;
     if (!d.items.length) return sub + empty({ pending: "확인을 기다리는 글꼴이 없어요", reported: "신고로 내려간 글꼴이 없어요" }[state] ?? "글꼴이 없어요", "앱에서 공개 글꼴(OFL 등)이라고 밝히고 레시피와 함께 나눈 글꼴이 여기 보여요.");
     const says = { ofl: "글꼴 안에 OFL이라고 적혀 있어요", apache: "글꼴 안에 Apache라고 적혀 있어요" };

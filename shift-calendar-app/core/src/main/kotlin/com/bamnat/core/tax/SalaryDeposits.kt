@@ -33,7 +33,7 @@ object SalaryDeposits {
     fun seen(entry: MoneyEntry, payMonths: List<Expected>, payers: Set<String>): Seen? {
         if (entry.kind != MoneyKind.INCOME || entry.amount <= 0) return null
         val month = closest(entry.date, payMonths) ?: Expected(YearMonth.from(entry.date), null, null)
-        if (entry.shareOf(MoneyCategories.SALARY) > 0) return Seen(entry, month.payMonth, Why.FILED)
+        if (entry.shareOf(com.bamnat.core.money.CategoryRole.SALARY) > 0) return Seen(entry, month.payMonth, Why.FILED)
         val payer = key(entry.merchant)
         if (payer.isNotEmpty() && payers.any { key(it) == payer }) return Seen(entry, month.payMonth, Why.PAYER)
         val net = month.net ?: return null

@@ -402,6 +402,16 @@ class InquiryClient(
         const val DIAG_MAX = 6000
         const val PAY_MAX = 3000
         const val SETUP_MAX = 3000
+
+        /**
+         * 2.0.0 [RVO-29] (PC-204) A Google Play order number (GPA.3312-4459-2207-48812, a renewal's "..0" after it) is how a 결제·환불
+         * question is found, and the 결제·환불 example asks for it; it is not an amount, so the five-digit rule does not count it.
+         * The server's inquiryText (company-worker src/inquiries.js PLAY_ORDER) takes it the same way. Amounts still do not go (처리방침 1-3항).
+         */
+        val PLAY_ORDER = Regex("GPA\\.\\d{4}-\\d{4}-\\d{4}-\\d{5}(?:\\.\\.\\d{1,3})?(?!\\d)", RegexOption.IGNORE_CASE)
+
+        /** The text the email·phone·amount check reads: [PLAY_ORDER] taken out. */
+        fun withoutOrder(text: String): String = text.replace(PLAY_ORDER, " ")
     }
 }
 

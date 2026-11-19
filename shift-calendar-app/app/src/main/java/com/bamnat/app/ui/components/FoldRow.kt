@@ -56,10 +56,10 @@ fun FoldRow(key: String, modifier: Modifier = Modifier, spacing: Dp = 6.dp, what
     if (open) {
         FlowRow(modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(spacing), verticalArrangement = Arrangement.spacedBy(4.dp)) {
             content()
-            FoldButton("접기 ▴", "${what.ifEmpty { "이 줄" }} 한 줄로 접기") { set(false) }
+            FoldButton("접기\u00A0▴", "${what.ifEmpty { "이 줄" }} 한 줄로 접기") { set(false) }
         }
     } else {
-        FoldLine(modifier, spacing, rememberScrollState(), button = { FoldButton("펼치기 ▾", "${what.ifEmpty { "이 줄" }} 모두 펼쳐 보기") { set(true) } },
+        FoldLine(modifier, spacing, rememberScrollState(), button = { FoldButton("펼치기\u00A0▾", "${what.ifEmpty { "이 줄" }} 모두 펼쳐 보기") { set(true) } },
             content = content)
     }
 }
@@ -276,7 +276,7 @@ fun FoldOverlay(host: FoldHost) {
                 .padding(vertical = 4.dp),
                 horizontalArrangement = Arrangement.spacedBy(o.spacing), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 o.content()
-                FoldButton("접기 ▴", "${o.what.ifEmpty { "이 줄" }} 한 줄로 접기") { fold() }
+                FoldButton("접기\u00A0▴", "${o.what.ifEmpty { "이 줄" }} 한 줄로 접기") { fold() }
             }
         }
     }
@@ -293,7 +293,7 @@ private fun FoldOver(modifier: Modifier, spacing: Dp, what: String, content: @Co
     val latest = androidx.compose.runtime.rememberUpdatedState(content)
     val isOpen = host != null && host.open != null && host.open === mine[0]
     FoldLine(modifier.onGloballyPositioned { coords = it }, spacing, scroll, keepButton = isOpen, button = {
-        FoldButton("펼치기 ▾", "${what.ifEmpty { "이 줄" }} 모두 펼쳐 보기") {
+        FoldButton("펼치기\u00A0▾", "${what.ifEmpty { "이 줄" }} 모두 펼쳐 보기") {
             val o = FoldOpen({ coords }, spacing, what) { latest.value() }
             mine[0] = o; host?.open = o
         }

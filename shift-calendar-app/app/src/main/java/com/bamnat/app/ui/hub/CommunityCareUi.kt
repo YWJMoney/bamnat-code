@@ -142,6 +142,7 @@ fun AppealDialog(c: AppContainer, target: String, answerHours: Int = CommunityCa
     var text by rememberSaveable(target) { mutableStateOf("") }
     var busy by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
+    var cut by remember { mutableStateOf(false) }
     val repost = target.startsWith("post:")
     AlertDialog(
         onDismissRequest = { if (!busy) onDone(null) },
@@ -151,9 +152,13 @@ fun AppealDialog(c: AppContainer, target: String, answerHours: Int = CommunityCa
                 Text(if (repost) "가려진 글을 왜 다시 보여 주면 좋을지 적어 주세요. 운영자가 다시 읽고 ${answerHours}시간 안에 내 문의로 답해요."
                     else "어떤 뜻이었는지, 무엇을 잘못 보았는지 적어 주세요. 운영자가 읽고 ${answerHours}시간 안에 내 문의로 답해요. 받아들이면 바로 풀려요.",
                     style = MaterialTheme.typography.bodyMedium)
-                OutlinedTextField(value = text, onValueChange = { if (it.length <= CommunityCare.APPEAL_MAX) text = it; error = null },
+                // 2.0.0 [RVO-31] PRO-23·U11b-19: a paste longer than the box is cut at the limit and says so, not dropped without a word.
+                OutlinedTextField(value = text, onValueChange = {
+                    CommunityCare.fitAppeal(it).let { (fit, wasCut) -> text = fit; cut = wasCut }
+                    error = null
+                },
                     minLines = 3, maxLines = 8, modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
-                    supportingText = { Text(error ?: "${text.trim().length}/${CommunityCare.APPEAL_MAX} · 이름·연락처는 쓰지 않아요") },
+                    supportingText = { Text(error ?: (if (cut) "붙여 넣은 글이 길어서 ${CommunityCare.APPEAL_MAX}자까지만 넣었어요 · " else "") + "${text.trim().length}/${CommunityCare.APPEAL_MAX} · 이름·연락처는 쓰지 않아요") },
                     isError = error != null)
             }
         },

@@ -197,7 +197,7 @@ fun HubScreen(
                     Row(Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, top = 12.dp), verticalAlignment = Alignment.Bottom) {
                         Text(HUB_NAME, style = MaterialTheme.typography.headlineSmall, modifier = Modifier.semantics { heading() })
                         Spacer(Modifier.padding(start = 8.dp))
-                        style?.let { Text(RecipeDescribe.short(it) + " 분들과", style = MaterialTheme.typography.bodyMedium,
+                        style?.let { Text(RecipeDescribe.together(it), style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(bottom = 3.dp)) }
                         Spacer(Modifier.weight(1f))
                         search()
@@ -329,7 +329,9 @@ private fun TodayOne(c: AppContainer, style: WorkStyle?, prefs: android.content.
 private fun Page(scroll: androidx.compose.foundation.ScrollState = rememberScrollState(), content: @Composable () -> Unit) {
     // 사용자 2026-11-03: tapping the tab you are on goes back to the top, on every 마을 page alike.
     val reselect = LocalHubReselect.current
-    androidx.compose.runtime.LaunchedEffect(reselect) { if (reselect > 0) scroll.animateScrollTo(0) }
+    // 2.0.0 [RVO-31] PRO-21: only a tap on the tab (or a 소식) after this part opened goes to the top, not every coming in.
+    val reselectAt = remember { reselect }
+    androidx.compose.runtime.LaunchedEffect(reselect) { if (reselect > reselectAt) scroll.animateScrollTo(0) }
     // PC c6a6e361 (공방을 반쯤 내린 채 달력에 다녀오면 132px 위로 어긋남): the kept place was cut to the page's first, shorter
     // height (cards that load a moment later were not in yet). Keep where it was left and go back there once the page is that long.
     var left by androidx.compose.runtime.saveable.rememberSaveable { androidx.compose.runtime.mutableIntStateOf(0) }
