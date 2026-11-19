@@ -135,9 +135,9 @@ class ReviewOSettingsTest {
             assertEquals("$style: $line", emptyList<String>(), TypeWords.leaks(style, line))
         }
         assertFalse(DisplayWords.dayStartHint(WorkStyle.DAY).contains("야간"))
-        assertEquals("팀 관리", manageTitle(leader = true, boss = false, style = WorkStyle.DAY))
-        assertEquals("직원 관리", manageTitle(leader = false, boss = true, style = WorkStyle.FIELD))
-        assertEquals("팀·가게 관리", manageTitle(leader = true, boss = true, style = WorkStyle.BUSINESS))
+        assertEquals("팀 관리", com.bamnat.app.ui.work.manageTitle(leader = true, boss = false, style = WorkStyle.DAY))
+        assertEquals("사업장 관리", com.bamnat.app.ui.work.manageTitle(leader = false, boss = true, style = WorkStyle.FIELD))
+        assertEquals("팀·가게 관리", com.bamnat.app.ui.work.manageTitle(leader = true, boss = true, style = WorkStyle.BUSINESS))
     }
 
     /**

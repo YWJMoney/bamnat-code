@@ -58,7 +58,7 @@ object DayStoryItems {
         plans.filter { it.until != null && it.kind != SleepPlan.Kind.CAFFEINE && it.kind != SleepPlan.Kind.DROWSY }.forEach { p ->
             val until = p.until!!
             val slept = sleeps.any { s -> s.start.isBefore(until) && (s.end ?: LocalDateTime.MAX).isAfter(p.at) }
-            if (!slept) out += StoryItem(p.at, until, StoryKind.SleepPlan, "${p.kind.label} 계획", p.text, id = "plan@${p.kind}@${p.at}")
+            if (!slept) out += StoryItem(p.at, until, StoryKind.SleepPlan, "${p.label} 계획", p.text, id = "plan@${p.kind}@${p.at}")
         }
         money.forEach { m ->
             val t = m.time ?: return@forEach

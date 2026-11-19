@@ -517,7 +517,7 @@ private fun SleepGroup(vm: SettingsViewModel, settings: AppSettings, refresh: In
             settings.quietWhileAsleep) { on -> vm.update { it.copy(quietWhileAsleep = on) } }
         HealthSleepRow(vm, settings.healthSleep)
         // [SLP-16] Where the taps go, and what they say about the user's own sleep.
-        NavRow("수면 기록 보기", if (settings.workStyle == WorkStyle.INVEST) "평균, 내 기록에서 보이는 것, 기록 고치기·추가" else "근무별 평균, 내 기록에서 보이는 것, 기록 고치기·추가") {
+        NavRow("수면 기록 보기", "${com.bamnat.core.sleep.SleepInsights.groupsWord(settings.workStyle)} 평균, 내 기록에서 보이는 것, 기록 고치기·추가") {
             com.bamnat.app.NoticeLinks.open(com.bamnat.app.NoticeLinks.Target.SLEEP)
         }
         // 2.0.0 [RVH-41] 검토 T30-77: 야간 is a shift worker's; others hear of a late night.
@@ -534,17 +534,19 @@ private fun RestChecks(vm: SettingsViewModel, settings: AppSettings) {
     if (com.bamnat.core.work.CalendarFocus.of(settings.workStyle) != com.bamnat.core.work.CalendarFocus.SHIFTS) return
     // [SLP-01][MKT-07][MKT-11]
     SectionCard(title = "휴식 점검") {
-        SwitchRow("휴식 점검", "근무 사이 휴식이 짧거나 야간이 이어지면 달력에 알려 줘요. 병원·회사 기준에 맞출 수 있어요", settings.restCheck) { v ->
+        // 2.0.0 [RVH-73] 검토 T30-79: 야간 is a 교대 worker's word; 일근·알바 hear of 연속 근무 (the rule that reaches them).
+        val shifts = settings.workStyle == null || settings.workStyle == WorkStyle.SHIFT
+        SwitchRow("휴식 점검", if (shifts) "근무 사이 휴식이 짧거나 야간이 이어지면 달력에 알려 줘요. 병원·회사 기준에 맞출 수 있어요"
+            else "근무 사이 휴식이 짧거나 쉬는 날 없이 이어지면 달력에 알려 줘요. 회사 기준에 맞출 수 있어요", settings.restCheck) { v ->
             vm.update { it.copy(restCheck = v) }
         }
         if (settings.restCheck) {
             // [REST-01] 1.21's '더 엄격하게' is a preset of the same 근무표 점검 기준 the calendar card opens.
             var rulesOpen by remember { mutableStateOf(false) }
             val r = settings.rules
-            // 2.0.0 [RVO-19] 검토 T11a-16: an 일근 calendar has no nights; its line says the checks it has (연속 근무).
-            val nightly = settings.workStyle == null || settings.workStyle == WorkStyle.SHIFT
+            // 2.0.0 [RVO-19] 검토 T11a-16 · [RVH-73]: an 일근 calendar has no nights; its line says the checks it has (연속 근무).
             NavRow("근무표 점검 기준", "${r.preset?.label ?: "직접 정함"} · 휴식 ${r.minRestHours}시간, " +
-                if (nightly) "연속 야간 ${r.maxNightsInRow}일, 한 달 야간 ${r.maxNightsPerMonth}일" else "연속 근무 ${r.maxWorkDaysInRow}일") {
+                if (shifts) "연속 야간 ${r.maxNightsInRow}일, 한 달 야간 ${r.maxNightsPerMonth}일" else "연속 근무 ${r.maxWorkDaysInRow}일") {
                 rulesOpen = true
             }
             if (rulesOpen) com.bamnat.app.ui.calendar.RestRulesSheet(r, com.bamnat.core.schedule.RotationSpeed.NONE, onDismiss = { rulesOpen = false }) { n ->
@@ -559,7 +561,7 @@ private fun RestChecks(vm: SettingsViewModel, settings: AppSettings) {
         // Only 교대·일근 reach this card ([RVH-41] above: 현장·가게·투자 return early, 알바 has no card), so one sentence, in the tab's own name.
         Text("건강을 위해 내가 정하는 경고예요. 법 한도(보통 한 주 52시간, 근로기준법 제53조)는 급여 설정에 맞춰 ${settings.workStyle.words().tab} 화면에 따로 보여요.",
             style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        LimitRow("한 주 근무 경고", "한 주가 이 시간을 넘으면 빨갛게 표시해요", settings.weeklyLimitHours) { h -> vm.update { it.copy(weeklyLimitHours = h) } }
+        LimitRow("한 주 근무 경고", "한 주가 이 시간을 넘으면 달력에 빨간 막대로 표시해요", settings.weeklyLimitHours) { h -> vm.update { it.copy(weeklyLimitHours = h) } }
         LimitRow("최근 3개월 한 주 평균 경고", "최근 3개월의 한 주 평균이 이 시간을 넘으면 표시해요", settings.averageLimitHours) { h ->
             vm.update { it.copy(averageLimitHours = h) }
         }
