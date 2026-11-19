@@ -2214,6 +2214,30 @@ test("[OBS2-08] 유형별 흐름 and 기능과 머묾 show once 처리방침 3.1
   assert.deepEqual(u.errors, []);
 });
 
+// 2.0.0 [RVQ-56] 검토 T21-02: 처리방침 3.14(stats.kind_use) 뒤에는 유형별 흐름 아래에 유형마다 덜 쓰는 기능이 보여요.
+test("[RVQ-56] 유형별로 덜 쓰는 기능 shows under 유형별 흐름 once 처리방침 3.14 is in force", async (t) => {
+  offline(t);
+  const { env } = server();
+  const u = await asOwner(env, t);
+  const db = env.DB.db;
+  db.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES ('policy_overrides', ?)")
+    .run(JSON.stringify({ "3.12": { posted: "2025-01-01", effective: "2025-01-02", heldUntil: null, unfavourable: false },
+      "3.14": { posted: "2025-01-01", effective: "2025-01-31", heldUntil: null, unfavourable: false } }));
+  const day = (n) => new Date(Date.now() + 9 * 3600000 - n * 86400000).toISOString().slice(0, 10);
+  const kind = db.prepare("INSERT INTO usage_kinds (day, app, style, event, phones) VALUES (?, '2.0.0', ?, ?, ?)");
+  kind.run(day(3), "SHIFT", "open", 40); kind.run(day(3), "SHIFT", "pay_view", 30);
+  kind.run(day(3), "BUSINESS", "open", 30); kind.run(day(3), "BUSINESS", "pay_view", 2);
+  await u.go("#/glance");
+  await u.settle(40);
+  const card = u.text("#main .ob-kinds");
+  assert.match(card, /유형별로 덜 쓰는 기능/);
+  assert.match(card, /자영업.*6\.7%.*전체 45\.7%/s, card);
+  assert.match(card, /교대.*전체와 비슷하게 써요/s);
+  assert.ok(!u.$$("#main .ob-gap-list li").some((li) => li.textContent.includes("3.14")), "nothing waits for 3.14");
+  assert.equal(u.$$("#main [style]").length, 0);
+  assert.deepEqual(u.errors, []);
+});
+
 // 1.40 [RVD-06] 검토 ADM-01·ADMX-04: 목록에서 처음 여는 문의의 '이 휴대폰' 패널이 미리 데우기 때 '못 불러옴'으로 굳어 다시 안 읽혔어요.
 test("[RVD-06] an inquiry opened from the list reads its phone panel once, also when the screen was warmed first", async () => {
   const s = await world();
@@ -3235,6 +3259,21 @@ test("[RVA-38] 자동 순환: 맨 위 한 줄 상태(저절로 도는지·다음
   assert.deepEqual(u.errors, []);
 });
 
+test("[RVQ-60] PC-213 자동 순환 › Play 출시 감지: 보류 줄은 나가는 시각과 남은 시간을 함께", async (t) => {
+  offline(t);
+  const { env } = await world();
+  const u = await asOwner(env, t);
+  env.DB.db.prepare("INSERT INTO loop_ships (version, seen_at, until, status, by) VALUES ('2.0.0', ?, ?, 'waiting', 'Claude 요청')")
+    .run(Date.now(), Date.now() + 9 * 60000 + 20000);
+  await u.go("#/loop");
+  await u.settle(20);
+  const line = u.text("#loop-play");
+  assert.match(line, /2\.0\.0 안내 (오전|오후) \d{1,2}:\d{2}에 · 9분 남음/, "the folded line: when and how long");
+  assert.match(line, /Claude 요청 · (오전|오후) \d{1,2}:\d{2}에 문의 안내·업데이트 소식이 나가요 · 9분 남음/, "the held line itself");
+  assert.doesNotMatch(line, /분 뒤 문의 안내/);
+  assert.deepEqual(u.errors, []);
+});
+
 test("[RVA-39] 자동 순환 › 연결 점검: 'Play까지 점검'을 누르면 그 시각과 '방금 다시 봤어요', 바뀐 줄은 '방금 됨 → 확인'", async (t) => {
   offline(t);
   const { env } = await world();
@@ -3833,6 +3872,32 @@ test("[RVQ-52] 자주 쓰는 답을 밤낮 Q&A에 올릴 때: 같은 창 안에 
   await u.settle(30);
   assert.equal(env.DB.db.prepare("SELECT public_a FROM reply_templates WHERE label = '위젯'").get().public_a, "최신 버전에서 고쳤어요. 위젯을 다시 놓아 주세요");
   assert.deepEqual([...u.errors, ...u.broken], []);
+});
+
+// 2.0.0 [RVQ-55] 검토 SVC-38: 스토어 리뷰 답도 문의 답과 같은 검사. 초안에 걸린 까닭을 알약으로, 보내기에서 걸리면 까닭을 보이고 한 번 더 물어요.
+test("[RVQ-55] 스토어 리뷰: 초안의 AI 표현은 알약으로 알리고, Play로 보내기에서 걸리면 '그래도 보내기'를 한 번 더 물어요", async (t) => {
+  offline(t);
+  const { env, DB } = await world({ PLAY_SERVICE_ACCOUNT: JSON.stringify({ client_email: "bamnat@example.iam.gserviceaccount.com", private_key: "test" }) });
+  await DB.prepare(`INSERT INTO store_reviews (id, stars, text, app, lang, at, reply, reply_at, replied_by, draft, draft_by, status, fetched_at)
+    VALUES ('gp:ui-rvq55-0001', 2, '알람이 늦게 울려요', '2.0.0', 'ko', ?1, '', NULL, '', '저는 AI 상담원이라 자세한 건 몰라요. 밤낮 운영팀', 'Claude', 'seen', ?1)`).bind(Date.now() - 3600e3).run();
+  const u = await asOwner(env, t);
+  await u.go("#/reviews");
+  await u.settle(30);
+  const form = u.$('#main form[data-form="review-draft"]');
+  assert.match(form.textContent, /답에 AI·자동 답 표현/);
+  assert.match(form.textContent, /보내기 전에 고쳐 주세요/);
+  form.requestSubmit(form.querySelector('[name="send"]'));
+  await u.settle(10);
+  u.$('dialog[open] form[data-form="confirm"]').requestSubmit();
+  await u.settle(30);
+  assert.match(u.text("dialog[open]"), /이 답은 사람이 한 번 더 봐야 해요/);
+  assert.match(u.text("dialog[open]"), /걸린 것\s*답에 AI·자동 답 표현/);
+  assert.match(u.text("dialog[open]"), /그래도 보내기/);
+  assert.equal((await DB.prepare("SELECT status FROM store_reviews WHERE id = 'gp:ui-rvq55-0001'").first()).status, "seen", "확인 전에는 보내지 않아요");
+  u.$('dialog[open] [data-act="close"]').click();
+  await u.settle(10);
+  assert.ok(!u.$("dialog[open]"));
+  assert.deepEqual(u.errors, []);
 });
 
 test("[RVA-63] 되풀이되는 닫힘 문의: 운영 장부 맨 위 묶음 카드(접히면 한 줄), 줄과 문의에 멈춤 기록 표식, '기록 부탁 답 넣기'는 적던 답을 지우지 않아요", async () => {

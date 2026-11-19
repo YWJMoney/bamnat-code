@@ -408,6 +408,36 @@ export async function setErrorState(env, sig, status, note, now = Date.now()) {
   return Boolean(r?.meta?.changes);
 }
 
+/**
+ * 2.0.0 [RVQ-55] 검토 SVC-25: D1 한도(유료 요금제 한 데이터베이스 10GB)와, 그 80%를 넘으면 사진·글꼴 올리기를 쉬는 선. 매시 정리가 크기를
+ * settings 'db_size'에 적고(dbSizeTick), 올리기는 그 값을 읽어요(한 시간 늦을 수 있어요). 오늘 › 주의 필요에도 떠요.
+ */
+export const DB_LIMIT = 10 * 1024 ** 3;
+export const DB_FULL = 0.8;
+export async function dbSizeTick(env, now = Date.now()) {
+  const bytes = await dbSize(env);
+  if (bytes) await env.DB.prepare("INSERT INTO settings (key, value) VALUES ('db_size', ?) ON CONFLICT (key) DO UPDATE SET value = excluded.value")
+    .bind(JSON.stringify({ bytes, at: now })).run();
+  return bytes;
+}
+/** 적어 둔 DB 크기가 한도의 [DB_FULL]을 넘었는지(모르면 false). */
+export async function uploadsFull(env) {
+  try {
+    const row = await env.DB.prepare("SELECT value FROM settings WHERE key = 'db_size'").first();
+    return dbFullFrom(row?.value);
+  } catch {
+    return false;
+  }
+}
+export function dbFullFrom(value) {
+  try {
+    const bytes = Number(JSON.parse(value ?? "{}")?.bytes);
+    return Number.isFinite(bytes) && bytes >= DB_LIMIT * DB_FULL;
+  } catch {
+    return false;
+  }
+}
+
 /** D1이 알려 주는 데이터베이스 크기(바이트). 알 수 없으면 null. */
 export async function dbSize(env) {
   try {
@@ -475,7 +505,7 @@ export async function healthBoard(env, now = Date.now()) {
   await flushWatch(env, now, true).catch(() => {});
   const [jobs, speed, errors, size, share] = await Promise.all([jobState(env, now), speedState(env, now), errorState(env, now), dbSize(env), sharePing(env)]);
   return { at: now, jobs, speed, errors: { counts: errors.counts, daily: errors.daily, days: errors.days, top: errors.groups.slice(0, 5) }, dbBytes: size,
-    dbLimit: 10 * 1024 ** 3, share, setup: requiredSetup(env), version: SERVER_VERSION };
+    dbLimit: DB_LIMIT, share, setup: requiredSetup(env), version: SERVER_VERSION };
 }
 
 /**

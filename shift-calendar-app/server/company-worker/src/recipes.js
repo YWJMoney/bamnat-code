@@ -24,6 +24,7 @@ import { PARTS_SINCE } from "./parts-since.js";
 import { cleanSetup } from "./company-setup.js";
 import { ZWJ, graphemes } from "./letters.js";
 import { SHIFT_RULES } from "./shift-rules.js";
+import { TICKET, blindSign, fairB64, fairBig, fairBytes, fairUnb64, ticketKey, ticketPrint, ticketSigned } from "./fair-ticket.js";
 
 // ---- the format (core recipe/*.kt) ----
 
@@ -1062,6 +1063,10 @@ export const RECIPE_SCHEMA = [
   "CREATE INDEX IF NOT EXISTS recipe_votes_device ON recipe_votes (device)",
   `CREATE TABLE IF NOT EXISTS recipe_counts (code TEXT NOT NULL, day TEXT NOT NULL, applied INTEGER NOT NULL DEFAULT 0,
     kept7 INTEGER NOT NULL DEFAULT 0, PRIMARY KEY (code, day))`,
+  // 2.0.0 [RVQ-59] 검토 I22c-03: 하루 표의 지문이 어느 작품의 어느 숫자에 한 번 쓰였는지(휴대폰과 잇지 않음, 30일).
+  `CREATE TABLE IF NOT EXISTS recipe_fair (fp TEXT NOT NULL, code TEXT NOT NULL, col TEXT NOT NULL, day TEXT NOT NULL,
+    PRIMARY KEY (fp, code, col))`,
+  "CREATE INDEX IF NOT EXISTS recipe_fair_day ON recipe_fair (day)",
   `CREATE TABLE IF NOT EXISTS recipe_flags (code TEXT NOT NULL, device TEXT NOT NULL, reason TEXT NOT NULL, at INTEGER NOT NULL,
     PRIMARY KEY (code, device))`,
   `CREATE TABLE IF NOT EXISTS recipe_trust (device TEXT PRIMARY KEY, first_at INTEGER NOT NULL, approved INTEGER NOT NULL DEFAULT 0,
@@ -1090,6 +1095,11 @@ export const RECIPE_COLUMNS = [
   // 1.39 판 정리 (작품 갈래 부탁): a retired work stays in the lists of apps below this versionCode, whose 장터 would otherwise be
   // nearly empty (the new 판's works are min_app 53 and newer). null: off for every app.
   "ALTER TABLE recipes ADD COLUMN retired_below INTEGER",
+  // 2.0.0 [RVQ-56] 검토 SX-03 '입은 뒤' 숫자(처리방침 3.14 30일 줄 7줄, 깃발 market.wear): 그날 '입은 뒤'를 재겠다고 온 입기(wear_n)와
+  // 그 가운데 30분 안에 뺀 것(off_soon)·글자 크기를 되돌린 것(text_back). 작품·날마다 합계뿐이고 휴대폰 구별은 없어요.
+  "ALTER TABLE recipe_counts ADD COLUMN wear_n INTEGER NOT NULL DEFAULT 0",
+  "ALTER TABLE recipe_counts ADD COLUMN off_soon INTEGER NOT NULL DEFAULT 0",
+  "ALTER TABLE recipe_counts ADD COLUMN text_back INTEGER NOT NULL DEFAULT 0",
   // 2.0.0 [RVQ-36] 검토 SVC-04·I22a-03·I22bc-01: 장터 색인. 올릴 때·새 판 때 한 번 재서 적어 두면, 목록은 작품 본문을 풀지 않고 SQL로 걸러요.
   // ix_v는 잰 규칙의 판(IX_READING)이고, 비었거나 낮은 줄은 목록이 본문으로 재고 매시 정리가 다시 적어요.
   "ALTER TABLE recipes ADD COLUMN ix_v INTEGER",
@@ -2208,12 +2218,7 @@ async function recipeVote(d, env, request, code) {
     cluster = same?.cluster
       ?? `${hour}·${((await d.one(env, "SELECT COUNT(DISTINCT cluster) AS n FROM recipe_votes WHERE code = ? AND cluster LIKE ?", code, `${hour}·%`))?.n ?? 0) + 1}`;
   }
-  const before = await d.one(env, "SELECT value, weight, held FROM recipe_votes WHERE code = ? AND device = ?", code, dev);
   const stmts = [];
-  if (before && !before.held) {
-    stmts.push(d.stmt(env, before.value === 1 ? "UPDATE recipes SET likes = likes - 1, wlikes = wlikes - ? WHERE code = ?"
-      : "UPDATE recipes SET dislikes = dislikes - 1, wdislikes = wdislikes - ? WHERE code = ?", before.weight, code));
-  }
   if (body.value === null) {
     stmts.push(d.stmt(env, "DELETE FROM recipe_votes WHERE code = ? AND device = ?", code, dev));
   } else {
@@ -2221,21 +2226,50 @@ async function recipeVote(d, env, request, code) {
       ON CONFLICT (code, device) DO UPDATE SET value = excluded.value, weight = excluded.weight, reason = excluded.reason, opinion = excluded.opinion,
         held = excluded.held, net = excluded.net, cluster = excluded.cluster, at = excluded.at`, code, dev, body.value, trust.weight, reason?.reason ?? null, reason?.opinion ?? null,
     held, net.now, cluster, now));
-    if (!held) {
-      stmts.push(d.stmt(env, body.value === 1 ? "UPDATE recipes SET likes = likes + 1, wlikes = wlikes + ? WHERE code = ?"
-        : "UPDATE recipes SET dislikes = dislikes + 1, wdislikes = wdislikes + ? WHERE code = ?", trust.weight, code));
-    }
   }
+  // 2.0.0 [RVQ-55] 검토 SVC-37: 같은 휴대폰이 거의 동시에 두 번 누르면 둘 다 '전에 없음'을 읽고 +1을 두 번 했어요(줄은 하나인데 좋아요 +2).
+  // 더하고 빼지 않고, 같은 batch 안에서 이 작품의 (기다리지 않는) 표를 다시 세요(좋아요 수는 늘 표에서 나와요).
+  stmts.push(d.stmt(env, `UPDATE recipes SET
+      likes = (SELECT COUNT(*) FROM recipe_votes WHERE code = ?1 AND held = 0 AND value = 1),
+      wlikes = (SELECT COALESCE(SUM(weight), 0) FROM recipe_votes WHERE code = ?1 AND held = 0 AND value = 1),
+      dislikes = (SELECT COUNT(*) FROM recipe_votes WHERE code = ?1 AND held = 0 AND value = -1),
+      wdislikes = (SELECT COALESCE(SUM(weight), 0) FROM recipe_votes WHERE code = ?1 AND held = 0 AND value = -1)
+    WHERE code = ?1`, code));
   await d.batch(env, stmts);
   const after = await d.one(env, "SELECT likes, dislikes FROM recipes WHERE code = ?", code);
   return d.json({ likes: after.likes, dislikes: after.dislikes, myVote: body.value, ...(held ? { held: true } : {}) });
 }
 
-/** POST /api/recipes/:code/applied — {kind: "applied" | "kept"}: a day's total, nothing about the phone (S8, 처리방침 3.8). */
+/**
+ * 2.0.0 [RVQ-56] 검토 SX-03 '입은 뒤' 숫자: 깃발(처리방침 3.14 30일 줄), 관리자 앱이 비율을 보이는 최근 날 수와 최소 입기 수, 개선 신호가 켜지는
+ * 비율(30분 안에 뺌·글자 크기 되돌림). Q2(관리자 앱)·S(앱)와 맞춘 모양이에요.
+ */
+export const WEAR = { flag: "market.wear", days: 30, few: 20, offSoon: 0.4, textBack: 0.3 };
+const WEAR_COLS = { offSoon: "off_soon", textBack: "text_back" };
+
+/** The 입은 뒤 of a work from its days' sums: off before the flag, few below [WEAR.few] 입기, else the two ratios (0~1) and whether to look. */
+export function wearOf(on, sums) {
+  if (!on) return { state: "off" };
+  const n = sums?.wear_n ?? 0;
+  if (n < WEAR.few) return { state: "few" };
+  const r2 = (v) => Math.round(Math.min(1, Math.max(0, v / n)) * 100) / 100;
+  const offSoon = r2(sums.off_soon ?? 0);
+  const textBack = r2(sums.text_back ?? 0);
+  return { state: "ok", offSoon, textBack, watch: offSoon >= WEAR.offSoon || textBack >= WEAR.textBack };
+}
+
+/**
+ * POST /api/recipes/:code/applied — {kind: "applied" | "kept" | "offSoon" | "textBack", wear?}: a day's total, nothing about the phone
+ * (S8, 처리방침 3.8). 2.0.0 [RVQ-56] SX-03: from 처리방침 3.14 (market.wear) an 입기 with wear: true is also the base of 입은 뒤, and
+ * offSoon·textBack count against it; before that they are answered as not counted, so an app that sends them early has nothing to try again.
+ */
 async function applied(d, env, request, code) {
-  const body = await d.readJson(request, 512);
-  if (body.kind !== "applied" && body.kind !== "kept") return d.json({ error: "kind", field: "kind" }, 400);
+  const body = await d.readJson(request, 1024);
+  if (!["applied", "kept", "offSoon", "textBack"].includes(body.kind)) return d.json({ error: "kind", field: "kind" }, 400);
   const now = Date.now();
+  const wearKind = Object.hasOwn(WEAR_COLS, body.kind);
+  const wearOn = (wearKind || body.wear === true) && Boolean(await d.legalOpen?.(env, WEAR.flag, now));
+  if (wearKind && !wearOn) return d.json({ ok: true, counted: false });
   const net = await d.network(request, env, now);
   if (!(await d.allow(env, `rapplied|${net.day}`, RECIPE_LIMITS.appliedPerNetworkDay, DAY, now))) return d.tooMany("network", DAY - (now % DAY));
   const r = await d.one(env, `SELECT code, scope FROM recipes WHERE code = ? AND (state = 'visible' OR (state = 'hidden' AND hidden_reason = '${RETIRED}'))`, code);
@@ -2244,18 +2278,65 @@ async function applied(d, env, request, code) {
   if (!r) return d.json({ ok: true, counted: false });
   // 2.0.0 [RVQ-26] SVC-51: a 나만 보기 work is its maker's alone; its 쓰는 분 are not counted (they would come with it if it went public).
   if (r.scope === "private") return d.json({ ok: true, counted: false });
-  const col = body.kind === "applied" ? "applied" : "kept7";
+  const col = body.kind === "applied" ? "applied" : body.kind === "kept" ? "kept7" : WEAR_COLS[body.kind];
+  // 2.0.0 [RVQ-59] 검토 I22c-03: a signed day ticket counts its person once on this work's number, wherever they are (a ward's Wi-Fi no
+  // longer caps a family at three); spent again, it is answered as not counted. No ticket, or one that does not check, is the old way.
+  const fair = !wearKind && body.ticket ? await fairSpend(d, env, body.ticket, code, col, now) : null;
+  if (fair === "spent") return d.json({ ok: true, counted: false });
   // 1.36 보안 점검 M9 (PC 확인 7525ccff "넣었다 되돌려도 쓰는 분이 늘어요"): 쓰는 분 and 7일 유지 weigh in 좋은 순 and 요즘 뜨는, and
   // they come with no phone (S8), so one line could push a recipe up 200 a day. A few a recipe a line (a family's phones), then
   // answered as kept but not counted, so the app has nothing to try again.
-  if (!(await d.allow(env, `rappliedone|${net.day}|${code}|${col}`, RECIPE_LIMITS.appliedPerRecipeNetworkDay, DAY, now))) {
+  if (fair !== "new" && !(await d.allow(env, `rappliedone|${net.day}|${code}|${col}`, RECIPE_LIMITS.appliedPerRecipeNetworkDay, DAY, now))) {
     return d.json({ ok: true, counted: false });
   }
+  // [RVQ-56] 입은 뒤의 두 숫자는 그날 합계에만(작품 줄의 쓰는 분·7일 유지는 그대로), 입기에 wear: true면 그 기준(wear_n)도 함께 하나.
+  const cols = body.kind === "applied" && wearOn && body.wear === true ? [col, "wear_n"] : [col];
   await d.batch(env, [
-    d.stmt(env, `INSERT INTO recipe_counts (code, day, ${col}) VALUES (?, ?, 1) ON CONFLICT (code, day) DO UPDATE SET ${col} = ${col} + 1`, code, kstDayOf(now)),
-    d.stmt(env, `UPDATE recipes SET ${col} = ${col} + 1 WHERE code = ?`, code),
+    d.stmt(env, `INSERT INTO recipe_counts (code, day, ${cols.join(", ")}) VALUES (?, ?${", 1".repeat(cols.length)}) ON CONFLICT (code, day) DO UPDATE SET
+      ${cols.map((c) => `${c} = ${c} + 1`).join(", ")}`, code, kstDayOf(now)),
+    ...(wearKind ? [] : [d.stmt(env, `UPDATE recipes SET ${col} = ${col} + 1 WHERE code = ?`, code)]),
   ]);
   return d.json({ ok: true });
+}
+
+/**
+ * 2.0.0 [RVQ-59] A ticket {t: words, s: signature} spent on [code]'s [col]: "new" (first time: its 지문 is kept and it counts), "spent"
+ * (this ticket counted here already), or null (off, no key, not a ticket, not signed, or not of today or yesterday in KST).
+ */
+async function fairSpend(d, env, ticket, code, col, now) {
+  if (!(await d.legalOpen?.(env, TICKET.flag, now))) return null;
+  const key = ticketKey(env);
+  const words = typeof ticket?.t === "string" ? ticket.t : "";
+  const day = TICKET.pattern.exec(words)?.[1];
+  const sig = fairUnb64(ticket?.s);
+  if (!key || !day || !sig || (day !== kstDayOf(now) && day !== kstDayOf(now - DAY))) return null;
+  if (!(await ticketSigned(key, words, fairBig(sig)))) return null;
+  const res = await d.one(env, "INSERT OR IGNORE INTO recipe_fair (fp, code, col, day) VALUES (?, ?, ?, ?) RETURNING fp", await ticketPrint(words), code, col, kstDayOf(now));
+  return res ? "new" : "spent";
+}
+
+/**
+ * 2.0.0 [RVQ-59] GET /api/recipes/ticket: whether day tickets are on and the public key to blind against ({on, n, e}).
+ * POST /api/recipes/ticket {device, blinded}: one signed ticket for this install this KST day ({sig}); the server sees only the blinded
+ * number, so the ticket it signs cannot be told from any other when it is spent.
+ */
+async function ticketRoute(d, env, request) {
+  const now = Date.now();
+  const key = (await d.legalOpen?.(env, TICKET.flag, now)) ? ticketKey(env) : null;
+  if (request.method === "GET") return d.json(key ? { on: true, n: key.pub.n, e: key.pub.e } : { on: false });
+  if (!key) return d.json({ error: "not_yet", field: TICKET.flag }, 403);
+  const body = await d.readJson(request, 1024);
+  const dev = await readDevice(d, request, body);
+  if (!dev) return d.json({ error: "device", field: "device" }, 400);
+  const blinded = fairUnb64(body.blinded);
+  if (!blinded || blinded.length > key.nBytes) return d.json({ error: "blinded", field: "blinded" }, 400);
+  const net = await d.network(request, env, now);
+  const today = kstDayOf(now);
+  if (!(await d.allow(env, `rticketnet|${net.day}`, TICKET.perNetworkDay, DAY, now))) return d.tooMany("network", DAY - (now % DAY));
+  if (!(await d.allow(env, `rticket|${dev}|${today}`, TICKET.perDeviceDay, DAY, now))) return d.json({ error: "today", field: "device" }, 429);
+  const sig = blindSign(key, fairBig(blinded));
+  if (sig == null) return d.json({ error: "blinded", field: "blinded" }, 400);
+  return d.json({ sig: fairB64(fairBytes(sig, key.nBytes)) });
 }
 
 /** POST /api/recipes/:code/flag — 신고; three hide it until the operator looks (임시 조치, 30일 안 판단). */
@@ -2485,6 +2566,7 @@ export async function recipeRoute(d, request, env, path, url, ctx) {
   if (path === "/api/recipes" && method === "GET") return d.edgeCached(request, ctx, RECIPE_LIMITS.edgeSeconds, () => recipeList(d, env, url));
   if (path === "/api/recipes" && method === "POST") return publish(d, env, request);
   if (path === "/api/recipes/mine" && method === "GET") return mine(d, env, request);
+  if (path === "/api/recipes/ticket" && (method === "GET" || method === "POST")) return ticketRoute(d, env, request);
   let m = path.match(/^\/api\/recipes\/talk\/(p[A-Za-z0-9]{15})\/vote$/);
   if (m && method === "POST") return talkVote(d, env, request, m[1]);
   m = path.match(/^\/api\/recipes\/([2-9A-HJ-NP-Z]{8})(\/[a-z]+)?$/);
@@ -2586,6 +2668,12 @@ export async function recipeAdmin(d, request, env, path, url, now, actorName) {
     const heldRows = tab === "votes" ? await byCodes((marks) => `SELECT code, cluster AS grp, SUM(value = 1) AS likes, SUM(value = -1) AS dislikes,
       COUNT(*) AS n, MIN(at) AS since FROM recipe_votes WHERE held = 1 AND code IN (${marks}) GROUP BY code, cluster ORDER BY n DESC`) : [];
     const heldAll = await d.one(env, "SELECT COUNT(*) AS n, COUNT(DISTINCT code) AS works FROM recipe_votes WHERE held = 1");
+    // 2.0.0 [RVQ-56] SX-03: 작품마다 최근 [WEAR.days]일의 입은 뒤(깃발 전에는 off, 입기가 적으면 few). 개수는 보내지 않고 비율만.
+    const wearOnNow = Boolean(await d.legalOpen?.(env, WEAR.flag, now));
+    // (그날은 KST 'YYYY-MM-DD'라 글자 그대로 넣어요: byCodes는 작품 번호만 묶어요.)
+    const wearFrom = kstDayOf(now - (WEAR.days - 1) * DAY);
+    const wearRows = wearOnNow ? await byCodes((marks) => `SELECT code, SUM(wear_n) AS wear_n, SUM(off_soon) AS off_soon, SUM(text_back) AS text_back
+      FROM recipe_counts WHERE day >= '${wearFrom}' AND code IN (${marks}) GROUP BY code`) : [];
     const piecesOf = (text) => { try { const v = JSON.parse(text); return { pieces: (v.pieces ?? []).map((p) => p.kind), inputs: (v.inputs ?? []).length }; } catch { return { pieces: [], inputs: 0 }; } };
     return d.json({ tab, ...(tab === "one" ? { code } : {}), ...(paged ?? {}), held: { votes: heldAll?.n ?? 0, works: heldAll?.works ?? 0 }, items: rows.map((r) => ({ ...listItem(r, now),
       section: sectionOfRow(r), state: r.state, scope: r.scope, ...(long ? piecesOf(r.body) : { body: r.body }), hash: r.hash, note: r.note,
@@ -2593,7 +2681,8 @@ export async function recipeAdmin(d, request, env, path, url, now, actorName) {
         n: h.n, since: new Date(h.since).toISOString() })) } : {}),
       ...(r.release_at ? { releaseAt: new Date(r.release_at).toISOString() } : {}), ...(r.min_app ? { minApp: r.min_app } : {}), ...(r.batch ? { batch: r.batch } : {}),
       late: r.state === "pending" && now - r.updated_at > DAY, flags: flags.filter((f) => f.code === r.code).map((f) => ({ reason: f.reason, n: f.n, counted: f.counted ?? f.n })),
-      quiet: quietOf(r.code), hidden: r.hidden_reason ?? null, ...(r.retired_below ? { retiredBelow: r.retired_below } : {}) })) });
+      quiet: quietOf(r.code), hidden: r.hidden_reason ?? null, ...(r.retired_below ? { retiredBelow: r.retired_below } : {}),
+      wear: wearOf(wearOnNow, wearRows.find((w) => w.code === r.code)) })) });
   }
   if (path === "/recipes/actions" && method === "GET") {
     const rows = await d.all(env, "SELECT * FROM recipe_actions ORDER BY id DESC LIMIT 300");

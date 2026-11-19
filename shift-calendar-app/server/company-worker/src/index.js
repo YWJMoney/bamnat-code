@@ -87,14 +87,14 @@ import { bundleInquiries, inboxAnswer, inboxRoute } from "./inbox.js";
 import { DEV, HELD_FOR_PERSON, INQUIRY, INQUIRY_TOPICS, QA, SLA, SLA_SQL, actorName, releaseHeld, rescanBilling, rescanBilling2, adminInquiries, ask, devRoute, expiredInquiries, forgetInquiries, inquiries, page, plainActor, plainText, publicQa, publicRows, readSla, slaKey, slaSetting, slaTargets, templateRoute } from "./inquiries.js";
 import { hasPro, INVITE, MONEY, REWARD_CAP, addMonths, b64url, config, deferFor, installOf, inviteCodeOf, inviteCodeShown, inviteDeadline, invitePage, inviteSettings, inviteSettingsRoute, invites, launchView, familyCode, familyCodeDelete, familyList, familySet, linkCode, money, myPhones, phoneList, phonePreviews, playIntent, playReady, playToken, readSub, recheckLapsed, rewardCounts, rewardWhy, rewardYear, setPhone, stack, stopUnconsentedTrials, storeLink, syncVoided } from "./money.js";
 import { EVENTS, NOTICE, PHOTO_REASONS, PHOTO_SCREENS, STARTUP_BUCKETS, SWITCHES, USAGE, checkOps, kstDay, lookupRows, metrics, noticeList, noticeView, opsItems, opsMonth, opsState, paused, photoWrong, photoWrongMetrics, readAction, readAudience, removeNotice, saveNotice, setSwitch, startupMetrics, startupRows, setupRows, SETUP_TAP_BUCKETS, usage } from "./usage.js";
-import { FLAG_CATALOG, FLAG_KEYS, FLAG_STORE_SQL, SWITCH_FLAGS, fixRequestsOpen, fixedAmountsOpen, flagDef, flagEffects, flagOverview, flagRoute, flagStore, flagTick, migrateFlags, roomMoneyFromPolicy, serverEval, storeFrom } from "./flags.js";
+import { FLAG_CATALOG, FLAG_KEYS, FLAG_STORE_SQL, SWITCH_FLAGS, fixRequestsOpen, fixedAmountsOpen, flagDef, flagEffects, flagOverview, flagOn, flagRoute, flagStore, flagTick, migrateFlags, roomMoneyFromPolicy, serverEval, storeFrom } from "./flags.js";
 // 1.34 [RCP-28]..[RCP-36] 나눔 판.
 import { CODE as RECIPE_CODE, RECIPE_COLUMNS, lookOf as recipeLookOf, RECIPE_SCHEMA, RECIPE_TABLE, forgetRecipes, makerId, pruneRecipes, recipeAdmin, recipeRoute } from "./recipes.js";
 import { INTEGRITY_SCHEMA, integrityGate, integrityMode, integrityRoute, integrityState } from "./integrity.js";
 import { COMMUNITY_COLUMNS, COMMUNITY_SCHEMA, communityAdmin, communityRoute, forgetCommunity, makerWebPage, settleRequests } from "./recipe-community.js";
-import { CARE_SCHEMA, careAppeal, careAppealDecide, careRepeat, careAppealOf, careGate, careOn, careHold, careLift, careList, carePerson, carePrune, careSeen, careStanding, careTarget, careWarn, CARE_REASONS } from "./community-care.js";
+import { CARE_SCHEMA, MUTED_KEPT_SCHEMA, restoreMute, careAppeal, careAppealDecide, careRepeat, careAppealOf, careGate, careOn, careHold, careLift, careList, carePerson, carePrune, careSeen, careStanding, careTarget, careWarn, CARE_REASONS } from "./community-care.js";
 import { WRITE_LIMITS, WRITE_LIMITS_COLUMNS, WRITE_LIMITS_SCHEMA, addStrike, confirmStrike, limitJson, liftLimit, operatorStrike, restrictions, strikeTakenBack, writeAllowance, writeLeft, writeLimitHit, writeRules } from "./write-limits.js";
-import { FONT_SCHEMA, fontAdmin, fontRoute, forgetFonts } from "./recipe-fonts.js";
+import { FONT_SCHEMA, fontAdmin, fontRoute, fontStoreTick, forgetFonts } from "./recipe-fonts.js";
 import { MATERIAL_SCHEMA, materialAdmin, materialRoute } from "./studio-materials.js";
 import { VILLAGE_SCHEMA, topicOf, villageAdmin, villageRoute } from "./village.js";
 import { makerMarks } from "./maker-mark.js";
@@ -116,7 +116,7 @@ import { LOOP_COLUMNS, LOOP_SCHEMA, effectTick, knownRoute, liveTick, loopRoute,
 import { OPS_ALERT_SQL, OPS_BADGE_SQL, OPS_SCHEMA, morningExtra, opsAlertsFrom, opsArea, opsRoute, opsSteps } from "./admin-ops.js";
 // 1.38 [ADM3-01] 패스키(지문) 로그인.
 import { PASSKEY_SCHEMA, passkeyCheck, passkeyMine, passkeyStart } from "./passkey.js";
-import { canaryStats, countFailure, deployInfo, flushWatch, jobRow, pruneWatch, recordError, recordRequest, recordRowErrors, rowTroubleQuery, rowTroubleRows, runJobs, serverVersions } from "./ops-watch.js";
+import { canaryStats, countFailure, dbSizeTick, deployInfo, flushWatch, jobRow, pruneWatch, recordError, recordRequest, recordRowErrors, rowTroubleQuery, rowTroubleRows, runJobs, serverVersions, uploadsFull } from "./ops-watch.js";
 import { FIVE_STEPS, hourlyAgo, hourlyWatch } from "./incident.js";
 import { RETENTION, deviceColumns, forgetSweep, retentionPrune } from "./retention.js";
 import { TEXT_RULES } from "./text-rules.js";
@@ -360,6 +360,9 @@ export async function prune(env, now) {
   await carryMerged(env);
   // 1.34 [RCP-33] a hidden recipe nobody restored goes after 90 days (처리방침 3.8).
   await pruneRecipes(recipeDeps, env, now);
+  // 2.0.0 [RVQ-55] 검토 SVC-25: R2가 묶여 있으면 옛 글꼴 조각을 옮기고 지운 글꼴의 파일을 지워요.
+  await fontStoreTick(recipeDeps, env).catch(() => null);
+  await dbSizeTick(env, now).catch(() => null);
   // 2.0.0 [RVQ-44] 요청 판: 7일 답 없는 '완성'은 끝, 14일 지난 '만들게요'는 다시 열림.
   await settleRequests(recipeDeps, env, now);
   await batch(env, [
@@ -380,6 +383,7 @@ export async function prune(env, now) {
     stmt(env, "DELETE FROM posts WHERE status = 'hidden' AND hidden_at < ?", now - LIMITS.hiddenPostDays * DAY),
     stmt(env, "INSERT INTO plaza_results (device, kind, post_id, result, company_id, at) SELECT device, 'unmuted', NULL, 'ended', NULL, until FROM muted WHERE until < ?", now),
     stmt(env, "DELETE FROM muted WHERE until < ?", now),
+    stmt(env, "DELETE FROM muted_kept WHERE until < ?", now),
     // 1.39 [CARE-04] 끝난 의견 쉬기는 소식 한 번, 끝난 지 180일 지난 경고·쉬기 기록은 지움.
     ...carePrune(recipeDeps, env, now),
     // 2.0.0 [RVD-15] 복구 코드로 옮긴 이용권을 1년 상한으로 세려고 예전 설치에 남긴 기록('moved')은 드린 날부터 1년이 지나면 지워요.
@@ -771,6 +775,8 @@ const SCHEMA = [
   `CREATE TABLE IF NOT EXISTS post_flags (post_id TEXT NOT NULL, device TEXT NOT NULL, reason TEXT NOT NULL, at INTEGER NOT NULL,
     PRIMARY KEY (post_id, device))`,
   "CREATE TABLE IF NOT EXISTS muted (device TEXT PRIMARY KEY, until INTEGER NOT NULL, reason TEXT NOT NULL)",
+  // 2.0.0 [RVQ-55] 검토 SVC-37: 마을 쉬기·쓰기 막기가 덮어쓴 운영자 말 못 하기(풀 때 다시 채워요).
+  MUTED_KEPT_SCHEMA,
   // [ADMIN-02] Questions from the app and the developer's answers.
   `CREATE TABLE IF NOT EXISTS inquiries (id TEXT PRIMARY KEY, device TEXT NOT NULL, kind TEXT NOT NULL, info TEXT NOT NULL,
     status TEXT NOT NULL, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL)`,
@@ -7669,6 +7675,9 @@ async function moderatePost(env, id, body, now) {
       stmt(env, "DELETE FROM muted WHERE device = ?", p.device),
       // 1.36 [LIM-10] Shown again: its strike no longer counts.
       stmt(env, "DELETE FROM write_strikes WHERE ref = ?", id),
+      // 2.0.0 [RVQ-55] 검토 SVC-37: 글을 다시 보여도 운영자가 건 마을 쉬기·신고 누적 쓰기 막기는 그대로(운영자 말 못 하기만 풀어요).
+      stmt(env, "DELETE FROM muted_kept WHERE device = ?", p.device),
+      restoreMute(recipeDeps, env, p.device, now),
     ]);
     // 1.36 [SEC-16] M10: and a restriction that strike started ends.
     if (p.status === "hidden") await strikeTakenBack(recipeDeps, env, p.device, now);
@@ -8534,15 +8543,18 @@ export async function photoFile(env, id, n) {
 export async function syncShareSwitch(env) {
   if (!shareAdmin(env)) return false;
   const off = (await opsState(env)).off.includes("SHARE_CREATE");
+  // 2.0.0 [RVQ-57] 검토 I22c-02: 팀 페이지 웹 알림(깃발 team.push, 처리방침 3.15 시행일에 저절로)도 같은 길로 공유 서버에 맞춰요.
+  const teamPush = flagOn(await flagStore(env), "team.push", Date.now());
+  const state = teamPush ? `${off}|push` : String(off);
   const was = (await one(env, "SELECT value FROM settings WHERE key = 'share_create_synced'"))?.value;
-  if (was === String(off)) return false;
+  if (was === state) return false;
   try {
-    await shareCall(env, "PUT", "/api/admin/flags", { createOff: off });
+    await shareCall(env, "PUT", "/api/admin/flags", { createOff: off, teamPush });
   } catch (e) {
     console.error(`share switch: ${e?.code ?? e}`);
     return false;
   }
-  await run(env, "INSERT OR REPLACE INTO settings (key, value) VALUES ('share_create_synced', ?)", String(off));
+  await run(env, "INSERT OR REPLACE INTO settings (key, value) VALUES ('share_create_synced', ?)", state);
   return true;
 }
 
@@ -8903,9 +8915,11 @@ async function sameSecret(given, secret) {
  */
 const recipeDeps = {
   one, all, run, batch, stmt, json, readJson, deviceId, deviceHash, network, networkCheck, overLimit, allow, tooMany, randomId, paused, edgeCached,
+  // 2.0.0 [RVQ-55] 검토 SVC-25: DB가 한도의 80%를 넘었으면 사진·글꼴 올리기를 쉬어요.
+  uploadsFull,
   // 1.36 [SEC-11] Play Integrity before a write others see (integrity.js); null to go on.
   integrity: (env, dev, now) => integrityGate(recipeDeps, env, dev, now),
-  legalOpen: async (env, key, now) => serverEval(await flagStore(env), key, now).on,
+  legalOpen: async (env, key, now) => flagOn(await flagStore(env), key, now),
   // 1.39 [FX-17] 기능 작품을 남이 보게 올리는 사람은 프로 (money.js hasPro).
   hasPro: (env, dev, now) => hasPro(env, dev, now),
   hiddenAuthors: async (env, request) => hiddenAuthors(await authorKey(env), request.headers.get("x-hide")),
