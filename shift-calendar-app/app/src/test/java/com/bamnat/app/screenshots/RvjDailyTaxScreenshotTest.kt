@@ -62,7 +62,9 @@ class RvjDailyTaxScreenshotTest : ScreenshotBase() {
     @Test fun aDailyStartsOnTheDailyWay() = shoot("rvj_293_daily_quick_tax_said_folded", FOLDED) {
         daily.invoke(this)
         assertTrue("일당은 일용근로 칩", shows("일용근로", exact = true))
-        assertTrue(scrolledTo("하루 15만 원까지는 소득세가 없고 고용보험만 떼요", exact = false))
+        // One line + ⓘ (조건 4); the 15만 원 rule is behind ⓘ.
+        assertTrue(scrolledTo("일당은 대부분 ‘일용근로’로 떼요", exact = true))
+        assertFalse(shows("하루 15만 원까지는 소득세가 없고 고용보험만 떼요", exact = false))
         assertTrue(scrolledTo("일용근로 소득세·고용보험 참고값", exact = false))
     }
 
