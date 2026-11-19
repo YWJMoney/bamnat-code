@@ -188,12 +188,27 @@ object TakeHome {
         pay: MonthPay? = null,
     ): TakeHomeResult = estimate(
         gross, mode, profile.taxFamily, month.atDay(1), profile.taxChildren, free ?: nonTaxable(profile, month),
-        off = profile.insuranceOff, afterTax = pay?.afterTax?.map { it.label to it.amount } ?: afterTax(profile, month),
+        off = profile.insuranceOffOn(month), afterTax = pay?.afterTax?.map { it.label to it.amount } ?: afterTax(profile, month),
         dayRate = dayRateOf(profile, month),
     ).let { r ->
         // 1.39 [PAYX-63] 발굴 G3-B8 (첫 단계): 소급분 is taxed here with the month it is paid in; the year's 연말정산 settles it.
         val backPay = profile.customRules.any { it.on && !it.deduct && it.oneMonth && it.inPeriod(month) && CustomRule.looksOneMonth(it.name) }
         if (backPay && mode == TaxMode.INSURANCE_4) r.copy(notes = r.notes + BACK_PAY_NOTE) else r
+    }.let { r -> ageNotes(r, profile, month, mode) }
+
+    /**
+     * 2.0.0 [RVJ-81] 결정 5: a line left out by the 생년 says the age as its reason instead of the hand-picked chip's, and a year the app
+     * cannot tell (the year of turning 60, a 입사 year of 65, no 입사일) says what happens, for the ways that take that line.
+     */
+    private fun ageNotes(r: TakeHomeResult, profile: PayProfile, month: java.time.YearMonth, mode: TaxMode): TakeHomeResult {
+        val age = InsuranceAge.lines(profile, month).filter { it.line !in profile.insuranceKeep }
+        if (age.isEmpty()) return r
+        val takes = { l: InsuranceLine -> mode == TaxMode.INSURANCE_4 || (mode == TaxMode.DAILY_WORKER && l == InsuranceLine.EMPLOYMENT) }
+        val byAge = age.filter { it.off && it.line !in profile.insuranceOff }.associateBy { it.line }
+        val notes = r.notes.map { n ->
+            byAge.values.firstOrNull { n == "${it.line.label}은 떼지 않아요 (${it.line.why})" }?.let { "${it.note} (생년 ${profile.birthYear}년)" } ?: n
+        } + age.filter { !it.off && takes(it.line) && it.line !in profile.insuranceOff }.map { it.note }
+        return r.copy(notes = notes)
     }
 
     /** 2.0.0 [RVJ-80] The 일당 of a 일당 setup for [month], for [TaxMode.DAILY_WORKER]; null for any other wage. */

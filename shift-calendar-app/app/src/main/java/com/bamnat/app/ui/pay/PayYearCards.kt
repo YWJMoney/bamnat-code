@@ -118,8 +118,9 @@ internal fun YearEndCard(profile: PayProfile, snapshot: ScheduleSnapshot, month:
         Text(if (x.projectedMonths > 0) "1~${month.monthValue}월은 근무 기록, ${x.projectedMonths}달은 근무표대로 셌어요"
             else "1~${month.monthValue}월 근무 기록으로 셌어요",
             style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        if (profile.insuranceOff.isNotEmpty()) Text("떼지 않는 ${profile.insuranceOff.joinToString("·") { it.label }}은 공제에서 뺐어요",
-            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        // 2.0.0 [RVJ-81] With the 생년, the lines the age leaves out too.
+        profile.insuranceOffOn(month).takeIf { it.isNotEmpty() }?.let { off -> Text("떼지 않는 ${off.joinToString("·") { it.label }}은 공제에서 뺐어요",
+            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
         Line("근로소득공제", "−" + won(x.earnedDeduction))
         if (x.cardDeduction > 0) Line("신용카드 등 소득공제", "−" + won(x.cardDeduction))
         if (x.extras.hasHometax) Text("카드는 홈택스 1~9월 숫자에 10월부터 가계부를 더했어요", style = MaterialTheme.typography.bodySmall,

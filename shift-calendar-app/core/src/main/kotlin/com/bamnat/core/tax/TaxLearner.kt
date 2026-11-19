@@ -36,16 +36,19 @@ object TaxLearner {
         val afterTax: (YearMonth) -> Long = { 0L },
         /** 2.0.0 [RVJ-80] The 일당 of the month for [TaxMode.DAILY_WORKER] (null: not a 일당 setup). */
         val dayRate: (YearMonth) -> Long? = { null },
+        /** 2.0.0 [RVJ-81] The lines the 생년 leaves out of the month ([com.bamnat.core.pay.InsuranceAge]), on top of [off]. */
+        val ageOff: (YearMonth) -> Set<com.bamnat.core.pay.InsuranceLine> = { emptySet() },
     ) {
         /** The table's deductions on [gross] for [month] in [asMode]. */
         fun deductions(gross: Long, month: YearMonth, asMode: TaxMode = mode): Long =
-            TakeHome.estimate(gross, asMode, family, month.atDay(1), children, nonTaxable(month).coerceAtMost(gross), off = off,
+            TakeHome.estimate(gross, asMode, family, month.atDay(1), children, nonTaxable(month).coerceAtMost(gross), off = off + ageOff(month),
                 dayRate = dayRate(month)).deductions.sumOf { it.second } + afterTax(month)
 
         companion object {
             fun of(profile: PayProfile): Table =
                 Table(profile.taxMode, profile.taxFamily, profile.taxChildren, { m -> TakeHome.nonTaxable(profile, m) }, profile.insuranceOff,
-                    { m -> TakeHome.afterTax(profile, m).sumOf { it.second } }, { m -> TakeHome.dayRateOf(profile, m) })
+                    { m -> TakeHome.afterTax(profile, m).sumOf { it.second } }, { m -> TakeHome.dayRateOf(profile, m) },
+                    { m -> com.bamnat.core.pay.InsuranceAge.off(profile, m) })
         }
     }
 

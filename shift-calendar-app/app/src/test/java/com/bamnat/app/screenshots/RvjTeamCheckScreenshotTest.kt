@@ -161,6 +161,28 @@ class RvjTeamCheckScreenshotTest : ScreenshotBase() {
     @Test fun seenLineUnderTheTools() = shoot("rvj_218_team_seen_under_tools_folded", FOLDED, seenUnderTools())
     @Test fun seenLineUnderTheToolsDarkBig() = shoot("rvj_219_team_seen_under_tools_folded_dark_200", DARK, 2f, seenUnderTools())
 
+    // ---- [RVJ-83] SPREAD-38 앱으로 받는 팀원 수 (처리방침 3.14 14번) ----
+    /** From 3.14, under the 봤어요 line: '앱으로 받는 팀원 5명' (one number, from 3, never who), so the leader can say the app brings the alarms. */
+    private fun appCount(): Screen.() -> Unit = {
+        policy314()
+        shares.apps = 5
+        seenUnderTools().invoke(this)
+        assertTrue(appears("앱으로 받는 팀원 5명", exact = false))
+        reveal("앱으로 받는 팀원 5명", across = 0.6f)
+    }
+
+    @Test fun appCountLight() = shoot("rvj_299_team_app_count_folded", FOLDED, appCount())
+    @Test fun appCountDarkBig() = shoot("rvj_300_team_app_count_folded_dark_200", DARK, 2f, appCount())
+    @Test fun appCountUnfolded() = shoot("rvj_301_team_app_count_unfolded", UNFOLDED, appCount())
+
+    /** Under 3 (or before 3.14) nothing is said at all. */
+    @Test fun appCountUnderThree() = shoot("rvj_302_team_app_count_under_three_folded", FOLDED) {
+        policy314()
+        shares.apps = null
+        seenUnderTools().invoke(this)
+        assertFalse(shows("앱으로 받는 팀원", exact = false))
+    }
+
     // ---- 빈칸 자동 채우기의 안 (PC-178) ----
     /** Each 안 says what pressing it does: '이 안으로 채우기', not only the window's 닫기. */
     private fun plans(): Screen.() -> Unit = {

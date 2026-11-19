@@ -1287,13 +1287,18 @@ class AppContainer(context: Context) {
                     settingsRepository.settings.map { listOf(it.plazaNews, it.plazaRulesAgreed, it.phoneCalendars, it.alarmsEnabled) },
                     companyStore.sent, companyStore.applied,
                     received.calendars.map { all -> all.isEmpty() to all.filter { !it.gone && com.bamnat.app.share.RosterFollower.followed(it) }.map { it.id } },
-                ) { a, _, _, r -> a to r }
+                    // 2.0.0 [RVJ-83] SPREAD-38: which leader links are put in by themselves, for the '앱으로 받음' mark (no job of its own).
+                    received.calendars.map { all -> all.filter(com.bamnat.app.share.AppMark::candidate).map { it.id to it.expiresAt } }.distinctUntilChanged(),
+                ) { a, _, _, r, m -> Triple(a, r, m) }
                     .distinctUntilChanged()
                     .collect {
                         if (com.bamnat.app.company.PlazaNewsJob.wanted(this@AppContainer)) com.bamnat.app.company.PlazaNewsJob.schedule(appContext)
                         else com.bamnat.app.company.PlazaNewsJob.cancel(appContext)
                         // 1.39 [TEAM-22] The 6-hour look runs while a received link is followed (no job of its own in the start's budget).
                         com.bamnat.app.share.RosterFollower.sync(appContext, this@AppContainer)
+                        // [RVJ-83] The mark follows 바로 넣기 on or off and a link taken out; asks nothing while there is none and none was
+                        // left (the flag waits for 처리방침 3.14).
+                        appScope.launch { runCatching { com.bamnat.app.share.AppMark.sync(this@AppContainer) } }
                     }
             }
             // 1.39 [TEAM-22] D9: once a start, a followed link is asked a little after the month is up, so a 리더's change made while

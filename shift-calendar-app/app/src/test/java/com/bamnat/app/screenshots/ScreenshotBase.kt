@@ -1444,6 +1444,18 @@ abstract class ScreenshotBase {
     )
 
     /** After the 정식 출시 switch, with Play's plans, as a phone without 프로 sees it. */
+    /**
+     * 2.0.0 [RVJ-81][RVJ-82][RVJ-83] 처리방침 3.14 in force by the server's clock (posted a month and a half ago, every line past): the
+     * rows that wait for it ([com.bamnat.core.flags.FlagCatalog.PAY_BIRTH_YEAR], SLIP_COUNT, TEAM_APP_COUNT) are on.
+     */
+    internal fun policy314() {
+        val now = Today.instant()
+        val day = Today.date()
+        app.container.remoteConfig.save(com.bamnat.app.tier.LaunchConfig(
+            policy = listOf(com.bamnat.core.flags.PolicyVersion("3.14", day.minusDays(45), day.minusDays(15))), serverTime = now, fetchedAt = now))
+        repeat(200) { if (app.container.flags.on(com.bamnat.core.flags.FlagCatalog.TEAM_APP_COUNT)) return; Thread.sleep(20) }
+    }
+
     internal fun launched(config: com.bamnat.app.tier.LaunchConfig = com.bamnat.app.tier.LaunchConfig(billingLive = true),
                          then: Screen.() -> Unit = {}): Screen.() -> Unit = {
         val c = app.container
@@ -1777,6 +1789,9 @@ internal class FakeShareApi : com.bamnat.app.share.ShareApi {
     override suspend fun update(state: com.bamnat.app.share.ShareLinkState, payload: org.json.JSONObject) = state
     override suspend fun delete(state: com.bamnat.app.share.ShareLinkState) = Unit
     override suspend fun read(id: String) = links[id] ?: throw com.bamnat.app.share.ShareLinkException("not_found")
+    /** 2.0.0 [RVJ-83] SPREAD-38: how many of the leader's links the server says are read by the app (null: under 3). */
+    var apps: Int? = null
+    override suspend fun appCount(links: List<Pair<String, String>>) = com.bamnat.app.share.AppCount(apps, 3)
 }
 
 /** [COMM-04] The company rules server for screenshots: made-up companies, answers at once. */

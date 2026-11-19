@@ -622,7 +622,7 @@ private fun ColumnScope.AmountsStage(
         val before = remember(gross, profile, month) {
             // 1.39 [PAYX-56] 실수령액 is after 사택관리비·회비 too: they are added back before the tax is worked back.
             com.bamnat.core.pay.TakeHome.grossFromNet(gross + com.bamnat.core.pay.TakeHome.afterTax(profile, month).sumOf { it.second }, mode,
-                profile.taxFamily, month.atDay(1), profile.taxChildren, com.bamnat.core.pay.TakeHome.nonTaxable(profile, month), profile.insuranceOff)
+                profile.taxFamily, month.atDay(1), profile.taxChildren, com.bamnat.core.pay.TakeHome.nonTaxable(profile, month), profile.insuranceOffOn(month))
         }
         if (before > gross) TextButton(onClick = { form.gross = before }) {
             Text("실수령액이었다면: 공제 전 약 ${won(before)}으로 바꾸기")

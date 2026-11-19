@@ -284,7 +284,7 @@ private fun DayFirstCard(
                 color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(bottom = 8.dp))
         }
         com.bamnat.app.tax.TaxWayChips(mode, daily = com.bamnat.app.tax.TaxWay.daily(profile)) { m -> taxScope.launch { com.bamnat.app.tax.TaxWay.pick(container, calendarId, m) } }
-        if (mode == TaxMode.INSURANCE_4 && profile != null) TaxFamilyRow(calendarId, profile)
+        if (mode == TaxMode.INSURANCE_4 && profile != null) TaxFamilyRow(calendarId, profile, month)
         takeHome?.takeIf { it.deductions.isNotEmpty() }?.let { r ->
             Text(
                 r.deductions.joinToString(" · ") { (name, v) -> "$name ${Fmt.won(v)}" },
@@ -305,7 +305,7 @@ private fun DayFirstCard(
  */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun TaxFamilyRow(calendarId: String, profile: PayProfile) {
+private fun TaxFamilyRow(calendarId: String, profile: PayProfile, month: YearMonth) {
     val store = LocalContext.current.appContainer.calendars.pay(calendarId)
     val scope = rememberCoroutineScope()
     fun set(change: (PayProfile) -> PayProfile) = scope.launch { store.update(change) }
@@ -321,8 +321,8 @@ private fun TaxFamilyRow(calendarId: String, profile: PayProfile) {
         }
         Text("근로소득세는 국세청 간이세액표 값이에요. 가족 수는 본인·배우자를 포함해 세어 주세요.",
             style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        // 1.39 [PAYX-59] 만 60세 이상·65세 이후 고용·주 15시간 미만: 그 보험은 떼지 않아요.
-        com.bamnat.app.ui.pay.InsuranceOffRow(profile.insuranceOff) { off -> set { it.copy(insuranceOff = off) } }
+        // 1.39 [PAYX-59] 만 60세 이상·65세 이후 고용·주 15시간 미만: 그 보험은 떼지 않아요. 2.0.0 [RVJ-81] 생년으로 저절로.
+        com.bamnat.app.ui.pay.InsuranceOffRow(profile, month) { change -> set(change) }
     }
 }
 

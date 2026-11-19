@@ -890,6 +890,18 @@ interface ShareApi {
     /** 2.0.0 [RVQ-32] The member's 확인했어요 from their own app; "not_found" once the leader no longer asks (or the link is gone). */
     suspend fun okPress(id: String): Unit = throw ShareLinkException("unsupported")
 
+    /**
+     * 2.0.0 [RVJ-83] SPREAD-38: this phone puts the leader's link [id] into its own calendar by itself; [mark] is its own random word (the
+     * server keeps its hash). "not_found" while the leader does not ask or before the share server's 처리방침 3.14 day.
+     */
+    suspend fun appMark(id: String, mark: String) {}
+
+    /** 2.0.0 [RVJ-83] Takes this phone's mark back from [id] (nothing happens when there is none). */
+    suspend fun appUnmark(id: String, mark: String) {}
+
+    /** 2.0.0 [RVJ-83] How many of the leader's links ([links]: id and its token) are read by the app: one number, null under [AppCount.min]. */
+    suspend fun appCount(links: List<Pair<String, String>>): AppCount = AppCount(null, 3)
+
     /** 1.38 [P3-L-15] 병동 전체 보기: the month's table, a row of labels per name ("" for none). */
     suspend fun boardCreate(team: String, month: java.time.YearMonth, names: List<String>, labels: List<List<String>>, colors: Map<String, String>): SignMade =
         throw ShareLinkException("unsupported")
@@ -917,6 +929,8 @@ interface ShareApi {
 }
 
 data class TiredBox(val id: String, val token: String)
+/** 2.0.0 [RVJ-83] [n] null under [min] (or while the team's links changed this week, [rest]); [off] before the server's 3.14 day. */
+data class AppCount(val n: Int?, val min: Int, val rest: Boolean = false, val off: Boolean = false)
 data class TiredGot(val min: Int, val days: List<Pair<java.time.LocalDate, Int?>>)
 
 data class SignMade(val id: String, val token: String, val url: String, val expiresAt: Instant)
@@ -1186,6 +1200,20 @@ class ShareLinkClient(private val baseUrl: String = BuildConfig.SHARE_BASE_URL) 
 
     override suspend fun okPress(id: String) = withContext(Dispatchers.IO) {
         request("POST", "/api/share/$id/ok", null, null); Unit
+    }
+
+    override suspend fun appMark(id: String, mark: String) = withContext(Dispatchers.IO) {
+        request("POST", "/api/share/$id/app", JSONObject().put("mark", mark), null); Unit
+    }
+
+    override suspend fun appUnmark(id: String, mark: String) = withContext(Dispatchers.IO) {
+        request("POST", "/api/share/$id/app", JSONObject().put("mark", mark).put("off", true), null); Unit
+    }
+
+    override suspend fun appCount(links: List<Pair<String, String>>): AppCount = withContext(Dispatchers.IO) {
+        val body = JSONObject().put("links", org.json.JSONArray().apply { links.forEach { (id, t) -> put(JSONObject().put("id", id).put("token", t)) } })
+        val o = request("POST", "/api/apps", body, null).body
+        readable { AppCount(if (o.isNull("n") || !o.has("n")) null else o.getInt("n"), o.optInt("min", 3), o.optBoolean("rest"), o.optBoolean("off")) }
     }
 
     private fun boardBody(team: String, month: java.time.YearMonth, names: List<String>, labels: List<List<String>>, colors: Map<String, String>) =

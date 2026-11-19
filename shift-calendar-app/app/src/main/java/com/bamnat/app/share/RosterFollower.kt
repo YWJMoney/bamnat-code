@@ -192,6 +192,8 @@ object RosterFollower {
         val ids = c.received.calendars.value.filter { !it.gone && followed(it) }.map { it.id }
         for (id in ids) refresh(c, id, quiet = true)
         sync(c.appContext, c)
+        // 2.0.0 [RVJ-83] SPREAD-38: after the look, the '앱으로 받음' marks follow what the links say now (the leader asks, the link's time).
+        runCatching { AppMark.sync(c) }
     }
 
     /** Starts or stops [RosterFollowJob] by whether any link is followed. */

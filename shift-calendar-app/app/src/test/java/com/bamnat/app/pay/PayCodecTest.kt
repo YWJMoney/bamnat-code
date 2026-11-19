@@ -171,6 +171,18 @@ class PayCodecTest {
         assertEquals(base, PayCodec.decode(plain))
     }
 
+    /** 2.0.0 [RVJ-81] 생년 and '그래도 내요' round trip (backups carry the pay setup this way); a file without them reads as none. */
+    @Test fun birthYearRoundTrip() {
+        val base = PayProfile(Occupation.CUSTOM, WageType.MONTHLY, ValueTimeline(listOf(DatedValue(LocalDate.of(2026, 1, 1), 3_000_000))))
+        val p = base.copy(birthYear = 1964, insuranceKeep = setOf(com.bamnat.core.pay.InsuranceLine.PENSION),
+            insuranceOff = setOf(com.bamnat.core.pay.InsuranceLine.HEALTH))
+        assertEquals(p, PayCodec.decode(PayCodec.encode(p)))
+        val plain = PayCodec.encode(base)
+        listOf("birthYear", "insuranceKeep").forEach { assertEquals(false, plain.has(it)) }
+        assertEquals(base, PayCodec.decode(plain))
+        assertNull(PayCodec.decode(PayCodec.encode(p).put("birthYear", 12)).birthYear)
+    }
+
     /** [JOB-02] 공무원 계급·호봉 round trip; a file without it, or with a grade this table lacks, reads as none. */
     @Test fun publicGradeRoundTrip() {
         val base = PayProfile(Occupation.FIRE, WageType.MONTHLY, ValueTimeline(listOf(DatedValue(LocalDate.of(2026, 1, 1), 2_542_700))))

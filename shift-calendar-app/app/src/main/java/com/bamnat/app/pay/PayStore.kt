@@ -406,6 +406,9 @@ object PayCodec {
         .apply { if (p.taxChildren != 0) put("taxChildren", p.taxChildren) }
         // 1.39 [PAYX-59] 떼지 않는 4대보험, left out when none.
         .apply { if (p.insuranceOff.isNotEmpty()) put("insuranceOff", JSONArray(p.insuranceOff.map { it.name })) }
+        // 2.0.0 [RVJ-81] 생년 (휴대폰 안·백업에만)과 나이로 빠질 보험 가운데 그래도 내는 줄, left out when not set.
+        .apply { p.birthYear?.let { put("birthYear", it) } }
+        .apply { if (p.insuranceKeep.isNotEmpty()) put("insuranceKeep", JSONArray(p.insuranceKeep.map { it.name })) }
         // [PHOTO-11] 1.29: 명세서로 맞춘 통상시급 (원 아래 두 자리), left out when not set.
         .apply { p.ordinaryHourly?.let { put("ordinaryHourly", it) } }
         // [HOURLY-01] 1.30: where 통상시급 and 기준 시간 came from, left out when not known.
@@ -459,6 +462,10 @@ object PayCodec {
         taxFamily = o.optInt("taxFamily", 1).coerceIn(1, 20),
         taxChildren = o.optInt("taxChildren", 0).coerceIn(0, 19),
         insuranceOff = o.optJSONArray("insuranceOff")?.let { a ->
+            (0 until a.length()).mapNotNull { n -> com.bamnat.core.pay.InsuranceLine.entries.firstOrNull { it.name == a.optString(n) } }.toSet()
+        }.orEmpty(),
+        birthYear = o.optInt("birthYear", 0).takeIf { it in 1900..2100 },
+        insuranceKeep = o.optJSONArray("insuranceKeep")?.let { a ->
             (0 until a.length()).mapNotNull { n -> com.bamnat.core.pay.InsuranceLine.entries.firstOrNull { it.name == a.optString(n) } }.toSet()
         }.orEmpty(),
         ordinaryHourly = o.optDouble("ordinaryHourly", Double.NaN).takeIf { it.isFinite() && it > 0 && it < 1_000_000 },

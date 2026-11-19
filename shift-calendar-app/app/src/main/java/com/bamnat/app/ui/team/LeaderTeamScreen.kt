@@ -825,6 +825,13 @@ private fun TeamBoardScreen(team: Team, calendarId: String, onBack: () -> Unit, 
                         TextButton(enabled = busy == null, onClick = { scope.launch { seen = readSeen() } }) { Text("다시 보기") }
                     }
                 }
+                // 2.0.0 [RVJ-83] SPREAD-38 (처리방침 3.14 14번): how many read it in the app, one number from 3 and never who, so the leader can
+                // say '앱으로 받으면 알람까지 와요'. Nothing shows before 3.14 or under 3.
+                var apps by remember(team.id) { mutableStateOf<Int?>(null) }
+                LaunchedEffect(team.id, linkKey, busy == null) { if (busy == null) apps = com.bamnat.app.team.TeamReceiveSync.appCount(c, store.boardNow(team.id, month).members.filter { it.active }) }
+                apps?.let { n ->
+                    Text(com.bamnat.app.team.TeamReceiveSync.appLine(n), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
             }
             if (linksFor == null) com.bamnat.app.ui.pro.PeerInviteCard(com.bamnat.core.guide.Peer.TEAM)
             Text("팀원은 앱이 없어도 링크로 자기 근무를 봐요. 앱이 있으면 내 달력에 넣을 수 있어요. 고친 뒤 다시 확정하면 같은 링크가 바뀌고, 밤낮 1.39 이상을 쓰는 팀원은 6시간 안에 바뀐 날이 자기 달력과 알람에 들어가요(팀원이 직접 바꾼 날은 그대로).",

@@ -355,7 +355,18 @@ data class PayProfile(
      * from it and a year's raise is one line instead of 20~30 typed again. The [base] it made is what is calculated; this is the table.
      */
     val payScale: PayScale? = null,
+    /**
+     * 2.0.0 [RVJ-81] 결정 5 (처리방침 3.14 7일 줄): 생년 (선택). Only the year, kept in this pay setup on the phone and in backups the
+     * user makes; never sent. [InsuranceAge] reads it for 만 60세 국민연금 (국민연금법 제6조·제12조 ①) and 65세 이후 고용의 고용보험
+     * (고용보험법 제10조 ②, 보험료징수법 제13조 ③), so [insuranceOff] no longer has to be picked by hand for those.
+     */
+    val birthYear: Int? = null,
+    /** 2.0.0 [RVJ-81] Lines [InsuranceAge] would leave out that are still taken ('그래도 내요': 임의계속가입, 65세 전부터 같은 곳). */
+    val insuranceKeep: Set<InsuranceLine> = emptySet(),
 ) {
+    /** 2.0.0 [RVJ-81] The 4대보험 lines left out of [month]'s 실수령: picked by hand ([insuranceOff]) and by age ([InsuranceAge]). */
+    fun insuranceOffOn(month: java.time.YearMonth): Set<InsuranceLine> = insuranceOff + InsuranceAge.off(this, month)
+
     /** [HRLY-07] The weekday 주휴 weeks start on. */
     val holidayWeekFrom: DayOfWeek get() = holidayWeekStart ?: weekStart
 
