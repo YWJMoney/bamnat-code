@@ -882,10 +882,39 @@ class RvmScreenshotTest : ScreenshotBase() {
         check(appears("조각 3개", exact = true)) { "받은 것 창에 조각 목록이 없어요" }
         check(appears("‘어두운 위젯’이 덮음", exact = true)) { "덮은 작품 이름이 없어요" }
         check(appears("이 조각만 되돌리기", exact = true)) { "쓰는 조각에 되돌리기가 없어요" }
+        // [RVM-61] HQ-148: one filled button; 링크 나누기·묶음에 넣기 under ⋮ 더 보기.
+        check(gone("링크 나누기", exact = true)) { "링크 나누기가 아직 단추로 줄지어 있어요" }
+        check(appears("더 보기", exact = true)) { "더 보기가 없어요" }
     }
     @Test fun gotPiecesFolded() = shoot("rvm_97_got_pieces_folded", FOLDED, gotPieces())
     @Test fun gotPiecesFoldedDarkBig() = shoot("rvm_98_got_pieces_folded_dark_200", DARK, 2f, gotPieces())
     @Test fun gotPiecesUnfolded() = shoot("rvm_99_got_pieces_unfolded", UNFOLDED, gotPieces())
+
+    /** 2.0.0 [RVM-60] RCP-14 / [RVM-61] HQ-148: a theme worn before, opened from 내 서랍 in the first days after install. */
+    private fun quietWear(): Screen.() -> Unit = {
+        c.wardrobe.adsSeen = com.bamnat.app.recipe.ThemeWardrobe.AdsSeen(on = true, pro = false, installedAt = com.bamnat.core.time.Today.instant().minusSeconds(5 * 3600L))
+        val two = com.bamnat.core.recipe.BuiltInThemes.of(WorkStyle.SHIFT).take(2)
+        runBlocking {
+            two.forEach { c.wardrobe.wear(it, "builtin:${it.title}", own = false) }
+            c.wardrobe.takeOff()
+        }
+        content {
+            Surface {
+                Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    com.bamnat.app.ui.recipe.ThemeDrawer(WorkStyle.SHIFT, onFind = {}, onFix = {}, onStudio = {}, onRecipe = {}, onUpload = {})
+                }
+            }
+        }
+        settle()
+        tapText(two[0].title, exact = true)
+        settle()
+        check(appears("바로 입기", exact = true)) { "처음 며칠에 광고 없이 입는 단추가 없어요" }
+        check(appears("앱을 깐 뒤 3일 동안은 광고 없이 바로 입어요", exact = true)) { "광고 없이 입는 까닭이 없어요" }
+        c.wardrobe.adsSeen = null
+    }
+    @Test fun quietWearFolded() = shoot("rvm_100_quiet_wear_folded", FOLDED, quietWear())
+    @Test fun quietWearFoldedDarkBig() = shoot("rvm_101_quiet_wear_folded_dark_200", DARK, 2f, quietWear())
+    @Test fun quietWearUnfolded() = shoot("rvm_102_quiet_wear_unfolded", UNFOLDED, quietWear())
 
     private companion object {
         const val DARK = "w369dp-h905dp-port-night-420dpi"

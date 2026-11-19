@@ -17,6 +17,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.MoreVert
 import com.bamnat.app.ui.components.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -373,27 +374,36 @@ private fun GotPieces(c: com.bamnat.app.AppContainer, e: AppliedRecipeEntity, as
     if (states.size < 2 && states.all { it.on }) return
     val canUndo = remember(e) { c.recipes.canUndo(e) }
     val inUse = states.count { it.on }
+    val big = androidx.compose.ui.platform.LocalDensity.current.fontScale >= 1.5f
     Column(Modifier.fillMaxWidth()) {
         Text("조각 ${states.size}개", style = MaterialTheme.typography.titleSmall, modifier = Modifier.semantics { heading() })
         states.forEach { p ->
             androidx.compose.material3.HorizontalDivider()
-            Column(Modifier.fillMaxWidth().padding(vertical = 6.dp)) {
-                Text(p.kind.label, style = MaterialTheme.typography.bodyLarge)
-                Text(if (p.on) "쓰는 중" else p.coveredBy?.let { "‘$it’${Fmt.iga(it)} 덮음" } ?: "다른 작품이 덮음",
-                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                if (p.on && canUndo && inUse > 1) Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-                    androidx.compose.material3.TextButton(onClick = {
-                        ask("이 조각만 되돌릴까요?", "‘${e.title}’의 ${p.kind.label}만 넣기 전으로 돌아가요. 나머지 조각은 그대로 쓰고, 넣은 뒤 내가 직접 바꾼 것은 그대로예요") {
-                            c.appScope.launch {
-                                val ok = c.recipes.undoPieces(e.id, setOf(p.key))
-                                val r = c.recipes.lastUndo
-                                PutOnNotice.sayWithSee(if (ok && r.kept == 0 && r.failed.isEmpty() && r.alarmsOff.isEmpty()) "‘${e.title}’의 ${p.kind.label}만 되돌렸어요"
-                                    else c.recipes.undoSay(ok), r.items.takeIf { ok && it.isNotEmpty() }?.let { items -> { UndoLeft.show(items) } })
-                            }
-                        }
-                    }, modifier = Modifier.heightIn(min = 48.dp)) { Text("이 조각만 되돌리기") }
+            val words: @Composable () -> Unit = {
+                Column {
+                    Text(p.kind.label, style = MaterialTheme.typography.bodyLarge)
+                    Text(if (p.on) "쓰는 중" else p.coveredBy?.let { "‘$it’${Fmt.iga(it)} 덮음" } ?: "다른 작품이 덮음",
+                        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             }
+            val back: @Composable () -> Unit = {
+                TextButton(onClick = {
+                    ask("이 조각만 되돌릴까요?", "‘${e.title}’의 ${p.kind.label}만 넣기 전으로 돌아가요. 나머지 조각은 그대로 쓰고, 넣은 뒤 내가 직접 바꾼 것은 그대로예요") {
+                        c.appScope.launch {
+                            val ok = c.recipes.undoPieces(e.id, setOf(p.key))
+                            val r = c.recipes.lastUndo
+                            PutOnNotice.sayWithSee(if (ok && r.kept == 0 && r.failed.isEmpty() && r.alarmsOff.isEmpty()) "‘${e.title}’의 ${p.kind.label}만 되돌렸어요"
+                                else c.recipes.undoSay(ok), r.items.takeIf { ok && it.isNotEmpty() }?.let { items -> { UndoLeft.show(items) } })
+                        }
+                    }
+                }, modifier = Modifier.heightIn(min = 48.dp)) { Text("이 조각만 되돌리기") }
+            }
+            // [RVM-61] HQ-148: the button beside the name at 100%, under it only from 150% (or when the name needs the room).
+            if (!(p.on && canUndo && inUse > 1)) Box(Modifier.fillMaxWidth().padding(vertical = 6.dp)) { words() }
+            else if (big) Column(Modifier.fillMaxWidth().padding(vertical = 6.dp), horizontalAlignment = Alignment.End) {
+                Box(Modifier.fillMaxWidth()) { words() }
+                back()
+            } else com.bamnat.app.ui.components.SideOrBelow(Modifier.fillMaxWidth().padding(vertical = 2.dp), start = words, end = back)
         }
         androidx.compose.material3.HorizontalDivider()
     }
@@ -421,6 +431,48 @@ private fun ItemSheet(i: DrawerItem, h: Held, onDismiss: () -> Unit, onTry: (Rec
     }
     // PC 08a6f771 (시트가 반만 열려 아래 단추가 가려요): opened all the way.
     AppSheet(onDismissRequest = onDismiss, sheetState = androidx.compose.material3.rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
+        // 2.0.0 [RVM-61] 총괄 HQ-148 (조건 2·4, 받은 것 창에 같은 무게의 테두리 단추 셋): one filled button for what is done most, at most
+        // two text lines (each with its one-line why), the rest under ⋮ 더 보기 beside the name. Every kind of thing in the drawer alike.
+        val themeBody = (h as? Held.Theme)?.w?.body
+        val r = remember(themeBody) { themeBody?.let { runCatching { RecipeCodec.read(it) }.getOrNull() } }
+        val folderLabel = if (i.folder == null) "묶음에 넣기" else "묶음 바꾸기"
+        val more: List<Triple<String, String?, () -> Unit>> = when (h) {
+            is Held.Theme -> buildList {
+                val w = h.w
+                val code = if (w.own) marketCode(w.shared) else marketCode(w.code)
+                if (w.own && code == null && c.recipeApi.enabled && r != null) add(Triple("장터에 올리기",
+                    if (w.mixedFrom.isNotBlank()) "섞은 것이라 원작의 수정판으로 올라가요" else "올린 내 테마는 기간·광고 없이 입어요") {
+                    RecipeLinks.remake = w.body to (w.mixedCodes.split(',').firstOrNull { it.isNotBlank() } ?: "")
+                    RecipeLinks.ownTheme = if (w.mixedFrom.isNotBlank()) null else w.key
+                    onUpload()
+                })
+                if (code != null) {
+                    add(Triple("장터에서 보기", null) { onRecipe(code) })
+                    add(Triple("링크 나누기", null) { share(w.title, code) })
+                }
+                add(Triple(folderLabel, null) { filing = true })
+                // A mix worn now lives only while it is worn (벗기 is on the card above); its key is the theme its parts came from.
+                if (!(ThemeWardrobe.isMix(w.title) && !w.own)) add(Triple(if (w.own) "지우기" else "서랍에서 빼기", null) {
+                    asking = Triple(if (w.own) "내 테마를 지울까요?" else "입었던 것에서 뺄까요?",
+                        "‘${w.title}’${Fmt.obj(w.title)} 서랍에서 빼요. 지금 입은 모양은 그대로예요" + if (w.own && w.shared.isNotEmpty()) ". 장터에 올린 것은 장터에 그대로 있어요" else "") {
+                        c.wardrobe.removeKept(w.key); c.wardrobe.setFolder(i.key, null); onDismiss()
+                    }
+                })
+            }
+            is Held.Got -> listOf(Triple("링크 나누기", null) { share(h.e.title, h.e.code) }, Triple(folderLabel, null) { filing = true })
+            is Held.Part -> listOf(Triple(folderLabel, null) { filing = true }, Triple("서랍에서 빼기", null) {
+                asking = Triple("조각을 뺄까요?", "‘${h.k.title}’${Fmt.obj(h.k.title)} 서랍에서 빼요. 지금 입은 모양은 그대로예요") {
+                    c.wardrobe.forgetKept(h.k.id); c.wardrobe.setFolder(i.key, null); onDismiss()
+                }
+            })
+            is Held.Laid -> listOfNotNull(marketCode(h.o.code)?.let { code -> Triple<String, String?, () -> Unit>("링크 나누기", null) { share(h.o.title, code) } },
+                Triple(folderLabel, null) { filing = true })
+            is Held.Draft -> listOf(Triple(folderLabel, null) { filing = true }, Triple("지우기", null) {
+                asking = Triple("만들던 것을 지울까요?", "지우면 이어서 만들 수 없어요") {
+                    c.appScope.launch { c.recipes.deleteDraft(h.d.id) }; c.wardrobe.setFolder(i.key, null); onDismiss()
+                }
+            })
+        }
         Column(Modifier.padding(start = 16.dp, end = 16.dp, bottom = 24.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
                 Thumb(h, 72.dp)
@@ -429,19 +481,41 @@ private fun ItemSheet(i: DrawerItem, h: Held, onDismiss: () -> Unit, onTry: (Rec
                     Text(listOfNotNull(i.kind.label, status(h)?.substringAfter(" · ", "")?.ifBlank { null }, i.folder?.let { "📁 $it" }).joinToString(" · "),
                         style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
+                if (more.isNotEmpty()) Box {
+                    var open by remember { mutableStateOf(false) }
+                    IconButton(onClick = { open = true }) { Icon(Icons.Filled.MoreVert, "더 보기") }
+                    com.bamnat.app.ui.components.DropdownMenu(open, { open = false }) {
+                        more.forEach { (label, line, go) ->
+                            androidx.compose.material3.DropdownMenuItem(
+                                text = {
+                                    Column {
+                                        Text(label)
+                                        line?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
+                                    }
+                                },
+                                onClick = { open = false; go() }, modifier = Modifier.heightIn(min = 48.dp))
+                        }
+                    }
+                }
             }
             Spacer(Modifier.heightIn(min = 4.dp))
             @Composable fun Act(label: String, line: String? = null, primary: Boolean = false, go: () -> Unit) {
-                if (primary) Button(onClick = go, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text(label) }
-                else OutlinedButton(onClick = go, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text(label) }
-                line?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
+                if (primary) {
+                    Button(onClick = go, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text(label) }
+                    line?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
+                } else Column(Modifier.fillMaxWidth().heightIn(min = 48.dp).clickable(role = Role.Button, onClick = go).padding(vertical = 8.dp),
+                    verticalArrangement = Arrangement.Center) {
+                    Text(label, style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
+                    line?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
+                }
             }
             when (h) {
                 is Held.Theme -> {
                     val w = h.w
-                    val r = remember(w.body) { runCatching { RecipeCodec.read(w.body) }.getOrNull() }
                     val ad = remember(w.key) { c.wardrobe.needsAdFor(w.code, w.title) }
-                    if (r != null && !ad && (!h.now || h.part)) Act(if (h.part) "전부 입기" else "바로 입기", primary = true) {
+                    // 2.0.0 [RVM-60] RCP-14: in the first days no ad is asked for; one line says so, so the ad later is no surprise.
+                    val quiet = remember(w.key) { if (c.wardrobe.quietFor(w.code, w.title)) quietLine(c.wardrobe.quietDays()) else null }
+                    if (r != null && !ad && (!h.now || h.part)) Act(if (h.part) "전부 입기" else "바로 입기", quiet, primary = true) {
                         onDismiss()
                         c.appScope.launch {
                             val m = c.wardrobe.mark()
@@ -450,43 +524,22 @@ private fun ItemSheet(i: DrawerItem, h: Held, onDismiss: () -> Unit, onTry: (Rec
                     }
                     if (r != null && (!h.now || h.part)) Act(if (ad) "입어 보고 입기 (광고)" else "입어 보고 고른 것만 입기", primary = ad) { onTry(r, w.code, w.ver) }
                     Act("스튜디오로 고치기") { onStudio(com.bamnat.app.ui.studio.StudioViewModel.START_THEME + w.key) }
-                    val code = if (w.own) marketCode(w.shared) else marketCode(w.code)
-                    if (w.own && code == null && c.recipeApi.enabled && r != null) Act("장터에 올리기",
-                        if (w.mixedFrom.isNotBlank()) "다른 테마를 섞은 것이라 원작의 수정판으로 올라가요" else "장터에 올린 내 테마는 기간·광고 없이 입어요. 나만 보기(링크로만)로도 올릴 수 있어요") {
-                        RecipeLinks.remake = w.body to (w.mixedCodes.split(',').firstOrNull { it.isNotBlank() } ?: "")
-                        RecipeLinks.ownTheme = if (w.mixedFrom.isNotBlank()) null else w.key
-                        onUpload()
-                    }
-                    if (code != null) {
-                        Act("장터에서 보기") { onRecipe(code) }
-                        Act("링크 나누기") { share(w.title, code) }
-                    }
-                    Act(if (i.folder == null) "묶음에 넣기" else "묶음 바꾸기") { filing = true }
-                    // A mix worn now lives only while it is worn (벗기 is on the card above); its key is the theme its parts came from.
-                    if (!(ThemeWardrobe.isMix(w.title) && !w.own)) Act(if (w.own) "지우기" else "서랍에서 빼기") {
-                        asking = Triple(if (w.own) "내 테마를 지울까요?" else "입었던 것에서 뺄까요?",
-                            "‘${w.title}’${Fmt.obj(w.title)} 서랍에서 빼요. 지금 입은 모양은 그대로예요" + if (w.own && w.shared.isNotEmpty()) ". 장터에 올린 것은 장터에 그대로 있어요" else "") {
-                            c.wardrobe.removeKept(w.key); c.wardrobe.setFolder(i.key, null); onDismiss()
-                        }
-                    }
                 }
                 is Held.Got -> {
                     val e = h.e
                     // 2.0.0 [RVM-59] 검토 U09b-03: each piece, whether it is in use or a later work covered it, and 이 조각만 되돌리기.
                     GotPieces(c, e) { title, text, go -> asking = Triple(title, text, { go(); onDismiss() }) }
                     Act("장터에서 보기", "넣은 것을 고르거나 새 판을 볼 수 있어요", primary = true) { onRecipe(e.code) }
-                    Act("링크 나누기") { share(e.title, e.code) }
-                    Act(if (i.folder == null) "묶음에 넣기" else "묶음 바꾸기") { filing = true }
                     if (c.recipes.canUndo(e)) Act("되돌리기 (넣은 지 7일 안)", "넣기 전으로 돌아가요. 그 사이 적은 기록은 그대로예요") {
                         asking = Triple("되돌릴까요?", "‘${e.title}’${Fmt.iga(e.title)} 바꾼 것만 넣기 전으로 돌아가요. 넣은 뒤 내가 직접 바꾼 것과 근무 기록·가계부·메모는 그대로예요") {
                             c.appScope.launch {
                                 val ok = c.recipes.undo(e.id)
                                 // 2.0.0 [RVM-45] RCP-02: what stayed as the user made it (or failed) is said, not a plain 되돌렸어요.
-                                val r = c.recipes.lastUndo
-                                PutOnNotice.sayWithSee(if (ok && r.kept == 0 && r.failed.isEmpty() && r.alarmsOff.isEmpty()) "‘${e.title}’${Fmt.obj(e.title)} 되돌렸어요"
+                                val u = c.recipes.lastUndo
+                                PutOnNotice.sayWithSee(if (ok && u.kept == 0 && u.failed.isEmpty() && u.alarmsOff.isEmpty()) "‘${e.title}’${Fmt.obj(e.title)} 되돌렸어요"
                                     else c.recipes.undoSay(ok),
                                     // 2.0.0 [RVM-55] U09b-02: 보기, what stayed as I made it.
-                                    r.items.takeIf { ok && it.isNotEmpty() }?.let { items -> { UndoLeft.show(items) } })
+                                    u.items.takeIf { ok && it.isNotEmpty() }?.let { items -> { UndoLeft.show(items) } })
                             }
                             onDismiss()
                         }
@@ -500,12 +553,6 @@ private fun ItemSheet(i: DrawerItem, h: Held, onDismiss: () -> Unit, onTry: (Rec
                         onStudio(com.bamnat.app.ui.studio.StudioViewModel.START_KEPT + k.id)
                     }
                     marketCode(k.from)?.let { code -> Act("나온 테마 보기 (‘${k.fromTitle}’)") { onRecipe(code) } }
-                    Act(if (i.folder == null) "묶음에 넣기" else "묶음 바꾸기") { filing = true }
-                    Act("서랍에서 빼기") {
-                        asking = Triple("조각을 뺄까요?", "‘${k.title}’${Fmt.obj(k.title)} 서랍에서 빼요. 지금 입은 모양은 그대로예요") {
-                            c.wardrobe.forgetKept(k.id); c.wardrobe.setFolder(i.key, null); onDismiss()
-                        }
-                    }
                 }
                 is Held.Laid -> {
                     val o = h.o
@@ -518,11 +565,7 @@ private fun ItemSheet(i: DrawerItem, h: Held, onDismiss: () -> Unit, onTry: (Rec
                             PutOnNotice.say("‘$tab’ 탭에서 ‘${o.title}’${Fmt.obj(o.title)} 뺐어요") { c.wardrobe.undoTo(m); true }
                         }
                     }
-                    marketCode(o.code)?.let { code ->
-                        Act("장터에서 보기") { onRecipe(code) }
-                        Act("링크 나누기") { share(o.title, code) }
-                    }
-                    Act(if (i.folder == null) "묶음에 넣기" else "묶음 바꾸기") { filing = true }
+                    marketCode(o.code)?.let { code -> Act("장터에서 보기") { onRecipe(code) } }
                 }
                 is Held.Draft -> {
                     val d = h.d
@@ -531,12 +574,6 @@ private fun ItemSheet(i: DrawerItem, h: Held, onDismiss: () -> Unit, onTry: (Rec
                     Act("이어서 하기", if (d.step >= 2) "올리기 ${d.step - 1}/4단계에서 멈춘 곳부터" else if (made) "만들기에서 멈춘 곳부터" else "스튜디오에서 꾸미던 곳부터", primary = true) {
                         if (made) onMakeDraft(d.id)
                         else onStudio(com.bamnat.app.ui.studio.StudioViewModel.START_DRAFT + d.id)
-                    }
-                    Act(if (i.folder == null) "묶음에 넣기" else "묶음 바꾸기") { filing = true }
-                    Act("지우기") {
-                        asking = Triple("만들던 것을 지울까요?", "지우면 이어서 만들 수 없어요") {
-                            c.appScope.launch { c.recipes.deleteDraft(d.id) }; c.wardrobe.setFolder(i.key, null); onDismiss()
-                        }
                     }
                 }
             }
@@ -613,3 +650,6 @@ private fun FolderRename(f: String, onRenamed: (String?) -> Unit) {
         },
     )
 }
+
+/** 2.0.0 [RVM-60] RCP-14 The line under 입기 in the quiet days after install. */
+internal fun quietLine(days: Int): String = "앱을 깐 뒤 ${days}일 동안은 광고 없이 바로 입어요"
