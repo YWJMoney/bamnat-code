@@ -581,7 +581,9 @@ fun StudioScreen(vm: StudioViewModel, onBack: () -> Unit, onOpen: (String) -> Un
     // Ask first when the draft has things the phone does not.
     fun guarded(then: () -> Unit) { if (s.changed) startAsk = then else then() }
     // [STU-12] 조합 자동 점검 before it goes anywhere.
-    fun checked(then: () -> Unit) { if (vm.hardToRead().isNotEmpty()) inkAsk = then else then() }
+    // 2.0.0 [RVS-06] STU-11: read on the screen as it is now (a dark phone, or the example turned dark), as the screen skin draws it.
+    val inkDark = seeDark || MaterialTheme.colorScheme.background.luminance() < 0.5f
+    fun checked(then: () -> Unit) { if (vm.hardToRead(inkDark).isNotEmpty()) inkAsk = then else then() }
 
     LaunchedEffect(s.said) {
         val said = s.said ?: return@LaunchedEffect
@@ -989,11 +991,11 @@ fun StudioScreen(vm: StudioViewModel, onBack: () -> Unit, onOpen: (String) -> Un
                             if (!(panel && area == Area.ALL && tool == Tool.SEED)) TextButton(onClick = { openSeed() }) { Text("한 색 열기") }
                         }
                     // [STU-36] With a condition on, what does not read is said under the example.
-                    if (seeDark || seeBig || seeCvd) vm.hardToRead().takeIf { it.isNotEmpty() }?.let { bad ->
+                    if (seeDark || seeBig || seeCvd) vm.hardToRead(inkDark).takeIf { it.isNotEmpty() }?.let { bad ->
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Text("글자가 잘 안 보일 수 있는 화면 ${bad.size}곳", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.error,
                                 modifier = Modifier.weight(1f))
-                            TextButton(onClick = { vm.fixInk() }) { Text("글자색 고치기") }
+                            TextButton(onClick = { vm.fixInk(inkDark) }) { Text("글자색 고치기") }
                         }
                     }
                     if (comparing) Text("고치기 전 모양이에요", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary,
@@ -1243,12 +1245,12 @@ fun StudioScreen(vm: StudioViewModel, onBack: () -> Unit, onOpen: (String) -> Un
         )
     }
     inkAsk?.let { go ->
-        val bad = vm.hardToRead().map { k -> Area.entries.firstOrNull { it.target?.keyFor(payStyle) == k }?.label ?: if (k.startsWith("pay.")) "급여" else k }
+        val bad = vm.hardToRead(inkDark).map { k -> Area.entries.firstOrNull { it.target?.keyFor(payStyle) == k }?.label ?: if (k.startsWith("pay.")) "급여" else k }
         AlertDialog(
             onDismissRequest = { inkAsk = null },
             title = { Text("글자가 잘 안 보일 수 있어요") },
             text = { Text("${bad.joinToString(", ")} 화면의 글자색이 바탕과 비슷해요. 고치면 그 화면 글자는 바탕에 맞춰 검정이나 흰색으로 보여요") },
-            confirmButton = { TextButton(onClick = { inkAsk = null; vm.fixInk(); go() }) { Text("글자색 고치고 계속") } },
+            confirmButton = { TextButton(onClick = { inkAsk = null; vm.fixInk(inkDark); go() }) { Text("글자색 고치고 계속") } },
             dismissButton = { TextButton(onClick = { inkAsk = null; go() }) { Text("그대로 계속") } },
         )
     }
