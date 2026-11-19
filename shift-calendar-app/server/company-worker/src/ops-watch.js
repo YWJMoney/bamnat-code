@@ -397,8 +397,10 @@ export async function errorState(env, now = Date.now(), { status = "open" } = {}
   const sum = async (kind) => (await all(env, "SELECT COALESCE(SUM(count), 0) AS n FROM counters WHERE key >= ? AND key LIKE ?", `${kind}|${from}`, `${kind}|%`)
     .catch(() => [{ n: 0 }]))[0]?.n ?? 0;
   const [failed, jobs] = [Math.min(loose, Number(await sum("errfail"))), Number(await sum("joberr"))];
+  // 2.0.0 [RVQ-34] 검토 SVC-32: 오류가 아닌 5xx(쉬는 기능의 503, Play·공유 서버가 안 닿은 502·504)를 따로.
+  const [busy, far] = [Number(await sum("busy503")), Number(await sum("far5xx"))];
   return {
-    days: list, daily, loose, split: { before: loose - failed, failed, jobs },
+    days: list, daily, loose, split: { before: loose - failed, failed, jobs }, rest: { busy, far },
     groups: groups.map((g) => ({ sig: g.sig, route: g.route, message: g.message, sample: g.sample, app: g.app, firstAt: g.first_at, lastAt: g.last_at,
       total: g.total, status: g.status, note: g.note, fresh: now - g.first_at < DAY, trend: list.map((day) => per.get(g.sig)?.get(day) ?? 0) })),
     counts: Object.fromEntries((await all(env, "SELECT status, COUNT(*) AS n FROM error_groups GROUP BY status")).map((r) => [r.status, r.n])),

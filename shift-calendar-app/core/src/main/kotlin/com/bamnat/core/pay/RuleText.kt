@@ -72,6 +72,15 @@ sealed interface RuleChange {
     data class Raise(val month: Int, val percent: Double) : RuleChange {
         override val summary get() = "매년 ${month}월 ${"%.1f".format(percent).removeSuffix(".0")}% 인상"
     }
+    /**
+     * 2.0.0 [RVL-48] (검토 SCAN-32) "3.5% 인상" with no word that it comes every year (매년·해마다·정기·호봉): the pay raised once,
+     * from [month] (the next one) or the month the rules go in, never again by itself. 1.39 read every 인상 as a yearly raise,
+     * and the pay worked out for the years after grew by it each year.
+     */
+    data class RaiseOnce(val month: Int?, val percent: Double) : RuleChange {
+        // Beside 매년's "매년 3월 3.5% 인상", short enough for two lines at 200% in a fold (the × 1.035 form lost its % to the …).
+        override val summary get() = (month?.let { "${it}월 " } ?: "") + "한 번만 기본급 ${"%.1f".format(percent).removeSuffix(".0")}% 인상"
+    }
     data class Extra(val kind: Long, val kindName: String, val rule: ExtraRule) : RuleChange {
         override val summary get() = "$kindName: ${rule.describe()}"
     }
@@ -148,6 +157,12 @@ object RuleText {
         """(?:(오전|오후|밤|새벽|저녁)\s*)?(\d{1,2})(?::(\d{2})|\s*시(?:\s*(\d{1,2})\s*분)?)?\s*(?:~|-|–|부터|에서)\s*(?:(오전|오후|밤|새벽|저녁)\s*)?(\d{1,2})(?::(\d{2})|\s*시(?:\s*(\d{1,2})\s*분)?)\s*(?:까지)?""",
     )
     private val monthListRe = Regex("""(\d{1,2})\s*월""")
+
+    /** 2.0.0 [RVL-48] (검토 SCAN-32) Words that make an 인상 come every year. */
+    private val YEARLY_RAISE = Regex("매년|해마다|매해|년마다|연마다|정기|호봉|연례")
+
+    /** 2.0.0 [RVL-48] (검토 SCAN-32) 설 as a word of its own: 설, 설날, 설 명절, 설·추석, 설과 추석, 구정. */
+    private val SEOLLAL = Regex("""(?<![가-힣])(?:설날|구정|설(?![가-힣])|설(?=과|및|에|엔|때|추석|명절|상여|보너스|연휴))""")
 
     fun read(text: String, kinds: List<ExtraKind> = emptyList(), shiftTypes: List<ShiftType> = emptyList(), fiveOrMore: Boolean = true): List<RuleFinding> =
         sentences(tidy(text)).flatMap { readSentence(it, kinds, shiftTypes, fiveOrMore) } + listOfNotNull(taxFamily(text))
@@ -601,8 +616,10 @@ object RuleText {
         if (payHead("시급|기본시급").containsMatchIn(c) && amount != null) return one(RuleChange.Base(WageType.HOURLY, amount), 0.9)
         if (payHead("일당|일급").containsMatchIn(c) && amount != null) return one(RuleChange.Base(WageType.DAILY, amount), 0.85)
         if (("인상" in c || "상승" in c) && pct != null) {
-            val month = monthListRe.find(c)?.groupValues?.get(1)?.toInt()?.takeIf { it in 1..12 } ?: 1
-            return one(RuleChange.Raise(month, pct), 0.8)
+            val month = monthListRe.find(c)?.groupValues?.get(1)?.toInt()?.takeIf { it in 1..12 }
+            // 2.0.0 [RVL-48] (검토 SCAN-32) Yearly only when the words say so; else once, offered unticked.
+            if (YEARLY_RAISE.containsMatchIn(c)) return one(RuleChange.Raise(month ?: 1, pct), 0.8)
+            return one(RuleChange.RaiseOnce(month, pct), 0.5)
         }
 
         // How the company counts.
@@ -661,7 +678,9 @@ object RuleText {
         // Bonuses: "상여금 800% 짝수달", "명절상여 50만원 설·추석".
         if (Regex("상여|보너스|명절").containsMatchIn(c) && (pct != null || amount != null)) {
             val festivals = buildSet {
-                if (Regex("설|명절").containsMatchIn(c)) add(Festival.SEOLLAL)
+                // 2.0.0 [RVL-48] (검토 SCAN-32) 설 as a word of its own, on the clause as written: 건설·시설·설비 hold the letter and
+                // are no 명절 (1.39 paid "시설관리팀 상여금 400%" only at 설).
+                if (SEOLLAL.containsMatchIn(clause) || "명절" in c) add(Festival.SEOLLAL)
                 if (Regex("추석|명절").containsMatchIn(c)) add(Festival.CHUSEOK)
             }
             val months = months(c)
@@ -928,7 +947,17 @@ object RuleText {
             }
             is RuleChange.Bonus -> {
                 val count = (change.months.size + change.festivals.size).coerceAtLeast(1)
-                p.copy(items = p.items + PayItem(newId("bonus", change.name, p), change.name, money(change.amount ?: 0), Cadence.BONUS,
+                // 2.0.0 [RVL-47] (검토 SCAN-31·PAYC-18) A 상여 of the same name is that one, changed (its months, 명절, % or amount), as
+                // an allowance is: the same rules read twice made two 상여 and the pay worked out twice the 상여.
+                val same = p.items.firstOrNull { it.cadence == Cadence.BONUS && it.name.replace(" ", "") == change.name.replace(" ", "") }
+                if (same != null) p.copy(items = p.items.map {
+                    if (it.id != same.id) it else it.copy(
+                        amount = if (same.amount.on(since).value == (change.amount ?: 0)) same.amount else BulkEditPlanner.apply(same.amount, change.amount ?: 0, EditScope.FromMonth(from)),
+                        months = change.months, festivals = change.festivals,
+                        percentOfBase = change.yearlyPercent?.let { y -> y / 100 / count }, bonusBasis = change.basis,
+                    )
+                }, estimatedFields = p.estimatedFields - same.id - Unknowns.item(same.id))
+                else p.copy(items = p.items + PayItem(newId("bonus", change.name, p), change.name, money(change.amount ?: 0), Cadence.BONUS,
                     ordinary = true, months = change.months, festivals = change.festivals,
                     percentOfBase = change.yearlyPercent?.let { it / 100 / count }, bonusBasis = change.basis))
             }
@@ -954,6 +983,13 @@ object RuleText {
             is RuleChange.ScheduleRegular -> p.copy(scheduleIsRegular = change.value).let { Unknowns.answered(it, Unknowns.SCHEDULE_IS_REGULAR) }
             is RuleChange.WeeklyHolidayDay -> p.withRules { it.copy(weeklyHoliday = WeeklyHoliday.Fixed(change.day)) }
             is RuleChange.Raise -> p.copy(base = p.base.copy(raise = RaiseRule(month = change.month, percent = change.percent, unit = 1_000)))
+            is RuleChange.RaiseOnce -> {
+                val start = change.month?.let { m -> YearMonth.of(from.year, m).let { if (it < from) it.plusYears(1) else it } } ?: from
+                val now = p.base.on(p.period.start(start)).value
+                if (now <= 0) p
+                else p.copy(base = BulkEditPlanner.apply(p.base, RaiseRule(start.monthValue, change.percent, unit = if (p.wageType == WageType.MONTHLY) 1_000 else 10).apply(now),
+                    EditScope.FromMonth(start)))
+            }
             is RuleChange.Extra -> p.withRules { it.copy(extra = it.extra + (change.kind to change.rule)) }
             is RuleChange.OrdinaryItems -> {
                 val wanted = change.names.map { it.replace(" ", "") }.toSet()

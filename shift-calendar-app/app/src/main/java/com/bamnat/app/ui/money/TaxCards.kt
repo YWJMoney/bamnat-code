@@ -100,7 +100,7 @@ internal fun TaxCard(
                         PayTaxLines(view, onTaxWay)
                         ledgerNet?.let { net ->
                             Muted("가계부 수입에 넣는 급여")
-                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            androidx.compose.foundation.layout.FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                                 com.bamnat.app.ui.components.FilterChip(selected = !net, onClick = { onLedgerNet(false) }, label = { Text("그달 일한 세전") })
                                 com.bamnat.app.ui.components.FilterChip(selected = net, onClick = { onLedgerNet(true) }, label = { Text("지급일 실수령") })
                             }
@@ -214,7 +214,7 @@ internal fun TakeHomeSheet(
                     Muted("월급이 통장에 들어오면 결제 알림으로 저절로 남아요. 지난 명세서를 사진으로 읽거나 직접 적어도 돼요.")
                 }
                 view.records.forEach { o -> RecordRow(o, onDelete, onNotPay) }
-                Muted("들어온 월급은 수입에 한 번만 셉니다: 예상 급여가 있으면 그 달은 예상으로 세고, 들어온 돈은 관측으로 남겨 세금 예측에만 써요. 기록은 휴대폰 밖으로 나가지 않아요.")
+                Muted("들어온 월급은 수입에 한 번만 세요: 예상 급여가 있으면 그 달은 예상으로 세고, 들어온 돈은 관측으로 남겨 세금 예측에만 써요. 기록은 휴대폰 밖으로 나가지 않아요.")
             }
         },
     )

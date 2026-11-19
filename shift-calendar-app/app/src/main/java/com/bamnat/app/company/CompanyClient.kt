@@ -1548,6 +1548,13 @@ data class ForgetCounts(val reports: Int = 0, val votes: Int = 0, val posts: Int
         return (if (parts.isEmpty()) "서버에 지울 것이 없었어요" else parts.joinToString("·") + "${com.bamnat.app.ui.Fmt.obj(parts.last())} 지웠어요" + kept) +
             stayLine + left + offLine
     }
+
+    /** 2.0.0 [RVO-16] 검토 SET-09: how the last request went, in a few words under the row ([com.bamnat.app.ui.company.ForgetLog]). */
+    fun short(): String = when {
+        linksLeft > 0 -> "공유 링크 ${linksLeft}개는 연결되면 마저 지워요"
+        !profile && listOf(reports, votes, posts, inquiries, recipes, sets, follows, links).all { it == 0 } -> "서버에 지울 것이 없었어요"
+        else -> "지웠어요"
+    }
 }
 
 internal suspend fun <T> serverCall(block: suspend CoroutineScope.() -> T): T = withContext(Dispatchers.IO) {
@@ -1885,7 +1892,8 @@ private fun exchangeOnce(
     session: ServerSession?,
 ): Answer {
     val conn = try {
-        // [SPD-26] 1.31 I2: through Cronet (HTTP/3·HTTP/2) when Google Play services has it, otherwise as before.
+        // [SPD-26] 1.31 I2: through HTTP/3·HTTP/2 when the phone has the engine (2.0.0 [RVN-23] PC-187: Android 14's own HttpEngine,
+        // no longer Play services' Cronet), otherwise as before.
         NetEngine.open(URL(baseUrl.trimEnd('/') + path))
     } catch (e: IOException) {
         if (ServerAddress.neverArrived(e)) throw e
@@ -1902,6 +1910,8 @@ private fun exchangeOnce(
         device?.let { conn.setRequestProperty("X-Device", it) }
         // 1.39 [PAYP-01] This app shows no one's pay way: the server sends none, and the way is taken when it is put in.
         conn.setRequestProperty(PAY_PRIVATE_HEADER, "1")
+        // 2.0.0 [RVN-22] This app knows the word "account" (계좌번호, [CompanyText.problem]); to an app before it the server says "amount".
+        conn.setRequestProperty(TEXT_CODES_HEADER, "account")
         session?.headers(method)?.forEach { (k, v) -> conn.setRequestProperty(k, v) }
         headers.forEach { (k, v) -> conn.setRequestProperty(k, v) }
         if (body != null) {
@@ -1950,6 +1960,9 @@ internal const val CONNECT_MS = 6_000
 
 /** 1.39 [PAYP-01] Says the app shows no shared pay way; the server then sends none (it is taken at putting it in). */
 internal const val PAY_PRIVATE_HEADER = "X-Pay-Private"
+
+/** 2.0.0 [RVN-22] The refusal words this app knows beyond email·phone·amount (server `textCode`). */
+internal const val TEXT_CODES_HEADER = "X-Text-Codes"
 
 /** [SPD-27] 1.31 R6: reads what is left of an answer and closes its stream, so the connection can be used again. */
 internal fun drain(conn: HttpURLConnection) {

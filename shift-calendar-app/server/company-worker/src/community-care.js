@@ -290,7 +290,8 @@ const noteView = (r, now) => ({
 export async function carePerson(d, env, dev, now) {
   const [notes, strikes, limit, posts, appeals] = await Promise.all([
     d.all(env, "SELECT * FROM care_notes WHERE device = ? ORDER BY at DESC LIMIT 30", dev),
-    d.one(env, "SELECT COUNT(*) AS n FROM write_strikes WHERE device = ? AND at > ?", dev, now - CARE.keepDays * DAY),
+    // 2.0.0 [RVQ-27] D·총괄 11-19: 가려진 것 하나에 한 번(같은 글의 겹친 줄은 하나로).
+    d.one(env, "SELECT COUNT(DISTINCT kind || '|' || ref) AS n FROM write_strikes WHERE device = ? AND at > ?", dev, now - CARE.keepDays * DAY),
     d.one(env, "SELECT step, until, per_day FROM write_limits WHERE device = ? AND until > ?", dev, now),
     d.one(env, "SELECT COUNT(*) AS n, SUM(CASE WHEN status = 'hidden' THEN 1 ELSE 0 END) AS hidden FROM posts WHERE device = ?", dev),
     d.all(env, "SELECT target, result, inquiry_id FROM care_appeals WHERE device = ?", dev),
@@ -344,7 +345,8 @@ export async function careList(d, env, now) {
   // 1.39 발굴: 약속한 48시간 안에 답하도록 기다리는 해명을 오래된 것부터, 30일이 지나면 세지 않는 '확인 전' 가려짐 수.
   const [waiting, open] = await Promise.all([
     d.all(env, "SELECT target, inquiry_id, at FROM care_appeals WHERE result IS NULL ORDER BY at ASC LIMIT 50"),
-    d.one(env, "SELECT COUNT(*) AS n, MIN(at) AS oldest FROM write_strikes WHERE confirmed = 0 AND at > ?", now - 30 * DAY),
+    // 2.0.0 [RVQ-27] D·총괄 11-19: 확인 대기는 가려진 것(사람·종류·글) 하나에 한 건(같은 글이 다시 가려져 쌓인 줄은 하나로).
+    d.one(env, "SELECT COUNT(DISTINCT device || '|' || kind || '|' || ref) AS n, MIN(at) AS oldest FROM write_strikes WHERE confirmed = 0 AND at > ?", now - 30 * DAY),
   ]);
   const HOUR = DAY / 24;
   const on = await careOn(d, env, now);
@@ -479,11 +481,11 @@ export const CARE_NUMBERS = {
   countFrom: "2026-11-09",
   keepMonths: 12,
 };
-const KST = 9 * 3600e3;
-const kstMs = (date) => Date.parse(`${date}T00:00:00+09:00`);
+const CARE_KST = 9 * 3600e3;
+const careKstMs = (date) => Date.parse(`${date}T00:00:00+09:00`);
 /** 한국 시각의 'YYYY-MM'. */
-export const careMonthOf = (now) => new Date(now + KST).toISOString().slice(0, 7);
-const monthBefore = (ym) => {
+export const careMonthOf = (now) => new Date(now + CARE_KST).toISOString().slice(0, 7);
+const careMonthBefore = (ym) => {
   const [y, m] = ym.split("-").map(Number);
   return m === 1 ? `${y - 1}-12` : `${y}-${String(m - 1).padStart(2, "0")}`;
 };
@@ -491,8 +493,8 @@ const monthBefore = (ym) => {
 /** [ym] 한 달(한국 시각, 3.12 시행일부터)의 합계. 가린 글은 운영 규칙의 이유로 가려진 채인 글(글쓴이가 지운 것은 빼요). */
 export async function careNumbersOf(d, env, ym) {
   const [y, m] = ym.split("-").map(Number);
-  const start = Math.max(Date.UTC(y, m - 1, 1) - KST, kstMs(CARE_NUMBERS.countFrom));
-  const end = Date.UTC(y, m, 1) - KST;
+  const start = Math.max(Date.UTC(y, m - 1, 1) - CARE_KST, careKstMs(CARE_NUMBERS.countFrom));
+  const end = Date.UTC(y, m, 1) - CARE_KST;
   if (end <= start) return null;
   const r = await d.one(env, `SELECT
       (SELECT COUNT(*) FROM posts WHERE status = 'hidden' AND hide_reason IN (${HIDDEN_BY_RULES.map((r) => `'${r}'`).join(", ")})
@@ -502,7 +504,7 @@ export async function careNumbersOf(d, env, ym) {
       (SELECT COUNT(*) FROM care_appeals WHERE result IS NOT NULL AND decided_at >= ?1 AND decided_at < ?2) AS answered,
       (SELECT COUNT(*) FROM care_appeals WHERE result = 'accepted' AND decided_at >= ?1 AND decided_at < ?2) AS accepted`,
   start, end);
-  const since = new Date(start + KST).toISOString().slice(0, 10);
+  const since = new Date(start + CARE_KST).toISOString().slice(0, 10);
   return { month: ym, since, hidden: r?.hidden ?? 0, warned: r?.warned ?? 0, held: r?.held ?? 0, appeals: { answered: r?.answered ?? 0, accepted: r?.accepted ?? 0 } };
 }
 
@@ -518,7 +520,7 @@ async function careNumbersKept(d, env) {
 
 /** 매시: 지난달을 아직 굳히지 않았으면 세어 굳혀요(3.12 시행일이 든 달부터, 12달까지). */
 export async function careNumbersTick(d, env, now) {
-  const last = monthBefore(careMonthOf(now));
+  const last = careMonthBefore(careMonthOf(now));
   if (last < CARE_NUMBERS.countFrom.slice(0, 7)) return { skipped: "before" };
   const kept = await careNumbersKept(d, env);
   if (kept.months.some((x) => x.month === last)) return { kept: last };
@@ -534,7 +536,7 @@ export async function careNumbersTick(d, env, now) {
  * [admin]이면 페이지에 나가기 전의 달과 이번 달 지금까지도 함께(관리자 앱 › 마을 돌봄).
  */
 export async function careNumbersView(d, env, now, { admin = false } = {}) {
-  const shown = now >= kstMs(CARE_NUMBERS.showFrom);
+  const shown = now >= careKstMs(CARE_NUMBERS.showFrom);
   const { months } = await careNumbersKept(d, env);
   const out = { from: CARE_NUMBERS.showFrom, months: shown || admin ? months.map(({ at, ...m }) => m) : [] };
   if (admin) {

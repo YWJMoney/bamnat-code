@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -47,6 +48,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import com.bamnat.app.ui.components.Dialog
 import androidx.compose.ui.window.DialogProperties
+import com.bamnat.app.ui.theme.color
 import com.bamnat.core.pay.PayslipRead
 import com.bamnat.core.pay.SlipLine
 import com.bamnat.core.pay.SlipRole
@@ -110,25 +112,42 @@ internal fun ReadTextButton(text: String) {
  * [PHOTO-29] 1.30 AV (R3 A-6 상): with yellow lines, '네, 같아요' is not the first button any more: it took every line as looked at
  * in one tap, and taught pressing it without looking. '노란 n줄 확인하기' opens each yellow line with [맞아요]·[고치기]; when the
  * last one is answered and the payslip's own sums meet, the photo counts as looked at.
+ * 2.0.0 [RVL-46] (검토 SCAN-29·I07ba-05) A line is looked at for its amount ('금액 확인') or its name ('이름 확인', [SlipLine.check]),
+ * said in words on the line. Amounts first, as before; then 'n개 이름만 …' [네, 같아요][하나씩 보기], each name with its own
+ * question (야간수당인가요? [네][아니요] · ‘식비’가 맞나요? [네][사진대로]). Names never hold the payslip back.
  */
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 internal fun SlipCheck(
     read: PayslipRead, unsure: Set<Int>, same: Boolean?, fromPhoto: Boolean,
     onAnswer: (Boolean) -> Unit, onChange: (PayslipRead, Set<Int>) -> Unit,
     /** [PHOTO-29] Tests open the yellow lines' answers at once. */
     reviewingAtFirst: Boolean = false,
-    /** [PHOTO-30] Goes up when the result's button sends the user to the yellow lines: they open as '노란 n줄 확인하기' would. */
+    /** [PHOTO-30] Goes up when the result's button sends the user to the yellow lines: they open as 'n줄 확인하기' would. */
     reviewAsk: Int = 0,
 ) {
     var editing by remember { mutableStateOf<Int?>(null) }
     var reviewing by remember { mutableStateOf(reviewingAtFirst) }
+    // 2.0.0 [RVL-46] (검토 SCAN-29·I07ba-05) Two things to look at, said apart: an amount read two ways ([unsure]) and a name the
+    // reader put right or guessed ([SlipLine.check]). The payslip's sums vouch for an amount, never for a name.
+    // Amounts first, as 1.39 asked them (the same taps); the names after, and they never hold the payslip back: a name not
+    // answered stays as shown (a kind-changing guess stays the plain 수당) and is asked again next month.
+    val names = read.names
+    val asking = names.isNotEmpty() && unsure.isEmpty()
     LaunchedEffect(reviewAsk) { if (reviewAsk > 0 && unsure.isNotEmpty()) reviewing = true }
     val fixing = same == false || !fromPhoto && same != true
+    fun done(next: PayslipRead, left: Set<Int>) = left.isEmpty() && com.bamnat.core.pay.SlipVote.adds(next) && com.bamnat.core.pay.SlipVote.stated(next)
     // [PHOTO-29] One yellow line answered 'that is right': the rest stay; the last one, with the sums meeting, ends the look.
     fun rightAsRead(i: Int) {
         val left = unsure - i
         onChange(read, left)
-        if (left.isEmpty() && com.bamnat.core.pay.SlipVote.adds(read) && com.bamnat.core.pay.SlipVote.stated(read)) { reviewing = false; onAnswer(true) }
+        if (done(read, left)) { reviewing = false; onAnswer(true) }
+    }
+    // 2.0.0 [RVL-46] A name answered: the line as the user said. The last one ends the look.
+    fun named(i: Int, line: SlipLine) {
+        val next = read.copy(lines = read.lines.mapIndexed { j, l -> if (j == i) line else l })
+        onChange(next, unsure)
+        if (next.names.isEmpty() && done(next, unsure)) { reviewing = false; onAnswer(true) }
     }
     fun delete(i: Int) {
         onChange(read.copy(lines = read.lines.filterIndexed { j, _ -> j != i }), unsure.filter { it != i }.map { if (it > i) it - 1 else it }.toSet())
@@ -145,7 +164,7 @@ internal fun SlipCheck(
             val next = read.copy(lines = read.lines.mapIndexed { j, l -> if (j == i) fixed else l })
             onChange(next, unsure - i)
             // [PHOTO-29] The last yellow line fixed while looking at them, the sums meeting: looked at.
-            if (reviewing && (unsure - i).isEmpty() && com.bamnat.core.pay.SlipVote.adds(next) && com.bamnat.core.pay.SlipVote.stated(next)) { reviewing = false; onAnswer(true) }
+            if (reviewing && done(next, unsure - i) && (!asking || next.names.isEmpty())) { reviewing = false; onAnswer(true) }
         }
         editing = null
     }
@@ -157,16 +176,32 @@ internal fun SlipCheck(
     @Composable
     fun cell(i: Int, line: SlipLine) {
         val doubt = i in unsure
+        val check = line.check
+        // 2.0.0 [RVL-46] What is looked at, in words beside the colour (조건 14): 이름 확인, 금액 확인 or both.
+        val tag = when {
+            check != null && doubt -> "이름·금액 확인"
+            check != null -> "이름 확인"
+            doubt -> "금액 확인"
+            else -> null
+        }
+        val why = when {
+            check == null -> null
+            check.maybe != null -> "${check.maybe}일 수도 있어요"
+            check.renamed(line) -> "사진에는 ‘${check.printed}’"
+            else -> "짐작한 이름"
+        }
+        val caution = com.bamnat.app.ui.theme.Tone.Caution.color()
         Column(
             Modifier.fillMaxWidth()
-                // 2.0.0 [RVP-12] (검토 UIX-12) The app's one caution colour.
-                .then(if (doubt) Modifier.background(Tone.Caution.container(), MaterialTheme.shapes.extraSmall) else Modifier)
+                // 2.0.0 [RVP-12] (검토 UIX-12) The app's one caution colour; [RVL-46] on a line asked about by name or amount.
+                // 2.0.0 [RVJ-66] (HQ-103, 조건 6) 노란 줄은 주의 색이에요(빨강이었어요).
+                .then(if (tag != null) Modifier.background(Tone.Caution.container(), MaterialTheme.shapes.extraSmall) else Modifier)
                 .then(if (editing == i) Modifier.background(MaterialTheme.colorScheme.primaryContainer, MaterialTheme.shapes.extraSmall) else Modifier)
                 // [PHOTO-31] 1.30 AW: any line opens on a tap, not only after '다른 곳이 있어요'.
                 .clickable(role = Role.Button, onClickLabel = "이 줄 고치기") { preset = null; editing = if (editing == i) null else i }
                 .heightIn(min = 44.dp)
                 .padding(horizontal = 6.dp, vertical = 4.dp)
-                .semantics { if (doubt) contentDescription = "${line.name} ${line.amount?.let(::won).orEmpty()}, 사진에서 두 가지로 읽혔어요" },
+                .semantics { if (tag != null) contentDescription = "${line.name} ${line.amount?.let(::won).orEmpty()}, $tag" + (why?.let { ", $it" } ?: "") },
         ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 // PC 5566ff20 ('실지급액객'): a total's name is its kind's own word; what the photo printed stays under it.
@@ -175,16 +210,34 @@ internal fun SlipCheck(
                     style = MaterialTheme.typography.bodySmall, modifier = Modifier.weight(1f), maxLines = 2)
                 if (fixing) Text("고치기", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
             }
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text((if (line.role in TOTALS) line.name.takeIf { it != line.role.label } else line.role.short().takeIf { it != line.name }) ?: "", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary, modifier = Modifier.weight(1f))
-                Text(line.amount?.let(::won) ?: "금액 없음", style = MaterialTheme.typography.bodyMedium,
-                    fontWeight = if (line.role in TOTALS) androidx.compose.ui.text.font.FontWeight.Bold else null)
+            // 2.0.0 [RVL-46] (조건 12) At 200% in half a fold the bold total left its kind's word no width: '지/급/합/계' stood a
+            // letter a line under the amount. The amount now goes whole to its own line, still on the right, when both do not fit.
+            KindAndAmount(
+                { Text((if (line.role in TOTALS) line.name.takeIf { it != line.role.label } else line.role.short().takeIf { it != line.name }) ?: "", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary) },
+                { Text(line.amount?.let(::won) ?: "금액 없음", style = MaterialTheme.typography.bodyMedium,
+                    fontWeight = if (line.role in TOTALS) androidx.compose.ui.text.font.FontWeight.Bold else null) },
+            )
+            val questioned = reviewing && asking && check != null && !fixing
+            // A question that says it all ("야간수당인가요?") leaves the line's tag at "이름 확인" (조건 4).
+            if (tag != null) Text(listOfNotNull(tag, why.takeUnless { questioned && check?.maybe != null }).joinToString(" · "),
+                style = MaterialTheme.typography.labelSmall, color = caution, fontWeight = androidx.compose.ui.text.font.FontWeight.Medium, maxLines = 3)
+            // 2.0.0 [RVL-46] A name being looked at, once the amounts are: its own question (야간수당인가요? · ‘식비’가 맞나요? ·
+            // 이름이 맞나요?).
+            if (questioned && check != null) {
+                val renamed = check.renamed(line)
+                Text(when {
+                    check.maybe != null -> "${check.maybe}인가요?"
+                    renamed -> "‘${line.name}’${com.bamnat.core.text.Josa.iga(line.name)} 맞나요?"
+                    else -> "이름이 맞나요?"
+                }, style = MaterialTheme.typography.bodySmall)
+                when {
+                    check.maybe != null -> Answers("네", { named(i, check.asMaybe(line)) }, "아니요", { named(i, line.copy(check = null)) })
+                    renamed -> Answers("네", { named(i, line.copy(check = null)) }, "사진대로", { named(i, check.asPrinted(line)) })
+                    else -> Answers("맞아요", { named(i, line.copy(check = null)) }, "고치기", { preset = null; editing = i })
+                }
             }
             // [PHOTO-29] A yellow line being looked at: is it as the photo shows?
-            if (reviewing && doubt && !fixing) FlowRow(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                OutlinedButton(onClick = { rightAsRead(i) }, modifier = Modifier.heightIn(min = 48.dp)) { Text("맞아요") }
-                TextButton(onClick = { preset = null; editing = i }, modifier = Modifier.heightIn(min = 48.dp)) { Text("고치기") }
-            }
+            else if (reviewing && doubt && !fixing) Answers("맞아요", { rightAsRead(i) }, "고치기", { preset = null; editing = i })
         }
     }
     @Composable
@@ -263,28 +316,111 @@ internal fun SlipCheck(
         // [PHOTO-06] 1.29: a line can be added any time, not only after '다른 곳이 있어요'.
         if (editing != -1) com.bamnat.app.ui.components.AddButton("칸 더하기 (빠진 줄)", onClick = { preset = null; editing = -1 })
         when {
+            // 2.0.0 [RVL-46] (검토 I07ba-05) The amounts looked at (or vouched for) and names left: they are asked on their own.
+            fromPhoto && same != false && asking -> LookCard(
+                "이름 ${names.size}개만 사진과 맞는지 봐 주세요",
+                if (reviewing) "줄마다 답을 눌러 주세요. 사진을 누르면 크게 보여요." else "금액은 명세서 합계와 맞아요. 비슷한 이름으로 읽었거나 짐작한 이름이에요.",
+                (if (reviewing) "나머지도 맞아요" else "네, 같아요") to { reviewing = false; onAnswer(true); onChange(read.namesLooked(), emptySet()) },
+                if (reviewing) null else "하나씩 보기" to { reviewing = true },
+            )
             same == true -> Text("사진과 같다고 확인했어요", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            fromPhoto && same == null -> Surface(color = MaterialTheme.colorScheme.secondaryContainer, shape = MaterialTheme.shapes.medium) {
-                Column(Modifier.fillMaxWidth().padding(10.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                    Text(if (unsure.isNotEmpty()) "노란 줄 ${unsure.size}개만 사진과 맞는지 봐 주세요" else "사진과 내용이 같은가요?",
-                        style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.onSecondaryContainer)
-                    if (unsure.isNotEmpty()) Text(
-                        if (reviewing) "노란 줄마다 ‘맞아요’나 ‘고치기’를 눌러 주세요. 사진을 누르면 크게 보여요."
-                        else "사진에서 두 가지로 읽혔거나 짐작한 줄이에요. 나머지는 명세서 합계로 맞는 걸 확인했어요.",
-                        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSecondaryContainer)
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        // [PHOTO-29] Yellow lines first: their own answers, not one '같아요' for all.
-                        if (unsure.isEmpty()) Button(onClick = { onAnswer(true); onChange(read, emptySet()) }, modifier = Modifier.weight(1f).heightIn(min = 48.dp)) { Text("네, 같아요") }
-                        else if (!reviewing) Button(onClick = { reviewing = true }, modifier = Modifier.weight(1f).heightIn(min = 48.dp)) { Text("노란 ${unsure.size}줄 확인하기") }
-                        OutlinedButton(onClick = { reviewing = false; onAnswer(false) }, modifier = Modifier.weight(1f).heightIn(min = 48.dp)) { Text("다른 곳이 있어요") }
-                    }
-                }
-            }
+            fromPhoto && same == null -> LookCard(
+                if (unsure.isNotEmpty()) "금액 ${unsure.size}줄만 사진과 맞는지 봐 주세요" else "사진과 내용이 같은가요?",
+                when {
+                    unsure.isEmpty() -> null
+                    reviewing -> "줄마다 답을 눌러 주세요. 사진을 누르면 크게 보여요."
+                    else -> "사진에서 두 가지로 읽힌 금액이에요. 나머지는 명세서 합계와 맞아요." + if (names.isNotEmpty()) " 이름은 그다음에 봐요." else ""
+                },
+                // [PHOTO-29] Yellow lines first: their own answers, not one '같아요' for all.
+                when {
+                    unsure.isEmpty() -> "네, 같아요" to { onAnswer(true); onChange(read.namesLooked(), emptySet()) }
+                    !reviewing -> "${unsure.size}줄 확인하기" to { reviewing = true }
+                    else -> null
+                },
+                "다른 곳이 있어요" to { reviewing = false; onAnswer(false) },
+            )
             same == false -> Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
                 Text("다른 줄을 눌러 그 줄만 고쳐 주세요", style = MaterialTheme.typography.bodySmall, modifier = Modifier.weight(1f).padding(top = 12.dp))
-                TextButton(onClick = { onAnswer(true); onChange(read, emptySet()) }) { Text("다 고쳤어요") }
+                TextButton(onClick = { onAnswer(true); onChange(read.namesLooked(), emptySet()) }) { Text("다 고쳤어요") }
             }
         }
+    }
+}
+
+/**
+ * 2.0.0 [RVL-46] A line's kind on the left and its amount on the right; when the two do not fit side by side (글자 200%, half
+ * a fold) the amount goes whole to the next line, still on the right, never broken as '150,000 / 원' (조건 12).
+ */
+@Composable
+private fun KindAndAmount(kind: @Composable () -> Unit, amount: @Composable () -> Unit) {
+    androidx.compose.ui.layout.Layout(contents = listOf(kind, amount)) { (k, a), c ->
+        val gap = 8.dp.roundToPx()
+        val free = c.copy(minWidth = 0)
+        val ap = a.first().measure(free)
+        val wide = k.first().maxIntrinsicWidth(c.maxHeight)
+        val w = if (c.hasBoundedWidth) c.maxWidth else wide + gap + ap.width
+        if (wide + gap + ap.width <= w) {
+            val kp = k.first().measure(free.copy(maxWidth = w - gap - ap.width))
+            val h = maxOf(kp.height, ap.height)
+            layout(w, h) { kp.place(0, (h - kp.height) / 2); ap.place(w - ap.width, (h - ap.height) / 2) }
+        } else {
+            val kp = k.first().measure(free)
+            layout(w, kp.height + ap.height) { kp.place(0, 0); ap.place(w - ap.width, kp.height) }
+        }
+    }
+}
+
+/**
+ * 2.0.0 [RVL-46] The card under a payslip's lines: what is left to look at, a line on it, the one filled button (what to do
+ * now) and one outlined.
+ */
+@Composable
+private fun LookCard(title: String, said: String?, filled: Pair<String, () -> Unit>?, outlined: Pair<String, () -> Unit>?) {
+    Surface(color = MaterialTheme.colorScheme.secondaryContainer, shape = MaterialTheme.shapes.medium) {
+        Column(Modifier.fillMaxWidth().padding(10.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            Text(title, style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.onSecondaryContainer)
+            said?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSecondaryContainer) }
+            val buttons = listOfNotNull(
+                filled?.let { (label, go) -> @Composable { Button(onClick = go, modifier = Modifier.heightIn(min = 48.dp)) { Text(label) } } },
+                outlined?.let { (label, go) -> @Composable { OutlinedButton(onClick = go, modifier = Modifier.heightIn(min = 48.dp)) { Text(label) } } },
+            )
+            SideOrStacked(buttons)
+        }
+    }
+}
+
+/**
+ * 2.0.0 [RVL-46] (조건 12) The card's buttons side by side in two halves while each word fits its half, else one above the
+ * other at full width: at 200% in a fold the halves broke '네, 같아요' and '하나씩 보기' over two lines each.
+ */
+@Composable
+private fun SideOrStacked(buttons: List<@Composable () -> Unit>) {
+    androidx.compose.ui.layout.Layout(contents = buttons) { parts, c ->
+        val gap = 8.dp.roundToPx()
+        val w = c.maxWidth
+        val each = if (parts.size > 1) (w - gap * (parts.size - 1)) / parts.size else w
+        val side = parts.all { it.first().maxIntrinsicWidth(c.maxHeight) <= each }
+        val placed = parts.map { it.first().measure(androidx.compose.ui.unit.Constraints.fixedWidth(if (side) each else w)) }
+        val h = if (side) placed.maxOf { it.height } else placed.sumOf { it.height } + gap * (placed.size - 1)
+        layout(w, h) {
+            var at = 0
+            placed.forEach { p -> if (side) { p.place(at, 0); at += each + gap } else { p.place(0, at); at += p.height + gap } }
+        }
+    }
+}
+
+/**
+ * 2.0.0 [RVL-46] A line's two answers ([맞아요][고치기], [네][아니요], [네][사진대로]), side by side in half a payslip's width: the
+ * outlined one with the app's 16dp sides so both fit on one row at 100% (1.39's 24dp put 고치기 under 맞아요).
+ */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun Answers(yes: String, onYes: () -> Unit, other: String, onOther: () -> Unit) {
+    // Material's own 40dp face keeps a one-letter '네' a pill, not an egg; its touch area is still 48dp
+    // (minimumInteractiveComponentSize), so both fit half a fold's width side by side.
+    FlowRow(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+        OutlinedButton(onClick = onYes, contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 16.dp)) { Text(yes) }
+        TextButton(onClick = onOther) { Text(other) }
     }
 }
 

@@ -52,13 +52,13 @@ import com.bamnat.app.ui.Fmt
 import com.bamnat.app.ui.components.FilterChip
 import com.bamnat.app.ui.components.SectionCard
 import com.bamnat.app.ui.components.StatTile
+import com.bamnat.app.ui.components.StatTiles
 import com.bamnat.app.ui.components.TimePickerDialog
 import com.bamnat.app.ui.components.ToneLine
 import com.bamnat.app.ui.money.AmountField
 import com.bamnat.app.ui.money.amountDigits
 import com.bamnat.app.ui.money.toAmount
 import com.bamnat.app.ui.theme.color
-import com.bamnat.app.ui.theme.LocalCalendarColors
 import com.bamnat.core.boss.Insurance
 import com.bamnat.core.boss.StaffAllowance
 import com.bamnat.core.boss.LedgerCsv
@@ -177,7 +177,7 @@ internal fun PayrollScreen(roster: StaffRoster, startMonth: YearMonth? = null, o
             Text(Fmt.won(ledger.total), style = MaterialTheme.typography.headlineSmall)
             // PC 4bd5d745: '+504,062원' set 민수's last month against 민수 and 지영 this month. Only the same people are set side by side.
             lastHead(ledger, lastLedger)?.let { Hint(it) }
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(top = 6.dp)) {
+            StatTiles(Modifier.padding(top = 6.dp)) {
                 StatTile("급여 합계", Fmt.won(ledger.gross), Modifier.weight(1f), caption = "${ledger.lines.size}명")
                 // 1.39 [BOSS-12] 산재보험 (사업주만) with the 4대보험 once the 업종 is picked.
                 StatTile(if (place.industry != null) "사장님 4대보험·산재" else "사장님 4대보험", Fmt.won(ledger.employerInsurance + ledger.accident), Modifier.weight(1f),
@@ -1008,7 +1008,12 @@ private fun PayslipDialog(place: Workplace, l: LedgerLine, month: YearMonth, onD
             }
             HorizontalDivider(Modifier.padding(vertical = 4.dp))
             ValueLine("지급 합계", Fmt.won(slip.gross))
-            slip.deductions.forEach { (n, v) -> ValueLine(n, "-" + Fmt.won(v)) }
+            slip.deductions.forEach { (n, v) ->
+                ValueLine(n, "-" + Fmt.won(v))
+                // 2.0.0 [RVJ-72] (PC-177) The 일용 소득세 line says how it came about: one line + ⓘ, the rest in its ⓘ (조건 4).
+                if (n == com.bamnat.core.boss.Payslip.DAILY_TAX_LABEL) com.bamnat.app.ui.components.Explain("boss:dailyTax",
+                    com.bamnat.core.boss.Payslip.DAILY_TAX_HOW, summary = "일한 날마다 15만 원을 빼고 셈해요.", iconOnly = false, firstInFull = false)
+            }
             ValueLine("실지급액", Fmt.won(slip.net), strong = true)
             Hint(PayrollLedger.NOTICE)
         }

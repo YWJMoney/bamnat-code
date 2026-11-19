@@ -71,16 +71,34 @@ object PlazaRules {
     private val CARE_LINE = "운영자가 확인한 일이 되풀이되면 먼저 알리고, 그래도 되풀이되면 며칠 쉬어 가요. 해명하면 사람이 다시 봐요. " +
         "마음에 들지 않는 사람의 글은 ‘이 사람 글 안 보기’로 가릴 수 있어요."
 
-    fun version(care: Boolean): Int = if (care) VERSION_CARE else VERSION
+    /**
+     * 2.0.0 [RVN-22] (COMP-14, 처리방침 3.14 문장표 10줄) 운영 규칙 3판: 4항이 '금액과 연락처'로 바뀌어요. 회사 서버의 방 글 금액 받기
+     * (`/api/terms` roomMoney)가 참인 날, 곧 3.14 게시일 + 7일(서버 roomMoneyFromPolicy)부터만 이 판을 쓰므로 그 전에는 아무에게도
+     * 다시 묻지 않아요. 3판은 2판 위에 서요: 2판([care])이 아직 아닌 휴대폰은 1판 그대로이고, 그 휴대폰은 방 글에서도 금액을 막아요
+     * (앱 `CompanyBoardViewModel.roomMoney`), 그래서 판 번호가 거꾸로 앞서 2판의 다시 묻기를 건너뛰는 일이 없어요.
+     */
+    const val VERSION_MONEY = 3
 
-    fun lines(care: Boolean): List<String> = if (care) LINES.dropLast(1) + CARE_LINE else LINES
+    /** The 4항 of 3판, in short (the page's '4. 금액과 연락처'). */
+    private const val MONEY_LINE = "회사·유형별 광장의 글과 투표 보기에는 금액을 적을 수 있어요. 회사 규칙 토론과 답글은 ‘야간 수당 50%’처럼 " +
+        "비율로 적어요. 전화번호·메일 주소·계좌번호는 어디에도 적지 않아요."
+    private const val MONEY_AT = 3
 
-    fun since(care: Boolean): List<Int> = if (care) SINCE.dropLast(1) + VERSION_CARE else SINCE
+    /** Whether 3판 is the one in force: 방 글 금액 받기 on, on a phone already under 2판. */
+    fun money(roomMoney: Boolean, care: Boolean): Boolean = roomMoney && care
 
-    fun changedSince(agreed: Int, care: Boolean): List<Int> =
-        if (agreed <= 0) emptyList() else since(care).let { s -> s.indices.filter { s[it] > agreed } }
+    fun version(care: Boolean, money: Boolean = false): Int = if (money(money, care)) VERSION_MONEY else if (care) VERSION_CARE else VERSION
 
-    fun agreed(version: Int, care: Boolean): Boolean = version >= version(care)
+    fun lines(care: Boolean, money: Boolean = false): List<String> =
+        (if (care) LINES.dropLast(1) + CARE_LINE else LINES).let { l -> if (money(money, care)) l.toMutableList().also { it[MONEY_AT] = MONEY_LINE } else l }
+
+    fun since(care: Boolean, money: Boolean = false): List<Int> =
+        (if (care) SINCE.dropLast(1) + VERSION_CARE else SINCE).let { s -> if (money(money, care)) s.toMutableList().also { it[MONEY_AT] = VERSION_MONEY } else s }
+
+    fun changedSince(agreed: Int, care: Boolean, money: Boolean = false): List<Int> =
+        if (agreed <= 0) emptyList() else since(care, money).let { s -> s.indices.filter { s[it] > agreed } }
+
+    fun agreed(version: Int, care: Boolean, money: Boolean = false): Boolean = version >= version(care, money)
 
     /** The one line on the card above the writing box. */
     fun cardLine(care: Boolean): String = if (care) "누군지 알 수 있는 정보·욕설·광고는 쓰지 않아요. 되풀이되면 먼저 알리고 며칠 쉬어 가요"

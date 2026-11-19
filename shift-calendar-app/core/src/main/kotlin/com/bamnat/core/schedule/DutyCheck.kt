@@ -14,8 +14,13 @@ import java.time.LocalTime
 object DutyCheck {
     enum class Kind { SHORT_REST, NO_OFF_AFTER_NIGHT, MANY_NIGHTS, LONG_RUN, MONTH_NIGHTS }
 
-    /** [source] says where the limit comes from; [pattern] names the order (N-O-D 나오데, E-D 이브데이) [REST-02]. */
-    data class Warning(val kind: Kind, val date: LocalDate, val text: String, val source: String = "", val pattern: String? = null)
+    /**
+     * [source] says where the limit comes from; [pattern] names the order (N-O-D 나오데, E-D 이브데이) [REST-02].
+     * 2.0.0 [RVJ-68] (총괄 HQ-107) [topic] is the sort of sign in a few words without the date or the 기준 ("야간 뒤 2일째 근무"), so the
+     * 팀 근무표's 확인할 것 can say "야간 뒤 2일째 근무 6건" once; [detail] is what is particular to this one ("나이트 뒤 데이 8시간만 쉬어요").
+     */
+    data class Warning(val kind: Kind, val date: LocalDate, val text: String, val source: String = "", val pattern: String? = null,
+                       val topic: String = "", val detail: String = "")
 
     /** A night shift: one that runs past midnight or starts in the evening (20시 넘어). */
     fun isNight(t: ShiftType?): Boolean {
@@ -37,13 +42,14 @@ object DutyCheck {
             if (rules.minRestHours > 0 && works(t) && works(prev) && t!!.hasTimes && prev!!.hasTimes) {
                 val prevEnd = date.minusDays(1).atTime(prev.start!!).plusMinutes(prev.durationMinutes.toLong())
                 val rest = Duration.between(prevEnd, date.atTime(t.start!!)).toMinutes()
+                val restWords = when { rest < 0 -> "시간이 겹쳐요"; rest == 0L -> "쉬지 않고 바로 이어져요"; else -> "${hours(rest)}만 쉬어요" }
                 if (rest < rules.minRestHours * 60L) out += Warning(Kind.SHORT_REST, date,
-                    "${md(date)} ${prev.name} 뒤 ${t.name}: ${when { rest < 0 -> "시간이 겹쳐요"; rest == 0L -> "쉬지 않고 바로 이어져요"; else -> "${hours(rest)}만 쉬어요" }} (${rules.note("${rules.minRestHours}시간보다 짧으면")})",
+                    "${md(date)} ${prev.name} 뒤 ${t.name}: $restWords (${rules.note("${rules.minRestHours}시간보다 짧으면")})",
                     RestRules.Sources.REST, pattern = when {
                         isEvening(prev) && isDay(t) -> "E-D(이브데이)"
                         isNight(prev) && isDay(t) -> "N-D"
                         else -> null
-                    })
+                    }, topic = "근무 사이 ${rules.minRestHours}시간을 못 쉼", detail = "${prev.name} 뒤 ${t.name} $restWords")
             }
             // The last night of a run: the next days off.
             if (isNight(t) && !isNight(byDate[date.plusDays(1)])) {
@@ -53,31 +59,35 @@ object DutyCheck {
                 // Another night after a day off (야비야비) carries the run on; the rest is counted when the nights end.
                 if (need > 0 && known && firstWork != null && !(firstWork > 1 && isNight(byDate[date.plusDays(firstWork.toLong())]))) {
                     val nextDate = date.plusDays(firstWork.toLong())
+                    val after = if (firstWork == 1) "바로 다음 날" else "${firstWork}일째"
                     out += Warning(Kind.NO_OFF_AFTER_NIGHT, nextDate,
-                        "${md(date)} 야간 끝나고 ${if (firstWork == 1) "바로 다음 날" else "${firstWork}일째"} 근무예요 (${rules.note("야간 뒤 쉬는 날 ${need}일보다 적으면")})",
+                        "${md(date)} 야간 끝나고 $after 근무예요 (${rules.note("야간 뒤 쉬는 날 ${need}일보다 적으면")})",
                         RestRules.Sources.NIGHTS, pattern = when {
                             firstWork == 2 && isDay(byDate[nextDate]) -> "N-O-D(나오데)"
                             firstWork == 1 && isDay(byDate[nextDate]) -> "N-D"
                             else -> null
-                        })
+                        }, topic = "야간 뒤 $after 근무", detail = "${md(date)} 야간 뒤 ${byDate[nextDate]?.name.orEmpty()}".trimEnd())
                 }
             }
         }
         if (rules.maxNightsInRow > 0) runs(sorted) { isNight(it) }.filter { it.size > rules.maxNightsInRow }.forEach { r ->
-            out += Warning(Kind.MANY_NIGHTS, r.first(), "${md(r.first())}부터 야간 ${r.size}일 연속 (${rules.note("${rules.maxNightsInRow + 1}일 연속부터")})", RestRules.Sources.NIGHTS)
+            out += Warning(Kind.MANY_NIGHTS, r.first(), "${md(r.first())}부터 야간 ${r.size}일 연속 (${rules.note("${rules.maxNightsInRow + 1}일 연속부터")})", RestRules.Sources.NIGHTS,
+                topic = "야간 ${rules.maxNightsInRow}일 넘게 연속", detail = "${md(r.first())}부터 ${r.size}일")
         }
         if (rules.maxWorkDaysInRow > 0) runs(sorted) { works(it) }.filter { it.size > rules.maxWorkDaysInRow }.forEach { r ->
-            out += Warning(Kind.LONG_RUN, r.first(), "${md(r.first())}부터 ${r.size}일 연속 근무 (${rules.note("${rules.maxWorkDaysInRow + 1}일 연속부터")})", RestRules.Sources.WEEK)
+            out += Warning(Kind.LONG_RUN, r.first(), "${md(r.first())}부터 ${r.size}일 연속 근무 (${rules.note("${rules.maxWorkDaysInRow + 1}일 연속부터")})", RestRules.Sources.WEEK,
+                topic = "${rules.maxWorkDaysInRow}일 넘게 연속 근무", detail = "${md(r.first())}부터 ${r.size}일")
         }
         if (rules.maxNightsPerMonth > 0) sorted.filter { isNight(it.second) }.groupBy { java.time.YearMonth.from(it.first) }.forEach { (m, ns) ->
             ns.getOrNull(rules.maxNightsPerMonth)?.let { (d, _) ->
-                out += Warning(Kind.MONTH_NIGHTS, d, "${m.monthValue}월 야간 ${ns.size}일 (${rules.note("한 달 ${rules.maxNightsPerMonth + 1}일째부터")})", RestRules.Sources.NIGHTS)
+                out += Warning(Kind.MONTH_NIGHTS, d, "${m.monthValue}월 야간 ${ns.size}일 (${rules.note("한 달 ${rules.maxNightsPerMonth + 1}일째부터")})", RestRules.Sources.NIGHTS,
+                    topic = "한 달 야간 ${rules.maxNightsPerMonth}일 넘음", detail = "야간 ${ns.size}일")
             }
         }
         // One sign per day for the rest before it: short rest wins over days off after nights [REST-02].
         val restDays = out.filter { it.kind == Kind.SHORT_REST }.map { it.date }.toSet()
         return out.filterNot { it.kind == Kind.NO_OFF_AFTER_NIGHT && it.date in restDays }
-            .map { w -> w.pattern?.let { w.copy(text = "$it · ${w.text}") } ?: w }
+            .map { w -> w.pattern?.let { w.copy(text = "$it · ${w.text}", topic = "$it · ${w.topic}") } ?: w }
             .sortedBy { it.date }
     }
 

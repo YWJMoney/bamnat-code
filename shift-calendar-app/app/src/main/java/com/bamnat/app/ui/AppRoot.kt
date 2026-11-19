@@ -747,6 +747,10 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
             }
             // [SRV-09] Shown by the update's own dialog below, which takes the target.
             NoticeLinks.Target.WHATS_NEW -> Unit
+            NoticeLinks.Target.SURE_ALARM -> {
+                com.bamnat.app.ui.settings.SettingsLinks.open(com.bamnat.app.ui.settings.SettingsPage.ALARM)
+                NoticeLinks.consume(target)
+            }
             NoticeLinks.Target.BACKUP -> {
                 com.bamnat.app.ui.settings.SettingsLinks.open(com.bamnat.app.ui.settings.SettingsPage.DATA, com.bamnat.app.ui.settings.AUTO_BACKUP_ROW)
                 NoticeLinks.consume(target)
@@ -1003,10 +1007,30 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
             container.inquiryStore.fixedNow(container.inquiryApi.mine(container.companyStore.device), com.bamnat.app.BuildConfig.VERSION_NAME)
         }.getOrDefault(emptyList())
     }
+    // 2.0.0 [RVH-64] 검토 PC-72 (설계 4절): every phone that came from 1.36.1~1.39.0 with a line found gets one line in the update
+    // notice, '최근에 넣은 근무를 한 번 봐 주세요', whatever its month turn; the notice waits for the look (one query per calendar).
+    LaunchedEffect(Unit) { com.bamnat.app.ui.calendar.TurnSlipAsk.load(container) }
+    // 2.0.0 [RVH-68] 검토 I50c-03 (RVR-31): a phone that came from the site's 명세서 맞춰 보기 goes on to '내 월급 맞나요?' once, after its
+    // first setup (the setup's last button said so); a pay not set up yet is set up there first, then the check opens.
+    LaunchedEffect(Unit) {
+        val web = container.webStart
+        runCatching { web.look() }
+        if (web.slipDue()) {
+            web.slipOpened()
+            container.pendingMatch = true
+            runCatching { nav.navigate(Routes.pay()) { launchSingleTop = true } }
+        }
+    }
+    val slipLoaded by com.bamnat.app.ui.calendar.TurnSlipAsk.loaded.collectAsStateWithLifecycle()
+    val slipAsk by com.bamnat.app.ui.calendar.TurnSlipAsk.ask.collectAsStateWithLifecycle()
+    val slipTold by com.bamnat.app.ui.calendar.TurnSlipAsk.toldNow.collectAsStateWithLifecycle()
+    val slipLine = slipAsk?.takeIf { !slipTold }?.rows?.size ?: 0
     // 2.0.0 [RVP-22] (검토 UIX-43·U13b-02) Each opening window takes its turn (OpenAsk): one at a time, one per visit, the law first,
     // never over a sheet or writing. The update notice was the only rule before (it held back four windows, which then came all at once).
-    if (whatsNew.value.isNotEmpty() && com.bamnat.app.ui.components.AskTurn.turn(com.bamnat.core.guide.OpenAsk.WHATS_NEW, asked = whatsNewAsked)) {
+    if (slipLoaded && (whatsNew.value.isNotEmpty() || slipLine > 0) &&
+        com.bamnat.app.ui.components.AskTurn.turn(com.bamnat.core.guide.OpenAsk.WHATS_NEW, asked = whatsNewAsked)) {
         val closeNew = {
+            if (slipLine > 0) com.bamnat.app.ui.calendar.TurnSlipAsk.markTold(container.appContext)
             container.inquiryStore.markThanked(fixedForMe.map { it.first })
             com.bamnat.app.data.GuideStore.get(container.appContext).whatsNewSeen(com.bamnat.app.BuildConfig.VERSION_CODE)
             com.bamnat.app.data.GuideStore.get(container.appContext).switchedSeen(
@@ -1017,10 +1041,12 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
         }
         // [RVH-40] 검토 WORK-14 Nothing new for this kind of work and nothing else to say: no window, only marked as seen.
         val nothingMine = com.bamnat.core.guide.WhatsNew.forStyle(whatsNew.value, settingsNow.workStyle).let { it.mine.isEmpty() && it.moreMine.isEmpty() }
-        if (nothingMine && fixedForMe.isEmpty() && recommendOff == 0) LaunchedEffect(Unit) { closeNew() }
+        if (nothingMine && fixedForMe.isEmpty() && recommendOff == 0 && slipLine == 0) LaunchedEffect(Unit) { closeNew() }
         else com.bamnat.app.ui.guide.WhatsNewDialog(
             releases = whatsNew.value,
             style = settingsNow.workStyle,
+            slip = slipLine,
+            onSlip = { closeNew(); com.bamnat.app.ui.calendar.TurnSlipAsk.show() },
             recommendOff = recommendOff,
             onRecommend = { closeNew(); SettingsLinks.go(SettingsGo.RECOMMENDED) },
             onOpen = { id -> closeNew(); com.bamnat.core.guide.FeatureRegistry.get(id)?.let(com.bamnat.app.ui.guide.FeatureLinks::open) },
@@ -1028,6 +1054,18 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
             onDismiss = closeNew,
             thanks = fixedForMe.map { it.second },
             onOpenAsks = { closeNew(); SettingsLinks.go(SettingsGo.INQUIRY) },
+        )
+    }
+    // 2.0.0 [RVH-64] 검토 PC-72 '이 날 맞아요?', from the calendar's card or the update notice's line.
+    val slipShowing by com.bamnat.app.ui.calendar.TurnSlipAsk.showing.collectAsStateWithLifecycle()
+    slipAsk?.takeIf { slipShowing }?.let { a ->
+        com.bamnat.app.ui.calendar.TurnSlipSheet(
+            rows = a.rows, today = com.bamnat.core.time.Today.date(), style = settingsNow.workStyle,
+            onApply = { container.turnSlip.apply(it) },
+            onUndo = { container.turnSlip.undo(it) },
+            onAnswered = { com.bamnat.app.ui.calendar.TurnSlipAsk.answered(container.appContext, it) },
+            onDone = { com.bamnat.app.ui.calendar.TurnSlipAsk.done(container.appContext) },
+            onDismiss = { com.bamnat.app.ui.calendar.TurnSlipAsk.closed() },
         )
     }
     // [MON-06][MON-10] Each in its turn (above).
@@ -1129,6 +1167,8 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
     com.bamnat.app.logic.LogicMessageHost(container)
     // [DRW-03] 1.37 넣었어요 · 되돌리기: a theme put on or off, a tab taken off, a rule switched on.
     PutOnNoticeHost(container)
+    // 2.0.0 [RVM-55] 검토 U09b-02: 되돌리기 › 보기 (what stayed as I made it).
+    com.bamnat.app.ui.recipe.UndoLeftHost(container)
 
     // [UNDO-01][UNDO-02][UNDO-03] A kind of work changed, records cleared or a calendar removed: 되돌리기 at
     // once, wherever it was done, and 설정 › 데이터 › 최근 지운 기록 for 7 days after.
@@ -1167,7 +1207,10 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
             if (com.bamnat.app.ui.shifts.TypeFoldAsk.done.value != d) return@collect
             com.bamnat.app.ui.shifts.TypeFoldAsk.done.value = null
             // 2.0.0 [RVP-23] A 되돌리기 goes first by itself; it no longer closes another's line by hand.
-            if (com.bamnat.app.ui.components.AppSnack.ask("${d.message} · 설정 › 내 근무 › 근무 종류와 시간 맨 아래에 있어요", "되돌리기")) com.bamnat.app.ui.shifts.TypeFoldAsk.undo(container, d)
+            // 2.0.0 [RVO-19] 검토 T11a-16: the page and row as the new kind's settings name them ('설정 › 내 가게 › 영업시간').
+            val kind = container.settingsRepository.settings.value.workStyle
+            val where = "설정 › ${com.bamnat.core.guide.FeatureRegistry.settingsPage("내 근무", kind)} › ${kind.words().types}"
+            if (com.bamnat.app.ui.components.AppSnack.ask("${d.message} · $where 맨 아래에 있어요", "되돌리기")) com.bamnat.app.ui.shifts.TypeFoldAsk.undo(container, d)
         }
     }
 

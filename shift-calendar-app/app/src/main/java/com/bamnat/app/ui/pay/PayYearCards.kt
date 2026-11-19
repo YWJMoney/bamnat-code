@@ -38,6 +38,7 @@ import kotlinx.coroutines.withContext
 import java.time.LocalDate
 import java.time.YearMonth
 import com.bamnat.core.time.Today
+import com.bamnat.app.ui.theme.bamnat
 
 /**
  * [PAYX-42] 연말정산 미리보기: from January to the month on screen, the 결정세액 roughly against the 간이세액표
@@ -102,7 +103,8 @@ internal fun YearEndCard(profile: PayProfile, snapshot: ScheduleSnapshot, month:
         Text(
             if (x.refund >= 0) "약 ${won(x.refund)} 돌려받아요" else "약 ${won(-x.refund)} 더 내요",
             style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold,
-            color = if (x.refund >= 0) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error,
+            // 2.0.0 [RVJ-66] (HQ-103, 조건 6) 더 내는 세금은 위험이 아니라 주의예요.
+            color = if (x.refund >= 0) MaterialTheme.colorScheme.primary else MaterialTheme.bamnat.caution,
         )
         settings?.yearEndLastRefund?.takeIf { settings?.yearEndLastAt != null && it != x.refund }?.let { last ->
             Text("지난 계산(${settings?.yearEndLastAt?.let { "${it.monthValue}/${it.dayOfMonth}" }})보다 ${won(kotlin.math.abs(x.refund - last))} " +
@@ -239,7 +241,7 @@ internal fun RateNewsCard(profile: PayProfile, ordinaryHourly: Long) {
                 color = MaterialTheme.colorScheme.onSecondaryContainer)
             news.lines.forEach { l ->
                 Text("· $l", style = MaterialTheme.typography.bodyMedium,
-                    color = if (news.belowMinimum && l.contains("적어요")) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSecondaryContainer)
+                    color = if (news.belowMinimum && l.contains("적어요")) MaterialTheme.bamnat.caution else MaterialTheme.colorScheme.onSecondaryContainer) // [RVJ-66] 계산은 저절로 맞춰져요: 주의
             }
             Text("급여 계산은 바뀐 기준으로 저절로 맞춰져요 (최저임금법 제6조).", style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSecondaryContainer)

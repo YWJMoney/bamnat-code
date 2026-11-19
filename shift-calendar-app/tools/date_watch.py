@@ -5,6 +5,11 @@
 
   python3 tools/date_watch.py report --label core --days 30 <JUnit 파일·폴더…> [--out core+30.json] [--today 2026-11-12]
       '12월 12일(+30일)에 깨질 시험 N개'와 이름·줄(파일:줄). --out에는 같은 내용을 JSON으로(다음 날 견주기·관리자 앱 신호용).
+  python3 tools/date_watch.py shift --at 23:40 [--month-end] [--days N]
+      2.0.0 [RVR-44] (총괄 HQ-123) 시험 JVM의 시계를 '오늘(또는 N일 뒤, 이달 끝날) 그 시각'에 맞추는 -Pbamnat.todayShift 값과,
+      탭 뒤에 사람이 읽는 때('11월 30일 23:40'). 시험이 그 시각에 시작해 몇 분 뒤 자정을 넘으니, 하루 중 시각·자정·달 끝에
+      묶인 시험(21시가 넘으면 깨지던 TaskWidgetTest 같은)이 그날이 오기 전에 깨져요. 시계는 이 컴퓨터의 시간대(CI는 UTC)예요.
+      report에 --head '11월 30일 23:40'을 주면 머리에 날짜 대신 그 때를 적어요.
   python3 tools/date_watch.py compare <어제.json> <오늘.json>
       어제는 통과했는데 오늘 깨진 시험. 두 결과의 커밋이 같으면 '코드 변경 없음'(날짜·바깥 탓)이라고 말해요.
   python3 tools/date_watch.py against <기준.json> <이름…>
@@ -89,9 +94,23 @@ def day_label(today: datetime.date, days: int) -> str:
     return f"{d.month}월 {d.day}일" + (f"(+{days}일)" if days else "(오늘)")
 
 
-def report(label: str, days: int, result: dict, today: datetime.date) -> list[str]:
-    head = day_label(today, days)
+def shift_to(now: datetime.datetime, at: datetime.time, days: int = 0, month_end: bool = False) -> tuple[str, str]:
+    """[RVR-44] now(시간대가 붙은 이 컴퓨터의 지금)에서 그날 at까지 옮길 ISO-8601 기간(Java Duration.parse가 읽음)과 그 때."""
+    day = now.date() + datetime.timedelta(days=days)
+    if month_end:
+        nxt = (day.replace(day=28) + datetime.timedelta(days=4)).replace(day=1)
+        day = nxt - datetime.timedelta(days=1)
+    target = datetime.datetime.combine(day, at, tzinfo=now.tzinfo)
+    secs = int((target - now).total_seconds())
+    return f"PT{secs}S", f"{day.month}월 {day.day}일 {at.strftime('%H:%M')}"
+
+
+def report(label: str, days: int, result: dict, today: datetime.date, head: str | None = None) -> list[str]:
+    head = head or day_label(today, days)
     fails = result["failed"]
+    if not result["tests"]:
+        # [RVR-44] 시험이 멈춰(자정을 지나며 기다리다 시간 넘김) 결과 파일이 없을 때 '깨질 시험 없음'으로 읽히지 않게.
+        return [f"**{label} · {head}: 결과 없음** — 시험이 돌지 않았거나 멈췄어요(시간 넘김). 로그에서 마지막으로 돈 시험을 봐요"]
     if not fails:
         return [f"**{label} · {head}: 깨질 시험 없음** ({result['tests']}개 돎)"]
     if days:
@@ -171,16 +190,33 @@ def load(path: str) -> dict | None:
 
 
 def main(argv: list[str]) -> int:
-    if not argv or argv[0] not in ("report", "compare", "against", "explain"):
+    if not argv or argv[0] not in ("report", "compare", "against", "explain", "shift"):
         print(__doc__)
         return 2
     cmd, rest = argv[0], argv[1:]
+    if cmd == "shift":
+        at, days, month_end, i = datetime.time(23, 40), 0, False, 0
+        while i < len(rest):
+            if rest[i] == "--month-end":
+                month_end, i = True, i + 1
+                continue
+            if rest[i] == "--at":
+                at = datetime.time.fromisoformat(rest[i + 1])
+            elif rest[i] == "--days":
+                days = int(rest[i + 1])
+            else:
+                print(f"모르는 값: {rest[i]}")
+                return 2
+            i += 2
+        dur, when = shift_to(datetime.datetime.now().astimezone(), at, days, month_end)
+        print(f"{dur}\t{when}")
+        return 0
     if cmd == "report":
-        label, days, out, today, paths = "시험", 0, None, datetime.datetime.now(KST).date(), []
+        label, days, out, today, paths, head = "시험", 0, None, datetime.datetime.now(KST).date(), [], None
         i = 0
         while i < len(rest):
             a = rest[i]
-            if a in ("--label", "--days", "--out", "--today"):
+            if a in ("--label", "--days", "--out", "--today", "--head"):
                 v = rest[i + 1]
                 if a == "--label":
                     label = v
@@ -188,6 +224,8 @@ def main(argv: list[str]) -> int:
                     days = int(v)
                 elif a == "--out":
                     out = v
+                elif a == "--head":
+                    head = v
                 else:
                     today = datetime.date.fromisoformat(v)
                 i += 2
@@ -195,11 +233,11 @@ def main(argv: list[str]) -> int:
                 paths.append(a)
                 i += 1
         result = read(paths)
-        print("\n".join(report(label, days, result, today)))
+        print("\n".join(report(label, days, result, today, head)))
         if out:
             os.makedirs(os.path.dirname(out) or ".", exist_ok=True)
             with open(out, "w", encoding="utf-8") as f:
-                json.dump({"label": label, "days": days, "date": (today + datetime.timedelta(days=days)).isoformat(),
+                json.dump({"label": label, "days": days, **({"when": head} if head else {}), "date": (today + datetime.timedelta(days=days)).isoformat(),
                            "ran": today.isoformat(), "sha": os.environ.get("GITHUB_SHA", ""), **result}, f, ensure_ascii=False, indent=1)
         return 0
     if cmd == "compare":

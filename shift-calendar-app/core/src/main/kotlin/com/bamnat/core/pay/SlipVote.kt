@@ -16,7 +16,7 @@ object SlipVote {
          * Every line agreed by the readings and the lines add up to a 지급 총액 the payslip states: nothing to ask. Without a
          * stated total the lines "add up" to their own sum, which says nothing (1.27 bench p07, a blurred payslip).
          */
-        val sure: Boolean get() = unsure.isEmpty() && adds(read) && stated(read)
+        val sure: Boolean get() = unsure.isEmpty() && read.lines.none { it.check != null } && adds(read) && stated(read)
     }
 
     /** [PHOTO-23] 지급, 공제 or a total: a line's side of the payslip. */
@@ -87,7 +87,7 @@ object SlipVote {
                     r.lines.firstOrNull { o -> o.amount == line.amount && !o.name.trim().contains(' ') && o.name.filter(Char::isLetter) == mine }
                 }?.let { renamed[i] = it }
                 // The kind as the whole name says (야간수 read as a 수당, 야간수당 is 야간).
-                renamed[i]?.let { lines[i] = lines[i].copy(name = it.name, role = it.role) }
+                renamed[i]?.let { lines[i] = lines[i].copy(name = it.name, role = it.role, check = it.check) }
                 // [READ-38] 1.38 사용자 사진: the name most readings agree on, letter for letter ("불링희 여주공장" once, "볼링회
                 // 여수공장" twice): the same amount on the same side, a name a few strokes from this one. Its kind stays.
                 if (renamed[i] == null) {
@@ -102,7 +102,8 @@ object SlipVote {
                     val votes = (near + line.name).groupingBy { it.filter(Char::isLetter) }.eachCount()
                     val top = votes.maxByOrNull { it.value }
                     if (top != null && top.key != mine && top.value > (votes[mine] ?: 0)) {
-                        near.firstOrNull { it.filter(Char::isLetter) == top.key }?.let { lines[i] = lines[i].copy(name = it) }
+                        // 2.0.0 [RVL-46] A name looked at stays so, as the readings agree on it.
+                        near.firstOrNull { it.filter(Char::isLetter) == top.key }?.let { lines[i] = lines[i].copy(name = it, check = lines[i].check?.let { c -> if (c.maybe == null) c.copy(printed = it) else c }) }
                     }
                 }
             }
@@ -137,7 +138,7 @@ object SlipVote {
         val read = anchor.copy(lines = lines, company = company)
         // A put-together that no longer adds up is worse than the anchor as read.
         if (adds(anchor) && !adds(read)) {
-            val named = anchor.copy(lines = anchor.lines.mapIndexed { i, l -> renamed[i]?.let { l.copy(name = it.name, role = it.role) } ?: l },
+            val named = anchor.copy(lines = anchor.lines.mapIndexed { i, l -> renamed[i]?.let { l.copy(name = it.name, role = it.role, check = it.check) } ?: l },
                 company = company)
             return Result(named, checked(named, disagreed), anchorText)
         }

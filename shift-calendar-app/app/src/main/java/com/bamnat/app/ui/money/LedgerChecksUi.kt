@@ -93,7 +93,7 @@ internal fun LedgerAsksCard(book: MoneyBook, today: LocalDate, vm: MoneyViewMode
                     else -> "$name, 어떤 카드예요?"
                 }, style = MaterialTheme.typography.bodyLarge)
                 Muted("최근 90일 ${u.lines}번 · ${Fmt.won(u.spent)}. 정해 두면 소득공제 문턱과 카드값을 바르게 계산해요")
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                androidx.compose.foundation.layout.FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     OutlinedButton(onClick = {
                         vm.saveAccount(MoneyAccount(name = name.take(MoneyAccount.MAX_NAME), type = AccountType.CHECK, last4 = u.last4))
                         c.autoRecordPrefs.askedCard(u.last4)

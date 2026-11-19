@@ -154,7 +154,8 @@ fun TodayInvestCard(vm: InvestViewModel, today: LocalDate, onTrade: () -> Unit, 
             val notes = listOfNotNull(
                 next?.let { (a, at) -> "${minuteText(at.hour * 60 + at.minute)} ${a.title}" },
                 events.takeIf { it.isNotEmpty() }?.joinToString(", ") { it.label },
-                if (InvestAlarms.marketClosed(today)) "오늘은 휴장일" else null,
+                // 2.0.0 [RVK-52] (검토 T06b-10): the markets this investor trades; nothing for coins only.
+                com.bamnat.core.invest.MarketDays.closedShort(today, state.full.venues),
             )
             if (notes.isNotEmpty()) Text(notes.joinToString(" · "), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary,
                 modifier = Modifier.padding(top = 4.dp))

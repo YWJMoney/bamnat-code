@@ -498,7 +498,8 @@ fun CompanySentScreen(vm: CompanyReportViewModel, onBack: () -> Unit, onShare: (
             onDismiss = { forgetting = false },
             onConfirm = {
                 forgetting = false
-                vm.forgetAllSaying { ok, said -> message = if (ok) said ?: "모두 지웠어요" else "인터넷에 연결한 뒤 다시 해 주세요" }
+                // 2.0.0 [RVO-16] 검토 U40-04: what stays, said with what went (as 설정 › 개인정보).
+                vm.forgetAllSaying { ok, said -> message = if (ok) (said ?: "모두 지웠어요") + ". " + FORGET_STAYS else "인터넷에 연결한 뒤 다시 해 주세요" }
             },
         )
     }
@@ -557,7 +558,7 @@ internal fun mineWords(key: String): Pair<String, com.bamnat.app.NoticeLinks.Tar
     "votes" -> "맞아요·달라요·투표·좋아요" to null
     "flags" -> "신고" to null
     "inquiries" -> "문의" to com.bamnat.app.NoticeLinks.Target.INQUIRY
-    "companies" -> "회사 참여·쓰고 있어요·별명" to null
+    "companies" -> "회사 참여·쓰고 있어요·마을 이름" to null
     "rates" -> "보낸 시세" to null
     "alerts" -> "바로 알림 등록" to null
     "works" -> "마을 작품·프로필·글꼴" to null

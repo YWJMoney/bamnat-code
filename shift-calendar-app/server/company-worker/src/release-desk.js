@@ -177,7 +177,7 @@ function viewOf(r, auto) {
  * 남은 일이 0이면 끝낸 때(done_at)를 적고 그 순간의 자동 단계를 굳혀(snap) 두고, 끝난 뒤 남은 일이 다시 생기면 지워요. [r.steps]를 고치고 새 done_at을
  * 돌려줘요. 사람이 단계를 누를 때(POST)와 매시 [releaseTick]이 같이 써요(2.0.0 [RVN-24] I22cc-03).
  */
-function settle(r, live, now) {
+function settleCheck(r, live, now) {
   let doneAt = r.doneAt ?? null;
   if (live.left === 0 && !doneAt) {
     doneAt = now;
@@ -249,7 +249,7 @@ export async function releaseRoute(request, env, path, method, now) {
     const auto = autoState(r.version, r, now, sh);
     freezeSeen(r, auto, now);
     const live = viewOf({ ...r, doneAt: null }, auto);
-    const doneAt = settle(r, live, now);
+    const doneAt = settleCheck(r, live, now);
     await run(env, "UPDATE release_runs SET steps = ?, done_at = ? WHERE version = ?", JSON.stringify(r.steps), doneAt, m[1]);
     await audit(env, now, "release_step", m[1], `${step.name} ${body.done === true ? "끝" : body.skip === true ? "건너뜀" : body.done === false ? "되돌림" : "메모"}`);
     return json(doneAt ? viewOf({ ...r, doneAt }, frozen(r)) : live);
@@ -298,7 +298,7 @@ export async function releaseTick(env, now = Date.now()) {
     const auto = autoState(r.version, r, now, sh);
     const froze = freezeSeen(r, auto, now);
     const live = viewOf({ ...r, doneAt: null }, auto);
-    const doneAt = settle(r, live, now);
+    const doneAt = settleCheck(r, live, now);
     if (!judged && !froze && !doneAt) continue;
     changed++;
     await run(env, "UPDATE release_runs SET steps = ?, done_at = ? WHERE version = ? AND done_at IS NULL", JSON.stringify(r.steps), doneAt, r.version);

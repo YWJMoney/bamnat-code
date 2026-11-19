@@ -108,9 +108,9 @@ jobs:
           name: core-reports
           path: shift-calendar-app/core/build/reports
           retention-days: 7
-  # The app's tests in four shards: everything but the screenshots, the screenshot classes in two halves, and the
-  # classes that run on Android 8, 11, 13 and 15 (app/build.gradle.kts bamnat.testSet). Each shard runs its classes
-  # in parallel forks too.
+  # The app's tests in six shards: everything but the screenshots, the screenshot classes in four parts split by time
+  # (2.0.0 [RVR-43], tools/shot_shards.py), and the classes that run on Android 8, 11, 13 and 15 (app/build.gradle.kts
+  # bamnat.testSet). Each shard runs its classes in parallel forks too.
   app:
     if: github.event_name != 'pull_request' || !github.event.pull_request.draft
     runs-on: ubuntu-latest
@@ -122,7 +122,7 @@ jobs:
       fail-fast: false
       matrix:
         # [RVR-14] A push to the integration branch runs the unit shard only (the screenshots and Android levels run on its PR).
-        set: ${{ fromJSON(github.event_name == 'push' && '["unit"]' || '["unit", "shots-a", "shots-b", "api"]') }}
+        set: ${{ fromJSON(github.event_name == 'push' && '["unit"]' || '["unit", "shots-a", "shots-b", "shots-c", "shots-d", "shots-e", "api"]') }}
     defaults:
       run:
         working-directory: shift-calendar-app
@@ -136,19 +136,52 @@ jobs:
         with:
           cache-read-only: false
       # Robolectric's Android jars (100 MB and more) come from Maven Central once, then from this cache.
-      - uses: actions/cache@v4
+      # 2.0.0 [RVR-43]: one cache per shard (each needs the same Android versions every run), keyed on the Robolectric version and
+      # the test SDK rather than all of build.gradle.kts, and saved even when tests fail (a red shard used to throw its download
+      # away, so every run fetched again and Maven Central answered 429). A shard whose download failed does not save.
+      - id: robover
+        run: |
+          echo "v=$(grep -o 'org.robolectric:robolectric:[0-9.]*' app/build.gradle.kts | cut -d: -f3)" >> "$GITHUB_OUTPUT"
+      - id: robo
+        uses: actions/cache/restore@v4
         with:
           path: ~/.m2/repository/org/robolectric
-          key: robolectric-${{ hashFiles('shift-calendar-app/app/build.gradle.kts') }}
-          restore-keys: robolectric-
+          key: robolectric-${{ matrix.set }}-${{ steps.robover.outputs.v }}-${{ hashFiles('shift-calendar-app/app/src/test/resources/robolectric.properties') }}
+          restore-keys: |
+            robolectric-${{ matrix.set }}-
+            robolectric-
       # [RVR-12] (검토 TEST-13) Node 22 before Gradle: the app tests that start server/company-worker (node:sqlite) need it, and
       # in CI (CI=true) a test that cannot find Node or the privacy page fails instead of being skipped (app test CiNeed.kt).
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-      - run: sh ./gradlew $GRADLE_FLAGS :app:testDebugUnitTest -Pbamnat.testSet=${{ matrix.set }} --continue
+      # 2.0.0 [RVR-43] (총괄 HQ-121): the tests stop at 38 minutes so a shard that runs long fails with its results and summary
+      # instead of the whole job being cancelled at 45 (a cancelled shard hid its failures). Over 30 minutes is a warning.
+      - name: 앱 시험
+        timeout-minutes: 38
+        run: |
+          start=$(date +%s)
+          rc=0; sh ./gradlew $GRADLE_FLAGS :app:testDebugUnitTest -Pbamnat.testSet=${{ matrix.set }} --continue || rc=$?
+          min=$(( ($(date +%s) - start) / 60 ))
+          if [ "$min" -ge 30 ]; then
+            echo "::warning::${{ matrix.set }} 묶음이 ${min}분 걸렸어요(30분 넘음). python3 tools/shot_shards.py update로 나누기를 다시 해요."
+            echo "### ⚠ ${{ matrix.set }} 묶음 ${min}분(30분 넘음): tests-app-${{ matrix.set }} 결과로 tools/shot_shards.py update" >> "$GITHUB_STEP_SUMMARY"
+          fi
+          exit $rc
       # 2.0.0 [RVR-42] (총괄 HQ-116): the tests never reach a server outside the runner (tools/net-guard, NetGuardTest). What
       # they tried and were refused is listed here, so a test that leans on the network shows up without touching the live server.
+      - name: Robolectric 캐시 저장 준비
+        id: robosave
+        if: always() && steps.robo.outputs.cache-hit != 'true'
+        run: |
+          ls ~/.m2/repository/org/robolectric/android-all*/*/*.jar >/dev/null 2>&1 || exit 0
+          grep -rlqE "Failed to fetch maven artifact|HTTP response code: 4[0-9][0-9]" app/build/test-results 2>/dev/null && { echo "Robolectric jar를 다 받지 못해 캐시를 저장하지 않아요"; exit 0; }
+          echo "save=1" >> "$GITHUB_OUTPUT"
+      - if: always() && steps.robosave.outputs.save == '1'
+        uses: actions/cache/save@v4
+        with:
+          path: ~/.m2/repository/org/robolectric
+          key: ${{ steps.robo.outputs.cache-primary-key }}
       - name: 바깥 연결 막은 것
         if: always()
         run: |
@@ -254,6 +287,16 @@ jobs:
             shift-calendar-app/app/build/screenshots
             shift-calendar-app/app/build/tests-${{ matrix.set }}.json
           retention-days: 7
+  # 2.0.0 [RVR-43] (총괄 HQ-121): one line that says whether every app shard passed. A shard that was cancelled or timed out
+  # counts as failed here (GitHub shows a cancelled job grey, and a check that waits for 'no failure' read it as passed).
+  app-result:
+    needs: app
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - run: |
+          echo "앱 시험 묶음 결과: ${{ needs.app.result }}"
+          case "${{ needs.app.result }}" in success|skipped) ;; *) echo "::error::앱 시험 묶음 가운데 실패·취소·시간 넘김이 있어요(${{ needs.app.result }})"; exit 1;; esac
   # 2.0.0 [RVR-14] (총괄 HQ-37) A draft pull request that changes a server runs the app tests that start that server
   # (server/company-worker/test/local-server.mjs, or the share server's payload check), so a server answer the app no longer
   # reads fails on the pull request that changed it, not on the integration branch after it.
@@ -484,7 +527,10 @@ jobs:
   lint:
     if: github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && !github.event.pull_request.draft)
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    # 2.0.0 [RVR-45] With Gradle's cache cold, compiling the app takes about 14 minutes and lint's analysis about 15 more
+    # (run 44433028533: stopped at 30 in :app:lintAnalyzeDebugUnitTest, then the watch app never ran). A lint that is cut
+    # off reads as cancelled, not as what it found; 45 as the app's shards have.
+    timeout-minutes: 45
     defaults:
       run:
         working-directory: shift-calendar-app

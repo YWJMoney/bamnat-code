@@ -112,6 +112,7 @@ import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.waitForUpOrCancellation
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.bamnat.app.ui.Fmt
 import com.bamnat.app.ui.IconCountBadge
@@ -215,8 +216,12 @@ fun MemoListScreen(
 
     // 2.0.0 [RVP-06] The new-memo button shrinks to its icon while the list scrolls down.
     val fab = com.bamnat.app.ui.components.rememberFabOpen()
+    // 2.0.0 갈래 P 5 (HQ-75·HQ-111·조건 9): 새 메모 is the bar under the list, so it never sits on a memo's words.
+    val dockAdd = com.bamnat.app.ui.components.addDocks() && !state.selecting
+    var dockPx by remember { androidx.compose.runtime.mutableIntStateOf(0) }
+    val dockRoom = with(androidx.compose.ui.platform.LocalDensity.current) { if (dockAdd) dockPx.toDp() else 0.dp }
     Box(Modifier.fillMaxSize().nestedScroll(fab.connection)) {
-        Column(Modifier.fillMaxSize()) {
+        Column(Modifier.fillMaxSize().padding(bottom = dockRoom)) {
             if (state.selecting) {
                 SelectionBar(
                     count = state.selection.size,
@@ -385,7 +390,8 @@ fun MemoListScreen(
         }
         if (!state.selecting) {
             Column(
-                Modifier.align(Alignment.BottomEnd).padding(16.dp),
+                if (dockAdd) Modifier.align(Alignment.BottomCenter).fillMaxWidth().onSizeChanged { dockPx = it.height }
+                else Modifier.align(Alignment.BottomEnd).padding(16.dp),
                 horizontalAlignment = Alignment.End,
                 verticalArrangement = Arrangement.spacedBy(com.bamnat.app.ui.theme.LocalSpacing.current.card),
             ) {
@@ -398,13 +404,7 @@ fun MemoListScreen(
                 Box {
                     // 2.0.0 [RVP-06] The shared floating-button rule: words at rest, the icon alone while the list goes down.
                     // [RVI-61] (검토 U07a-04) One tap starts a memo; held, it asks memo or checklist (it asked on every tap).
-                    com.bamnat.app.ui.components.AddFab(
-                        "새 메모",
-                        onClick = { onNew(false, date) },
-                        open = fab.open,
-                        icon = Icons.Outlined.Edit,
-                        description = if (date != null) "오늘 날짜로 새 메모" else "새 메모",
-                        modifier = Modifier
+                    val press = Modifier
                             .pointerInput(Unit) {
                                 // Seen before the button's own tap: held long enough, the menu opens and the tap does not happen.
                                 awaitEachGesture {
@@ -421,8 +421,12 @@ fun MemoListScreen(
                                     }
                                 }
                             }
-                            .semantics { onLongClick(label = "체크리스트로 새로 만들기") { choosing = true; true } },
-                    )
+                            .semantics { onLongClick(label = "체크리스트로 새로 만들기") { choosing = true; true } }
+                    val words = if (date != null) "오늘 날짜로 새 메모" else "새 메모"
+                    if (dockAdd) com.bamnat.app.ui.components.AddDock("새 메모", onClick = { onNew(false, date) }, modifier = press,
+                        icon = Icons.Outlined.Edit, description = words)
+                    else com.bamnat.app.ui.components.AddFab("새 메모", onClick = { onNew(false, date) }, open = fab.open,
+                        icon = Icons.Outlined.Edit, description = words, modifier = press)
                     DropdownMenu(expanded = choosing, onDismissRequest = { choosing = false }) {
                         DropdownMenuItem(text = { Text("메모") }, leadingIcon = { Icon(Icons.Outlined.Edit, null) },
                             onClick = { choosing = false; onNew(false, date) })

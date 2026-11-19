@@ -51,6 +51,27 @@
       "before": "관리자 앱 › 처리방침 일정의 3.13 시행일이 이 날과 같은지 봐요."
     },
     {
+      "id": "policy-3.14-posted",
+      "what": "처리방침 3.14·광장 운영 규칙 3 게시일(사용자 \"게시해\" 뒤, 앱 공지와 페이지로 알림)",
+      "area": "사람·웹",
+      "from": {"file": "core/src/main/kotlin/com/bamnat/core/ops/PolicyConsent.kt", "re": "val REVISION14_POSTED: LocalDate = LocalDate\\.of\\((\\d{4}), (\\d{1,2}), (\\d{1,2})\\)"},
+      "before": "날을 옮기면 python3 tools/legal_dates.py <게시일> --rev 3.14로 코드·페이지를 함께 고쳐요. 관리자 앱 › 처리방침 일정에 3.14 게시일·시행일, 앱 공지."
+    },
+    {
+      "id": "policy-3.14-p7",
+      "what": "처리방침 3.14 7일 줄·광장 운영 규칙 3 시행(광장 방 글 금액, 회사 광장에 나누기, 생년 등)",
+      "area": "앱·서버·사람",
+      "from": {"file": "core/src/main/kotlin/com/bamnat/core/ops/PolicyConsent.kt", "re": "val REVISION14_POSTED: LocalDate = LocalDate\\.of\\((\\d{4}), (\\d{1,2}), (\\d{1,2})\\)", "plus_days": 7},
+      "before": "광장 방 글 금액은 서버가 3.14 게시일 + 7일부터 받아요. 계좌번호 막기(갈래 N)가 실서버에 있는지 봐요."
+    },
+    {
+      "id": "policy-3.14-p30",
+      "what": "처리방침 3.14 30일 줄 시행(링크 확인했어요·이름 낱말·피곤해요 표시, 사용 통계 셋, 장터 숫자, 폰 바꾸기, 근무표 약어)",
+      "area": "앱·서버·사람",
+      "from": {"file": "core/src/main/kotlin/com/bamnat/core/ops/PolicyConsent.kt", "re": "val REVISION14_POSTED: LocalDate = LocalDate\\.of\\((\\d{4}), (\\d{1,2}), (\\d{1,2})\\)", "plus_days": 30},
+      "before": "관리자 앱 › 처리방침 일정의 3.14 시행일이 이 날과 같은지, 공유 서버 POLICY_314_FROM이 이 날로 배포됐는지 봐요(갈래 D)."
+    },
+    {
       "id": "train-start",
       "what": "정기 출시 열차 첫 출발(그 뒤 7일마다, 관리자 앱 › 자동 순환 › 정기 출시에서 바꿈)",
       "area": "사람·서버",

@@ -9,6 +9,7 @@ import { shipCode, shippedVersion } from "./desk.js";
 import { DAY, HOUR } from "./units.js";
 import { EFFECT, reachedAt } from "./loop.js";
 import { changeMarks, versionHealth } from "./release-desk.js";
+import { CRASH, crashOf, crashRepeats } from "./crash-repeat.js";
 
 // ---- 1.39 [OBS2-01~08] 관측: 앱 전체 사용자의 유입·활성·이탈·품질과, 거기서 찾은 개선 신호 ----
 //
@@ -63,10 +64,24 @@ export const OBS = {
   /** 보고서 날짜 줄은 이만큼 남겨요(석 달 파일을 읽어 합쳐요). */
   keepDays: 70,
   months: 3,
-  /** 개선 신호: 최대 수, 끝난(좋아짐·아님) 신호를 지우는 날, 안 보인 지 이만큼이면 '좋아짐'. */
+  /** 개선 신호: 최대 수, 끝난(돌아옴·굳음·자료 없음·아님) 신호를 지우는 날, 안 보인 지 이만큼이면 판정해요. */
   signalsMax: 60,
   signalDoneDays: 30,
   clearMs: 3 * DAY,
+  /**
+   * 2.0.0 [RVQ-35] 검토 SVC-18: 처음 켜질 때의 기준(base0)에서 이 몫(90%) 안으로 돌아와야 '돌아옴'이에요. 판정하는 값은 이만큼 안에
+   * 읽은 것이어야 해요(그보다 오래됐으면 '자료 없음').
+   */
+  backShare: 0.9,
+  readFreshMs: DAY,
+  /**
+   * 2.0.0 [HQ-117] 총괄: 서버가 센 숫자(꾸밀 수 있음)의 앞 구간에 평소(그 숫자의 0 아닌 날 가운데값)의 이 배 넘게 부푼 날이 있으면
+   * (시험이 실서버를 부른 11-12·11-13처럼) 그날을 빼고 견줘요. 부푼 날을 빼면 문제 선이 아니면 '부풀었다 돌아옴'으로 따로 닫아요.
+   */
+  puffTimes: 10,
+  puffMin: 50,
+  /** 부푼 날을 빼고도 줄었다고 할 때, 남은 앞 날 가운데 평소의 이 배 넘는 날은 신호 설명에 따로 적어요(총괄 11-19). */
+  puffHigh: 3,
   /** 출처 순위 칸 수, 기능 쓰임·찾았는데 없던 말 신호 수. */
   sources: 8,
   featureSignals: 3,
@@ -352,6 +367,23 @@ function obsWindow(series, a, b) {
   return { now: obsAvg(s.slice(-a)), before: obsAvg(s.slice(-(a + b), -a)), n: s.length };
 }
 
+/**
+ * 2.0.0 [HQ-117] [obsWindow]와 같지만, 앞 [b]일 가운데 평소의 [OBS.puffTimes]배(적어도 [OBS.puffMin]) 넘게 부푼 날을 빼고 평균을 내요.
+ * [rows]는 { day, n }. 돌려주는 raw는 빼기 전 앞 평균, puffed는 뺀 날(앞 구간 안에서만, 최근 [a]일은 그대로 둬요).
+ */
+export function obsWindowPuffed(rows, a, b) {
+  const s = (rows ?? []).filter((r) => r.n !== null && r.n !== undefined);
+  const pos = s.map((r) => r.n).filter((v) => v > 0).sort((x, y) => x - y);
+  const mid = pos.length ? (pos[(pos.length - 1) >> 1] + pos[pos.length >> 1]) / 2 : 0;
+  const cut = Math.max(OBS.puffMin, mid * OBS.puffTimes);
+  const prev = s.slice(-(a + b), -a);
+  const kept = pos.length >= 5 ? prev.filter((r) => r.n < cut) : prev;
+  return { now: obsAvg(s.slice(-a).map((r) => r.n)), before: obsAvg(kept.map((r) => r.n)), raw: obsAvg(prev.map((r) => r.n)),
+    puffed: prev.filter((r) => !kept.includes(r)).map((r) => r.day),
+    // 뺀 날이 있을 때, 남은 앞 날 가운데 평소의 [OBS.puffHigh]배 넘는 날(출시 직후·시험일 수 있어 사람이 봐요).
+    high: pos.length >= 5 && kept.length < prev.length ? kept.filter((r) => r.n >= mid * OBS.puffHigh).map((r) => ({ day: r.day, n: r.n })) : [], n: s.length };
+}
+
 /** 워치 판 번호가 시작하는 곳(`wear/build.gradle.kts`: 폰 판 번호 + 100000). */
 export const WATCH_CODE = 100_000;
 
@@ -456,12 +488,17 @@ export function obsRules(b) {
     }
   }
   if (a?.config?.length) {
-    const w = obsWindow(a.config.map((d) => d.n), 3, 10);
+    // 2.0.0 [HQ-117] 앞 구간에 부푼 날(시험이 실서버를 부른 날 등)이 있으면 빼고 견줘요(puffed). 빼고 나서도 줄었을 때만 신호예요.
+    const w = obsWindowPuffed(a.config, 3, 10);
     if (w.n >= 10) {
+      const md = (d) => `${Number(d.slice(5, 7))}월 ${Number(d.slice(8, 10))}일`;
+      const high = w.high.length ? `남은 앞 날 가운데 ${w.high.map((r) => `${md(r.day)}(${r.n}번)`).join("·")}은 평소의 ${OBS.puffHigh}배가 넘어요. 출시 직후나 시험이었다면 정말 준 것이 아닐 수 있어요. ` : "";
+      const puffed = w.puffed.length ? `그 앞의 ${w.puffed.map(md).join("·")}은 평소의 ${OBS.puffTimes}배 넘게 부풀어(시험·몰림) 빼고 견줬어요. ${high}` : "";
       push({ kind: "config-drop", src: "server", value: obsRound1(w.now), base: obsRound1(w.before), better: "up", unit: "번/일",
         on: w.before >= 30 * t("config-drop") && w.now <= w.before * 0.6, tone: "bad", sample: Math.round(w.before),
         // 2.0.0 [RVN-24] 검토 SVC-111: the count is of /api/config asks, so an app version that reads its settings less often moves it too.
-        caveat: "앱이 받아 둔 것을 쓰면 요청이 줄어도 사용자는 그대로일 수 있어요. 앱의 설정 읽기 주기가 바뀐 판이 퍼지는 중이면 사용자 수가 그대로여도 이 숫자가 바뀌어요(새 판 넘어옴과 같이 봐요).",
+        ...(w.puffed.length ? { puffed: w.puffed, raw: obsRound1(w.raw) } : {}),
+        caveat: `${puffed}앱이 받아 둔 것을 쓰면 요청이 줄어도 사용자는 그대로일 수 있어요. 앱의 설정 읽기 주기가 바뀐 판이 퍼지는 중이면 사용자 수가 그대로여도 이 숫자가 바뀌어요(새 판 넘어옴과 같이 봐요).`,
         title: `앱이 서버에 오는 횟수가 하루 ${obsRound1(w.now)}번으로 줄었어요(그 전 ${obsRound1(w.before)}번)`,
         why: "늦지 않는 숫자라 오늘 일어난 일을 먼저 보여요. 앱이 서버에 닿지 못하는지(오류·주소)도 봐요.",
         dev: "앱 → 서버 요청 감소 원인 찾기(연결·판·사용자)", to: "#/server" });
@@ -527,6 +564,12 @@ export function obsRules(b) {
       title: `'${m.word}'를 찾았는데 없었어요 ${m.n}번(${m.placeName ?? m.place})`, why: "사용자가 직접 찾다가 못 찾은 말이에요. 기능이 없거나, 있는데 이름이 달라요.",
       dev: `'${m.word}' 찾기 길 만들기(없으면 기능, 있으면 이름·검색어)`, to: "#/growth" });
   }
+  // 2.0.0 [RVQ-35] 검토 SVC-18: 기능 쓰임·찾았는데 없던 말은 문제일 때만 목록에 올라와서, 안 보이는 것이 '나아짐'인지 '못 읽음'인지
+  // 몰랐어요. 열린 신호의 대상은 관측 판이 따로 읽어(follow) 지금 값을 꺼진 채로 넘겨요. 못 읽었으면 follow가 비어 '자료 없음'이 돼요.
+  for (const f of b.follow ?? []) {
+    if (out.some((x) => x.kind === f.kind && x.subject === f.subject)) continue;
+    push({ kind: f.kind, src: "stats", subject: f.subject, value: f.value, base: f.base ?? null, better: f.kind === "search-miss" ? "down" : "up", on: false, title: "", why: "" });
+  }
   // 2.0.0 [RVA-52] 검토 I24c-02: 관리자 앱 화면 오류는 한 번이어도 신호예요(그 화면이 누구에게나 깨져 있을 수 있어요).
   for (const x of b.screen ?? []) {
     push({ kind: "screen-error", subject: x.sig, value: x.n, base: 0, better: "down", unit: "번", on: x.n >= 1, sample: x.n,
@@ -543,6 +586,15 @@ export function obsRules(b) {
       why: "낱말 식은 쓸수록 틀린 곳이 드러나요. 그 말이 든 예문을 장부(test/ask-corpus.json)에 넣고 식(src/ask-check.js)을 고쳐요.",
       dev: `분류 고칠 것: ${m.word ? `‘${m.word}’` : m.kindName} 낱말 식과 예문 다듬기`, to: "#/inquiries" });
   }
+  // 2.0.0 [RVA-63] HQ-124: 같은 보낸 분, 또는 같은 기기·안드로이드·앱 판에서 7일 안 닫힘 문의가 2건 넘으면 한 신호(묶음마다).
+  for (const g of b.crashRepeats ?? []) {
+    push({ kind: "crash-repeat", subject: g.key, value: g.n, base: 1, better: "down", unit: "건", on: g.n >= CRASH.min * t("crash-repeat"), sample: g.n,
+      tone: g.n >= 3 || g.by === "model" ? "bad" : "warn",
+      caveat: "문의 말에 닫힘·튕김이 있거나 앱이 '앱 멈춤' 기록을 앞에 붙인 오류 문의만 세요. 같은 분이 같은 일로 다시 물어도 세요.",
+      title: `같은 판에서 닫힘 되풀이: ${g.label} ${g.n}건(${kstDay(Date.parse(g.first)).slice(5)}~${kstDay(Date.parse(g.last)).slice(5)})${g.noRecord ? ` · 멈춤 기록 없음 ${g.noRecord}건` : ""}`,
+      why: "따로따로 들어온 문의라 한 건씩 보면 되풀이가 안 보여요. 멈춤 기록이 없으면 앱이 스스로 꺼졌거나 기록 전에 닫힌 것일 수 있어요.",
+      dev: `${g.label}에서 앱이 닫히는 원인 찾기(문의 ${g.n}건)`.slice(0, 100), to: "#/desk" });
+  }
   // 2.0.0 [RVQ-15] 검토 SRV-20: 사용 통계(누구나 보낼 수 있음)와 서버가 센 요청에서 나온 신호는 꾸밀 수 있는 숫자라, Play 숫자(꾸밀 수 없음)와
   // 맞춰 봐요. Play의 하루 사용자가 같은 주에 그대로(±15%)면 '맞춰 보면 Play는 그대로'를 붙이고 사람이 확인해야 개발사항이 돼요.
   const pw = a?.play?.length ? obsWindow(a.play.map((d) => d.n), 7, 7) : null;
@@ -556,10 +608,6 @@ export function obsRules(b) {
 }
 
 /**
- * [OBS2-04] 저장된 신호에 이번에 찾은 것을 합쳐요. 같은 종류·대상이 열려 있으면 고치고, 없으면 새로. 사흘 넘게 안 보인 신호는
- * '좋아짐'(cleared)과 그때 값(after). 끝난 것(좋아짐·아님)은 30일 뒤에 지우고, 많으면 오래된 끝난 것부터.
- */
-/**
  * 2.0.0 [RVQ-15] 검토 SRV-20: 꾸밀 수 있는 숫자의 신호가 사람 확인을 기다리는지. 처음 보인 지 하루 안(하루 사이 급변)이거나 Play 숫자가 그대로면
  * human: true. 그동안 운영 열쇠(자동 처리)로는 개발사항이 되지 않고, 사람이 '개발사항으로'를 누르면 돼요.
  */
@@ -568,37 +616,83 @@ function humanCheck(f, first, now) {
   return { src: f.src, play: f.play ?? null, doubt: Boolean(f.doubt), human: Boolean(f.doubt) || now - first < DAY };
 }
 
-export function obsMerge(stored, found, now) {
+/** 2.0.0 [RVQ-35] 판정 이름(관리자 앱 숫자 › 개선 신호). 판정이 없는 옛 줄은 '옛 판정'(사흘 안 보이면 좋아짐이던 때)이에요. */
+export const OBS_OUTCOMES = { back: "돌아옴", settled: "새 기준으로 굳음", nodata: "자료 없음", puffed: "부풀었다 돌아옴", old: "옛 판정" };
+
+/**
+ * 2.0.0 [RVQ-35] 지금 값(now)이 처음 기준(base0)의 [OBS.backShare] 안으로 돌아왔는지. 기준이나 값을 모르면 null.
+ * 줄면 좋은 숫자(better down)는 기준보다 10%까지 높아도, 늘면 좋은 숫자는 10%까지 낮아도 돌아온 거예요.
+ */
+export function obsRecovered(s) {
+  const b = Number(s.base0 ?? s.base);
+  const v = Number(s.now);
+  if (s.now === null || s.now === undefined || (s.base0 ?? s.base) === null || (s.base0 ?? s.base) === undefined || !Number.isFinite(b) || !Number.isFinite(v)) return null;
+  const gap = Math.abs(b) * (1 - OBS.backShare);
+  return s.better === "down" ? v <= b + gap : v >= b - gap;
+}
+
+/**
+ * [OBS2-04] 저장된 신호에 이번에 찾은 것을 합쳐요. 같은 종류·대상이 열려 있으면 고치고, 없으면 새로. 끝난 것(판정·아님)은 30일 뒤에
+ * 지우고, 많으면 오래된 끝난 것부터.
+ *
+ * 2.0.0 [RVQ-35] 검토 SVC-18·U22-07·I22c-01: 사흘 안 보이면 무조건 '좋아짐'이었어요(기준 base도 매번 덮어써서, 나빠진 값이 새 기준이
+ * 되기도 했어요). 이제 처음 켜질 때의 기준(base0)을 지키고, 꺼진 뒤 읽은 값(now, 읽은 때 read)으로 셋 중 하나로 판정해요.
+ * - 돌아옴(back): 기준의 90% 안으로 돌아왔어요.
+ * - 새 기준으로 굳음(settled): 문제 선 아래로는 내려왔지만 기준까지는 못 돌아왔어요.
+ * - 자료 없음(nodata): 꺼진 뒤 하루 안에 읽은 값이 없어요(보고서가 끊겼거나 표본이 모자라요).
+ * 개발사항이 달린 신호는 그 고침이 사용자에게 닿은 뒤(reach: 개발사항 id → 닿은 때, 아직이면 null)에만 판정하고, 굳었으면 저절로
+ * 대기열(새 신호)로 되돌려요(stuck, devWas). 사람이 다시 개발사항으로 넘기거나 지켜보기·아님을 고르면 stuck이 풀려요.
+ * reach를 넘기지 않으면(시험·옛 부름) 개발사항은 이미 닿은 것으로 봐요.
+ */
+export function obsMerge(stored, found, now, { reach = null } = {}) {
   const list = (stored ?? []).map((s) => ({ ...s }));
   const open = (s) => s.state !== "dismiss" && !s.cleared;
   for (const f of found) {
     const s = list.find((x) => x.kind === f.kind && x.subject === f.subject && (open(x) || (x.state === "dismiss" && now - x.at < OBS.signalDoneDays * DAY)));
     if (!f.on) {
-      if (s && open(s)) Object.assign(s, { now: f.value, ...(f.sample !== undefined ? { sample: f.sample } : {}) });
+      if (s && open(s)) Object.assign(s, { now: f.value, read: now, ...(f.sample !== undefined ? { sample: f.sample } : {}) });
+      // 2.0.0 [HQ-117] 앞 구간이 부풀었던 것뿐이면(부푼 날을 빼면 문제 선이 아님) '돌아옴'·'굳음'과 따로 '부풀었다 돌아옴'으로 바로 닫아요.
+      // 개발사항이 달린 신호는 고침의 판정(아래)을 그대로 따라요.
+      if (s && open(s) && f.puffed?.length && !(s.state === "dev" && s.devId)) {
+        Object.assign(s, { cleared: now, after: f.value ?? null, outcome: "puffed", puffed: f.puffed, base: f.base, caveat: f.caveat ?? s.caveat ?? "" });
+      }
       continue;
     }
     if (s) {
       if (s.state === "dismiss") continue;
-      Object.assign(s, { tone: f.tone, title: f.title, why: f.why, value: f.value, base: f.base, unit: f.unit, better: f.better, last: now, now: f.value,
-        sample: f.sample ?? null, caveat: f.caveat ?? "", ...humanCheck(f, s.first ?? now, now) });
+      // 2.0.0 [HQ-117] 처음 기준이 부푼 날로 잡혔으면(그 뒤 부푼 날을 빼게 됨) 뺀 기준으로 낮춰요. 그래야 '돌아옴'이 부푼 숫자를 기다리지 않아요.
+      const base0 = f.puffed?.length && s.base0 != null && f.base != null && s.base0 > f.base ? f.base : s.base0 ?? f.base;
+      Object.assign(s, { tone: f.tone, title: f.title, why: f.why, value: f.value, base: f.base, unit: f.unit, better: f.better, last: now, now: f.value, read: now,
+        base0, sample: f.sample ?? null, caveat: f.caveat ?? "", ...(f.puffed?.length ? { puffed: f.puffed } : {}), ...humanCheck(f, s.first ?? now, now) });
       continue;
     }
-    // 좋아졌다가 다시 나타나면 그 기록을 이어요(다시 나타남).
+    // 판정한 뒤 다시 나타나면 그 기록을 이어요(다시 나타남). 처음 기준(base0)은 그대로예요.
     const was = list.find((x) => x.kind === f.kind && x.subject === f.subject && x.cleared);
     if (was) {
-      Object.assign(was, { cleared: null, after: null, back: (was.back ?? 0) + 1, tone: f.tone, title: f.title, why: f.why, value: f.value, now: f.value,
-        base: f.base, last: now, sample: f.sample ?? null, caveat: f.caveat ?? "", state: was.state === "dev" ? "dev" : "new" });
+      Object.assign(was, { cleared: null, after: null, outcome: null, back: (was.back ?? 0) + 1, tone: f.tone, title: f.title, why: f.why, value: f.value, now: f.value,
+        base: f.base, base0: was.base0 ?? f.base, last: now, read: now, sample: f.sample ?? null, caveat: f.caveat ?? "", state: was.state === "dev" ? "dev" : "new" });
       continue;
     }
     list.push({ key: `${f.kind}${f.subject ? `:${f.subject}` : ""}:${kstDay(now)}`, kind: f.kind, subject: f.subject, tone: f.tone, title: f.title, why: f.why,
-      dev: f.dev, to: f.to, unit: f.unit, better: f.better, value: f.value, base: f.base, now: f.value, first: now, last: now, at: now, state: "new",
+      dev: f.dev, to: f.to, unit: f.unit, better: f.better, value: f.value, base: f.base, base0: f.base, now: f.value, first: now, last: now, read: now, at: now, state: "new",
       sample: f.sample ?? null, caveat: f.caveat ?? "", ...humanCheck(f, now, now) });
   }
   for (const s of list) {
-    if (open(s) && now - s.last >= OBS.clearMs) {
-      s.cleared = now;
-      s.after = s.now ?? null;
+    if (!open(s) || s.stuck) continue;
+    const linked = s.state === "dev" && s.devId;
+    const reached = !linked || !reach ? 0 : reach.get(s.devId);
+    // 고침이 아직 닿지 않았으면 판정하지 않아요(개발 중인 동안 숫자가 저절로 내려와도 '고쳐서 돌아옴'이 아니에요).
+    if (reached === null || reached === undefined) continue;
+    const from = Math.max(s.last, reached);
+    if (now - from < OBS.clearMs) continue;
+    const fresh = s.read > from && now - s.read <= OBS.readFreshMs;
+    const back = fresh ? obsRecovered(s) : null;
+    const outcome = back === null ? "nodata" : back ? "back" : "settled";
+    if (outcome === "settled" && linked) {
+      Object.assign(s, { state: "new", stuck: "settled", devWas: s.devId, devId: null, last: now, stuckAt: now });
+      continue;
     }
+    Object.assign(s, { cleared: now, after: s.now ?? null, outcome });
   }
   const done = (s) => !open(s);
   const kept = list.filter((s) => !(done(s) && now - (s.cleared ?? s.at) > OBS.signalDoneDays * DAY));
@@ -798,17 +892,20 @@ export async function observe(env, now = Date.now(), { names = EVENTS } = {}) {
   const days = obsDays(now);
   const from = days[0];
   const to = days.at(-1);
+  const from7 = days.at(-7);
   const [reports, vitals, store, stored, shipped] = await Promise.all([playReports(env, now).catch(() => ({ state: "unreachable" })),
     playVitals(env, now).catch(() => null), flagStore(env).catch(() => null), obsStored(env), shippedVersion(env).catch(() => null)]);
   // 2.0.0 [RVN-15] 검토 SVC-85·SVC-103: '새 판'은 서버가 아는 나간 판(관리자·자동 순환이 저장한 것)의 휴대폰 판 번호예요.
   const shippedCode = shipped ? await shipCode(env, shipped.v).catch(() => null) : null;
-  const q = (await batch(env, [
+  // 2.0.0 [RVQ-35] 열린 '찾았는데 없던 말' 신호의 대상은 따로 읽어요(목록 10줄 밖으로 밀려도 지금 값을 알게).
+  const missOpen = stored.filter((x) => x.kind === "search-miss" && x.state !== "dismiss" && !x.cleared && x.subject).map((x) => x.subject).slice(0, OBS.signalsMax);
+  const missFrom = kstDay(now - 21 * DAY).slice(0, 10);
+  const qr = await batch(env, [
     stmt(env, "SELECT substr(hour, 1, 10) AS day, SUM(n) AS n, SUM(err) AS err FROM req_stats WHERE route = '/api/config' AND hour >= ? GROUP BY day", `${from}T00`),
     stmt(env, "SELECT day, SUM(phones) AS phones FROM usage_days WHERE day BETWEEN ? AND ? GROUP BY day", from, to),
     // 2.0.0 [RVN-15] 검토 SVC-88: 기능 쓰임을 4주 전 같은 주와도 견주려고 28일을 읽어요(안 써 본 기능 카드는 그 가운데 14일).
     stmt(env, "SELECT day, event, SUM(phones) AS phones FROM usage_events WHERE day BETWEEN ? AND ? GROUP BY day, event", from, to),
-    stmt(env, `SELECT word, place, SUM(n) AS n FROM search_misses WHERE week >= ? GROUP BY word, place HAVING SUM(n) >= 2 ORDER BY n DESC LIMIT 10`,
-      kstDay(now - 21 * DAY).slice(0, 10)),
+    stmt(env, `SELECT word, place, SUM(n) AS n FROM search_misses WHERE week >= ? GROUP BY word, place HAVING SUM(n) >= 2 ORDER BY n DESC LIMIT 10`, missFrom),
     stmt(env, `SELECT COUNT(*) AS n, SUM(CASE WHEN created_at >= ? THEN 1 ELSE 0 END) AS week FROM inquiries WHERE created_at >= ?`, now - 7 * DAY, now - 28 * DAY),
     stmt(env, `SELECT COUNT(*) AS n, AVG(stars) AS stars, SUM(CASE WHEN at >= ? THEN 1 ELSE 0 END) AS week FROM store_reviews`, now - 7 * DAY),
     stmt(env, `SELECT id, title FROM dev_items WHERE deleted_at IS NULL AND status IN ('doing', 'done') AND COALESCE(events, '') = '' ORDER BY updated_at DESC LIMIT 5`),
@@ -818,8 +915,15 @@ export async function observe(env, now = Date.now(), { names = EVENTS } = {}) {
       WHERE g.route LIKE 'screen/%' AND g.status IN ('new', 'again', 'seen') AND d.day >= ? GROUP BY g.sig ORDER BY n DESC LIMIT ${OBS.screenSignals}`, kstDay(now - 7 * DAY)),
     // 2.0.0 [RVA-53] 검토 I24c-03: 관리자가 '판정이 틀렸어요'·'아니에요'로 뺀 문장의 걸린 말(30일).
     stmt(env, "SELECT detail FROM audit WHERE action = 'ask_miss' AND at >= ? ORDER BY id DESC LIMIT 500", now - 30 * DAY),
-  ]).catch(() => null))?.map((r) => r.results ?? []) ?? [[], [], [], [], [{}], [{}], [], [{}], [], []];
-  const [configRows, usageRows, eventRows, missRows, inqRows, revRows, noEvRows, noEvCount, screenRows = [], missAsk = []] = q;
+    // 2.0.0 [RVA-63] HQ-124: 7일 안 오류 문의(닫힘 되풀이 묶음을 운영 장부와 같은 셈으로).
+    stmt(env, `SELECT i.id, i.kind, i.info, i.device, i.created_at,
+        (SELECT m.text FROM inquiry_messages m WHERE m.inquiry_id = i.id AND m.sender = 'user' ORDER BY m.id LIMIT 1) AS first
+      FROM inquiries i WHERE i.kind IN ('bug', 'question', 'other') AND i.created_at >= ? ORDER BY i.created_at DESC LIMIT 400`, now - CRASH.days * DAY),
+    ...(missOpen.length ? [stmt(env, `SELECT place || ':' || word AS subject, SUM(n) AS n FROM search_misses WHERE week >= ? AND place || ':' || word IN (${missOpen.map(() => "?").join(",")})
+      GROUP BY place, word`, missFrom, ...missOpen)] : []),
+  ]).catch(() => null);
+  const q = qr?.map((r) => r.results ?? []) ?? [[], [], [], [], [{}], [{}], [], [{}], [], [], [], []];
+  const [configRows, usageRows, eventRows, missRows, inqRows, revRows, noEvRows, noEvCount, screenRows = [], missAsk = [], crashRows = [], missOpenRows = []] = q;
   const cfg = new Map(configRows.map((r) => [r.day, r.n ?? 0]));
   const sample = new Map(usageRows.map((r) => [r.day, r.phones ?? 0]));
   const sampleSeries = days.map((d) => sample.get(d) ?? 0);
@@ -868,14 +972,28 @@ export async function observe(env, now = Date.now(), { names = EVENTS } = {}) {
     disc: obsDisc(eventRows.filter((r) => r.day >= from14)),
     screen: screenRows.map((r) => ({ sig: r.sig, screen: String(r.route).slice("screen/".length), message: r.message, n: r.n ?? 0 })),
     askMiss: obsAskMiss(missAsk),
+    crashRepeats: obsCrashRepeats(crashRows, now),
     tune: await obsTune(env),
   };
+  board.follow = qr ? obsFollow(stored, eventRows, from7, missOpenRows) : [];
   board.found = obsRules(board);
   // 2.0.0 [RVA-54] 개발사항으로 이어진 신호는 한 줄 걸음(뜸 → 개발사항 → 닿음 → 돌아옴)과 함께.
   const devInfo = await obsDevInfo(env, stored.map((s) => s.devId ?? s.prevDev));
   board.signals = stored.map((s) => (s.devId || s.prevDev ? { ...s, steps: signalSteps(s, devInfo.get(s.devId ?? s.prevDev), now) } : s));
   board.gaps = obsGaps(board);
   return board;
+}
+
+/** 2.0.0 [RVA-63] HQ-124: 7일 안 오류 문의에서 닫힘 되풀이 묶음. 보낸 분 번호는 표지로만 남아요. */
+export function obsCrashRepeats(rows, now) {
+  const items = [];
+  for (const r of rows ?? []) {
+    let info = {};
+    try { info = JSON.parse(r.info || "{}") ?? {}; } catch { /* 못 읽은 정보는 빈 것으로 */ }
+    const c = crashOf(r.kind, r.first, info);
+    if (c) items.push({ id: r.id, device: r.device, model: info.model ?? null, android: info.android ?? null, app: info.app ?? null, at: r.created_at, record: c.record });
+  }
+  return crashRepeats(items, now).map((g) => ({ ...g, first: new Date(g.first).toISOString(), last: new Date(g.last).toISOString() }));
 }
 
 /**
@@ -920,6 +1038,49 @@ export function obsDisc(rows) {
   if (!shown) return null;
   const pct = (n) => Math.round((n / shown) * 1000) / 10;
   return { shown, tried: sum("disc_try"), later: sum("disc_later"), off: sum("disc_off"), tryRate: pct(sum("disc_try")), offRate: pct(sum("disc_off")) };
+}
+
+/**
+ * 2.0.0 [RVQ-35] 검토 SVC-18: 문제일 때만 목록에 오르는 신호(기능 쓰임·찾았는데 없던 말)의 열린 대상마다 지금 값. 기능은 최근 7일 쓴 휴대폰
+ * (그 전 7일과 함께), 찾았는데 없던 말은 3주 횟수예요. 읽은 줄에 없으면 0이에요(읽기에 실패하면 부르지 않아요).
+ */
+export function obsFollow(stored, eventRows, from7, missRows = []) {
+  const openOf = (kind) => (stored ?? []).filter((x) => x.kind === kind && x.state !== "dismiss" && !x.cleared && x.subject).map((x) => x.subject);
+  const out = [];
+  for (const ev of new Set(openOf("feature-fall"))) {
+    let now = 0;
+    let before = 0;
+    for (const r of eventRows) {
+      if (r.event !== ev) continue;
+      if (r.day >= from7) now += r.phones ?? 0;
+      else before += r.phones ?? 0;
+    }
+    out.push({ kind: "feature-fall", subject: ev, value: now, base: before });
+  }
+  const miss = new Map(missRows.map((r) => [r.subject, r.n ?? 0]));
+  for (const sub of new Set(openOf("search-miss"))) out.push({ kind: "search-miss", subject: sub, value: miss.get(sub) ?? 0 });
+  return out;
+}
+
+/**
+ * 2.0.0 [RVQ-35] 개선 신호에 달린 개발사항마다 그 고침이 사용자에게 닿은 때(loop.js reachedAt). 아직이면 null, 반려·지움·없음은 0(바로
+ * 판정해요: 고치지 않기로 했으니 숫자대로).
+ */
+async function obsReach(env, list) {
+  const ids = [...new Set(list.filter((s) => s.state === "dev" && s.devId && !s.cleared).map((s) => s.devId))];
+  const reach = new Map(ids.map((id) => [id, 0]));
+  if (!ids.length) return reach;
+  const [rows, ships] = await Promise.all([
+    all(env, `SELECT id, status, route, released_in, live_at, deleted_at FROM dev_items WHERE id IN (${ids.map(() => "?").join(",")})`, ...ids).catch(() => null),
+    all(env, "SELECT target AS v, MIN(at) AS at FROM audit WHERE action = 'shipped_version' GROUP BY target ORDER BY at").catch(() => []),
+  ]);
+  // 개발사항을 읽지 못했으면 모두 '아직'으로 둬요(못 읽은 것을 닿은 것으로 판정하지 않게).
+  if (!rows) return new Map(ids.map((id) => [id, null]));
+  for (const d of rows) {
+    if (d.deleted_at || d.status === "rejected") continue;
+    reach.set(d.id, d.status === "done" ? reachedAt(d, ships) : null);
+  }
+  return reach;
 }
 
 /**
@@ -1011,7 +1172,7 @@ export async function obsStuck(env, list, now) {
 export async function observeTick(env, now = Date.now()) {
   const b = await observe(env, now);
   const before = new Set(b.signals.map((s) => s.key));
-  const list = obsMerge(b.signals, b.found, now);
+  const list = obsMerge(b.signals, b.found, now, { reach: await obsReach(env, b.signals) });
   // 2.0.0 [RVA-54] 닿고 2주가 지나도 그대로인 신호는 다시 대기열에.
   await obsStuck(env, list, now);
   await obsSave(env, list);
@@ -1106,9 +1267,11 @@ export async function observeRoute(request, env, path, method, now) {
       devEvent(env, id, now, "create", { title, from: "관측 신호" }),
       ...(bundle ? [devEvent(env, id, now, "bundle", bundle)] : []),
     ]);
-    Object.assign(s, { state: "dev", devId: id, by: actorName(env), at: now });
-  } else if (act === "reopen") Object.assign(s, { state: s.devId ? "dev" : "new", cleared: null, after: null, by: actorName(env), at: now });
-  else Object.assign(s, { state: act, by: actorName(env), at: now, ...(note ? { note } : {}), ...(act === "dismiss" && body.wrong === true ? { wrong: true } : {}) });
+    Object.assign(s, { state: "dev", devId: id, stuck: null, by: actorName(env), at: now });
+  } else if (act === "reopen") {
+    // 2.0.0 [RVQ-35] 다시 열면 판정을 지우고 사흘을 새로 세요(바로 다시 닫히지 않게).
+    Object.assign(s, { state: s.devId ? "dev" : "new", cleared: null, after: null, outcome: null, stuck: null, last: now, by: actorName(env), at: now });
+  } else Object.assign(s, { state: act, stuck: null, by: actorName(env), at: now, ...(note ? { note } : {}), ...(act === "dismiss" && body.wrong === true ? { wrong: true } : {}) });
   // 2.0.0 [RVN-15] 검토 U22c-03: '거짓이었어요'(아님 + wrong)는 그 규칙의 표본 기준을 올려요(세 번까지, 1.5배씩). 다시 열면 하나 내려요.
   let tuned = null;
   if ((act === "dismiss" && body.wrong === true) || (act === "reopen" && s.wrong)) {

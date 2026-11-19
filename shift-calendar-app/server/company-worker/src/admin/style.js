@@ -867,7 +867,7 @@ button.tile{font:inherit;text-align:left;cursor:pointer;color:inherit}button.til
 /* PC 확인 8d290ec3: 휴대폰 폭에서 상태는 두 줄로 다 보이고, 단추는 제목 아래 한 줄에 같은 폭으로. */
 hr.split{border:0;border-top:2px dashed var(--line);margin:1.5rem 0}
 .linkish{background:none;border:0;padding:0;color:var(--accent,#2b6cb0);text-decoration:underline;cursor:pointer;font:inherit}
-li.flash{outline:2px solid var(--accent,#2b6cb0);outline-offset:2px;transition:outline-color .3s}
+li.flash,.kv dd.flash{outline:2px solid var(--accent,#2b6cb0);outline-offset:2px;transition:outline-color .3s}
 img.photo-big{display:block;width:100%;max-width:512px;height:auto;margin:0 auto;image-rendering:auto;border-radius:8px}
 @media (max-width:640px){.rows.work .row{flex-wrap:wrap}.rows.work .row-side{width:100%;max-width:none;flex-direction:column;align-items:stretch;gap:.4rem}
 .rows.work .row-acts{flex-wrap:nowrap}.rows.work .row-acts .btn{flex:1 1 0;min-width:0;padding-left:.3rem;padding-right:.3rem}
@@ -1094,7 +1094,7 @@ border:1px solid var(--line);border-radius:var(--r-lg);box-shadow:var(--shadow)}
 .how>summary{display:flex;align-items:center;justify-content:space-between;gap:.75rem;cursor:pointer;list-style:none;min-height:1.75rem}
 .how>summary::-webkit-details-marker{display:none}
 .how>summary::after{content:"";width:.5rem;height:.5rem;border-right:2px solid var(--muted);border-bottom:2px solid var(--muted);transform:rotate(45deg);margin-left:.25rem}
-.how[open]>summary::after{transform:rotate(-135deg)}
+.how[open]>summary::after{content:"";transform:rotate(-135deg)}
 .how>summary .meta{margin:0 0 0 auto}
 .how-steps{list-style:none;margin:.85rem 0 0;padding:0;display:grid;gap:.85rem;grid-template-columns:repeat(auto-fit,minmax(min(15rem,100%),1fr))}
 .how-steps li{display:flex;align-items:flex-start;gap:.7rem}
@@ -1219,6 +1219,19 @@ form[data-form="dev-ship-note"] textarea{min-height:5rem}
 .grid-table thead th{font-size:.75rem;color:var(--muted);font-weight:800}
 .grid-table tr.bad th,.grid-table tr.bad td{color:var(--bad)}
 .grid-table input{width:6.5rem;min-height:2.5rem;text-align:right}
+/* 2.0.0 [RVQ-48] 검토 U22b-12: 돈 › 상품마다 표(9열)는 칸이 좁으면(380 폭, 글자 200%) 옆으로 밀지 않고 상품마다 작은 칸 묶음으로 펼쳐요. */
+.prod-wrap{container:prods/inline-size}
+@container prods (width < 30rem){
+  .prod-table thead{display:none}
+  .prod-table,.prod-table tbody{display:block}
+  .prod-table tr{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(4.5rem,100%),1fr));gap:.25rem .5rem;padding:.6rem 0;border-bottom:1px solid var(--line)}
+  .prod-table tr:last-child{border-bottom:0}
+  .prod-table th,.prod-table td{border-bottom:0;padding:.15rem 0;text-align:left;white-space:normal;position:static}
+  .prod-table tbody th{grid-column:1/-1;font-weight:800}
+  .prod-table td{display:flex;flex-direction:column;gap:.05rem}
+  .prod-table td::before{content:attr(data-label);font-size:.75rem;font-weight:700;color:var(--muted);word-break:keep-all}
+  .prod-table td.amt{grid-column:1/-1}
+}
 .stars{color:var(--gold);letter-spacing:.05em;font-size:1rem}
 .stars .off{color:var(--line-strong)}
 .review-list{display:grid;gap:.75rem}
@@ -1566,7 +1579,8 @@ details.card>summary{display:flex;flex-wrap:wrap;gap:.25rem .75rem;align-items:b
 details.card.home-fold{margin:0;padding:0}
 .home-fold>summary{display:flex;flex-wrap:nowrap;align-items:center;gap:.75rem;min-height:3.25rem;padding:.6rem 1.1rem;list-style:none}
 .home-fold>summary::after{content:"";flex:none;width:.5rem;height:.5rem;border-right:2px solid var(--muted);border-bottom:2px solid var(--muted);transform:rotate(45deg);margin:0 .2rem}
-.home-fold[open]>summary::after{transform:rotate(-135deg)}
+/* 2.0.0 [RVA-63] 총괄(#526): 펼친 꺾쇠에 공통 details[open] 글자(▴)가 함께 그려져 획이 하나 더 붙어 보였어요(오늘 접는 카드도). 글자를 비워요. */
+.home-fold[open]>summary::after{content:"";transform:rotate(-135deg)}
 .home-fold .hf-t{flex:1;min-width:0;display:flex;flex-direction:column;gap:.1rem}
 .home-fold .hf-t b{font-size:.98rem}
 .home-fold .hf-t small{font-size:min(.8rem,16px);font-weight:500;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
@@ -1584,6 +1598,11 @@ details.card.home-fold{margin:0;padding:0}
 .stuck-list p{margin:0 0 .35rem;overflow-wrap:anywhere}.stuck-list small{color:var(--muted);font-size:min(.8rem,16px)}
 /* 2.0.0 [RVA-62] 좁은 폭(또는 큰 글자)에서는 굵은 제목 뒤에 작은 글이 이어 붙지 않고 아래 줄로. */
 .stuck-list{container:stuck/inline-size}@container stuck (width < 30rem){.stuck-list p>small{display:block;margin-top:.15rem}}
+/* 2.0.0 [RVA-63] HQ-124: 운영 장부 맨 위 '같은 판에서 닫힘 되풀이'(안내 카드 한 모양, 접으면 한 줄)와 문의 상세의 멈춤 기록 줄. */
+details.card.crash-card{margin:0 0 .75rem}.crash-card>summary .hf-t small{white-space:normal;overflow-wrap:anywhere}.crash-card .crash-lines{margin:.1rem 0 0}.crash-card .stuck-list p.crash-g{font-weight:400;font-size:1rem;margin:0 0 .3rem}.crash-card .hint{margin:.6rem 0 0}
+.crash-lines a.chip{text-decoration:none;color:var(--fg);min-height:min(2.75rem,48px);display:inline-flex;align-items:center}
+.crash-note{display:flex;flex-wrap:wrap;align-items:center;gap:.4rem .6rem;color:var(--fg);overflow-wrap:anywhere}.crash-note>span:not(.pill){flex:1 1 14rem;min-width:0}
+.crash-note .btn{flex:0 1 auto;max-width:100%;white-space:normal;overflow-wrap:anywhere}
 /* 2.0.0 [RVD-16] 디자인 품질(총괄 11-12): 설명은 한 줄 + 펼치기, 줄 안 칩은 글자 폭, 여러 개 고르기 줄(label.row: 보상·문의·개발사항)의
    글이 label의 굵은 글씨를 물려받지 않아요. */
 label.row{font-weight:inherit;font-size:inherit;margin:0}
@@ -1638,6 +1657,8 @@ details.row-more>.menu .btn{justify-content:flex-start;width:100%;border-color:t
 /* 2.0.0 [RVA-25] 검토 U24-07: 카드의 왼쪽 맞춤 단추 줄에서는 ⋯가 왼쪽에 있어 메뉴를 오른쪽으로 펴요(화면 밖으로 나가지 않게). */
 .actions.start details.row-more>.menu{left:0;right:auto}
 .list-note{margin:.5rem 0 .75rem}
+/* 2.0.0 [RVQ-39] 보류된 표의 묶음 줄: 세기·버리기는 한 묶음으로 글 옆이나 그 아래 줄에 함께 놓여요(하나만 다음 줄로 떨어지지 않게). */
+.held-group{display:flex;flex-wrap:wrap;align-items:center;gap:.25rem .5rem}.held-acts{display:inline-flex;gap:.35rem}
 .list-head .lg-bar{display:flex;flex:1 1 8rem;min-width:min(8rem,100%);margin:0}.list-head .lg-bar input[type=search]{flex:1 1 auto;min-width:0}
 .seg .n.hot{color:var(--bad)}
 .ledger-view>.stage-strip{margin:.75rem 0}

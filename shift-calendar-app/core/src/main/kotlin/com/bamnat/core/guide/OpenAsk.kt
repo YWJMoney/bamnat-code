@@ -37,7 +37,13 @@ enum class OpenAsk {
     TEXT_SIZE,
 
     /** 정식 출시 전부터 쓴 사람에게 한 번: 고마워요. */
-    LAUNCH_THANKS;
+    LAUNCH_THANKS,
+
+    /**
+     * 2.0.0 [RVH-61] 검토 PC-131: Play 별점·리뷰 창. 가장 가벼워 맨 뒤: 다른 창이 이번 방문에 떴으면 다음 방문으로 (판 올림 뒤 첫 화면이
+     * 리뷰 창이던 것).
+     */
+    REVIEW;
 
     /** A window that wants to show: [asked] when the user asked for it (a notice's 새 기능 보기). */
     data class Want(val ask: OpenAsk, val asked: Boolean = false)

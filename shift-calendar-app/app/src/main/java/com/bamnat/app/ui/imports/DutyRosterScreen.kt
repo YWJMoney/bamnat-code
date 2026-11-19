@@ -927,8 +927,15 @@ fun DutyRosterScreen(vm: DutyRosterViewModel, onBack: () -> Unit) {
                         marked = (ui.doubtful + ui.missing).map { ui.month.atDay(it) }.toSet(),
                         outlined = if (ui.keepMine) emptySet() else over,
                         modifier = Modifier.heightIn(min = cellHeight * 5),
+                        preview = true,
                     )
                 }
+                // 2.0.0 [RVH-70] (검토 HQ-82) The bar at a week's left said nothing here: what it means, once, when a week has one.
+                val longWeeks = remember(calculator, ui.month, vm.weekStart) { longWeeks(calculator, ui.month, vm.weekStart) }
+                if (longWeeks > 0) com.bamnat.app.ui.components.ToneLine(
+                    "왼쪽 막대는 ${com.bamnat.core.hours.HourLimits().weeklyLimitHours}시간이 넘는 주예요 · ${longWeeks}주",
+                    Modifier.padding(top = 4.dp),
+                )
                 Text("날짜를 누르면 그 날부터 넣고, 한 번 더 누르면 그 칸을 골라 고쳐요. 키를 하나 누른 뒤 손가락으로 쓸면 그 근무로 칠해요.",
                     style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
@@ -948,6 +955,12 @@ fun DutyRosterScreen(vm: DutyRosterViewModel, onBack: () -> Unit) {
     newKindFor?.let { raw ->
         NewKindDialog(raw, onDismiss = { newKindFor = null }) { name, range -> vm.newKind(raw, name, range); newKindFor = null }
     }
+}
+
+/** 2.0.0 [RVH-70] The rows of [month]'s grid whose week is over the limit (the ones [MonthGrid] draws a bar at). */
+internal fun longWeeks(calculator: WorkHoursCalculator, month: YearMonth, weekStart: java.time.DayOfWeek): Int {
+    val first = month.atDay(1).with(java.time.temporal.TemporalAdjusters.previousOrSame(weekStart))
+    return (0 until com.bamnat.app.ui.calendar.GRID_ROWS).count { calculator.week(first.plusDays(it * 7L + 3)).overLimit }
 }
 
 /** [READ-37] "사진에서 7월로 읽었어요. 맞나요?" with the month the screen was on as the other answer. */

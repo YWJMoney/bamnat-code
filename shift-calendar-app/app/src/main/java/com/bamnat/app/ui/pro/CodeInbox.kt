@@ -27,6 +27,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.foundation.relocation.bringIntoViewRequester
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.heading
@@ -143,6 +145,14 @@ internal fun CodeInbox(c: AppContainer, gate: Gate, startOpen: Boolean = false, 
         CodeKind.EIGHT -> eightAs != null && eightNo == null
         CodeKind.NONE -> false
     }
+    // 2.0.0 [RVO-25] PC-146 (키보드 ✓를 눌러도 아무 일이 없고 '고르기·넣기'가 키보드 뒤에 가려요): the field, what it says of the code,
+    // the choice and 넣기 come up over the keyboard together, and ✓ does what 넣기 does, or says what is still missing and puts the
+    // keyboard away so the choice shows.
+    val actions = remember { androidx.compose.foundation.relocation.BringIntoViewRequester() }
+    var typing by remember { mutableStateOf(false) }
+    androidx.compose.runtime.LaunchedEffect(typing, kind, eightAs, eightNo) {
+        if (typing) { kotlinx.coroutines.delay(KEYBOARD_SETTLE_MS); actions.bringIntoView() }
+    }
     fun send() {
         if (!ready) return
         if (ProCodeTries.waiting()) { said = CODE_WAIT; return }
@@ -195,6 +205,15 @@ internal fun CodeInbox(c: AppContainer, gate: Gate, startOpen: Boolean = false, 
             }
         }
     }
+    fun done() {
+        if (ready) { send(); return }
+        focus.clearFocus()
+        said = when {
+            kind == CodeKind.NONE -> "받은 코드를 다 넣어 주세요(6·8·16자리)."
+            kind == CodeKind.EIGHT && eightNo == null && eightAs == null -> "친구 초대 코드인지 프로 나눔 코드인지 골라 주세요."
+            else -> null
+        }
+    }
     SectionCard(title = null, modifier = modifier) {
         Row(
             Modifier.fillMaxWidth().heightIn(min = 48.dp)
@@ -218,9 +237,11 @@ internal fun CodeInbox(c: AppContainer, gate: Gate, startOpen: Boolean = false, 
             code, { code = it.uppercase().filter { ch -> ch.isLetterOrDigit() || ch == '-' || ch == ' ' }.take(24); said = null },
             label = { Text("받은 코드") }, singleLine = true,
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Ascii, capitalization = KeyboardCapitalization.Characters, imeAction = ImeAction.Done),
-            keyboardActions = KeyboardActions(onDone = { send() }),
-            modifier = Modifier.fillMaxWidth(),
+            keyboardActions = KeyboardActions(onDone = { done() }),
+            modifier = Modifier.fillMaxWidth().onFocusChanged { typing = it.isFocused },
         )
+        androidx.compose.foundation.layout.Column(Modifier.fillMaxWidth().bringIntoViewRequester(actions),
+            verticalArrangement = Arrangement.spacedBy(8.dp)) {
         when (kind) {
             CodeKind.LINK -> Text("6자리 연결 코드예요. 넣으면 이 휴대폰을 연결해요.", style = MaterialTheme.typography.bodySmall)
             CodeKind.RECOVERY -> Text("이용권 복구 코드예요. 옮기면 그 휴대폰의 이용권은 끝나요.", style = MaterialTheme.typography.bodySmall)
@@ -246,5 +267,9 @@ internal fun CodeInbox(c: AppContainer, gate: Gate, startOpen: Boolean = false, 
         }
         said?.let { Text(it, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.primary,
             modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite }) }
+        }
     }
 }
+
+/** The keyboard's coming up, before what is under the field is brought over it (as [com.bamnat.app.ui.money.aboveKeyboard]). */
+private const val KEYBOARD_SETTLE_MS = 350L

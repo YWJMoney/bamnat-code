@@ -1,7 +1,6 @@
 import { all, audit, batch, iso, json, one, overLimit, randomId, readJson, run, stmt } from "./index.js";
 import { DAY } from "./units.js";
-import { grams, likeness, titleFrom } from "./inbox.js";
-import { fcmTell } from "./fcm.js";
+import { autoAnswerOrHold, grams, likeness, titleFrom } from "./inbox.js";
 import { grantMakerReward } from "./maker-reward.js";
 import { textProblem } from "./recipes.js";
 
@@ -175,24 +174,26 @@ export function toldText(need, how) {
 
 /**
  * Answers every asker of [need] not told yet; 문의는 '답함'이 되어 앱의 새 답 알림이 떠요.
- * 2.0.0 [RVN-24] 검토 SVC-109: 90 askers a batch (two statements each), each batch marking only its own askers told, so a big group never
- * makes one huge batch and a batch that failed leaves its askers to the next answer.
+ * 2.0.0 [RVQ-34] 검토 SVC-31: 전에는 문의 대화에 바로 넣어, 사람이 보려던 문의(돈·개인정보…)도 '답함'이 되고 말투도 달랐어요. 이제 문의 답
+ * 규칙(inboxAnswer)을 거치고, 사람이 봐야 할 문의는 사람이 보낼 보류 답으로 올라가요. 앱 알림은 inboxAnswer가 보내요.
+ * 2.0.0 [RVN-24] 검토 SVC-109: 90 askers a batch, each batch marking only its own askers told, so a big group never makes one
+ * huge batch and an asker whose answer failed (a throw) is left for the next answer.
  */
 async function tellAskers(env, need, how, now) {
   const links = await all(env, "SELECT src, ref FROM studio_need_links WHERE need_id = ? AND told = 0 AND src = 'inq'", need.id);
   const text = toldText(need, how);
+  let n = 0;
   for (let i = 0; i < links.length; i += TELL_CHUNK) {
-    const part = links.slice(i, i + TELL_CHUNK);
-    const stmts = [];
-    for (const l of part) {
-      stmts.push(stmt(env, "INSERT INTO inquiry_messages (inquiry_id, sender, text, by, at) SELECT id, 'admin', ?, '밤낮', ? FROM inquiries WHERE id = ?", text, now, l.ref));
-      stmts.push(stmt(env, "UPDATE inquiries SET status = 'answered', updated_at = ? WHERE id = ?", now, l.ref));
+    const done = [];
+    for (const l of links.slice(i, i + TELL_CHUNK)) {
+      try {
+        if (await autoAnswerOrHold(env, l.ref, text, now)) n++;
+        done.push(l.ref);
+      } catch { /* left for the next answer */ }
     }
-    stmts.push(stmt(env, `UPDATE studio_need_links SET told = 1 WHERE need_id = ? AND src = 'inq' AND ref IN (${part.map(() => "?").join(",")})`, need.id, ...part.map((l) => l.ref)));
-    await batch(env, stmts);
+    if (done.length) await run(env, `UPDATE studio_need_links SET told = 1 WHERE need_id = ? AND src = 'inq' AND ref IN (${done.map(() => "?").join(",")})`, need.id, ...done);
   }
-  await fcmTell(env, links.map((l) => l.ref), now);
-  return links.length;
+  return n;
 }
 
 export const TELL_CHUNK = 90;

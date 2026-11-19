@@ -46,7 +46,7 @@ fun TierPreviewCard(c: AppContainer, gate: Gate, showNow: Boolean = true) {
             style = MaterialTheme.typography.bodyMedium,
         )
         // On the 프로 screen its own 지금 card is right under this one.
-        if (showNow) Text("지금: ${gate.access.say(com.bamnat.core.time.Today.zone())}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        if (showNow) Text(nowLine(gate.access.say(com.bamnat.core.time.Today.zone())), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
             com.bamnat.app.ui.components.FilterChip(selected = preview == null, onClick = { setPreview(c, null) }, label = { Text("실제") })
             listOf(Tier.FREE to "무료", Tier.PRO to "프로", Tier.LEADER to "팀·직원 요금제").forEach { (t, words) ->
@@ -94,3 +94,6 @@ internal fun previewNoPay(gate: Gate): Boolean = BuildConfig.DEBUG && gate.previ
 internal fun shownPass(gate: Gate, pass: PassOffer?): PassOffer? = pass ?: if (BuildConfig.DEBUG && gate.preview) previewPass() else null
 
 internal const val PREVIEW_NO_PAY = "미리 보기라 결제는 되지 않아요"
+
+/** 2.0.0 [RVO-27] PC-196: '지금: 모든 기능이 무료로 열려 있어요', not '지금: 지금은 …' (the reason's words start with 지금은 by themselves). */
+internal fun nowLine(said: String): String = "지금: " + said.removePrefix("지금은 ")

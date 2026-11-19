@@ -351,9 +351,9 @@ test("[RVN-24] SVC-107 이달의 제작자 후보: from 30 쓰는 분 of the mon
   d = await month();
   assert.deepEqual(d.candidates.SHIFT.map((x) => [x.maker, x.users]), [[mb, 30]]);
   assert.deepEqual(d.candidates.DAY, []);
-  const { monthBefore } = await import("../src/recipe-community.js");
-  assert.equal(monthBefore(Date.parse("2027-01-01T00:00:00Z")), "2026-12");
-  assert.equal(monthBefore(Date.parse("2026-12-31T16:00:00Z")), "2026-12", "KST: already January");
+  const { recipeMonthBefore } = await import("../src/recipe-community.js");
+  assert.equal(recipeMonthBefore(Date.parse("2027-01-01T00:00:00Z")), "2026-12");
+  assert.equal(recipeMonthBefore(Date.parse("2026-12-31T16:00:00Z")), "2026-12", "KST: already January");
 });
 
 test("[RVN-24] SVC-108 the release-note line names the maker only while their maker profile is open", async (t) => {

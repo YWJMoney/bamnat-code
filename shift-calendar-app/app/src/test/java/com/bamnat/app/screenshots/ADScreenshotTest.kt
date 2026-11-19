@@ -208,6 +208,7 @@ class ADScreenshotTest : ScreenshotBase() {
     @Test fun settingsMovesTheTabsAndPutsThemBack() {
         open(PHONE_393) {
             settingsPage(SettingsPage.CALENDAR.title)
+            tapText("누르기·메뉴", exact = true) // 2.0.0 [RVO-21] the group is folded until opened
             tapText(TAB_ORDER_ROW, exact = true)
             tapText("가계부 위로", exact = true)
             assertEquals("money,calendar,memos,stats,plaza,settings", saved())
@@ -220,7 +221,14 @@ class ADScreenshotTest : ScreenshotBase() {
             assertEquals("가계부", tabNow())
             // [NAV2-02] Settings waits by the 나 button.
             settingsPage(SettingsPage.CALENDAR.title)
+            tapText("누르기·메뉴", exact = true) // 2.0.0 [RVO-21] the group is folded until opened
             tapText(TAB_ORDER_ROW, exact = true)
+            tapText("처음대로 (다섯 탭)", exact = true)
+            assertEquals("", saved())
+            // 2.0.0 [RVO-21] 검토 U11a-16: 되돌리기 puts the bar back, in the dialog, and 처음대로 is there again.
+            val reset = saved()
+            tapText("되돌리기", exact = true)
+            assertTrue(saved() != reset)
             tapText("처음대로 (다섯 탭)", exact = true)
             assertEquals("", saved())
             tapText("완료", exact = true)
@@ -273,22 +281,26 @@ class ADScreenshotTest : ScreenshotBase() {
     }
     @Test fun settingsRow() = shoot("1029_ad_settings_row", PHONE_393) {
         settingsPage(SettingsPage.CALENDAR.title)
+        tapText("누르기·메뉴", exact = true) // 2.0.0 [RVO-21] the group is folded until opened
         reveal(TAB_ORDER_ROW, exact = true)
         noCuts("settings_row")
     }
     @Test fun settingsDialog() = shoot("1030_ad_settings_dialog", PHONE_393) {
         memoFirst()
         settingsPage(SettingsPage.CALENDAR.title)
+        tapText("누르기·메뉴", exact = true) // 2.0.0 [RVO-21] the group is folded until opened
         tapText(TAB_ORDER_ROW, exact = true)
         noCuts("settings_dialog")
     }
     @Test fun settingsDialog200() = shoot("1031_ad_settings_dialog_200", SMALL_PHONE, 2f) {
         settingsPage(SettingsPage.CALENDAR.title)
+        tapText("누르기·메뉴", exact = true) // 2.0.0 [RVO-21] the group is folded until opened
         tapText(TAB_ORDER_ROW, exact = true)
         noCuts("settings_dialog_200")
     }
     @Test fun settingsDialogDark() = shoot("1032_ad_settings_dialog_dark", PHONE_393_NIGHT) {
         settingsPage(SettingsPage.CALENDAR.title)
+        tapText("누르기·메뉴", exact = true) // 2.0.0 [RVO-21] the group is folded until opened
         tapText(TAB_ORDER_ROW, exact = true)
     }
     @Test fun helpAnswer() = shoot("1033_ad_help_answer", PHONE_393) {
@@ -381,6 +393,7 @@ class ADScreenshotTest : ScreenshotBase() {
     @Test fun slotEditorWithAGroup() = shoot("1038_ad_slot_editor", PHONE_393) {
         c.settingsRepository.update { it.copy(tabSlots = "calendar;g|돈|money+f:OWED+f:PAY;memos;f:SLEEP;plaza") }
         settingsPage(SettingsPage.CALENDAR.title)
+        tapText("누르기·메뉴", exact = true) // 2.0.0 [RVO-21] the group is folded until opened
         tapText(TAB_ORDER_ROW, exact = true)
         assertTrue(appears("묶음 3개", exact = true))
         noCuts("slot_editor")
@@ -388,6 +401,7 @@ class ADScreenshotTest : ScreenshotBase() {
     @Test fun slotEditor200() = shoot("1039_ad_slot_editor_200", SMALL_PHONE, 2f) {
         c.settingsRepository.update { it.copy(tabSlots = "calendar;g|돈|money+f:OWED+f:PAY;memos;f:SLEEP;plaza") }
         settingsPage(SettingsPage.CALENDAR.title)
+        tapText("누르기·메뉴", exact = true) // 2.0.0 [RVO-21] the group is folded until opened
         tapText(TAB_ORDER_ROW, exact = true)
         noCuts("slot_editor_200")
     }

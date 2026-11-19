@@ -168,6 +168,23 @@ fun StepperRow(
 private val STACK_BELOW = 300.dp
 
 /**
+ * 2.0.0 [RVH-81] 검토 HQ-98 (총괄 사진 검토, 편 폭 707dp 글자 100%: 달력 옆 하루 칸의 '휴게 시간'이 한 글자씩 세로로 섰어요): a row's
+ * name and its control (− 1시간 +, a switch), on the shared [SideOrBelow] (BIGTXT-01). They share the line only while the whole name
+ * fits on it in one line; when the column is too narrow the name takes its own line and the control sits under it at the end, so no
+ * word is ever set one letter per line (조건 12).
+ */
+@Composable
+fun LabelControlRow(
+    label: String,
+    modifier: Modifier = Modifier,
+    style: androidx.compose.ui.text.TextStyle = MaterialTheme.typography.bodyLarge,
+    control: @Composable () -> Unit,
+) = SideOrBelow(modifier.fillMaxWidth(), minStart = WHOLE_NAME, start = { Text(label, style = style) }, end = control)
+
+/** As [SideOrBelow]'s minStart: more than any name, so the name keeps all of itself beside the control or goes above it. */
+private val WHOLE_NAME = 10_000.dp
+
+/**
  * 2.0.0 [RVN-18] 검토 COMP-22-6·I10aa-05 (디자인 품질 12): two buttons side by side, one under the other with big letters (150% and up)
  * or on a narrow screen, so neither breaks its words syllable by syllable. Each is given its [Modifier] (half the row, or the whole
  * width); [second] null leaves [first] the row.

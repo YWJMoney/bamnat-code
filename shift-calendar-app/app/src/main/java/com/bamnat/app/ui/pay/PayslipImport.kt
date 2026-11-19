@@ -56,6 +56,7 @@ import com.bamnat.core.pay.RuleChange
 import com.bamnat.core.pay.RuleText
 import com.bamnat.core.pay.SlipNames
 import com.bamnat.core.pay.SlipRole
+import com.bamnat.app.ui.theme.bamnat
 import com.bamnat.app.ui.theme.Tone
 import com.bamnat.app.ui.theme.color
 
@@ -215,7 +216,9 @@ fun PayslipFillDialog(
             val from = if (scan != null || scanSecond != null) CellFrom.PHOTO else CellFrom.TEXT
             // 2.0.0 [RVL-17] (검토 SCAN-30) A pay read that changes the pay by much starts off, with the line that says so.
             sheet.reset(com.bamnat.core.pay.RuleSheet.read(findings, photos.unread, from, rules.shiftTypes.associate { it.id to it.name },
-                current = com.bamnat.core.pay.RuleSheet.payNow(rules.profile, com.bamnat.core.time.Today.date())))
+                current = com.bamnat.core.pay.RuleSheet.payNow(rules.profile, com.bamnat.core.time.Today.date()),
+                // 2.0.0 [RVL-47] (검토 SCAN-31) A 상여 like one already set, under another name, starts off and says so.
+                bonuses = rules.profile?.items.orEmpty().filter { it.cadence == com.bamnat.core.pay.Cadence.BONUS }))
         }
     }
     // [PHOTO-01] A photo with no words found, or one that failed to read, opens the lines to fill by hand, never a dead end.
@@ -267,12 +270,14 @@ fun PayslipFillDialog(
     val chosen = if (rules != null) sheet.sheet.toChanges() else emptyList()
     // [READ-18] A photo's payslip not sure (a line read two ways, or lines that do not add up to a stated 지급 총액)
     // waits for "사진과 같은가요?" (조용히 틀린 값 0).
+    // 2.0.0 [RVL-46] (검토 SCAN-29) A name looked at ('이름 확인') is asked on the card but never holds the payslip back: not
+    // answered, it stays as shown (a kind-changing guess the plain 수당) and is asked again next month. The same taps as 1.39.
     val sure = unsure.isEmpty() && com.bamnat.core.pay.SlipVote.adds(r) && com.bamnat.core.pay.SlipVote.stated(r)
     val waiting = r.lines.isNotEmpty() && photo != null && same == null && !sure
     val action = when {
         r.lines.isEmpty() && chosen.isEmpty() -> SheetAction("칸을 넣어 주세요", enabled = false) {}
         // [PHOTO-30] The button sends the user to what is left to look at, never a grey button with nothing to press.
-        waiting -> SheetAction(if (unsure.isNotEmpty()) "노란 ${unsure.size}줄 확인하기" else "명세서 줄이 사진과 같은지 봐 주세요") { reviewAsk++ }
+        waiting -> SheetAction(if (unsure.isNotEmpty()) "${unsure.size}줄 확인하기" else "명세서 줄이 사진과 같은지 봐 주세요") { reviewAsk++ }
         else -> SheetAction(when {
             r.lines.isEmpty() && (rulesOnly || byHandRules) -> "규칙으로 계산하기"
             chosen.isNotEmpty() -> "이대로 채우고 규칙 넣기"
@@ -363,7 +368,7 @@ private fun PickDialog(
                         else -> "1. 명세서"
                     }, style = MaterialTheme.typography.titleSmall)
                     ScanButtons(onScan = onScan, onEmpty = onEmpty, keepSlips = true)
-                    notice?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error) }
+                    notice?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.bamnat.caution) } // 2.0.0 [RVJ-66] (HQ-103, 조건 6)
                     // [INPUT-04] A payslip copied from the company's app or a message: one tap.
                     com.bamnat.app.ui.components.ClipboardHint("명세서", fits = { PayslipReader.read(it).lines.isNotEmpty() }, onPaste = onPaste)
                     TextButton(onClick = { others = !othersOpen }, modifier = Modifier.heightIn(min = 48.dp)) {
@@ -410,6 +415,8 @@ internal fun RuleSentenceBox(
     current: RuleChange.Base? = null,
     /** 2.0.0 [RVJ-63] Whether something is written, picked or read here (the window around it asks before closing then). */
     onStarted: (Boolean) -> Unit = {},
+    /** 2.0.0 [RVL-47] (검토 SCAN-31) The 상여 set now: one read again under another name starts off and says so. */
+    bonuses: List<com.bamnat.core.pay.PayItem> = emptyList(),
     onApply: (List<RuleChange>) -> Unit,
 ) {
     var text by remember { mutableStateOf("") }
@@ -449,7 +456,7 @@ internal fun RuleSentenceBox(
                 onClick = {
                     sheet.reset(com.bamnat.core.pay.RuleSheet.read(
                         RuleText.read(all, kinds, shiftTypes, fiveOrMore), RuleText.unread(all, kinds, shiftTypes, fiveOrMore),
-                        if (fromPhoto) CellFrom.PHOTO else CellFrom.TEXT, host.shiftNames, current = current))
+                        if (fromPhoto) CellFrom.PHOTO else CellFrom.TEXT, host.shiftNames, current = current, bonuses = bonuses))
                     read = true
                 },
                 enabled = all.isNotBlank(),

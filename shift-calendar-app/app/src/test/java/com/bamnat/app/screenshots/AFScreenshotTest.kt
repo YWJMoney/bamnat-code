@@ -245,7 +245,9 @@ class AFScreenshotTest : ScreenshotBase() {
         members()
         ask()
         assertTrue(appears("회사 광장에 나눌까요?", exact = true))
-        assertTrue(appears("같은 회사 사람들이 쓰게 근무 순서·계산 방식(내 급여 금액·이름 빼고)을 나눌까요?", exact = true))
+        // 2.0.0 [RVN-22] I10bc-03: it names the parts it asks about (설정 › 회사 광장에 나누기 chooses each), the amount and name still left out.
+        assertTrue(appears("같은 회사 사람들이 쓰게", exact = false))
+        assertTrue(appears("나눌까요? (내 급여 금액·이름 빼고)", exact = false))
         assertEquals(1, c.autoShare.ask.value?.rewardMonths)
         // [PLAZA-34] 1.27 AI: 이번엔 안 할게요 · 다시 묻지 않기 in place of the one no.
         assertTrue(appears("이번엔 안 할게요", exact = true))

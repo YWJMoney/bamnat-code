@@ -9,7 +9,7 @@ import { readFileSync } from "node:fs";
 import worker from "../../src/index.js";
 import { adminFile } from "../../src/admin-app.js";
 import { SERVER_VERSION } from "../../src/version.js";
-import { server, signIn, report, setup, device, from, ORIGIN, PASSWORD } from "../helpers.mjs";
+import { server, signIn, report, setup, device, from, neighbour, ORIGIN, PASSWORD } from "../helpers.mjs";
 import { adminLib } from "../../src/admin-lib.js";
 
 const APP_JS = await adminFile("/admin/app.js").text();
@@ -2093,7 +2093,7 @@ test("[OBS2-01~05] 한눈에 is the 관측 board: 전체 사용자 tiles say whe
   assert.match(u.text("#main .ob-tile.need"), /연결 필요/);
   assert.match(u.text("#main .ob-tile.keep"), /앱 → 서버 요청/);
   assert.match(u.text("#main .ob-tile.voice"), /문의/);
-  assert.equal(u.$$("#main .ob-signal").length, 1, "the cleared one waits under 좋아진 신호");
+  assert.equal(u.$$("#main .ob-signal").length, 1, "the cleared one waits under 판정한 신호");
   assert.match(u.text("#main .ob-better"), /9% → 16%/);
   // [OBS2-09] 할 일만 펼치고, 기다리면 풀리는 것(3.12 시행·1.39 출시)과 정한 것(지운 이유)은 접어요.
   assert.ok(u.$("#main .ob-gaps details.ob-gap-rest"), "folded");
@@ -2107,6 +2107,82 @@ test("[OBS2-01~05] 한눈에 is the 관측 board: 전체 사용자 tiles say whe
   assert.match(made.title, /앱 삭제가 늘어난 이유/);
   assert.match(u.text("#main .ob-signal"), /개발사항/);
   assert.ok(u.$(`#main .ob-signal a[href*="${made.id}"]`), "a link to the new 개발사항");
+  assert.equal(u.$$("#main [style]").length, 0);
+  assert.deepEqual(u.errors, []);
+});
+
+test("[RVQ-34] SVC-20 개발사항: 잴 이벤트가 있을 때만 '효과를 볼 방향'을 고르고, 효과 카드가 그 방향과 '아직 몰라요'의 까닭을 말해요", async (t) => {
+  offline(t);
+  const { env } = server();
+  const u = await asOwner(env, t);
+  const db = env.DB.db;
+  const made = await u.api("POST", "/api/admin/dev", { title: "정산 화면 여는 길 줄이기" });
+  const plain = await u.api("POST", "/api/admin/dev", { title: "알람 소리 고치기" });
+  // 잴 이벤트는 저장소 동기화(ops/dev-status.jsonl)로 와요.
+  db.prepare("UPDATE dev_items SET events = 'pay_open', status = 'done', route = 'server', live_at = ?, effect = 'unknown', effect_at = ?, effect_note = ? WHERE id = ?")
+    .run(Date.now() - 16 * 86400000, Date.now(), JSON.stringify({ from: new Date(Date.now() - 16 * 86400000).toISOString(), why: "pay_open 쓰는 비율 +40% · 늘었지만 좋은 방향(늘면·줄면)을 정하지 않았어요" }), made.id);
+  db.prepare("UPDATE dev_items SET status = 'done', route = 'server', live_at = ? WHERE id = ?").run(Date.now() - 16 * 86400000, plain.id);
+  await u.go(`#/dev/${made.id}`);
+  await u.settle(40);
+  const card = u.$$("#main section.card").find((c) => c.querySelector("h2")?.textContent === "효과");
+  assert.match(card.querySelector(".pill").textContent, /아직 몰라요/);
+  assert.match(card.textContent, /좋은 방향\(늘면·줄면\)을 정하지 않았어요/);
+  assert.match(card.textContent, /잴 이벤트: pay_open · 좋은 방향: 정하지 않음/);
+  const form = u.$('form[data-form="dev-loop"]');
+  assert.ok(form.querySelector("#dev-good"), "잴 이벤트가 있으면 방향을 골라요");
+  assert.ok(form.querySelector('label[for="dev-good"]'), "칸 이름");
+  form.querySelector("#dev-good").value = "up";
+  form.requestSubmit();
+  await u.settle(40);
+  assert.equal(db.prepare("SELECT good FROM dev_items WHERE id = ?").get(made.id).good, "up");
+  // 잴 이벤트가 없는 개발사항에는 방향 칸이 없고, 효과는 묶인 문의로 본다는 한 줄만.
+  await u.go(`#/dev/${plain.id}`);
+  await u.settle(40);
+  assert.equal(u.$('form[data-form="dev-loop"] #dev-good'), null);
+  const card2 = u.$$("#main section.card").find((c) => c.querySelector("h2")?.textContent === "효과");
+  assert.match(card2.textContent, /잴 이벤트가 없어서 묶인 문의로 봐요/);
+  u.$('form[data-form="dev-loop"] #dev-size').value = "fix";
+  u.$('form[data-form="dev-loop"]').requestSubmit();
+  await u.settle(40);
+  assert.equal(db.prepare("SELECT size, good FROM dev_items WHERE id = ?").get(plain.id).size, "fix", "방향 칸이 없어도 저장돼요");
+  assert.equal(u.$$("#main [style]").length, 0);
+  assert.deepEqual(u.errors, []);
+});
+
+test("[RVQ-35] SVC-18·U22-07 개선 신호 says 돌아옴·새 기준으로 굳음·자료 없음, keeps the first 기준, and a fix that did not bring it back comes back to the list", async (t) => {
+  offline(t);
+  const { env } = server();
+  const now = Date.now();
+  const base = { why: "최근 판에서 그 기능 가는 길·모양이 바뀌었는지 봐요.", dev: "쓰임이 줄어든 이유 찾기", to: "#/metrics", unit: "대", better: "up", first: now, at: now, tone: "warn" };
+  const sig = (key, extra) => ({ ...base, key, kind: "feature-fall", subject: key, title: `'${key}' 쓰는 휴대폰이 반 넘게 줄었어요`, ...extra });
+  const list = [
+    sig("stuck", { state: "new", stuck: "settled", devWas: "dSTUCKSTUCKSTUCK", devId: null, value: 10, base: 12, base0: 40, now: 12, last: now }),
+    sig("dev", { state: "dev", devId: "dDEVDEVDEVDEVDEV", value: 9, base: 22, base0: 40, now: 9, last: now - 3600000 }),
+    sig("back", { state: "dev", devId: "dBACKBACKBACKBAC", value: 10, base0: 40, after: 39, cleared: now, outcome: "back", last: now - 4 * 86400000 }),
+    sig("settled", { state: "watch", value: 10, base0: 40, after: 18, cleared: now, outcome: "settled", last: now - 4 * 86400000 }),
+    sig("nodata", { state: "new", value: 10, base0: 40, after: 10, cleared: now, outcome: "nodata", last: now - 4 * 86400000 }),
+    sig("old", { state: "new", value: 10, base: 40, after: 30, cleared: now, last: now - 4 * 86400000 }),
+  ];
+  const u = await asOwner(env, t);
+  env.DB.db.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES ('obs_signals', ?)").run(JSON.stringify({ list }));
+  await u.go("#/glance");
+  await u.settle(40);
+  assert.equal(u.$$("#main .ob-signal").length, 2, "열린 신호 둘(되돌아온 것·개발 중)");
+  const stuck = u.$$("#main .ob-signal").find((li) => li.textContent.includes("'stuck'"));
+  assert.match(stuck.querySelector(".pill").textContent, /고쳤는데 그대로/);
+  assert.match(stuck.querySelector("[data-stuck]").textContent, /처음 기준 40대까지 돌아오지 않았어요\(새 기준으로 굳음\)/);
+  assert.ok(stuck.querySelector('[data-stuck] a[href*="dSTUCKSTUCKSTUCK"]'), "고친 개발사항으로 가는 길");
+  assert.ok(stuck.querySelector('[data-do="dev"]'), "다시 개발사항으로 넘길 수 있어요");
+  const dev = u.$$("#main .ob-signal").find((li) => li.textContent.includes("'dev'"));
+  assert.match(dev.querySelector(".ob-metric").textContent, /기준 22대 · 처음 기준 40대 · 고침이 닿은 뒤 사흘 동안 안 보이면 처음 기준과 견줘 판정해요/);
+  assert.match(u.text("#main .ob-better summary"), /판정한 신호 4개\s*돌아옴 1 · 새 기준으로 굳음 1 · 자료 없음 1 · 옛 판정 1/);
+  assert.match(u.text('#main .ob-better [data-outcome="back"]'), /개발사항 dBACKBACKBACKBAC 뒤 · 10대 → 39대 · 처음 기준 40대/);
+  assert.match(u.text('#main .ob-better [data-outcome="nodata"]'), /안 보인 뒤로 이 숫자를 읽지 못했어요/);
+  assert.match(u.text('#main .ob-better [data-outcome="old"]'), /처음 기준과 견주기 전/);
+  // 조건 6: 판정에는 빨강을 쓰지 않아요(굳음만 주황).
+  assert.equal(u.$$("#main .ob-better .pill.bad").length, 0);
+  assert.equal(u.$$("#main .ob-better .pill.warn").length, 1);
+  assert.match(u.text("#main .ob-signals .hint"), /처음 기준까지 돌아오면 '돌아옴', 못 돌아오면 다시 여기로 와요/);
   assert.equal(u.$$("#main [style]").length, 0);
   assert.deepEqual(u.errors, []);
 });
@@ -3618,5 +3694,200 @@ test("[RVA-62] PC-158 회사 목록: 좁은 폭은 정렬 고르기, 고르면 �
   pick.dispatchEvent(new u.window.Event("change", { bubbles: true }));
   await u.settle(30);
   assert.match(u.$('#main th[aria-sort="descending"]').textContent, /참여/);
+  assert.deepEqual(u.errors, []);
+});
+
+// 2.0.0 [RVQ-39] 검토 SVC-53·U22b-02: 장터 › 보류된 표. 탭에 수, 묶음마다 '11월 30일 12시 · 묶음 1'과 세기·버리기(버리기는 한 번 물어요), 다른 보기엔 한 줄.
+test("[RVQ-39] 장터 › 보류된 표: 묶음 이름(해시 없이)과 세기·버리기, 다른 보기에서도 한 줄로 알려요", async (t) => {
+  offline(t);
+  t.mock.timers.enable({ apis: ["Date"], now: Date.parse("2026-11-30T03:00:00Z") });
+  const { call, env } = server({ plaza: true });
+  const recipe = { format: "bamnat-recipe", v: 1, title: "병동 3교대 달력", summary: "야간이 잘 보여요", styles: ["SHIFT"],
+    pieces: [{ kind: "shiftLook", items: [{ name: "주간", role: "day", label: "주", color: 4294940928, emoji: "☀️" }] }] };
+  const code = (await call("POST", "/api/recipes", { device: device(1), recipe, scope: "public" }, from(1))).data.code;
+  for (let n = 100; n < 133; n++) await call("POST", `/api/recipes/${code}/vote`, { device: device(n), value: 1 }, from(7));
+  const u = await asOwner(env, t);
+  await u.go("#/recipes");
+  await u.idle();
+  assert.match(u.text('#main [data-act="recipe-tab"][data-key="votes"]'), /보류된 표 3/);
+  assert.match(u.text("#main .list-note"), /보류된 표 3개 · 작품 1개/);
+  await u.click('#main [data-act="recipe-tab"][data-key="votes"]');
+  await u.idle();
+  const group = u.$("#main .held-group");
+  assert.ok(group, "묶음 한 줄");
+  assert.match(group.textContent, /11월 30일 12시 · 묶음 1 · 좋아요 3 · 안좋아요 0/);
+  assert.doesNotMatch(group.textContent, /[0-9a-f]{8}/, "네트워크 해시가 보이지 않아요");
+  assert.match(group.querySelector('[data-key="release"]').getAttribute("aria-label"), /묶음 1의 3표 세기/);
+  // 버리기는 한 번 물어요.
+  group.querySelector('[data-key="drop"]').click();
+  await u.settle(20);
+  assert.match(u.text('dialog form[data-form="confirm"] h2'), /이 묶음의 표를 버릴까요/);
+  u.$('dialog form[data-form="confirm"] [data-act="close"]').click();
+  await u.settle(20);
+  u.$('#main .held-group [data-key="release"]').click();
+  await u.settle(40);
+  assert.equal(env.DB.db.prepare("SELECT COUNT(*) AS n FROM recipe_votes WHERE held = 1").get().n, 0);
+  assert.equal(env.DB.db.prepare("SELECT likes FROM recipes WHERE code = ?").get(code).likes, 33);
+  assert.deepEqual(u.errors, []);
+});
+
+// 2.0.0 [RVQ-44] 검토 SVC-29·SVC-62·I22bb-01: 장터 › 요청에서 스튜디오 요구의 완성 확인(맞아요·아니에요)과 만드는 중 며칠째.
+test("[RVQ-44] 장터 › 요청: 스튜디오 요구의 완성은 운영자가 맞아요로 닫고, 만드는 중은 D+n과 다시 열리는 날", async (t) => {
+  offline(t);
+  t.mock.timers.enable({ apis: ["Date"], now: Date.parse("2026-11-30T03:00:00Z") });
+  const { call, env } = server({ plaza: true });
+  await call("GET", "/api/recipes/requests?style=SHIFT");
+  const now = Date.now();
+  const add = env.DB.db.prepare("INSERT INTO recipe_requests (id, device, style, body, state, created_at, updated_at) VALUES (?, ?, 'ALL', ?, 'waiting', ?, ?)");
+  add.run("qAAAAAAAAAAAA", "operator", "달력 칸 가운데 정렬", now, now);
+  add.run("qBBBBBBBBBBBB", "operator", "주간 근무 색 바꾸기", now, now);
+  await neighbour(env.DB, 4);
+  const recipe = { format: "bamnat-recipe", v: 1, title: "가운데 달력", summary: "칸 글이 가운데예요", styles: ["SHIFT"],
+    pieces: [{ kind: "shiftLook", items: [{ name: "주간", role: "day", label: "주", color: 4294940928, emoji: "☀️" }] }] };
+  const code = (await call("POST", "/api/recipes", { device: device(4), recipe, scope: "public" }, from(4))).data.code;
+  const act = (q, what, body = {}) => call("POST", `/api/recipes/requests/${q}/${what}`, { device: device(4), ...body }, from(4));
+  await act("qAAAAAAAAAAAA", "take");
+  await act("qAAAAAAAAAAAA", "done", { code });
+  await act("qBBBBBBBBBBBB", "take");
+  t.mock.timers.tick(2 * 24 * 3600e3);
+  const u = await asOwner(env, t);
+  await u.go("#/recipes");
+  await u.idle();
+  await u.click('#main [data-act="recipe-tab"][data-key="requests"]');
+  await u.idle();
+  assert.match(u.text("#main .list-note"), /완성 확인을 기다려요/);
+  const rows = u.$$("#main ul.rows>li");
+  const check = rows.find((li) => /달력 칸 가운데/.test(li.textContent));
+  const making = rows.find((li) => /주간 근무 색/.test(li.textContent));
+  assert.match(check.textContent, /완성 확인 기다림 · 운영자가 확인해요/);
+  assert.match(making.textContent, /만드는 중 · D\+\d+ · 12월 14일에 다시 열려요/, "화면은 브라우저 시계로 며칠째를 세요");
+  assert.ok(check.querySelector(`[data-act="recipe-open"][data-id="${code}"]`), "완성한 작품을 바로 열어요");
+  check.querySelector('[data-key="check-ok"]').click();
+  await u.settle(40);
+  assert.deepEqual({ ...env.DB.db.prepare("SELECT state, checked FROM recipe_requests WHERE id = 'qAAAAAAAAAAAA'").get() }, { state: "done", checked: 1 });
+  assert.deepEqual(u.errors, []);
+});
+
+test("[RVA-63] 되풀이되는 닫힘 문의: 운영 장부 맨 위 묶음 카드(접히면 한 줄), 줄과 문의에 멈춤 기록 표식, '기록 부탁 답 넣기'는 적던 답을 지우지 않아요", async () => {
+  const css = await adminFile("/admin/app.css").text();
+  assert.match(css, /details\.card\.crash-card\{/);
+  // 총괄(#526): 펼친 접는 카드의 꺾쇠에 공통 '▴' 글자가 겹쳐 그려지지 않게.
+  assert.match(css, /\.home-fold\[open\]>summary::after\{content:"";transform:rotate\(-135deg\)\}/);
+  const { call, env } = await world();
+  // 지어낸 값: 같은 보낸 분이 닫힘 문의 둘(멈춤 기록 없음).
+  const info = { app: "1.39.0 (53)", model: "Test Fold 9", android: "17 (API 37)", diag: "[앱 멈춤]\n기록 없음" };
+  const ids = [];
+  for (const text of ["앱이 갑자기 닫혀요", "또 앱이 저절로 꺼졌어요"]) {
+    ids.push((await call("POST", "/api/inquiries", { v: 1, device: "test-device-00000071", kind: "bug", text, info }, from(71))).data.id);
+  }
+  const u = await signedIn(env);
+  await u.go("#/desk");
+  await u.settle(30);
+  const card = u.$("#main .ledger-view > details.crash-card");
+  assert.ok(card, "the card is on the ledger");
+  // 조건 1: 처음에는 접힌 한 줄(장부 첫 줄이 밀리지 않게), 그 한 줄에 건수·기기·날짜·기록 없음.
+  assert.equal(card.open, false, "folded to one line at first");
+  assert.match(card.querySelector("summary").textContent, /닫힘 되풀이 2건 · 같은 보낸 분Test Fold 9 · 안드로이드 17 · 1\.39\.0 · \d\d\.\d\d~\d\d\.\d\d · 멈춤 기록 없음 2건/);
+  card.querySelector("summary").click();
+  await u.settle(5);
+  assert.equal(card.open, true);
+  // 조건 4: 묶음이 하나면 머리가 이미 말하니 묶음 제목 없이 줄 번호 칩만.
+  assert.equal(card.querySelectorAll(".crash-g").length, 0);
+  const chips = [...card.querySelectorAll(".crash-lines a.chip")];
+  assert.deepEqual(chips.map((a) => a.textContent.replace(/K-\d{4}/, "K")), ["K · 1번째", "K · 2번째"]);
+  assert.ok(chips[0].getAttribute("href").endsWith(ids[0]));
+  // 조건 2·6: 채운 단추를 더하지 않고, 빨강을 더하지 않아요.
+  assert.equal(card.querySelectorAll(".btn.primary, .pill.bad").length, 0);
+  assert.ok(u.$$("#main .rows.ledger .pill").some((p) => /되풀이 2\/2/.test(p.textContent)));
+  assert.ok(u.$$("#main .rows.ledger .pill").some((p) => p.textContent === "멈춤 기록 없음"));
+  // 펼친 것은 다시 그려도 남고, 접으면 한 줄로 돌아가요.
+  await u.click('#main [data-act="ledger-view"][data-key="open"]');
+  await u.settle(30);
+  assert.equal(u.$("#main details.crash-card").open, true);
+  u.$("#main details.crash-card summary").click();
+  await u.settle(5);
+  await u.click('#main [data-act="ledger-view"][data-key="today"]');
+  await u.settle(30);
+  assert.equal(u.$("#main details.crash-card").open, false);
+  // 문의 화면: 줄 표식, 상세의 몇 번째와 '기록 부탁 답 넣기'.
+  await u.go("#/inquiries");
+  await u.settle(30);
+  assert.ok(u.$$("#main .rows .row-side .pill").some((p) => p.textContent === "멈춤 기록 없음"));
+  await u.go(`#/inquiries/${ids[1]}`);
+  await u.settle(30);
+  assert.match(u.text("#main .crash-note"), /같은 보낸 분의 닫힘 문의 2건 중 2번째/);
+  // [RVA-67] PC-201: 보고서 복사는 답장 칸(2,000자)보다 길어요. 점검 기록을 켠 새 문의로.
+  assert.match(u.text("#main .crash-note"), /점검 기록을 켠 새 문의\('앱이 이상해요'\)로 받아 봐요/);
+  await u.type("#reply", "안녕하세요.");
+  await u.click('#main [data-act="crash-draft"]');
+  const v = u.$("#reply").value;
+  assert.match(v, /^안녕하세요\.\n\n불편을 드려/, "what was typed stays first");
+  assert.match(v, /점검 기록도 보내기/);
+  assert.match(v, /밤낮 운영팀$/);
+  assert.deepEqual(u.errors, []);
+});
+
+test("[RVA-65] 장터 작품 '입은 뒤' 숫자: 줄에는 비율만(넣은 분이 20명 이상), 하나 보기에는 빈 상태 둘, 개선 신호 주소로 그 작품이 바로 열려요", async (t) => {
+  offline(t);
+  const { env, call } = await world();
+  const look = { kind: "shiftLook", items: [{ name: "야간", role: "night", label: "야", color: 4282664004, emoji: "🌙" }] };
+  const make = async (n, title) => (await call("POST", "/api/recipes", { device: device(n), scope: "public",
+    recipe: { format: "bamnat-recipe", v: 1, title, summary: "지어낸 작품", styles: ["SHIFT"], pieces: [look] } }, from(n))).data.code;
+  const ok = await make(1, "작은 글씨 달력");
+  const few = await make(2, "새로 올린 달력");
+  const off = await make(3, "깃발 전 달력");
+  // 서버(Q1 4g)가 싣는 wear 모양: 비율만, 넣은 분 수·낱개 수는 없음.
+  const WEAR = { [ok]: { state: "ok", offSoon: 0.45, textBack: 0.12, watch: true }, [few]: { state: "few" }, [off]: { state: "off" } };
+  const u = await asOwner(env, t);
+  const real = u.window.fetch;
+  u.window.fetch = async (input, init) => {
+    const url = new URL(typeof input === "string" ? input : input.url, ORIGIN);
+    const r = await real(input, init);
+    if (!url.pathname.startsWith("/api/admin/recipes") || (init?.method ?? "GET") !== "GET" || !r.ok) return r;
+    const j = await r.json();
+    for (const it of j.items ?? []) if (WEAR[it.code]) it.wear = WEAR[it.code];
+    return new u.window.Response(JSON.stringify(j), { status: r.status, headers: { "content-type": "application/json" } });
+  };
+  await u.go("#/recipes?tab=visible");
+  await u.settle(30);
+  const row = (code) => u.$(`#main [data-act="recipe-do"][data-id="${code}"]`)?.closest("li");
+  assert.match(row(ok).querySelector(".wear").textContent, /넣은 뒤\(30일\) · 30분 안에 다시 뺌 45% · 글자 크기 되돌림 12%/);
+  assert.equal(row(ok).querySelectorAll(".wear .pill.warn").length, 1, "눈여겨볼 작품만 주의 pill");
+  assert.ok(!row(few).querySelector(".wear") && !row(off).querySelector(".wear"), "목록 줄에는 비율이 있을 때만(짧게)");
+  assert.equal(u.$$("#main .wear .pill.bad").length, 0, "빨강 없음");
+  assert.doesNotMatch(u.window.location.hash, /code=/, "작품 코드는 하나 보기에서만 주소에");
+  // 개선 신호가 가는 주소: 그 작품 하나 보기.
+  for (const [code, words] of [[few, /넣은 분이 20명이 되면 비율이 보여요/], [off, /처리방침 3\.14 시행 뒤, 사용 통계를 켠 분에게서 모여요/]]) {
+    await u.go(`#/recipes?tab=one&code=${code}`);
+    await u.settle(30);
+    assert.equal(u.$('#main [data-act="recipe-tab"][aria-pressed="true"]'), null, "하나 보기");
+    assert.match(u.text("#main .wear"), words);
+    assert.match(u.window.location.hash, new RegExp(`code=${code}`));
+  }
+  await u.go("#/recipes?tab=one&code=%2Fx");
+  await u.settle(30);
+  assert.equal(u.$('#main [data-act="recipe-tab"][aria-pressed="true"]')?.dataset.key, "flagged", "이상한 코드는 신고됨으로");
+  assert.deepEqual(u.errors, []);
+});
+
+test("[RVA-66] 문의 상세 멈춤 안내는 화면에 보이는 칸 이름으로, '멈춤 줄 보기'를 누르면 그 줄로 가요", async () => {
+  const css = await adminFile("/admin/app.css").text();
+  assert.match(css, /li\.flash,\.kv dd\.flash\{outline/);
+  const { call, env } = await world();
+  // 지어낸 값: 멈춘 줄이 있는 닫힘 문의 하나.
+  const info = { app: "1.39.0 (53)", model: "Test Fold 9", android: "17 (API 37)", diag: "[앱 멈춤]\n11/18 21:04 TestCrashException@x.y:3\n\n[알람]\n다음 알람 07:00" };
+  const id = (await call("POST", "/api/inquiries", { v: 1, device: "test-device-00000081", kind: "bug", text: "앱이 갑자기 닫혀요", info }, from(81))).data.id;
+  const u = await signedIn(env);
+  await u.go(`#/inquiries/${id}`);
+  await u.settle(30);
+  const note = u.$("#main .crash-note");
+  assert.match(note.textContent, /함께 온 정보 › 알람 점검의 \[앱 멈춤\] 줄을 봐요\./, "PC-195: 화면에 보이는 칸 이름");
+  assert.doesNotMatch(note.textContent, /'앱 멈춤' 칸/);
+  assert.match(note.querySelector(".pill").title, /함께 온 정보 › 알람 점검의 \[앱 멈춤\] 줄/);
+  const dt = u.$("#main #ctx-diag");
+  assert.equal(dt.textContent, "알람 점검");
+  await u.click('#main [data-act="crash-diag"]');
+  assert.ok(dt.nextElementSibling.classList.contains("flash"), "누르면 그 줄로 가서 잠깐 표시해요");
+  assert.ok(!u.$('#main [data-act="crash-draft"]'), "기록이 있으면 부탁 답 단추는 없어요");
   assert.deepEqual(u.errors, []);
 });

@@ -4,13 +4,14 @@ import { SORTING, autoAnswer, compareVersions, grams, likeness, needsPerson, nee
 import { replyRisk } from "./ledger.js";
 import { billingWordOf, isBillingRecord, replyRiskOf } from "./ask-check.js";
 import { careAppealOf } from "./community-care.js";
+import { CRASH, CRASH_ASK_DRAFT, crashOf, crashRecord, crashRepeats } from "./crash-repeat.js";
 // 1.37 [ADM2-02] 나간 판.
-import { DESK, broadcastRisk, isOut, shippedVersion } from "./desk.js";
+import { DESK, OUTBOX_DROPPED, broadcastRisk, isOut, shippedVersion } from "./desk.js";
 import { needFromInquiry } from "./growth.js";
 import { fcmTell, stillHere } from "./fcm.js";
 import { kstDay } from "./usage.js";
 import { bugFixed, ideaAdopted } from "./money.js";
-import { ASK_TIER_SQL, LOOP, WAITING_SQL, basisOf, effectOf, styleList, tierEffective, fixedAnswer, fixedAsk, heldLog, instantOk, phoneArrived } from "./loop.js";
+import { ASK_TIER_SQL, EFFECT, LOOP, WAITING_SQL, basisOf, effectOf, styleList, tierEffective, fixedAnswer, fixedAsk, heldLog, instantOk, phoneArrived } from "./loop.js";
 // ---- questions from the app [ADMIN-02] ----
 //
 // 설정 > 문의하기 sends here instead of opening a mail app, and the developer answers in /admin; the
@@ -81,7 +82,8 @@ export async function rescanBilling2(env, now, limit = 300) {
       AND NOT EXISTS (SELECT 1 FROM audit a WHERE a.action = 'inquiry_billing' AND a.target = i.id) ORDER BY i.id LIMIT ?`, limit);
   const on = rows.filter((r) => !r.billing_at && billingRecordOf(r.kind, r.words ?? ""));
   const off = rows.filter((r) => r.billing_at && !billingRecordOf(r.kind, r.words ?? ""));
-  const stmts = [...on.map((r) => stmt(env, "UPDATE inquiries SET billing_at = ? WHERE id = ?", r.created_at, r.id)),
+  // PC 5차 Q1-500 13: 결제·환불 기록은 모두의 문의에 두지 않아요(돈·주문 이야기는 운영자만 봐요).
+  const stmts = [...on.map((r) => stmt(env, "UPDATE inquiries SET billing_at = ?, public = 0 WHERE id = ?", r.created_at, r.id)),
     ...off.map((r) => stmt(env, "UPDATE inquiries SET billing_at = NULL WHERE id = ?", r.id))];
   stmts.push(rows.length < limit
     ? stmt(env, "INSERT OR REPLACE INTO settings (key, value) VALUES ('billing_rescan2', ?)", String(now))
@@ -117,6 +119,8 @@ export const INQUIRY_INFO = [
   ["기기", "model", 80],
   ["Android", "android", 40],
   ["알람 점검", "diag", INQUIRY.diag],
+  // 2.0.0 [RVO-28] 답장으로 새 기록이 오기 전, 처음 문의와 함께 온 점검 기록(서버가 옮겨 둔 것, 앱이 보내지 않아요).
+  ["처음 점검 기록", "diagFirst", INQUIRY.diag],
   // 급여 > 계산이 이상해요: the month's rules and each line's hours and rate, never an amount.
   ["급여 계산", "pay", INQUIRY.pay],
   // [INQ-01] 회사 방식 알려 주기: the kind's settings in words, never an amount.
@@ -172,6 +176,8 @@ export function triage(kind, text, info) {
   // nothing of the topic (every form can send it, and it always starts with 알람 상태), so a question with no word stays 기타
   // instead of 알람 — a settings-search question about 보상 came in as 문제 신고 · 알람.
   else if (/^\[앱 멈춤/.test(info?.diag ?? "")) topic = "app";
+  // 2.0.0 [RVA-68] PC-202: 낱말로 주제를 못 정한 글('app closed itself again')에 멈춘 기록이 실려 오면 앱 동작이에요. 낱말이 고른 주제는 그대로.
+  else if (topic === "etc" && crashRecord(info?.diag) === "has") topic = "app";
   // 1.36 [GRW-01] 스튜디오 요구는 꾸미기예요.
   if (kind === "studio") topic = "look";
   // 2.0.0 [RVQ-30] 앱의 '결제·환불'은 글과 상관없이 결제 주제.
@@ -230,14 +236,18 @@ export async function inquiries(request, env, path) {
     return new Response(null, { status: 204 });
   }
   if (m[2] && method === "POST") {
-    const body = await readJson(request, INQUIRY.bytes);
+    // 2.0.0 [RVO-28] HQ-150: 답장에도 새 문의와 같은 점검 기록(info.diag)이 함께 올 수 있어 그 몫만큼 받아요.
+    const body = await readJson(request, INQUIRY.bytes + INQUIRY.diag * 4);
     const text = inquiryText(body.text);
+    const diag = replyDiag(body.info);
     const now = Date.now();
     { const limitHit = await overLimit(env, now, [["device", `inquiry_msg|${dev}`, INQUIRY.messagesPerHour, HOUR]]); if (limitHit) return limitHit; }
     const count = await one(env, "SELECT COUNT(*) AS n FROM inquiry_messages WHERE inquiry_id = ? AND sender = 'user'", row.id);
     if (count.n >= INQUIRY.messages) return json({ error: "too_many", field: "text" }, 409);
     await batch(env, [
-      stmt(env, "INSERT INTO inquiry_messages (inquiry_id, sender, text, by, at) VALUES (?, 'user', ?, NULL, ?)", row.id, text, now),
+      // [RVO-28] 기록과 함께 온 답장은 by = 'diag'(사용자 줄의 by는 그 표시에만 써요), 문의의 점검 기록은 새 기록으로.
+      stmt(env, "INSERT INTO inquiry_messages (inquiry_id, sender, text, by, at) VALUES (?, 'user', ?, ?, ?)", row.id, text, diag ? DIAG_BY : null, now),
+      ...(diag ? [stmt(env, "UPDATE inquiries SET info = ? WHERE id = ?", JSON.stringify(withReplyDiag(readInfo(row.info), diag, now)), row.id)] : []),
       // 1.36 [INQ-07] A thread that turns to paying or a refund becomes a 결제·환불 record from then on.
       stmt(env, "UPDATE inquiries SET status = 'open', updated_at = ?, billing_at = COALESCE(billing_at, ?) WHERE id = ?", now,
         BILLING_RECORD.test(text) ? now : null, row.id),
@@ -277,14 +287,16 @@ export async function ask(request, env) {
   if (limitHit) return limitHit;
   const photos = await readPhotos(env, body.photos);
   const id = randomId(22);
+  // 2.0.0 [RVQ-30] PC 5차 Q1-500 13: '프로 샀는데 광고가 나와요'처럼 글이 결제·환불 기록이면 '모두의 문의에 올리기'를 켜도 운영자만 봐요.
+  const billing = billingRecordOf(body.kind, text);
   await batch(env, [
     // [SRV-06] Photos stay with the developer even on a public question.
     ...photos.list.map((data, i) => stmt(env, "INSERT INTO inquiry_photos (inquiry_id, n, data, bytes, at) VALUES (?, ?, ?, ?, ?)",
       id, i + 1, data.base64, data.bytes, now)),
     // Only an app that says so on its form sends public: true; a question from an older app stays the developer's.
     stmt(env, "INSERT INTO inquiries (id, device, kind, info, status, public, created_at, updated_at, billing_at) VALUES (?, ?, ?, ?, 'open', ?, ?, ?, ?)",
-      id, dev, body.kind, JSON.stringify(info), body.public === true && !PRIVATE_KINDS.includes(body.kind) ? 1 : 0, now, now,
-      billingRecordOf(body.kind, text) ? now : null),
+      id, dev, body.kind, JSON.stringify(info), body.public === true && !PRIVATE_KINDS.includes(body.kind) && !billing ? 1 : 0, now, now,
+      billing ? now : null),
     stmt(env, "INSERT INTO inquiry_messages (inquiry_id, sender, text, by, at) VALUES (?, 'user', ?, NULL, ?)", id, text, now),
     // Threads with nothing new for half a year go, answers, notes and 개발사항 links and all (결제·환불: 3 years).
     ...dropInquiries(env, ...expiredInquiries(now)),
@@ -351,6 +363,8 @@ export function inquiryInfo(v) {
   if (typeof v !== "object" || Array.isArray(v)) refuse("info", "info");
   const out = {};
   for (const [, key, longest] of INQUIRY_INFO) {
+    // [RVO-28] 처음 점검 기록은 서버가 옮겨 두는 칸이라 앱에서 받지 않아요.
+    if (key === "diagFirst") continue;
     const x = v[key];
     if (x === undefined || x === null || x === "") continue;
     if (typeof x !== "string" || [...x].length > longest) refuse("info", key);
@@ -359,6 +373,30 @@ export function inquiryInfo(v) {
     out[key] = x.replace(/[\u0000-\u0008\u000b-\u001f\u007f]/g, "");
   }
   return out;
+}
+
+/** 2.0.0 [RVO-28] HQ-150: 점검 기록과 함께 온 사용자 답장 줄의 표시(inquiry_messages.by). */
+export const DIAG_BY = "diag";
+
+/**
+ * [RVO-28] 답장에 함께 온 점검 기록: 새 문의의 info와 같은 검사를 diag 키에만. 없으면 null, 다른 칸은 받지 않아요
+ * (앱 버전·기기는 첫 글에 이미 있어요).
+ */
+export function replyDiag(v) {
+  if (v === undefined || v === null) return null;
+  if (typeof v !== "object" || Array.isArray(v)) refuse("info", "info");
+  for (const key of Object.keys(v)) if (key !== "diag") refuse("info", key);
+  return inquiryInfo({ diag: v.diag }).diag ?? null;
+}
+
+/**
+ * [RVO-28] 문의의 점검 기록을 답장으로 온 새 기록으로. 처음 문의와 함께 온 기록(없었으면 없음 그대로)은 diagFirst로 한 번만
+ * 남겨요(Q2: 처음에 멈춤 기록이 없었다는 것도 운영에 쓸모가 있어요). diagAt은 마지막으로 받은 때(ms).
+ */
+export function withReplyDiag(info, diag, now) {
+  const { unreadable, ...rest } = info;
+  const first = rest.diagAt ? rest.diagFirst : rest.diag;
+  return { ...rest, diag, diagAt: now, ...(first ? { diagFirst: first } : {}) };
 }
 
 export const messagesOf = (env, id) => all(env, "SELECT sender, text, by, at FROM inquiry_messages WHERE inquiry_id = ? ORDER BY id", id);
@@ -372,7 +410,8 @@ export async function inquiryView(env, row, admin = false, app = null) {
     status: row.status,
     createdAt: iso(row.created_at),
     updatedAt: iso(row.updated_at),
-    messages: messages.map((m) => ({ from: m.sender, text: m.text, at: iso(m.at), ...(admin && m.by ? { by: m.by } : {}) })),
+    messages: messages.map((m) => ({ from: m.sender, text: m.text, at: iso(m.at), ...(m.sender === "user" && m.by === DIAG_BY ? { diag: true } : {}),
+      ...(admin && m.by && m.sender !== "user" ? { by: m.by } : {}) })),
     public: row.public === 1,
     same: row.same ?? 0,
     ...(row.hidden ? { hidden: { code: row.hidden, text: INQUIRY_HIDE[row.hidden] ?? "" } } : {}),
@@ -388,19 +427,37 @@ export async function inquiryView(env, row, admin = false, app = null) {
   const info = readInfo(row.info);
   const context = {};
   for (const [label, key] of INQUIRY_INFO) if (info[key]) context[label] = info[key];
-  const [reasons, notes, items] = (await batch(env, [
+  // 2.0.0 [RVA-63] HQ-124: 닫힘 문의면 멈춤 기록과, 같은 보낸 분이 7일 안에 보낸 닫힘 문의 중 몇 번째인지.
+  const firstText = messages.find((m) => m.sender === "user")?.text;
+  const crash = crashOf(row.kind, firstText, info);
+  const sameDevice = crash && typeof row.device === "string" && !row.device.startsWith("gone");
+  const [reasons, notes, items, mine = []] = (await batch(env, [
     stmt(env, `SELECT reason, COUNT(*) AS n FROM inquiry_marks WHERE inquiry_id = ? AND kind = 'flag'
       GROUP BY reason ORDER BY n DESC, reason`, row.id),
     stmt(env, "SELECT by, text, at FROM inquiry_notes WHERE inquiry_id = ? ORDER BY id", row.id),
     stmt(env, `SELECT d.id, d.title, d.status, (SELECT COUNT(*) FROM dev_links x JOIN inquiries xi ON xi.id = x.inquiry_id WHERE x.item_id = d.id) AS links FROM dev_links l
       JOIN dev_items d ON d.id = l.item_id AND d.deleted_at IS NULL WHERE l.inquiry_id = ? ORDER BY l.at`, row.id),
+    ...(sameDevice ? [stmt(env, `SELECT i.id, i.kind, i.info, i.device, i.created_at,
+        (SELECT m.text FROM inquiry_messages m WHERE m.inquiry_id = i.id AND m.sender = 'user' ORDER BY m.id LIMIT 1) AS first
+      FROM inquiries i WHERE i.device = ? AND i.created_at BETWEEN ? AND ? ORDER BY i.created_at LIMIT 40`,
+      row.device, row.created_at - CRASH.days * DAY, row.created_at + CRASH.days * DAY)] : []),
   ])).map((r) => r.results);
+  let crashView = null;
+  if (crash) {
+    // 운영 장부와 같은 7일 창(지금까지, 오래된 문의는 그 뒤 7일)에서 같은 보낸 분 묶음. 보낸 분 번호는 화면으로 보내지 않아요.
+    const same = mine.map((r) => ({ r, info: readInfo(r.info) })).map(({ r, info: i }) => ({ id: r.id, c: crashOf(r.kind, r.first, i), at: r.created_at, device: r.device, model: i.model, android: i.android, app: i.app }))
+      .filter((x) => x.c).map((x) => ({ ...x, record: x.c.record }));
+    const g = crashRepeats(same, Math.min(Date.now(), row.created_at + CRASH.days * DAY)).find((x) => x.by === "same" && x.ids.includes(row.id));
+    crashView = { ...crash, ...(crash.record !== "has" ? { draft: CRASH_ASK_DRAFT } : {}),
+      ...(g ? { repeat: { nth: g.ids.indexOf(row.id) + 1, n: g.n, first: iso(g.first), last: iso(g.last), noRecord: g.noRecord, ids: g.ids } } : {}) };
+  }
   return {
     ...view, appVersion: info.app ?? null, context, waitingHours: row.status === "open" ? Math.floor((Date.now() - row.updated_at) / HOUR) : null, ...triage(row.kind, messages.find((m) => m.sender === "user")?.text, info),
     flags: row.flags ?? 0, kept: row.kept === 1, reasons: reasons.map((r) => ({ code: r.reason, text: FLAGS[r.reason] ?? r.reason, n: r.n })),
     // [ADMIN-12] Who is answering it and what admins told each other; [ADMIN-11] the 개발사항 it is in.
     assignee: row.assignee ? { id: row.assignee, name: row.assignee_name ?? "" } : null,
     notes: notes.map((n) => ({ by: n.by, text: n.text, at: iso(n.at) })),
+    ...(crashView ? { crash: crashView } : {}),
     ...(env.actor && can(env.actor, "dev") ? { dev: items.map((d) => ({ id: d.id, title: d.title, status: d.status, links: d.links })) } : {}),
   };
 }
@@ -490,7 +547,7 @@ export async function publicList(env, params, device, hide) {
   const rows = cached && cached.until > Date.now() ? cached.rows : await all(env, `SELECT i.id, i.kind, i.status, i.info, i.same, i.device, i.created_at, i.updated_at,
       (SELECT m.text FROM inquiry_messages m WHERE m.inquiry_id = i.id ORDER BY m.id LIMIT 1) AS first,
       (SELECT COUNT(*) FROM inquiry_messages m WHERE m.inquiry_id = i.id AND m.sender = 'admin') AS answers
-    FROM inquiries i WHERE i.public = 1 AND i.hidden IS NULL ORDER BY ${order} LIMIT 500`);
+    FROM inquiries i WHERE i.public = 1 AND i.hidden IS NULL AND i.billing_at IS NULL ORDER BY ${order} LIMIT 500`);
   if (!cached || cached.rows !== rows) {
     if (!publicRows.has(env.DB ?? env)) publicRows.set(env.DB ?? env, new Map());
     publicRows.get(env.DB ?? env).set(cacheKey, { rows, until: Date.now() + PUBLIC_CACHE_MS });
@@ -549,7 +606,7 @@ export async function inquiryMark(request, env, id, kind) {
     ["network", `vote|${net.now}`, LIMITS.votesPerNetworkHour, HOUR]]);
   if (limitHit) return limitHit;
   const dev = await deviceHash(device);
-  const row = await one(env, "SELECT * FROM inquiries WHERE id = ? AND public = 1 AND hidden IS NULL", id);
+  const row = await one(env, "SELECT * FROM inquiries WHERE id = ? AND public = 1 AND hidden IS NULL AND billing_at IS NULL", id);
   if (!row) return json({ error: "not_found" }, 404);
   if (row.device === dev) return json({ error: "own" }, 400);
   if (kind === "same") {
@@ -641,7 +698,8 @@ export async function adminInquiries(request, env, url, path, now) {
       await batch(env, dropInquiries(env, "id = ?", row.id));
       return json({ deleted: true });
     }
-    await run(env, "UPDATE inquiries SET billing_at = ? WHERE id = ?", body.on ? row.billing_at ?? now : null, row.id);
+    // PC 5차 Q1-500 13: 관리자가 결제·환불 기록으로 켜면 모두의 문의에서도 내려요(끌 때 다시 올리지는 않아요).
+    await run(env, `UPDATE inquiries SET billing_at = ?${body.on ? ", public = 0" : ""} WHERE id = ?`, body.on ? row.billing_at ?? now : null, row.id);
   } else if (m[2] === "/visibility") {
     // 모두의 문의: hide (with a reason the writer's app shows) or show again; either way 신고 no longer hides it.
     if (!row.public) refuse("public", "action");
@@ -702,6 +760,21 @@ export async function replyTo(env, row, body, now, audited = true) {
 }
 
 /**
+ * 2.0.0 [RVQ-34] 검토 I22a-02: 열쇠 답에 Claude가 그 문의를 어떻게 판정했는지 적는 꼬리표(check). 낱말 표는 끝없이 뚫리니, 판정을 둘이
+ * 해요. 'none'(걸리는 것 없음)이어야 '바로 보내기'가 될 수 있고, 꼬리표가 없으면 기본 보류(10분, 그 사이 사람이 고치거나 취소),
+ * 위험 분류이거나 읽을 수 없는 꼬리표면 사람이 보내요. 이름은 askOwner·replyRisk와 같은 말이에요.
+ */
+export const CHECK_TAGS = { none: "걸리는 것 없음", money: "환불·결제·보상", law: "법·안전 신고", privacy: "개인정보 요청", angry: "크게 화난 민원",
+  terms: "약관·처리방침 질문", company: "회사 방식 공개", security: "보안·코드·우회 요청", human: "사람·AI인지 묻는 문의", foreign: "한국어가 아닌 문의" };
+
+/** [check]가 사람을 부르는 까닭(없으면 null). 꼬리표가 없는 것은 null(기본 보류만). */
+export function checkWhy(check) {
+  if (check === undefined || check === null || check === "") return null;
+  if (typeof check !== "string" || !Object.hasOwn(CHECK_TAGS, check)) return "Claude 판정 꼬리표를 읽지 못함";
+  return check === "none" ? null : `Claude 판정: ${CHECK_TAGS[check]}`;
+}
+
+/**
  * 2.0.0 [RVA-51] 검토 I24b-03(ADMX-06·07): 보내는 문 하나. 사람이 쓴 답·여러 문의에 같은 답·개발사항 답·정리함·결과 붙여 넣기·Claude 열쇠·자동 정리가
  * 모두 이 검사를 지나요(전에는 길마다 검사가 달랐어요: 열쇠와 자동만 보고 사람이 쓴 답·개발사항 답은 안 봤어요).
  * 걸리는 것: 답 글의 AI·자동 답 표현이나 보안 정보(누가 쓰든), 그리고 사람이 먼저 볼 문의(환불·법·개인정보·크게 화남·약관·회사 방식·보안·사람이냐).
@@ -749,11 +822,13 @@ export async function holdReply(env, row, text, body, now) {
   // 문의 권한이 있는 관리자가 '지금 보내기'(또는 고치기·보내지 않기)를 눌러야 가요.
   // 1.39 [LOOP-38] 답 글에 AI·자동 답 표현이나 보안 정보가 있어도 사람이 보고 보내요.
   // 2.0.0 [RVA-51] 같은 문(sendGate): 걸리는 기준이 사람이 쓴 답·자동 답과 하나예요.
-  const person = (await sendGate(env, row.id, text))?.name ?? null;
-  const instant = !person && await instantOk(env, pile, kind, text);
+  // 2.0.0 [RVQ-34] 검토 I22a-02: Claude의 판정 꼬리표(check)도 함께. 꼬리표가 'none'일 때만 바로 보내기가 돼요.
+  const person = (await sendGate(env, row.id, text))?.name ?? checkWhy(body.check);
+  const instant = !person && body.check === "none" && await instantOk(env, pile, kind, text);
   await run(env, "INSERT INTO held_replies (inquiry_id, text, by, actor_id, close, template, at, until, pile) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)", row.id, text,
     actorName(env), env.actor?.id ?? null, body.close === true ? 1 : 0, Number.isInteger(body.template) ? body.template : null, now, instant ? now : person ? HELD_FOR_PERSON : now + DESK.hold, pile);
-  await audit(env, now, "inquiry_reply_held", row.id, instant ? `바로 보내기(${LOOP.piles[pile]})` : person ? `사람이 보내기(${person})` : `${Math.round(DESK.hold / 60000)}분 보류`);
+  await audit(env, now, "inquiry_reply_held", row.id, instant ? `바로 보내기(${LOOP.piles[pile]})` : person ? `사람이 보내기(${person})`
+    : `${Math.round(DESK.hold / 60000)}분 보류${body.check ? "" : " · 판정 꼬리표 없음"}`);
   if (instant) await releaseHeld(env, now);
   return true;
 }
@@ -787,24 +862,62 @@ export async function heldOf(env, id) {
   return rows.map((r) => ({ id: r.id, text: r.text, by: r.by, close: r.close === 1, person: r.until >= HELD_FOR_PERSON, until: r.until >= HELD_FOR_PERSON ? null : iso(r.until) }));
 }
 
-/** 1.38 [DESK-09] Held answers whose time came go into their threads as answers, and the askers hear at once. */
+/**
+ * 2.0.0 [RVQ-34] 검토 SVC-09: 보류한 동안 바뀐 것. 보류할 때 한 번만 봐서, 그 뒤 문의한 분이 새 글(돈·개인정보 이야기일 수도)을 쓰거나 다른 관리자가
+ * 먼저 답하거나 문의가 닫혀도 10분 뒤 그대로 나갔어요. 사람이 봐야 하면 그 까닭, 아니면 null.
+ */
+async function heldRecheck(env, h) {
+  const q = await one(env, `SELECT i.status, (SELECT COUNT(*) FROM inquiry_messages m WHERE m.inquiry_id = i.id AND m.sender = 'user' AND m.at > ?) AS asked,
+      (SELECT COUNT(*) FROM inquiry_messages m WHERE m.inquiry_id = i.id AND m.sender = 'admin' AND m.at > ?) AS answered
+    FROM inquiries i WHERE i.id = ?`, h.at, h.at, h.inquiry_id);
+  if (!q) return null;
+  const why = (await needsPerson(env, h.inquiry_id)) || replyRisk(h.text);
+  if (why) return why;
+  if (q.asked) return "보류한 뒤 문의한 분이 새 글을 씀";
+  if (q.answered) return "보류한 뒤 다른 답이 먼저 감";
+  if (q.status === "closed") return "보류한 뒤 문의가 닫힘";
+  return null;
+}
+
+/**
+ * 1.38 [DESK-09] Held answers whose time came go into their threads as answers, and the askers hear at once.
+ * 2.0.0 [RVQ-34] 검토 SVC-09: 나가기 전에 다시 봐요(사람이 '지금 보내기'를 누른 답은 그 사람이 본 것이라 그대로). 걸리면 사람이 보내는 답으로
+ * 남겨요. 가져가기는 한 batch 안에서 '그 줄이 아직 있고 때가 됐을 때만' 넣고 지워서, 5분 틱과 매시 단계·'지금 보내기'가 겹쳐도 한 번만 가요.
+ * 출시 안내에서 온 답(ship_item)은 나갈 때 그 개발사항의 '알렸음'과 편지함을 함께 적어요.
+ */
 export async function releaseHeld(env, now) {
   const rows = await all(env, "SELECT * FROM held_replies WHERE until <= ? ORDER BY id LIMIT 50", now).catch(() => []);
   const told = [];
   for (const h of rows) {
-    const row = await one(env, "SELECT id FROM inquiries WHERE id = ?", h.inquiry_id);
-    const out = [stmt(env, "DELETE FROM held_replies WHERE id = ?", h.id)];
-    if (row) {
-      out.push(stmt(env, "INSERT INTO inquiry_messages (inquiry_id, sender, text, by, at) VALUES (?, 'admin', ?, ?, ?)", h.inquiry_id, h.text, h.by, now),
-        stmt(env, `UPDATE inquiries SET status = ?, updated_at = ?, assignee = COALESCE(assignee, ?),
-          assignee_name = CASE WHEN assignee IS NULL THEN ? ELSE assignee_name END WHERE id = ?`, h.close ? "closed" : "answered", now, h.actor_id, h.by, h.inquiry_id),
-        ...(h.template ? [stmt(env, "UPDATE reply_templates SET uses = uses + 1 WHERE id = ?", h.template)] : []),
-        stmt(env, "INSERT INTO audit (at, action, target, detail, actor, actor_id) VALUES (?, 'inquiry_reply_sent', ?, '', ?, ?)", now, h.inquiry_id, h.by, h.actor_id ?? ""));
-      told.push(h.inquiry_id);
+    if (!h.approved) {
+      const why = await heldRecheck(env, h);
+      if (why) {
+        const r = await run(env, "UPDATE held_replies SET until = ? WHERE id = ? AND until = ?", HELD_FOR_PERSON, h.id, h.until);
+        if (r.meta.changes) await audit(env, now, "inquiry_reply_held", h.inquiry_id, `사람이 보내기(${why})`);
+        continue;
+      }
     }
-    await batch(env, out);
+    const take = "EXISTS (SELECT 1 FROM held_replies WHERE id = ? AND until <= ?)";
+    const res = await batch(env, [
+      stmt(env, `INSERT INTO inquiry_messages (inquiry_id, sender, text, by, at) SELECT h.inquiry_id, 'admin', h.text, h.by, ? FROM held_replies h
+        WHERE h.id = ? AND h.until <= ? AND EXISTS (SELECT 1 FROM inquiries i WHERE i.id = h.inquiry_id)`, now, h.id, now),
+      stmt(env, `UPDATE inquiries SET status = ?, updated_at = ?, assignee = COALESCE(assignee, ?),
+        assignee_name = CASE WHEN assignee IS NULL THEN ? ELSE assignee_name END WHERE id = ? AND ${take}`, h.close ? "closed" : "answered", now, h.actor_id, h.by, h.inquiry_id, h.id, now),
+      ...(h.template ? [stmt(env, `UPDATE reply_templates SET uses = uses + 1 WHERE id = ? AND ${take}`, h.template, h.id, now)] : []),
+      stmt(env, `INSERT INTO audit (at, action, target, detail, actor, actor_id) SELECT ?, 'inquiry_reply_sent', ?, '', ?, ? WHERE ${take}
+        AND EXISTS (SELECT 1 FROM inquiries WHERE id = ?)`, now, h.inquiry_id, h.by, h.actor_id ?? "", h.id, now, h.inquiry_id),
+      ...(h.ship_item ? [
+        stmt(env, `UPDATE dev_links SET told_at = ? WHERE item_id = ? AND inquiry_id = ? AND told_at IS NULL AND ${take}`, now, h.ship_item, h.inquiry_id, h.id, now),
+        stmt(env, `UPDATE inquiries SET fixed = 0, fixed_at = NULL WHERE id = ? AND fixed = -1 AND ${take}`, h.inquiry_id, h.id, now),
+        stmt(env, `UPDATE ship_outbox SET state = 'sent', why = '사람이 보냄', done_at = ? WHERE inquiry_id = ? AND item_id = ? AND state = 'person' AND ${take}`, now, h.inquiry_id, h.ship_item, h.id, now),
+      ] : []),
+      stmt(env, "DELETE FROM held_replies WHERE id = ? AND until <= ?", h.id, now),
+    ]);
+    // 다른 틱이 먼저 가져갔으면 아무것도 바뀌지 않았어요.
+    if (!res.at(-1)?.meta?.changes || !res[0]?.meta?.changes) continue;
+    told.push(h.inquiry_id);
     // 1.39 [LOOP-12] 종류마다 그대로 나갔는지·고쳐서 나갔는지(바로 보내기는 따로 셈).
-    if (row) await heldLog(env, h.pile, h.until <= h.at ? "instant" : h.edited ? "edited" : "sent", now);
+    await heldLog(env, h.pile, h.until <= h.at ? "instant" : h.edited ? "edited" : "sent", now);
   }
   if (told.length) await fcmTell(env, [...new Set(told)], now);
   return told.length;
@@ -828,13 +941,16 @@ export async function heldChange(env, inquiryId, heldId, body, now) {
   // 1.39 [LOOP-37] 사람이 보내야 하는 답(또는 기다리는 답)을 지금 보내요.
   if (body.send === true) {
     if (!can(env.actor, "inquiries", "edit")) throw new Refuse("no_permission", "held", 403);
-    await run(env, "UPDATE held_replies SET until = ? WHERE id = ?", now, h.id);
+    // 2.0.0 [RVQ-34] 사람이 보고 누른 답이라 나갈 때 다시 멈추지 않아요(approved).
+    await run(env, "UPDATE held_replies SET until = ?, approved = 1 WHERE id = ?", now, h.id);
     await audit(env, now, "inquiry_reply_approve", inquiryId, h.by);
     await releaseHeld(env, now);
     return null;
   }
   if (body.cancel === true) {
     await run(env, "DELETE FROM held_replies WHERE id = ?", h.id);
+    // 2.0.0 [RVQ-34] 출시 안내를 사람이 보내지 않기로 했으면 다음 판에도 그 문의에 다시 올리지 않아요.
+    if (h.ship_item) await run(env, "UPDATE ship_outbox SET state = 'gone', why = ?, done_at = ? WHERE inquiry_id = ? AND item_id = ? AND state = 'person'", OUTBOX_DROPPED, now, inquiryId, h.ship_item);
     await audit(env, now, "inquiry_reply_cancel", inquiryId, h.by);
     await heldLog(env, h.pile, "cancelled", now);
   } else {
@@ -1061,6 +1177,8 @@ export async function inquiryList(env, params, actorId = "") {
       count: r.count,
       waiting: r.last === "user",
       appVersion: info.app ?? null,
+      // 2.0.0 [RVA-63] HQ-124: 닫힘 문의면 '멈춤 기록 있음·없음·점검 기록 없이 옴'.
+      ...(() => { const c = crashOf(r.kind, r.first, info); return c ? { crash: c } : {}; })(),
       createdAt: iso(r.created_at),
       updatedAt: iso(r.updated_at),
       ...triage(r.kind, r.first, info),
@@ -1433,7 +1551,8 @@ export async function devUpdate(env, row, body, now) {
     const v = body.first === true ? "admin" : body.first === false ? "" : refuse("first", "first");
     if (v !== (row.origin ?? "")) [edit.first, set.origin] = [[Boolean(row.origin), Boolean(v)], v];
   }
-  for (const [key, names] of [["route", LOOP.routes], ["size", LOOP.sizes]]) {
+  // 2.0.0 [RVQ-34] 검토 SVC-20: 잴 이벤트의 좋은 방향(늘면·줄면).
+  for (const [key, names] of [["route", LOOP.routes], ["size", LOOP.sizes], ["good", EFFECT.goods]]) {
     if (body[key] === undefined) continue;
     const v = body[key] === null || body[key] === "" ? "" : Object.hasOwn(names, body[key]) ? body[key] : refuse(key, key);
     if (v !== (row[key] ?? "")) [edit[key], set[key]] = [[row[key] ?? "", v], v];
@@ -1676,6 +1795,9 @@ export const devItem = (r) => ({
   pay: tierEffective(r),
   // 1.39 [LOOP-39] 출시 2주 뒤 숫자로 본 효과.
   effect: effectOf(r),
+  // 2.0.0 [RVQ-34] 잴 이벤트와 좋은 방향.
+  events: String(r.events ?? "").split(",").filter(Boolean),
+  good: r.good ?? "",
   createdBy: { id: r.created_by, name: r.created_by_name },
   assignee: r.assignee ? { id: r.assignee, name: r.assignee_name ?? "" } : null,
   createdAt: iso(r.created_at),
