@@ -123,7 +123,7 @@ internal fun reactionWords(agree: Int, disagree: Int): String? =
 internal fun PlazaTagScopeDialog(c: AppContainer, room: String?, onDismiss: () -> Unit) {
     var s by remember { mutableStateOf(c.plazaTags.scope()) }
     // 2.0.0 [RVN-24] T22c-04: without a room (opened from the plaza home) the rows are the main kind of work's.
-    val style = room?.let(StylePlaza::styleOf) ?: c.settingsRepository.current.workStyle
+    val style = room?.let(StylePlaza::styleOf) ?: c.settingsRepository.current.workStyle ?: WorkStyle.SHIFT
     val preview by produceState<PlazaTag?>(null, s) {
         val t = room?.let { c.plazaTags.tagFor(it) }
         value = t?.copy(months = if (s.months) 0 else null)
