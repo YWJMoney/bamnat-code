@@ -1,5 +1,7 @@
 package com.bamnat.app.team
 
+import com.bamnat.app.backup.putSecret
+import com.bamnat.app.backup.secret
 import android.content.Context
 import com.bamnat.app.AppContainer
 import com.bamnat.core.team.Team
@@ -19,11 +21,11 @@ object TeamReceiveSync {
     private fun prefs(c: Context) = c.getSharedPreferences("team_board_links", Context.MODE_PRIVATE)
 
     fun board(c: Context, teamId: String): Board? = runCatching {
-        prefs(c).getString(teamId, null)?.let { JSONObject(it) }?.let { Board(it.getString("id"), it.getString("token"), it.getString("url")) }
+        prefs(c).secret(teamId)?.let { JSONObject(it) }?.let { Board(it.getString("id"), it.getString("token"), it.getString("url")) }
     }.getOrNull()
 
     private fun keep(c: Context, teamId: String, b: Board?) {
-        prefs(c).edit().apply { if (b == null) remove(teamId) else putString(teamId, JSONObject().put("id", b.id).put("token", b.token).put("url", b.url).toString()) }.apply()
+        prefs(c).edit().apply { if (b == null) remove(teamId) else putSecret(teamId, JSONObject().put("id", b.id).put("token", b.token).put("url", b.url).toString()) }.apply()
     }
 
     /** 병동 전체 보기 on: the table as confirmed goes up (the same link each time). */
@@ -115,18 +117,33 @@ object TeamReceiveSync {
 
     fun url(m: TeamMember): String? = m.linkId?.let { com.bamnat.app.BuildConfig.SHARE_BASE_URL.trimEnd('/') + "/s/" + it }
 
+    /**
+     * 2.0.0 [RVJ-83] SPREAD-38 (처리방침 3.14 14번): how many of the team read their link in the app and get changes into their own calendar
+     * and alarms by themselves. One number for the team's links together, shown from 3 (the share server says nothing under it, nor
+     * which link); null when the flag waits for 3.14, nobody has a link, or it could not be read.
+     */
+    suspend fun appCount(app: AppContainer, members: List<TeamMember>): Int? {
+        if (!runCatching { app.flags.on(com.bamnat.core.flags.FlagCatalog.TEAM_APP_COUNT) }.getOrDefault(false)) return null
+        val links = members.mapNotNull { m -> m.linkId?.let { id -> m.linkToken?.let { id to it } } }
+        if (links.size < 3) return null
+        return try { app.shareApi.appCount(links).n } catch (e: kotlinx.coroutines.CancellationException) { throw e } catch (_: Exception) { null }
+    }
+
+    /** The line under 봤어요: '앱으로 받는 팀원 5명 · 바뀐 날이 알람까지 저절로 들어가요'. */
+    fun appLine(n: Int): String = "앱으로 받는 팀원 ${n}명 · 바뀐 날이 그분들 달력과 알람에 저절로 들어가요"
+
     // ---- 1.38 [P3-L-18] 피곤해요 합계 받기: counts per day from members who press 피곤해요 in their own app, never who ----
 
     private fun tiredKey(teamId: String) = "tired:$teamId"
 
     fun tiredBox(c: Context, teamId: String): com.bamnat.app.share.TiredBox? = runCatching {
-        prefs(c).getString(tiredKey(teamId), null)?.let { JSONObject(it) }?.let { com.bamnat.app.share.TiredBox(it.getString("id"), it.getString("token")) }
+        prefs(c).secret(tiredKey(teamId))?.let { JSONObject(it) }?.let { com.bamnat.app.share.TiredBox(it.getString("id"), it.getString("token")) }
     }.getOrNull()
 
     /** On: a box for the team, and every member link that exists tied to it (a link made later is tied by [tieTired]). */
     suspend fun tiredOn(app: AppContainer, context: Context, team: Team, members: List<TeamMember>): com.bamnat.app.share.TiredBox {
         val box = tiredBox(context, team.id) ?: app.shareApi.tiredCreate(team.name.take(30)).also {
-            prefs(context).edit().putString(tiredKey(team.id), JSONObject().put("id", it.id).put("token", it.token).toString()).apply()
+            prefs(context).edit().putSecret(tiredKey(team.id), JSONObject().put("id", it.id).put("token", it.token).toString()).apply()
         }
         tieTired(app, box.id, members)
         return box
@@ -144,9 +161,14 @@ object TeamReceiveSync {
         prefs(context).edit().remove(tiredKey(teamId)).apply()
     }
 
-    /** The last 7 days as one line: "오늘 4명 · 어제 3명 미만 · …"; null while nobody has said so this week. */
-    fun tiredLine(got: com.bamnat.app.share.TiredGot, today: java.time.LocalDate): String? {
+    /**
+     * The last 7 days as one line: "오늘 4명 · 어제 3명 미만 · …"; null while nobody has said so this week.
+     * 2.0.0 (PC 4차, 폰 시간대 GMT): the box counts by the server's day (KST), so '오늘' is the newest day the server sent, not the
+     * phone's date; [phoneToday] only names the days when the server sent none.
+     */
+    fun tiredLine(got: com.bamnat.app.share.TiredGot, phoneToday: java.time.LocalDate): String? {
         if (got.days.isEmpty()) return null
+        val today = got.days.maxOfOrNull { it.first } ?: phoneToday
         val name = { d: java.time.LocalDate -> when (d) { today -> "오늘"; today.minusDays(1) -> "어제"; else -> "${d.monthValue}/${d.dayOfMonth}" } }
         val shown = got.days.filter { it.second != null }
         val todayPart = got.days.firstOrNull { it.first == today }?.let { (d, n) -> "${name(d)} ${n?.let { "${it}명" } ?: "${got.min}명 미만"}" }

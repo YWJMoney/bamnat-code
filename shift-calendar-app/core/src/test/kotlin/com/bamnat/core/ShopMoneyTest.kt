@@ -215,4 +215,26 @@ class ShopMoneyTest {
         assertEquals(listOf(yesterday), com.bamnat.core.work.CardSettlement.matchParts(115_700, pay, listOf(yesterday), expected)!!.second)
         assertNull(com.bamnat.core.work.CardSettlement.matchParts(115_700, pay, listOf(first.copy(date = pay.minusDays(7))), expected))
     }
+
+    /** 2.0.0 [RVJ-84] 검토 BOSS-63·T05c-07: 간이과세 counts by the trade's 부가가치율 (부가가치세법 시행령 제111조 제2항의 표). */
+    @Test
+    fun simpleTaxCountsByTheTradesRate() {
+        // The table's six rows and rates, in its order.
+        assertEquals(listOf(15, 20, 25, 30, 40, 30), com.bamnat.core.work.SimpleVatTrade.entries.map { it.percent })
+        val year = listOf(DailySales(d(3, 2), 30_000_000), DailySales(d(9, 1), 30_000_000))
+        val lodging = ShopMoney(simpleTax = true).withTrade(com.bamnat.core.work.SimpleVatTrade.LODGING)
+        assertEquals(25, lodging.valueAddedPercent)
+        assertEquals(60_000_000L * 25 / 1_000, VatEstimate.of(d(10, 5), year, emptyList(), lodging).vat)
+        // A 미용실 (그 밖의 서비스) pays twice a 식당's rate on the same sales.
+        val salon = VatEstimate.of(d(10, 5), year, emptyList(), lodging.withTrade(com.bamnat.core.work.SimpleVatTrade.SERVICE)).vat
+        val restaurant = VatEstimate.of(d(10, 5), year, emptyList(), lodging.withTrade(com.bamnat.core.work.SimpleVatTrade.RETAIL)).vat
+        assertEquals(restaurant * 2, salon)
+        // Nothing chosen yet: the rate shows by itself, and 30% (two trades) names none.
+        assertNull(ShopMoney().tradeChosen)
+        assertEquals(com.bamnat.core.work.SimpleVatTrade.RETAIL, ShopMoney().tradeShown)
+        assertNull(ShopMoney(valueAddedPercent = 30).tradeShown)
+        // A recipe that sets another rate leaves the old trade unchosen.
+        assertNull(lodging.copy(valueAddedPercent = 40).tradeChosen)
+        assertEquals(com.bamnat.core.work.SimpleVatTrade.FINANCE, lodging.copy(valueAddedPercent = 40).tradeShown)
+    }
 }

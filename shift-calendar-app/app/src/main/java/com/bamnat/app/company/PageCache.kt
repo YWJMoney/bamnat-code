@@ -313,17 +313,22 @@ internal fun Talk.toJson(): JSONObject = JSONObject()
             .put("author", p.author ?: JSONObject.NULL).put("review", p.review).put("answer", p.answer ?: JSONObject.NULL)
             .put("attach", p.attach?.let { (code, title) -> JSONObject().put("code", code).put("title", title)
                 .apply { p.attachLook?.let { l -> runCatching { put("look", JSONObject(l)) } } } } ?: JSONObject.NULL)
-            .put("poll", p.poll?.let { v -> JSONObject().put("options", JSONArray(v.options)).put("counts", JSONArray(v.counts)).put("mine", v.mine ?: JSONObject.NULL) } ?: JSONObject.NULL)
+            .put("poll", p.poll?.let { v -> JSONObject().put("options", JSONArray(v.options)).put("counts", JSONArray(v.counts)).put("mine", v.mine ?: JSONObject.NULL)
+                // 2.0.0 [RVN-22] 검토 COMP-57·U10b-10: what the server's page has is kept too, so the first picture is the same.
+                .put("byForm", JSONArray(v.byForm.map { g -> JSONObject().put("f", g.form?.name ?: JSONObject.NULL).put("counts", JSONArray(g.counts)) })) } ?: JSONObject.NULL)
+            .put("maker", p.maker ?: JSONObject.NULL)
             .put("tag", p.tag?.let { t -> JSONObject(t.fields()).apply { t.months?.let { put("m", it) } } } ?: JSONObject.NULL)
             .put("card", p.card?.let { JSONObject(it.fields()) } ?: JSONObject.NULL)
             .put("first", p.first).put("helped", p.helped).put("mark", p.mark?.key ?: JSONObject.NULL)
     }))
     .put("mutedUntil", mutedUntil?.toString() ?: JSONObject.NULL).put("past", past).put("hiddenByYou", hiddenByYou)
     .apply { leftPosts?.let { put("left", JSONObject().put("posts", it)) } }
-    .apply { limit?.let { put("limit", JSONObject().put("until", it.until.toString()).put("perDay", it.perDay)) } }
+    .apply { limit?.let { put("limit", JSONObject().put("until", it.until.toString()).put("perDay", it.perDay).put("by", it.by ?: "").put("n", it.n)
+        .put("kinds", JSONArray(it.kinds))) } }
     .apply { topic?.let { put("topic", it) } }
-    .put("more", more)
-    .apply { pulse?.let { put("pulse", JSONObject().put("today", it.today).put("waiting", it.waiting).put("working", it.working)) } }
+    .put("more", more).put("older", older)
+    .apply { pulse?.let { put("pulse", JSONObject().put("today", it.today).put("waiting", it.waiting).put("working", it.working)
+        .apply { it.checkin?.let { k -> put("checkin", JSONObject().put("counts", JSONObject(k.counts)).put("mine", k.mine ?: "")) } }) } }
 
 internal fun Board.toJson(): JSONObject = JSONObject().put("next", next ?: JSONObject.NULL)
     .put("items", JSONArray(items.map { i ->

@@ -199,6 +199,30 @@ class CompanySearchTest {
         }
     }
 
+    /**
+     * 2.0.0 [RVN-22] 검토 I10bc-01: the day's digest says the list's two tags; when they are the ones kept here, the list counts as
+     * checked now and the next warm asks nothing; a moved tag leaves it for the next warm to take.
+     */
+    @Test fun theDigestsTagsStandForTheListsOwnCheck() = runBlocking {
+        TinyCompanyServer(names, split = true).use { server ->
+            val dir = Files.createTempDirectory("company-tags").toFile()
+            val file = File(dir, "company_search.json")
+            CompanySearch({ CompanyClient(server.base) }, file).warm(saver = false)
+            withTimeoutOrNull(5_000) { while (!File(dir, "company_all.json").exists()) delay(20) }
+            val later = Today.millis() + CompanySearch.ALL_FRESH_MS + 1
+            val next = CompanySearch({ CompanyClient(server.base) }, file, now = { later })
+            assertFalse("a tag that moved", next.tagsSaid(server.namesTag, "\"counts9\""))
+            assertFalse(next.peek("가상화학2").enough)
+            assertTrue(next.tagsSaid(server.namesTag, server.countsTag))
+            assertTrue("as good as checked now", next.peek("가상화학2").enough)
+            val asked = server.requests.get()
+            next.warm(saver = false)
+            assertEquals("nothing asked", asked, server.requests.get())
+            dir.deleteRecursively()
+        }
+        Unit
+    }
+
     /** Everything a search does not need, refused. */
     private class FakeBase : CompanyApi {
         override val enabled = true

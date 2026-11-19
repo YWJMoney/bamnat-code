@@ -44,7 +44,14 @@ fun StatGrid(cells: List<StatCell>, modifier: Modifier = Modifier) {
     if (cells.isEmpty()) return
     var open by rememberSaveable { mutableStateOf<Int?>(null) }
     BoxWithConstraints(modifier.fillMaxWidth()) {
-        val perRow = if (maxWidth >= 600.dp) cells.size.coerceAtMost(4) else 2
+        // 2.0.0 [RVJ-92] (조건 12 '금액은 줄이지 말고 줄을 바꿔요'): at 글자 150%·200% two cells a row cut 3,000,000원 to '3,000,0…', so
+        // a big-letter phone shows one a row (two when unfolded) and the amount whole.
+        val big = androidx.compose.ui.platform.LocalDensity.current.fontScale >= 1.5f
+        val perRow = when {
+            big -> if (maxWidth >= 600.dp) 2 else 1
+            maxWidth >= 600.dp -> cells.size.coerceAtMost(4)
+            else -> 2
+        }
         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
             cells.chunked(perRow).forEachIndexed { r, row ->
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {

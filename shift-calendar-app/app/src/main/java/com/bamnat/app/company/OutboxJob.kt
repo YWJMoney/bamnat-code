@@ -38,6 +38,12 @@ class OutboxJob : JobService() {
                 }
             }.getOrDefault(false)
             jobFinished(params, !done)
+            // 2.0.0 [RVN-22] I10bc-03 A change held for a later morning than this run's (it was held again, or 취소 then held anew):
+            // its job again, now that this one is finished (a running job is still 'pending' and could not be replaced from inside).
+            if (done && params.jobId != FORGET_ID && params.jobId != ID) runCatching {
+                (if (params.jobId == SHARE_ID) c.autoShare else cal?.let { c.companyOf(it).takeIf { s -> s.calendarId == it }?.autoShare })
+                    ?.takeIf { it.waiting }?.reschedule()
+            }
         }
         return true
     }
@@ -55,6 +61,7 @@ class OutboxJob : JobService() {
         private const val FORGET_ID = 4408
         private const val SHARE_BASE = 4_410_000
         private const val CAL = "cal"
+        private const val IDS = "outbox_ids"
         private val BACKOFF = TimeUnit.MINUTES.toMillis(15)
 
         fun schedule(context: Context) {
@@ -70,14 +77,15 @@ class OutboxJob : JobService() {
         }
 
         /**
-         * [PLAZA-07] The work order and pay way to share by themselves, not before [delayMs] (a day after the last). A
-         * one-off job like the rest, only while a change waits, so nothing runs at start.
+         * [PLAZA-07] The work order and pay way to share by themselves, not before [delayMs] (2.0.0 [RVN-22] the morning the change
+         * is held until). A one-off job like the rest, only while a change waits, so nothing runs at start.
          */
-        fun scheduleShare(context: Context, delayMs: Long, cal: String = com.bamnat.app.data.PersonalCalendar.MAIN) {
+        fun scheduleShare(context: Context, delayMs: Long, cal: String = com.bamnat.app.data.PersonalCalendar.MAIN, replace: Boolean = false) {
             val jobs = context.getSystemService(JobScheduler::class.java) ?: return
             val main = cal == com.bamnat.app.data.PersonalCalendar.MAIN
-            val id = if (main) SHARE_ID else shareId(cal)
-            if (jobs.getPendingJob(id) != null) return
+            val id = if (main) SHARE_ID else shareId(context, cal)
+            // 2.0.0 [RVN-22] I10bc-03 A new hold names its own morning (never from inside the job, which would stop itself).
+            if (replace) jobs.cancel(id) else if (jobs.getPendingJob(id) != null) return
             jobs.schedule(
                 JobInfo.Builder(id, ComponentName(context, OutboxJob::class.java))
                     .setRequiredNetworkType(JobInfo.NETWORK_TYPE_ANY)
@@ -89,8 +97,21 @@ class OutboxJob : JobService() {
             )
         }
 
-        /** [CALI-02] An added calendar's share job, away from the app's other jobs (4401~4404). */
-        internal fun shareId(cal: String): Int = SHARE_BASE + (cal.hashCode() and 0xFFFF)
+        /**
+         * [CALI-02] An added calendar's share job, away from the app's other jobs (4401~4404). 2.0.0 [RVN-22] 검토 COMP-60-2: a
+         * number of its own given once (two calendars whose names hashed alike shared a job, and one's share took the other's place).
+         */
+        @Synchronized
+        internal fun shareId(context: Context, cal: String): Int {
+            val prefs = context.getSharedPreferences(IDS, Context.MODE_PRIVATE)
+            prefs.getInt("share_$cal", -1).takeIf { it >= 0 }?.let { return SHARE_BASE + it }
+            val n = prefs.getInt("next", 0)
+            prefs.edit().putInt("share_$cal", n).putInt("next", n + 1).commit()
+            return SHARE_BASE + n
+        }
+
+        /** Before 2.0.0 the number came from the name; a job made then is cancelled with it. */
+        private fun hashedId(cal: String): Int = SHARE_BASE + (cal.hashCode() and 0xFFFF)
 
         /** 1.39 [PRIV-06] 발굴 1-1: the links a 모두 지우기 left, cut once online even with the app closed. */
         fun scheduleForget(context: Context) {
@@ -108,7 +129,11 @@ class OutboxJob : JobService() {
         /** [CALI-07] A calendar that went takes its waiting share with it. */
         fun cancelShare(context: Context, cal: String) {
             if (cal == com.bamnat.app.data.PersonalCalendar.MAIN) return
-            context.getSystemService(JobScheduler::class.java)?.cancel(shareId(cal))
+            val jobs = context.getSystemService(JobScheduler::class.java) ?: return
+            val prefs = context.getSharedPreferences(IDS, Context.MODE_PRIVATE)
+            prefs.getInt("share_$cal", -1).takeIf { it >= 0 }?.let { jobs.cancel(SHARE_BASE + it) }
+            jobs.cancel(hashedId(cal))
+            prefs.edit().remove("share_$cal").apply()
         }
 
         /** How many things wait to be sent, for 서버 연결 점검. */
@@ -147,9 +172,17 @@ class OutboxJob : JobService() {
  * Photos do not wait; the form says so.
  */
 object InquiryOutbox {
-    /** Sends what waits, oldest first; true when nothing is left. */
-    suspend fun flush(c: AppContainer): Boolean {
-        if (!c.inquiryApi.enabled) return c.inquiryStore.outbox.value.isEmpty()
+    /** 2.0.0 [PC-217] The refusal by the day's limit that stopped the last [flush], so '지금 보내기' says it in limit words. */
+    @Volatile var limited: CompanyException? = null
+
+    /** Sends what waits, oldest first; true when nothing is left that a later try could send (refused ones wait for the user). */
+    suspend fun flush(c: AppContainer): Boolean = flushSaying(c).waiting == 0
+
+    /** 2.0.0 [RVN-22] COMP-54: as [flush], with how many went, how many the user has to fix and how many still wait. */
+    suspend fun flushSaying(c: AppContainer): OutboxResult {
+        if (!c.inquiryApi.enabled) return c.inquiryStore.outbox.value.let { l -> OutboxResult(0, l.count { it.refused != null }, l.count { it.refused == null }) }
+        // 2.0.0 [RVQ-62] (총괄, 합치며) Each flush says its own reason: yesterday's limit must not speak for today's lost internet.
+        limited = null
         var sent = 0
         // [OBS-01] 기록 지점 7: how many went, also when the rest still waits.
         try {
@@ -159,20 +192,42 @@ object InquiryOutbox {
         }
     }
 
-    private suspend fun flushEach(c: AppContainer, onSent: () -> Unit): Boolean {
-        for (q in c.inquiryStore.outbox.value) {
+    private suspend fun flushEach(c: AppContainer, onSent: () -> Unit): OutboxResult {
+        val list = c.inquiryStore.outbox.value
+        var sent = 0
+        var toFix = 0
+        for ((i, q) in list.withIndex()) {
+            // 2.0.0 [RVN-22] COMP-54: one the server refused for what it says waits for the user to fix it; sending it again as it
+            // is would only be refused again (before, every try sent it and 지금 보내기 said 보냈어요).
+            if (q.refused != null) { toFix++; continue }
             try {
                 c.inquiryApi.send(c.companyStore.device, q.kind, q.text, q.info, q.requestId)
                 c.inquiryStore.asked = true
                 c.inquiryStore.unqueue(q.requestId)
+                sent++
                 onSent()
                 c.telemetry.event(com.bamnat.core.stats.UsageEvent.INQUIRY.key)
             } catch (e: CompanyException) {
-                if (e.retryable) return false
+                if (e.retryable) {
+                    if (e.code == "rate_limited") limited = e
+                    val rest = list.drop(i)
+                    return OutboxResult(sent, toFix + rest.count { it.refused != null }, rest.count { it.refused == null })
+                }
                 // Refused for what it says (a phone number, too long): it would be refused again, so it stays for the user to fix.
                 c.inquiryStore.refused(q.requestId, e.code)
+                toFix++
             }
         }
-        return true
+        return OutboxResult(sent, toFix, 0)
+    }
+}
+
+/** 2.0.0 [RVN-22] COMP-54·U10b-08: a send of the waiting questions, said as it went ("보낸 문의 1개 · 고쳐서 보낼 문의 1개"). */
+data class OutboxResult(val sent: Int, val toFix: Int, val waiting: Int) {
+    val words: String get() = when {
+        waiting > 0 -> (if (sent > 0) "${sent}개를 보냈어요. " else "") + "아직 인터넷에 연결되지 않았어요. 연결되면 저절로 보내요"
+        toFix > 0 -> (if (sent > 0) "보낸 문의 ${sent}개 · " else "") + "고쳐서 보낼 문의 ${toFix}개: 아래 까닭을 보고 고쳐 주세요"
+        sent > 0 -> "${sent}개를 보냈어요"
+        else -> "보낼 문의가 없어요"
     }
 }

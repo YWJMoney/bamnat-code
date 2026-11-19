@@ -140,23 +140,6 @@ data class LedgerView(
 /** [SWIPE-01] How far a line must slide, as a share of its width, before letting go acts on it. */
 internal const val SWIPE_THRESHOLD = 0.5f
 
-/**
- * [SWIPE-01] Asked before a line slid to the left goes: what it is, so the right one is removed.
- * After 삭제 the money view model offers 되돌리기, which puts the same line back.
- */
-@Composable
-internal fun DeleteLineDialog(e: MoneyEntry, onDismiss: () -> Unit, onConfirm: () -> Unit) {
-    val what = listOfNotNull(Fmt.shortDate(e.date), e.title.ifBlank { e.category }, signedWon(e)).joinToString(" · ")
-    com.bamnat.app.ui.components.ConfirmDialog(
-        title = "지울까요?",
-        message = "$what\n\n지운 뒤 나오는 ‘되돌리기’나, 30일 동안 가계부 메뉴 › 최근 지운 기록에서 살릴 수 있어요.",
-        confirmLabel = "지우기",
-        destructive = true,
-        onDismiss = onDismiss,
-        onConfirm = onConfirm,
-    )
-}
-
 /** What the list can do to its lines; the money view model does it, with undo. */
 interface LedgerListActions {
     fun open(e: MoneyEntry)
@@ -200,7 +183,8 @@ fun LedgerListPane(
     var exporting by rememberSaveable { mutableStateOf(false) }
     var moving by rememberSaveable { mutableStateOf(false) }
     // 2.0.0 [RVK-10] (MONEY-04·U06a-11): the 휴지통 of picked lines asks first, saying how many and how much ('모두 고르기' with
-    // 전체 can be the whole 가계부); what goes stays 30 days in 최근 지운 기록.
+    // 전체 can be the whole 가계부); what goes stays 30 days in 최근 지운 기록. 2.0.0 [RVK-61] (총괄 HQ-111 묶음): one line goes without
+    // asking, as it is kept 30 days and 되돌리기 puts it back; only two or more ask.
     var askingDelete by rememberSaveable { mutableStateOf(false) }
     val selecting = selection.isNotEmpty()
     val picked = remember(shown, selection) { shown.filter { it.id in selection } }
@@ -235,7 +219,7 @@ fun LedgerListPane(
                     onClose = { onSelection(emptySet()) },
                     onAll = { onSelection(if (picked.size == shown.size) emptySet() else shown.map { it.id }.toSet()) },
                     onMove = { moving = true },
-                    onDelete = { askingDelete = true })
+                    onDelete = { if (picked.size == 1) { actions.delete(picked); onSelection(emptySet()) } else askingDelete = true })
             }
             val listState = rememberLazyListState()
             LazyColumn(state = listState, modifier = Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = FabClearance + 8.dp)) {
@@ -345,10 +329,9 @@ fun LedgerListPane(
     if (exporting) {
         ExportDialog(shown, book, view.range(month, cycle), actions::message) { exporting = false }
     }
-    if (askingDelete && picked.isNotEmpty()) {
+    if (askingDelete && picked.size > 1) {
         val done = { askingDelete = false }
-        if (picked.size == 1) DeleteLineDialog(picked.single(), onDismiss = done, onConfirm = { done(); actions.delete(picked); onSelection(emptySet()) })
-        else com.bamnat.app.ui.components.ConfirmDialog(
+        com.bamnat.app.ui.components.ConfirmDialog(
             title = "기록 ${picked.size}건을 지울까요?",
             message = "${Fmt.shortDate(picked.minOf { it.date })}~${Fmt.shortDate(picked.maxOf { it.date })} · 모두 ${Fmt.won(picked.sumOf { kotlin.math.abs(it.amount) })}\n\n" +
                 "지운 기록은 30일 동안 가계부 메뉴 › 최근 지운 기록에서 되살릴 수 있어요.",
@@ -572,14 +555,13 @@ private fun LedgerRow(
     big: Boolean = false,
 ) {
     val haptics = LocalHapticFeedback.current
-    // [SWIPE-01] A slide to the left never removes the line by itself: it springs back and asks first,
-    // and it has to go half the row's width, so a slanted scroll cannot set it off.
-    var asking by remember { mutableStateOf(false) }
+    // [SWIPE-01] A slide to the left has to go half the row's width, so a slanted scroll cannot set it off. 2.0.0 [RVK-61] It then
+    // removes the line at once and 되돌리기 (30일 in 최근 지운 기록) puts it back; before it sprang back and asked 지울까요?.
     val state = rememberSwipeToDismissBoxState(
         confirmValueChange = { v ->
             if (v == SwipeToDismissBoxValue.EndToStart) {
                 haptics.performHapticFeedback(HapticFeedbackType.Reject)
-                asking = true
+                actions.delete(listOf(e))
                 false
             } else true
         },
@@ -591,9 +573,6 @@ private fun LedgerRow(
             SwipeToDismissBoxValue.EndToStart -> state.reset()
             SwipeToDismissBoxValue.Settled -> Unit
         }
-    }
-    if (asking) {
-        DeleteLineDialog(e, onDismiss = { asking = false }, onConfirm = { asking = false; actions.delete(listOf(e)) })
     }
     val cal = LocalCalendarColors.current
     SwipeToDismissBox(
@@ -651,7 +630,7 @@ private fun LedgerRow(
                     if (selecting) this.selected = selected
                     customActions = listOf(
                         CustomAccessibilityAction("오늘로 복사") { actions.duplicate(e); true },
-                        CustomAccessibilityAction("지우기") { asking = true; true },
+                        CustomAccessibilityAction("지우기") { actions.delete(listOf(e)); true },
                         CustomAccessibilityAction(if (selected) "고르기 풀기" else "고르기") { onToggle(); true },
                     )
                 },

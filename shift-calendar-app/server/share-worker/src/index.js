@@ -60,6 +60,10 @@
 //                              the page since then. The first ask turns it on for that link; nothing but the times is kept.
 // POST   /s/:id/ok             2.0.0 [RVQ-19] the page's '확인했어요' (a link the leader watches): back to the page with ?k=1
 // POST   /api/share/:id/ok     2.0.0 [RVQ-19] the same press from the member's app (GET /api/share/:id says watch:true) -> 204
+// POST   /api/share/:id/app    2.0.0 [RVJ-83] SPREAD-38 {mark} -> 204: the member's app puts this watched link's changes into its own
+//                              calendar by itself (자동 반영), from 처리방침 3.14 only; {mark, off:true} takes it back (any day)
+// POST   /api/apps             2.0.0 [RVJ-83] {links:[{id, token}]} -> { n|null, min }: how many of the leader's links are read so,
+//                              one number for them all and only from LIMITS.appMin up (never which)
 // POST   /api/board            1.38 [P3-L-15] {team, month, names:[name], labels:[[label per day]], colors:{label:"#hex"}} -> { id, token, url,
 //                              expiresAt }: 병동 전체 보기, the whole month's table and each day's count per shift, when the leader turns it on
 // PUT    /api/board/:id        header X-Delete-Token, same body -> 204 · DELETE /api/board/:id -> 204 · GET /b/:id the page
@@ -188,6 +192,10 @@ export const LIMITS = {
   settleMs: 60 * 1000,
   tiredDays: 30,
   tiredBoxDays: 120,
+  // 2.0.0 [RVJ-83] SPREAD-38: how many of a leader's links read by the app before the number shows (처리방침 3.14 14번 '3명 이상일
+  // 때만'), and how long a different set of links gets no number after the marks were last counted together.
+  appMin: 3,
+  appRestDays: 7,
 };
 
 /** [SRV-05] Why someone reports a link (the page and the app offer the same list). */
@@ -427,6 +435,10 @@ async function route(request, env) {
   if (tiredForm && request.method === "POST") return tiredPress(request, env, tiredForm[1]);
   const okForm = path.match(/^\/(s|api\/share)\/([A-Za-z0-9]{16,32})\/ok$/);
   if (okForm && request.method === "POST") return okPress(request, env, okForm[2], okForm[1] !== "s");
+  // 2.0.0 [RVJ-83] SPREAD-38 앱으로 받는 팀원 수.
+  const appMarkApi = path.match(/^\/api\/share\/([A-Za-z0-9]{16,32})\/app$/);
+  if (appMarkApi && request.method === "POST") return appMark(request, env, appMarkApi[1]);
+  if (path === "/api/apps" && request.method === "POST") return appCount(request, env);
   const seenApi = path.match(/^\/api\/share\/([A-Za-z0-9]{16,32})\/seen$/);
   if (seenApi && request.method === "GET") return seenRead(request, env, seenApi[1]);
   if (path === "/api/sign" && request.method === "POST") return signCreate(request, env, url);
@@ -535,7 +547,8 @@ async function remove(request, env, id) {
   if (record instanceof Response) return record;
   await kvDel(env, id);
   // 2.0.0 [RVQ-19] 열어 봄·확인했어요 go with the link at once, not when their time runs out.
-  if (record.watch) await Promise.all([kvDel(env, seenKey(id)), kvDel(env, okKey(id))]);
+  // 2.0.0 [RVJ-83] and the '앱으로 받음' mark (only a watched link can hold one).
+  if (record.watch) await Promise.all([kvDel(env, seenKey(id)), kvDel(env, okKey(id)), kvDel(env, appKey(id))]);
   return new Response(null, { status: 204 });
 }
 
@@ -1599,11 +1612,87 @@ async function okPress(request, env, id, app = false) {
   return back("1");
 }
 
+// ---- 2.0.0 [RVJ-83] SPREAD-38 앱으로 받는 팀원 수 (처리방침 3.14 14번, 30일 줄) ----
+// A member's app that puts a watched link's changes into its own calendar by itself (자동 반영) leaves one mark on that link: the hash
+// of a random word only that phone keeps, with no name and nothing about the phone, so only that phone takes it back. The leader reads
+// one number for all of the team's links together, never per link, and only from LIMITS.appMin up. A leader who asks again with a
+// different set of links (one taken out or put in, to see whose mark it was) gets no number for LIMITS.appRestDays after the marks were
+// last counted together. The mark goes with the link (remove), when the link runs out, or when the phone turns 자동 반영 off. Before
+// 처리방침 3.14 nothing is kept and the leader reads no number. What stays possible: someone who knows a link's address can leave a mark
+// on it too (as anyone can press 확인했어요); that only spoils the leader's own number, and a new mark counts like any other.
+
+const appKey = (id) => `app:${id}`;
+const MARK = /^[A-Za-z0-9_-]{16,64}$/;
+
+/**
+ * POST /api/share/:id/app {mark}: 204, or not_found (the link is gone, not watched, or 3.14 is not in force), bad_mark, rate_limited.
+ * {mark, off: true}: the phone that left the mark takes it back (204 also when there is none, any day).
+ */
+async function appMark(request, env, id) {
+  let body;
+  try { body = JSON.parse((await request.text()).slice(0, 1024)); } catch { return json({ error: "bad_json" }, 400); }
+  const mark = typeof body?.mark === "string" ? body.mark : "";
+  if (!MARK.test(mark)) return json({ error: "bad_mark" }, 400);
+  const h = (await sha256(`app:${mark}`)).slice(0, 24);
+  const old = await env.SHARES.get(appKey(id), "json");
+  if (body.off === true) {
+    if (old?.h === h) await kvDel(env, appKey(id));
+    return new Response(null, { status: 204 });
+  }
+  const record = await env.SHARES.get(id, "json");
+  if (!record || record.removed || Date.parse(record.expiresAt) < Date.now() || !record.watch || !policy314(env)) return json({ error: "not_found" }, 404);
+  if (!(await allow(env, request, "ap", LIMITS.createsPerHour))) return json({ error: "rate_limited" }, 429);
+  // The same mark again only follows the link's time (a link the leader kept longer); a new one keeps when it was last counted.
+  if (old?.h === h && old.expiresAt === record.expiresAt) return new Response(null, { status: 204 });
+  await put(env, appKey(id), { h, expiresAt: record.expiresAt, ...(old?.set ? { set: old.set, setAt: old.setAt } : {}) });
+  return new Response(null, { status: 204 });
+}
+
+/**
+ * POST /api/apps {links:[{id, token}]}: the leader's links (each with its own token; any other is left out) -> { n, min }, n null under
+ * LIMITS.appMin, while 3.14 is not in force (off), or while the set rests after it changed (rest).
+ */
+async function appCount(request, env) {
+  if (!readAllowed(request, "apps", 60)) return json({ error: "rate_limited" }, 429);
+  let body;
+  try { body = JSON.parse((await request.text()).slice(0, 16 * 1024)); } catch { return json({ error: "bad_json" }, 400); }
+  const asked = Array.isArray(body?.links) ? body.links.slice(0, LIMITS.askMembers) : [];
+  if (!policy314(env)) return json({ n: null, min: LIMITS.appMin, off: true });
+  const ids = new Set();
+  const marks = [];
+  for (const l of asked) {
+    const id = typeof l?.id === "string" && /^[A-Za-z0-9]{16,32}$/.test(l.id) ? l.id : null;
+    const token = typeof l?.token === "string" ? l.token : "";
+    if (!id || !token || ids.has(id)) continue;
+    const record = await env.SHARES.get(id, "json");
+    if (!record || record.removed || Date.parse(record.expiresAt) < Date.now() || (await sha256(token)) !== record.tokenHash) continue;
+    ids.add(id);
+    const mark = record.watch ? await env.SHARES.get(appKey(id), "json") : null;
+    if (mark) marks.push([id, mark]);
+  }
+  const set = (await sha256([...ids].sort().join(","))).slice(0, 16);
+  const now = Date.now();
+  const rest = marks.some(([, m]) => m.set && m.set !== set && now - Date.parse(m.setAt) < LIMITS.appRestDays * 86400 * 1000);
+  if (rest) return json({ n: null, min: LIMITS.appMin, rest: true });
+  // Only a mark counted in another set (or never) is written, so asking again with the same links writes nothing.
+  for (const [id, m] of marks) if (m.set !== set) await put(env, appKey(id), { ...m, set, setAt: new Date(now).toISOString() });
+  return json({ n: marks.length >= LIMITS.appMin ? marks.length : null, min: LIMITS.appMin });
+}
+
 // ---- 1.38 [P3-L-18] 피곤해요 팀 합계 ----
 // Only a number per day is kept. A member's app adds one at most once a day; the leader sees the last week, and a day with
 // fewer than LIMITS.tiredMin is shown without its number, so one tired person cannot be picked out.
 
 const tiredKey = (id) => `tired:${id}`;
+/** 2.0.0 [RVQ-21] The day's phone marks of box [id] (salted hashes), gone by themselves two days on: only their number stays. */
+const tiredMarksKey = (id, day) => `tiredm:${id}:${day}`;
+/** [RVQ-21] A box's counts without the days older than LIMITS.tiredDays (and no phone marks of an older server). */
+function tiredPruned(box) {
+  const keep = kstDay(new Date(Date.now() - LIMITS.tiredDays * 86400 * 1000).toISOString());
+  const recent = (o) => o && Object.fromEntries(Object.entries(o).filter(([d]) => d > keep));
+  const { marks: _m, ...rest } = box;
+  return { ...rest, days: recent(box.days) ?? {}, ...(box.people ? { people: recent(box.people) } : {}) };
+}
 
 async function tiredCreate(request, env) {
   if (await env.SHARES.get(CREATE_OFF)) return json({ error: "paused" }, 503);
@@ -1630,7 +1719,10 @@ async function tiredRead(request, env, id) {
   const record = await tiredOwned(request, env, id);
   if (record instanceof Response) return record;
   // Reading keeps the box alive while the leader uses it.
-  if (Date.parse(record.expiresAt) - Date.now() < (LIMITS.tiredBoxDays - 7) * 86400 * 1000) await put(env, tiredKey(id), { ...record, expiresAt: expiry(LIMITS.tiredBoxDays) });
+  // [RVQ-21] Reading it keeps the box (120 days) and drops what is older than 30 days, even with no press since.
+  const pruned = tiredPruned(record);
+  const stale = JSON.stringify(pruned.days) !== JSON.stringify(record.days ?? {}) || JSON.stringify(pruned.people) !== JSON.stringify(record.people) || record.marks;
+  if (stale || Date.parse(record.expiresAt) - Date.now() < (LIMITS.tiredBoxDays - 7) * 86400 * 1000) await put(env, tiredKey(id), { ...pruned, expiresAt: expiry(LIMITS.tiredBoxDays) });
   const days = Array.from({ length: 7 }, (_, i) => kstDay(new Date(Date.now() - i * 86400 * 1000).toISOString())).map((d) => ({ d, n: tiredShown(record, d) }));
   return json({ min: LIMITS.tiredMin, days });
 }
@@ -1638,7 +1730,10 @@ async function tiredRead(request, env, id) {
 async function tiredDelete(request, env, id) {
   const record = await tiredOwned(request, env, id);
   if (record instanceof Response) return record;
-  await kvDel(env, tiredKey(id));
+  // [RVQ-21] The day's phone marks go with the box at once (today's and yesterday's are the only ones still there).
+  const today = kstDay(new Date().toISOString());
+  const yesterday = kstDay(new Date(Date.now() - 86400 * 1000).toISOString());
+  await Promise.all([kvDel(env, tiredKey(id)), kvDel(env, tiredMarksKey(id, today)), kvDel(env, tiredMarksKey(id, yesterday))]);
   return new Response(null, { status: 204 });
 }
 
@@ -1722,12 +1817,17 @@ async function tiredAdd(request, env, id) {
     count(env, "tired");
     return "ok";
   }
+  // 2.0.0 [RVQ-21] 갈래 O 3.14 문장표 확인(11-12): the day's marks live in a key of their own that goes by itself two days on
+  // ([tiredMarksKey]), not in the box until another day's press; the box keeps only the day's number.
   const mark = (await sha256(`${env.RATE_SALT || "bamnat"}:tp:${day}:${netOf(request.headers.get("cf-connecting-ip"))}:${request.headers.get("user-agent") || ""}`)).slice(0, 10);
-  const marks = box.marks?.day === day ? new Set(box.marks.list) : new Set();
+  const marksKey = tiredMarksKey(record.tired, day);
+  const marks = new Set((await env.SHARES.get(marksKey, "json")) ?? []);
   marks.add(mark);
+  await kvPut(env, marksKey, JSON.stringify([...marks].slice(-LIMITS.askMembers * 2)), { expirationTtl: 2 * 86400 });
   const people = Object.fromEntries(Object.entries(box.people ?? {}).filter(([d]) => d > keep));
   people[day] = marks.size;
-  await put(env, tiredKey(record.tired), { ...box, days, people, marks: { day, list: [...marks].slice(-LIMITS.askMembers * 2) } });
+  const { marks: _old, ...kept } = box;
+  await put(env, tiredKey(record.tired), { ...kept, days, people });
   count(env, "tired");
   return "ok";
 }
@@ -3377,3 +3477,19 @@ main{max-width:720px;margin:0 auto;padding:24px 16px 48px}h1{font-size:22px;marg
 
 /** 1.39 [IOS-05] apple-touch-icon.png (180×180), drawn from app/src/main/res/drawable/ic_launcher_foreground.xml on its ink background. */
 const TOUCH_ICON = "iVBORw0KGgoAAAANSUhEUgAAALQAAAC0CAIAAACyr5FlAAAQAElEQVR4nOydB1xT5/rHXyCMhBUIK5Awwt57bxERtIrV2uGoXXbYdav3dlr93zra2/b2Uz/eWzvssu2/vW2vtdUuBw5EBEE2sjdhbxJQAvchEeunciBgTs454f2aTz7H5BySc/I7z/u8z/O+z8uy5HsjDGY6tBEGQwAWB4YQLA4MIVgcGEKwODCEYHFgCMHiwBCCxYEhBIsDQwgWB4YQLA4MIVgcGEKwODCEYHFgCMHiwBCCxYEhBIsDQwgWB4YQFsJM8fJfH4Hn3W9+iDBysDiu4+UhenDjKtg4/NPJsiu1CIPFcYPunn7FRld3H8LIwT4HhhAsDgwhWBwYQjRWHCIngYmxESIZExMj+CCkoWisODzdRZFh/ohkIkP9PdxESEPRWHE0t7QLBTaIZBwd+M0tbUhD0VhxNDW3cTgGPHMuIg1LHldfXx8+CGkoGiuOnt5+iWSEVOMhFNrCR/T2DSANRZN7K41NYnulxQFBsOLSqtKy6p5eZX9soZ1NfWML0lw0OULa1CKOjw3T0tKamJiYdeexsbH0e55BSqOtrW1na3UyIxtpLoyxHND18Pd1m9Mh9Q2t4rYOHR1SzhH+bIu4vb6pdU5HBfh5hIf6IYbAGHH09Q9ERwQZGXGUP0Q6MnrkaMbYmAyRwLVrY/DHR0evKn8IfPmo8ID+/kHEEBgjjvKKuv6BodioYMRY4qJDwE2+UlmHGAKTHNLTZ3Ncne35fAvEQMB7dREJM87lIubAJHG0iDtq65uT4iMQA0mMD6uubWpv70LMgWFd2XNZeVxTY1/vuXmmlAOutLGR4fkLeYhR6BgaWyHmAA7g+Pg4+JgdnT2IOVhb8VrFndB7QoxCa8GWmjQw0HNzdjQzMzHkGHA4bI4h25DDhteHJVLJsFQikQ4PSyEgVlXbMDIyhy6JJrGAhgn6ern6+7q7uTmIHAXwgLt5hp0haqY1td3W3gW+DjwqKxsKSypKyqrRwkDDLUdosM+SRZFBAZ4QfZrm7ZslMC1TO/xpx4KiK/kF5b+fupCbV4I0F4rFwWHrW1tb1NWrOENhZWm+Jj159cpkRwdbReRcC5FCfX3Ld0eOf/fD8c6uXqRSnBwFbW1d0pERRB0Ui0PkKFyeGpeZlZ9fWI5UAZiKzZtWL0oIJ1UTfzBlUo6funDg4LdgUZAqCArwiokM/OmX0yq/beYExb0VyHdDHDomKgiexbcXA1iSFPXGa88+9dh9jo6Cyd9rYgJSbohstNBkVk9Ly9lJePfqlOiIQIiB1jXc1i8aFuILUXa4YcorKJ4+Q31XFjQBSZC4mBD4LZtb29HcAZfig307HtiQzrexRFPWQh3KmPqgG59ky7dckZaQFB8Ov2t7RzeaO2AwwPidPpdbUFyBqIYWcQ64jqCP6MhAXV1W41wGVvHMubtefXL7849aWpqrSQuzMTEZ1TBbe2eKHd8qr6BsZGRU+WPhDgHH+dTZnJLSKkQD6BIEA30MSaRglqtrGqXKXdBHNq3+1zsv+/m4aanNSiiB/JtMfiMvT+d71iy9enVMSUeEZ2YKLePJMxfLymsQPaBXV9bCnNvVM/tsRGg+3t/3qrenM6I1153VwuKKx5/dpUwro+Tpqw16hc8l0tl7blERAf//8RsCO+sJ9bic80fhFk/YWFusTk+G0NmsQ5GVOX11wqTcCkhh69Mb9+x4Wl9Pb0KNLuftIB+kiNgG+unLE+H7XrxUjJgDY8Shp8s68O72tXcundQE/GOAMK6jNeWGRIT6ebg5/nYya3x89jGtdIAZ4oCU2Ocf7gF3FTEcF5F9SJD3L8czSRq8qFoYMJ7D3Nz020NvBwd6KTOInObAKUSG+X/z2VtcU2NEe+guDi7X+D+fvunu5kh791MpFKcA/axvD70Fp4boDa3FYcg2OPThXif5NHYNUMbNiJyEnx3YDSeIaAzpPkdSQjjEMcVtc86b6LJYnx/c4+/jphk240/ASVlb8SAeeuRYxlybS21tbWhkPdxEt5nEmRXSxWHBM5v00l0du3v6BwaHlTwK1HBg33bwQDVSGeh6F3dCKLCBjN2vx88rf6DA1nrlHYvgqJq6plZxJyIT0sXRKu6oqKqztORFRwRwTU3EbZ3XxsZmPWrbM5sgPaGpylCg0Iebi4OWlnZ2btGs+3PYBmCGIYPd3NJxVC3ZfHV0ZUdHr1VVNzS3tHt5ukA+urd3YOaZ6ZCZ3PXqU1patMqZkILiBMOCfXIulcyckXYRCVetTIb9f/n9XH5BOVxSpIavp87cCtwoXh4iaGFnmPUFLfGvh98zMSG9YhOtgLslZeVj3cSJFU93J7hu5RW16rxh6JV409HR/v7Ld3y9XdHCI+9y2d33/5VWsRx6RUgfe+iuVXckabarMS1wyrZ8q+FhqaqGS6oEGlkOG2veyaMfGRjoo4XKyMho/NIHu7pVPFZ53tAoCPZ/L29ZyMpAk/Os9He+/ASiDXQRR2xU0OJERs6QVi2pydERtKnuQhdx7HzpcYSRs+PFxxA9oIU40pbEODrYaUDS9faZDIu5OiYvikQ0gBbieOrxdUjjUmvzQ3ERtmy+B9EA6sWRGBcGIWRsNm4AlwIiPXHR1Be4ol4cz25Zj7DZuAnFpXjy0XsR1VAsDi9PkY+XC8LcAiTlwaAiSlFlhNRewI+JCjYyZMtkMgj2KWMMNq1PDwlaoNVjZqWvfzA7Z/ZsLWBpYebu6hgc6D06Mto/MIRUhCqLt0hHRsaujQX5e8ZGBY+MXm1pbYdMbE1t09CwhOiQFcsSEIaA5Uvj3tl/iOhdIyOOs5NQKODb2Vrq6+kND0sglS+dy+zLWSElfG7GNbHjWwnsrOHRIu6ELPO0u/n7uv/3q3cQhpgVdz9VWjb97MhlS+P51rym5vZmcXtLS3sfCbVvSSn7BAloeJSUV4PjbWpCOIwW+ikIMyOJsWFE4jiXldffP0iqI09uTTD46gODhE1gWDD2NmYhNNiH6K2BgSGyu3iU9VZ0dLSnr9OFuYnQIG+SCvsrA2UfHBjgqa+vh2NfMwAXBy4RhRV5KRNHWNCkwcSxrxm4McIUUQRldUi9PHHsSym8PChbfZIycTgI+QijBA4OtogiKBOHs0iIMErgKKRMHNT4HBY8M309XYRRAhMTI1NTaiZqUCMOB3u+vGQWRhkmHCgyHtQ0KxaTawHjfoqSaIGhRVRAjTgM2At6lPlcYVN0uagRB8eA1nUp6AbbYCGJw4DeRUvoBodxlmPb0/dvfnCNjo4O0Q7FpVVr1m8dm67gAttAD2GUxoDA0LJYrGPf73cR2RMdKJPJ9r//9b73vkTzgkTLoU0cGh8fH4fn89kFGx95CWGI+eLg3sgw/9tJMujpzv8nnv+Rb+37DB5oXihK9RpycOMyCxz5snMSiXTad8Eqp6wkcQYUNT6HRDo5mo2NPY/ZUNw/wxJqyl5TIw6p3HKwcYd2NjjsScshlUoRFVBkOSSKZoWNMDNiaDhpOSQUWQ5qwufd3ZP1jXjmXG1thi2JrU7Al1SMwO2kqGIHNb9NQ/P1tZntceKeGAf76ymV6ppGRAXUiKO/f2hAPvdGnoHDTI9CHF3dvVevzV6ckwwos+p1jZPGw9HBDmEIcJSLo7FJjCiCMnE0ysXhQN1IFvqjGAPWsADFUXZlctFUH7qv00Yl3vJhtqXllK0uS5k4cuSrwPv7uuvhIWHTAUEgP3k91tw8ylb+okwcxaWVo6NXWSyd8BBfhLmF8FA/SKkMS6Sl1K0kSpk4ZLLx3PxS2MDimBZFTcHcvBIK532RKw7FnC2id3PlLUsSrjA5HSlJUWjqEk2LgQHp8wVJCZ9zTY0FttaKEgzgbB8/dWHa3U6dufiXJze4uTi4uzpWVNUjzBTeXs6K8OCJjGyifeKig+0FfMaUYLC0MAvy9xLYWRkachTFW6DhqKxqINofOiyV1Q0gjjvSEire/RRhpliRmgDPZeU11bVNRPtkZuW7ujgKBfyYyMAbxVvyC8s6u1QWa1elOMy5pixdVn5heXNLe0dnjzJDVH48lrHtmU0rlye+hcVxE6vuSILnI8cyZthHIh0tLK6AB5LflmCk7WytzbgmKhQHxYXx+dYWmSc+h421G7flXS5DmEkP3e+rT14HfyIs4b6enn5EHRQnRcXtXRlncmBjwz3LEUbOxnWTlwIcNWqVgehQh/TAx/9BkxWu4m4kIdWPLksrPV64bYM3PGBDR5uyCVcuImFKUjRs/OuDrxHVUC+OS/llRSWV2traT8uLXKsfEMKOh/03LHOO9LWEB2zseMSPKnnARQBfLTu3sKSsGlENLcba7HvvK3hekRZPifGI9LXwFHFvfsXb2SzCxwKpHQchPy0lFjbeP/gdogG0EEfG2ZzaumYwHi9texipHYGNoZIvks3Ol58As1FZVX/2fB6iAXQZpbfrH+/D8+LEiKSEcKRehqWyW1/sG7iK1EtqcrSiGP7OPe8hekAXcZzJzPv590wkv3tmiLiTQUn1NIGBsro+pEY4bIMd8uWIfjx2+uIlytKwf4JGq0NCHuHeu1J55lxdXdb5C5eRuugfujY+PuFmb8KSF3UcvSr75ve6i6XdSI08/9wD0ZFBkIPd9OgrEFxG9IBe68rev37lq88/Oj4+vnbDtstFV5AaYekgWwsObLR2ScZkSJ1AXvqLg3vB5dqx699ffHMU0QZ6iQPcsUMf7YkM8+/q7k27c8sMKzRrDGApfztyAMLe2blF6x58AdEJtfocEBL2dHdyd3GcYYcnn9sDyrDgmR3Yt13jq5Tq6GjDaYIy4JS3/GX3DHu6uzp5uDmpeWyH+nwOO77V8qXx7u6i+oaWGUwCtLj5BeVr0pNt+VbgmZ7PLkCay/PPPbh8adzYmAxcjfrG1hn2hNRaQlyYi7Owt6d/cEiC1II6xGFqYrg4MTI6MhCytT/9nNHW3oVmRNzWNSaTRYUHhAR6NzS2aupQj5XLEhVxnX+888mx387NvHNXdx9k8G2seLHRwTyeWVtH19Wr1xDJkC6O0GCftJQ4HW3tn387d7mo/NqYUvNzLuWXujrbu7o4QOQjN78UVIU0Cwhp7H/7RXBCfzh6au/bB5U5BC5ddW1Tq7jT28s5PNh3fGICthGZkC4OXy/XqpqGX0+cn2FtjWn5/WQWWA57IT81OeZMZq4KhylQjp+P26fv79LV1T2TeemprXvn5EnAZSwurQJlmJuZ1NQ1IzKhV2/lT0Bo6MtPXvfzduvtG3zg0VeKy6oQ84HT+fSD10xNjAuKK9Y/9IJUqsqFt1QLjYJgtwKGFOxHckIEn295x7LEy4VXmluZ3b7ERAYefO81YyPD2rqmdQ+9MDRETeENJaG1OICRkdEffz4dExlkZ2u1Ii2hsrqhpq4JMZPUJTEH3t0OXbCyKzX3bPqbCpdxJAm6iwPJO7fgtQX6e0JCf1lKbHtHN4XzfObNfWvT3tq9FTxQSJ2sf+jF4WFa2wwFAlDTFAAABVxJREFUDBAHmqyMJgP74ebi4OJsn5QQYW3JO5+dL5ONIybAZuvv3vG0YoXp46cuPPLkTjX0QlUCM8SBJqtTTkAwANIukInw9XFNTY7Nzins6aV4lOWsQFjzq0/eiAr3l8lk/9x/aOfuf8OJIIbAGHEoyMkruZhbBMEPvo3l2jtTdHR08gvLFVVN6Yaenu6zW9a/uWuruZlpd0//w1t2HDmagRgFvcQBbvysJrdF3AFXOSTIG1zUiFA/CD+XXaklOxw0VyD098VHe6EFhOxJXkHZfQ+8UKVE6SZlTl+d0EgcXp7Oq1curq5pnHXNbfDmvj18fGBwODjAy8rS/K5VS0AouXklozQYCcHlGoOH8crfNpuYGA0ODb/+z4+3/30/UZXZm+GZmW5ct2JwWEKfcB9dxAFBw0Xx4fkFZUpmUiCqWFB05fsjJ+xsrSHQ7uXhfN/daWDAa+ua4SdBVACZxWefWPfm7q1wLvBfSBc8vOXVCxcLlTwcbgl9A/3IMP9hibSzswfRAFpESIP8PWOigqCPB/4EmjvxMSF/375FYGut+O+vJzI/+eLIpbxSpC7CQ/w2rlu+dHGM4r+NzWKwFpnzGswGUbKgAK/T53KLSioR1VAvjtAgn8hw/8ysfHAt0XzR1WWtWpG0+f7VTk4CxStggb7+9ufvj5wclpAVUQAX4c70xfeuSQXTpXilurbxw0//+8NPp8bG5l//LyzYNyLM7zYviEqgWBzOTsJlS+POZeVBaBypgrSU2M0PrPGVF0xCigDrsYysi0UFReVNKkrt2gtsAvw9oiMC16Qn33gx73LZx58fhvwiUgVgPMCE/PTL6br6FkQdFIvDkMO25VtWqboIq5enaEVaYvryRZYWf6yO1tXdW1A0OS29prYJct/Kh+FdREIXkb2zSOjv6x7g584z/2MGVEdHz+GjJ7//4YTKg/oQ8Wtp7SDP7CkDrbOyt090REBCbGhQoFeAr/ut70L2a+augZWF+Y126mYuF5bnF5RnnM25kDMfJ4kpaLg4bgZy5dCPcHNzEDkK4GFtxVPywLb2rtr6ZnhUVjYUllTQYRarelhA4vgTBgZ6bs6OZlxjQ0M2h8PmGLIVqziAJZcMSyEyAdGUnt6BqtqGkRG6TCRRM8wTBzT8kJ4oLqW+p6c8isgHHXqnc4JhK1pwTY1jo4IQA4mNCqZq1fF5wzBxQKysr3+QWWYDyW1G/8BgTCTDZM0kcUB8GhzJk2eyEQOBrw1BHRtrCsp+zBvGiAOSKYlxYVXVDWJxF2Ig8LUhuJIQE4KYA2PEATlbyHOeybyEGMvZ85fMzbkebk6IITBGHBbm3KyLlxUL0iqJnp5u6pIYFksHkQBkc1KTY+a05MPQkORCToEFj4sYAjWrQ86Dc1n5aI6Ag+LkICBpqOnYmMwJ/n59S0VVnfJHqSqFpB40eXFGewG/ubVNyflkLBbrx2/2/fD1u0g54M+2iNvthTZIc9FocQj5jU1tSu7MMzf19nKBdK6VpbmShzQ1tWn2MmQaKw6emSmHY9BE5gJpTc1i+AgzrgnSUDRWHEIhXyIZ6SZz7kJnd9/o6KhQoLEti8aKQ2Bn3djcikimoVEMH4Q0FMb0VuZK2ZWawUHSRxrnF5YbGnKQhqKx4qgluXaFgo7OHkSPkeJkoMm9FcxtgsWBIQSLA0OIxvocc2V8XDa1wZhZ8GSDxXGdzq6+jz8/jOQzGBBGzsIdYIyZFexzYAjB4sAQgsWBIQSLA0MIFgeGECwODCFYHBhCsDgwhGBxYAjB4sAQgsWBIQSLA0MIFgeGECwODCFYHBhCsDgwhGBxYAjB4sAQ8j8AAAD//175CLkAAAAGSURBVAMAatbEWdbczpEAAAAASUVORK5CYII=";
+
+/**
+ * 2.0.0 [RVD-33] 앱 없는 팀원 방(Q1 4h)의 Durable Object 바닥 판용 빈 클래스. wrangler.toml의 TEAM_ROUND 바인딩과
+ * migration v1-team-round(new_sqlite_classes)를 먼저 실서버에 적용하려고 둬요. 이 판의 코드는 TEAM_ROUND를 부르지 않아서
+ * 방은 하나도 생기지 않고, 손님이 보는 동작은 앞 판과 같아요. 방을 쓰는 진짜 클래스는 2.0.0 묶음(Q1 4h)이 같은 이름으로 대신해요.
+ */
+export class TeamRound {
+  constructor(ctx, env) {
+    this.ctx = ctx;
+    this.env = env;
+  }
+
+  async fetch() {
+    return new Response("not found", { status: 404 });
+  }
+}

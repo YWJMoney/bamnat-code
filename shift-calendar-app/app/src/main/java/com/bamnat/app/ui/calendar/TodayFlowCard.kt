@@ -296,8 +296,11 @@ internal fun TodayFlowCard(
                     Row {
                         Icon(stateIcon(card), null, tint = if (warning) Tone.Danger.color() else MaterialTheme.colorScheme.primary,
                             modifier = Modifier.padding(top = 1.dp, end = 10.dp).size(22.dp))
-                        Text(card.headline, style = MaterialTheme.typography.titleMedium,
-                            modifier = Modifier.weight(1f).padding(end = 84.dp))
+                        // 2.0.0 [RVIB-21] (HQ 사진 검토, 조건 4·12) At 200% '비는 시간 · 17:00 다시 시작' broke before '·', leaving
+                        // '· 17:00' alone on a line: the dot stays with the words before it. Under the number the two buttons are
+                        // above it, so it takes the width they left (it broke into three lines on a wide screen).
+                        Text(card.headline.replace(" · ", "\u00A0· "), style = MaterialTheme.typography.titleMedium,
+                            modifier = Modifier.weight(1f).padding(end = if (countdown != null) 0.dp else 84.dp))
                     }
                     card.detail?.let {
                         Text(it, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -396,8 +399,13 @@ private fun FlowStrip(card: TodayFlow.Card, modifier: Modifier = Modifier) {
     val under = MaterialTheme.typography.labelSmall.copy(fontSize = 11.sp)
     val total = Duration.between(card.from, card.to).toMinutes().toFloat().coerceAtLeast(1f)
     val said = remember(card) { stripText(card) }
-    Canvas(modifier.fillMaxWidth().height(42.dp).semantics { contentDescription = said }) {
-        val bar = 22.dp.toPx()
+    // 2.0.0 [RVIB-21] (HQ 사진 검토, 조건 12) The strip was 42dp whatever the letter size: at 200% the times under it ran into the
+    // buttons below and a name stood out of its bar. The bar and the room under it grow with the letters.
+    val density = androidx.compose.ui.platform.LocalDensity.current
+    val barDp = with(density) { maxOf(22.dp, measurer.measure("주간", inside).size.height.toDp() + 4.dp) }
+    val underDp = with(density) { measurer.measure("09:30", under).size.height.toDp() }
+    Canvas(modifier.fillMaxWidth().height(barDp + 4.dp + underDp + 2.dp).semantics { contentDescription = said }) {
+        val bar = barDp.toPx()
         val radius = CornerRadius(6.dp.toPx())
         fun x(t: LocalDateTime) = (Duration.between(card.from, t).toMinutes() / total * size.width).coerceIn(0f, size.width)
         drawRoundRect(track, Offset.Zero, Size(size.width, bar), radius)

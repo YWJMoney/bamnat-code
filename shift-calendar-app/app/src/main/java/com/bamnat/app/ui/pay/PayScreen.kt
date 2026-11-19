@@ -603,7 +603,8 @@ private fun PayResult(
         // 2.0.0 [RVJ-67] (PC-156): the company's way by its name, not '직접 설정'.
         val way by vm.sharedWay.collectAsStateWithLifecycle()
         val who: @Composable (Modifier) -> Unit = { m ->
-            if (headPart.hide != true) com.bamnat.app.ui.parts.PartText(profile.whoLabel(way), headPart, MaterialTheme.typography.titleMedium,
+            // 2.0.0 [RVJ-91] (HQ-134) '가나다화학 방식' never breaks in two; '월급제' goes under it when the line is short.
+            if (headPart.hide != true) PayWhoLine(profile.whoName(way), profile.wageLabel(), headPart, MaterialTheme.typography.titleMedium,
                 modifier = m.then(com.bamnat.app.ui.parts.partSpotModifier("pay.head")))
             else Spacer(m)
         }
@@ -705,7 +706,8 @@ private fun PayResult(
             }
             later?.takeIf { due == null }?.let { java.time.YearMonth.parse(it) }?.let { m ->
                 com.bamnat.app.ui.components.ToneLine("${m.monthValue}월 마감은 도구 › ${m.monthValue}월 마감에서 할 수 있어요",
-                    tone = com.bamnat.app.ui.theme.Tone.Plain, onClick = { vm.showMonth(m); payTab = PayTab.TOOLS; later = null })
+                    tone = com.bamnat.app.ui.theme.Tone.Plain, onClick = { vm.showMonth(m); payTab = PayTab.TOOLS; later = null },
+                    action = "열기") // [RVJ-79] HQ-125
             }
         }
         if (noBase) guides()
@@ -893,7 +895,7 @@ private fun PayResult(
                     return@forEach
                 }
                 ValueRow(
-                    title = "${item.name} · " + if (item.isFixedOvertime) "고정 연장 ${item.fixedOvertimeMinutes / 60}시간분" else item.cadence.label,
+                    title = "${item.name} · " + if (item.isFixedOvertime) "고정 연장 ${FixedOtHoursRules.text(item.fixedOvertimeMinutes)}시간분" else item.cadence.label,
                     value = item.amount.on(month),
                     raise = item.amount.raise?.describe(),
                     estimated = item.id in profile.estimatedFields,

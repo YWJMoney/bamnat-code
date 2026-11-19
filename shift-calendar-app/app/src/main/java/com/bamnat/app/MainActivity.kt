@@ -99,7 +99,7 @@ class MainActivity : ComponentActivity() {
             NoticeLinks.read(this, intent)
             com.bamnat.app.logic.FxOutside.pressOpened(container, intent) // [RVM-14] a 위젯·타일·알림 단추 that opens a screen
             // [ROST-09] A shared roster photo or text first, so it never reads as a 회사 파일 or backup.
-            if (!IncomingRoster.read(intent)) IncomingFiles.read(intent) // [CAL-47]
+            IncomingFiles.readAny(intent) // [CAL-47]
         }
         // [LOCK-01] 앱 잠금 is decided before the first frame of the app, as when onStart came after setContent.
         if (lifecycle.currentState.isAtLeast(androidx.lifecycle.Lifecycle.State.STARTED) && !startDone) started(container)
@@ -271,7 +271,7 @@ class MainActivity : ComponentActivity() {
         openLink(intent)
         // [ROST-09] shared while the app was open. 2.0.0 [RVL-14] (검토 DATA-06): a backup or a 회사 설정 file opened while the app was
         // open came here and was never read (the app only came forward); it is offered now as on a first open.
-        if (!IncomingRoster.read(intent)) IncomingFiles.read(intent)
+        IncomingFiles.readAny(intent)
         // [SLP-15] A tapped notice opens its own screen, so coming back is not sent to the calendar.
         if (NoticeLinks.read(this, intent)) HomeRequests.followingLink()
         com.bamnat.app.logic.FxOutside.pressOpened(appContainer, intent) // [RVM-14]
@@ -345,6 +345,8 @@ class MainActivity : ComponentActivity() {
         AppLock.onStart(this, c.settingsRepository.settings.value.appLock, HomeRequests.awaitingResult)
         HomeRequests.onStart()
         c.verifyAlarms()
+        // 2.0.0 [RVN-22] 검토 I10bc-02: this half hour's open, kept on this phone, and the next reading ahead before a likely open.
+        com.bamnat.app.company.ReadAheadJob.sawOpen(this)
         // [TYPE-04] Shop days that passed with no sales become 임시휴무 when the app is opened.
         // [PERF-03] 324-2 (검토 A6): at most once in [CATCH_UP_EVERY]; a day turns over far less often than the app
         // comes back. 알람 점검 and the 정식 출시 switch below keep running every time (they keep their own pace).

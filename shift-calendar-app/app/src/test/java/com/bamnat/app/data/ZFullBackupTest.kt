@@ -11,6 +11,7 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import org.json.JSONObject
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -42,7 +43,7 @@ class ZFullBackupTest {
         setupLater = true,
         extraKinds = ExtraKinds(ExtraKinds.DEFAULTS.map { if (it.id == ExtraKind.COVER_ID) it.copy(name = "대신 근무") else it }),
         memoInCells = true, calendarMemos = false, restCheck = false, strictRest = true, restRules = "11h", sleepTips = false,
-        todayShiftNotice = true, briefing = true, commuteNotice = true, bedtimeNotice = true, recordOffer = false, sleepNoTap = false, memoHoldAtWork = false, memoRestCard = false, sleepingNotice = false,
+        todayShiftNotice = true, gapNotice = false, briefing = true, commuteNotice = true, bedtimeNotice = true, recordOffer = false, sleepNoTap = false, memoHoldAtWork = false, memoRestCard = false, sleepingNotice = false,
         quietWhileAsleep = false, moneyNotices = false, leaveNotice = false, sleepTargetMinutes = 8 * 60, commuteMinutes = 40,
         restDayCompared = true, phoneDayView = PhoneDayView.WEEK, showDayCard = true, appLock = true,
         calendarLayout = "cards:a", statsLayout = "stats:b", manageLayout = "plan,-keep", dayGroupOrder = listOf("memo", "money"), phoneCalendars = listOf("3"),
@@ -68,8 +69,8 @@ class ZFullBackupTest {
         // 1.31 [STAT-08][ALRM-16][WEAR-04][WEAR-06].
         usageStatsLookup = true, afterAlarmCard = false, watchAlarm = AppSettings.WATCH_ALARM_WATCH, watchCalendar = "side-job",
         // 1.32 [CALX-03][CALX-04][CALX-05][LEDX-07][PAYA-05][UX132-05][UX132-06].
-        tapSelectFirst = true, textAsked = true, compact = false, textStep = 3, clock12 = true, spendInCells = true, spendHeat = true, backupNudge = false,
-        payDepositNotice = false, payAutoClose = true, weekHoursNudge = false, calendarOnly = true, statsPeriod = StatsPeriod.MONTH, moneyByPayCycle = true, workTimeFrom = 0L, dayCloseNotice = true, shiftPreviewNotice = !s.shiftPreviewNotice, shiftPreviewHour = 7, moneyChallenge = "NO_SPEND|20000",
+        tapSelectFirst = true, textAsked = true, compact = false, textStep = 3, clock12 = true, spendInCells = true, spendHeat = true, backupNudge = false, dataSelfCheck = false,
+        payDepositNotice = false, payAutoClose = true, weekHoursNudge = false, calendarOnly = true, statsPeriod = StatsPeriod.MONTH, moneyByPayCycle = true, workTimeFrom = 0L, dayCloseNotice = true, bossFilingNotice = !s.bossFilingNotice, shiftPreviewNotice = !s.shiftPreviewNotice, shiftPreviewHour = 7, moneyChallenge = "NO_SPEND|20000",
         // 1.32 조사 대조 [WTYP-12][WTYP-16].
         stretchLimitHours = 24, leaveTimeNotice = true,
         // 1.38 [SLEEP-04] 잠드는 소리.
@@ -97,6 +98,8 @@ class ZFullBackupTest {
         val marks = RecurringMarks(marksFile)
         marks.put(mapOf(5L to LocalDate.of(2026, 10, 25)))
         val file = c.backupManager.export()
+        // 2.0.0 [RVL-77] (검토 I12b-03) The 우리 조 code lets anyone in the group see it: only a file with a password holds it.
+        val sealed = c.backupManager.exportSealed()
         assertTrue(JSONObject(file).has("settingsFiles"))
 
         // A new phone: nothing set, nothing in the files, its own install id and calendar choice.
@@ -123,10 +126,12 @@ class ZFullBackupTest {
         assertEquals(setOf("2026-10"), prefs("calendar_view").getStringSet("redWorked", null))
         assertEquals(123L, prefs("auto_record").getLong("since", 0))
         assertEquals(0.5f, prefs("auto_record").getFloat("weight", 0f))
-        assertEquals("A조", prefs("share_group").getString("group", null))
+        assertNull("암호 없는 파일에는 우리 조 코드가 없어요", prefs("share_group").getString("group", null))
         assertEquals("B조", prefs("duty_codes").getString("mine:main", null))
         assertEquals(true, prefs("calendar_import").getBoolean("auto", false))
         // What is this phone's own stays this phone's own.
+        c.backupManager.restore(sealed)
+        assertEquals("A조", prefs("share_group").getString("group", null))
         assertEquals("new-phone", prefs("company").getString("device", null))
         assertEquals("1", prefs("calendar_import").getString("chosen", null))
         // The repeating money lines know how far they were written, read again without restarting the app.

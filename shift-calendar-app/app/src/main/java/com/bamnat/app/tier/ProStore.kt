@@ -1,5 +1,7 @@
 package com.bamnat.app.tier
 
+import com.bamnat.app.backup.putSecret
+import com.bamnat.app.backup.secret
 import android.content.Context
 import com.bamnat.core.tier.AdminLink
 import com.bamnat.core.tier.AdRules
@@ -210,10 +212,11 @@ class ProStore(context: Context) {
 
     private fun edit(change: (ProState) -> ProState) {
         _state.update(change)
-        prefs.edit().putString(KEY, write(_state.value).toString()).apply()
+        // 2.0.0 [RVL-77] The recovery code inside, so the whole state is sealed by the phone's key.
+        prefs.edit().putSecret(KEY, write(_state.value).toString()).apply()
     }
 
-    private fun read(): ProState = runCatching { parse(JSONObject(prefs.getString(KEY, null) ?: return ProState())) }.getOrDefault(ProState())
+    private fun read(): ProState = runCatching { parse(JSONObject(prefs.secret(KEY) ?: return ProState())) }.getOrDefault(ProState())
 
     companion object {
         private const val KEY = "state"

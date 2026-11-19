@@ -26,7 +26,7 @@ class OneAddWindowTest {
         ItemDraft(kind, "t").apply { this.name = name; this.amount = amount }
 
     @Test fun aFixedOvertimeAllowanceIsAPayItemNeverOrdinary() {
-        val d = draft(ItemKind.MONTHLY, "고정 연장수당", 300_000).apply { ordinary = true; fixedOtHours = 20 }
+        val d = draft(ItemKind.MONTHLY, "고정 연장수당", 300_000).apply { ordinary = true; fixedOtMinutes = 20 * 60 }
         val item = (d.made(start) as MadeItem.Item).item
         assertEquals(Cadence.MONTHLY, item.cadence)
         assertEquals(20 * 60, item.fixedOvertimeMinutes)
@@ -71,7 +71,7 @@ class OneAddWindowTest {
     }
 
     @Test fun theFixedOvertimeHoursOnlyGoOnAMonthlyItem() {
-        val d = draft(ItemKind.PER_DAY, "식대", 8_000).apply { fixedOtHours = 20 }
+        val d = draft(ItemKind.PER_DAY, "식대", 8_000).apply { fixedOtMinutes = 20 * 60 }
         val item = (d.made(start) as MadeItem.Item).item
         assertEquals(Cadence.PER_WORK_DAY, item.cadence)
         assertEquals(0, item.fixedOvertimeMinutes)
@@ -87,9 +87,9 @@ class OneAddWindowTest {
     }
 
     @Test fun aChangedItemKeepsItsFixedOvertimeAndTaxFree() {
-        val old = (draft(ItemKind.MONTHLY, "고정OT", 300_000).apply { fixedOtHours = 30 }.made(start) as MadeItem.Item).item.copy(taxable = false)
+        val old = (draft(ItemKind.MONTHLY, "고정OT", 300_000).apply { fixedOtMinutes = 30 * 60 }.made(start) as MadeItem.Item).item.copy(taxable = false)
         val again = ItemDraft.ofItem(old)!!
-        assertEquals(30, again.fixedOtHours)
+        assertEquals(30 * 60, again.fixedOtMinutes)
         val item = (again.made(start) as MadeItem.Item).item
         assertEquals(30 * 60, item.fixedOvertimeMinutes)
         assertFalse(item.taxable)

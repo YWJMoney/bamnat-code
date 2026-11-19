@@ -48,7 +48,7 @@ class RvjRedScreenshotTest : ScreenshotBase() {
 
     @Test fun payHeadSaysTheWay() = shoot("rvj_190_pay_head_way_folded", FOLDED) {
         withWay().invoke(this)
-        assertTrue(shows("가나다화학 방식 · "))
+        assertTrue(shows("가나다화학 방식 · 월급제", exact = true))
         assertTrue(!shows("직접 설정 · "))
     }
 
@@ -56,6 +56,17 @@ class RvjRedScreenshotTest : ScreenshotBase() {
         withWay().invoke(this)
         assertTrue(shows("가나다화학 방식 · "))
     }
+
+    // ── [RVJ-91] HQ-134: the way's name is one piece; '월급제' goes under it, the month row stays where it was ──
+    private fun longWay(): Screen.() -> Unit = {
+        app.container.companyOf(PersonalCalendar.MAIN).payWays.use(PayWay("c-l", "가나다라마바사정밀화학 남부지역본부", "생산부", "s-c-l"))
+        payScreen(Tier.PRO, withProfile = true).invoke(this)
+        assertTrue("읽어 주기는 한 줄", shows("가나다라마바사정밀화학 남부지역본부 방식 · 월급제", exact = true))
+        assertTrue(shows("다음 달", exact = true))
+    }
+
+    @Test fun payHeadLongWay() = shoot("rvj_322_pay_head_long_way_folded", FOLDED, longWay())
+    @Test fun payHeadLongWayDarkBig() = shoot("rvj_323_pay_head_long_way_folded_dark_200", DARK, 2f, longWay())
 
     @Test fun theSetupSaysTheWayToo() = shoot("rvj_192_pay_setup_way_folded", FOLDED) {
         withWay().invoke(this)

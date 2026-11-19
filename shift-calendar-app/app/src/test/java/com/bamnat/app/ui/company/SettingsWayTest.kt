@@ -23,7 +23,7 @@ class SettingsWayTest {
         assertEquals("설정 › 급여와 연차 › 광장 시세와 내 단가 견주기", settingsWay("pay.rateHint", WorkStyle.SHIFT))
         assertEquals("설정 › 시급과 주휴수당 › 광장 시세와 내 단가 견주기", settingsWay("pay.rateHint", WorkStyle.HOURLY))
         assertEquals("설정 › ${SettingsPage.PAY.titleFor(WorkStyle.FIELD)} › 광장 시세와 내 단가 견주기", settingsWay("pay.rateHint", WorkStyle.FIELD))
-        assertEquals("설정 › 개인정보·앱 정보 › 회사 광장에 저절로 나누기", settingsWay("plaza.autoShare", WorkStyle.DAY))
+        assertEquals("설정 › 개인정보·앱 정보 › 회사 광장에 나누기", settingsWay("plaza.autoShare", WorkStyle.DAY))
         assertEquals("설정 › 급여와 연차 › 회사 찾기", companyFindWay(WorkStyle.SHIFT))
     }
 

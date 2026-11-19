@@ -270,7 +270,10 @@ internal fun SlipCheck(
     val netIdx = read.lines.indices.filter { read.lines[it].role == SlipRole.NET }
     Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
         androidx.compose.foundation.layout.BoxWithConstraints(Modifier.fillMaxWidth()) {
-            if (maxWidth >= 320.dp) Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            // 2.0.0 [RVL-46] (HQ-149 ②, 조건 12) At 150% letters and more in a fold's cover width, two halves left each line's name a
+            // few letters a row: 지급 over 공제 in one column there, side by side again on a wide screen.
+            val big = androidx.compose.ui.platform.LocalDensity.current.fontScale >= 1.5f
+            if (maxWidth >= (if (big) 600.dp else 320.dp)) Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 side("지급", payIdx, QUICK_PAY, Modifier.weight(1f))
                 side("공제", dedIdx, QUICK_DED, Modifier.weight(1f))
             } else Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {

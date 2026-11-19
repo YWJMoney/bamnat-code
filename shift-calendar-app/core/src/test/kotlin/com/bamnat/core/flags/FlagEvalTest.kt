@@ -310,17 +310,44 @@ class FlagEvalTest {
                 // 1.39 PAYP-05, CARE-01, PLZC-10, G5-N4, SETUP-20: the rows tied to 처리방침 3.12.
                 else if (f.key in setOf(FlagCatalog.PLAZA_FIX_REQUEST, FlagCatalog.COMMUNITY_CARE, FlagCatalog.PLAZA_PEOPLE, FlagCatalog.SLEEP_PLAN_SHARE, FlagCatalog.STATS_SETUP, FlagCatalog.STATS_LIFE, FlagCatalog.STATS_KIND, FlagCatalog.STATS_KEEP)) "1.39.0"
                 else if (f.key == FlagCatalog.STATS_DISC) "1.40.0" /* 1.40 DISC-06, 처리방침 3.13 */
-                else if (f.key == FlagCatalog.COMMUNITY_CONFIRMED || f.key == FlagCatalog.CARD_FONTS || f.key == FlagCatalog.SHARE_WORD) "2.0.0" /* 2.0.0 RVD-18, RVM-21, RVG-38 */
+                else if (f.key in setOf(FlagCatalog.PAY_BIRTH_YEAR, FlagCatalog.SLIP_COUNT, FlagCatalog.TEAM_APP_COUNT)) "2.0.0" /* 2.0.0 RVJ-81·82·83, 처리방침 3.14 */
+                else if (f.key == FlagCatalog.COMMUNITY_CONFIRMED || f.key == FlagCatalog.CARD_FONTS || f.key == FlagCatalog.SHARE_WORD
+                    || f.key == FlagCatalog.SHARE_DUTY_CODES || f.key == FlagCatalog.STATS_CRASH
+                    || f.key == FlagCatalog.STATS_KIND_USE || f.key == FlagCatalog.MARKET_WEAR
+                    || f.key == FlagCatalog.MARKET_FAIR_COUNT) "2.0.0" /* 2.0.0 RVD-18, RVM-21, RVG-38, RVQ-56(처리방침 3.14), RVQ-59(3.15) */
                 else if (f.group == FlagGroup.PHASE3) "1.38.0" /* 1.38 P3-01 */ else "1.28.0"))
             // 1.38 사용자 C안: a Phase 3 row opens on 정식 출시일 (the launch policy's day), never earlier.
             if (f.group == FlagGroup.PHASE3) assertTrue(f.key, !f.default && f.conditions.any { it == Condition.Date(policy = FlagCatalog.PHASE3_POLICY) } && f.conditions.any { it == Condition.Policy(FlagCatalog.PHASE3_POLICY) } && FlagCatalog.PHASE3_POLICY == "3.11")
             // 2.0.0 총괄 11-12 (나): after launch a 7-day line has no day of its own in the server calendar (its 3.13 is the 30-day line), so
             // such a row rests on PolicyConsent.REVISION_EFFECTIVE, which tools/legal_dates.py moves with the posting day.
             if (f.risk == Risk.LEGAL) assertTrue("${f.key}: a LEGAL row rests on a policy date", f.conditions.any {
-                it is Condition.Date && (it.policy != null || it.from == PolicyConsent.REVISION_EFFECTIVE) })
+                it is Condition.Date && (it.policy != null || it.from == PolicyConsent.REVISION_EFFECTIVE || it.from == PolicyConsent.REVISION14_EFFECTIVE) })
         }
         ServerSwitch.entries.forEach { assertEquals(it, FlagCatalog.switchOf(FlagCatalog.switchKey(it))) }
         WorkStyle.entries.forEach { assertTrue(FlagCatalog.of(FlagCatalog.typeKey(it))!!.default) }
+    }
+
+    /**
+     * 2.0.0 [RVL-63] (검토 DATA-19) A row that sends something new to a server is LEGAL (shift-calendar-app/CLAUDE.md): one whose words
+     * name a server or a link it makes, and does not say it sends nothing. 팀원 근무 링크·출퇴근·서명 링크·지금 자는 중 were 보통, so a force-on
+     * opened them on a phone that had not said yes to 3.11. The server's own switches (서버 기능 끄기) are not rows that send.
+     */
+    @Test fun aRowThatSendsToAServerIsLegal() {
+        val sends = Regex("서버|링크")
+        val loose = FlagCatalog.ALL.filter { f ->
+            f.group != FlagGroup.SERVER && f.risk != Risk.LEGAL && sends.containsMatchIn(f.what + " " + f.whyOff) &&
+                !(f.what + " " + f.whyOff).contains("보내지 않")
+        }.map { it.key }
+        assertEquals(emptyList<String>(), loose)
+        // A phone installed before 3.11 was posted (11-07) that has not said yes waits until 12-07, also when forced on.
+        val held = phone(kst(2026, 11, 20), agreed = emptySet(), installed = LocalDate.of(2026, 10, 21), version = 54)
+        for (key in listOf(FlagCatalog.TEAM_LEADER, FlagCatalog.BOSS_PAYROLL, FlagCatalog.SLEEP_SHARE)) {
+            val f = FlagCatalog.of(key)!!
+            assertEquals(key, Risk.LEGAL, f.risk)
+            val forced = FlagEval.state(f, held, FlagOverride(force = Force.ON))
+            assertFalse("$key: ${forced.reason}", forced.on)
+            assertTrue(key, FlagEval.state(f, held.copy(agreed = setOf(FlagCatalog.PHASE3_POLICY)), FlagOverride(force = Force.ON)).on)
+        }
     }
 
     /**
@@ -379,6 +406,32 @@ class FlagEvalTest {
         assertFalse(FlagEval.state(word, phone(kst(2026, 12, 13, 23, 59)), calendar = cal).on)
         assertTrue(FlagEval.state(word, phone(kst(2026, 12, 14, 0, 1)), calendar = cal).on)
         assertFalse("서버 시각을 모르면 꺼져요", FlagEval.state(word, phone(kst(2026, 12, 20), server = null), calendar = cal).on)
+    }
+
+    /**
+     * 2.0.0 [RVJ-81][RVJ-82] 생년 and 명세서로 맞춰 본 분 수 are 처리방침 3.14's 7-day lines: on from [PolicyConsent.REVISION14_EFFECTIVE] by the
+     * server's clock, also on a phone installed before the 게시일 (3.14 asks no phone), while 앱으로 받는 팀원 수 waits for the 30-day day.
+     */
+    @Test fun theSevenDayRowsOf314WaitForTheirOwnDay() {
+        val day = PolicyConsent.REVISION14_EFFECTIVE
+        assertEquals(PolicyConsent.REVISION14_POSTED.plusDays(7), day)
+        val cal = PolicyCalendar.SEED.merged(listOf(PolicyVersion("3.14", PolicyConsent.REVISION14_POSTED, PolicyConsent.REVISION14_EFFECTIVE_30)))
+        val eve = day.minusDays(1)
+        val old = LocalDate.of(2026, 9, 1)
+        for (key in listOf(FlagCatalog.PAY_BIRTH_YEAR, FlagCatalog.SLIP_COUNT)) {
+            val f = FlagCatalog.of(key)!!
+            assertEquals(key, listOf<Condition>(Condition.Date(from = day)), f.conditions)
+            assertEquals(Risk.LEGAL, f.risk)
+            assertFalse(key, f.default)
+            assertFalse(key, FlagEval.state(f, phone(kst(eve.year, eve.monthValue, eve.dayOfMonth, 23, 59)).copy(installed = old), calendar = cal).on)
+            assertTrue(key, FlagEval.state(f, phone(kst(day.year, day.monthValue, day.dayOfMonth, 0, 1)).copy(installed = old), calendar = cal).on)
+            assertFalse("$key: 서버 시각을 모르면 꺼져요", FlagEval.state(f, phone(kst(2026, 12, 31), server = null), calendar = cal).on)
+            assertTrue(f.whyOff, f.whyOff.contains("${day.monthValue}월 ${day.dayOfMonth}일"))
+        }
+        val count = FlagCatalog.of(FlagCatalog.TEAM_APP_COUNT)!!
+        assertFalse("30일 줄은 7일 줄 날에 아직", FlagEval.state(count, phone(kst(day.year, day.monthValue, day.dayOfMonth, 0, 1)).copy(installed = old), calendar = cal).on)
+        val d30 = PolicyConsent.REVISION14_EFFECTIVE_30
+        assertTrue(FlagEval.state(count, phone(kst(d30.year, d30.monthValue, d30.dayOfMonth, 0, 1)).copy(installed = old), calendar = cal).on)
     }
 
     @Test fun unknownKeysAreIgnoredAndFreeRowsAreReadByName() {

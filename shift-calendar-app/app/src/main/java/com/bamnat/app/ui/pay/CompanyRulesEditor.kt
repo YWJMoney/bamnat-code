@@ -352,13 +352,13 @@ fun CompanyRulesEditor(
                     }
                     // PC 6da49f0b (−/+ 단추가 줄바꿈되면서 '말일'·'-' 글자만 혼자 남음): the stepper keeps together on one line.
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        OutlinedButton(onClick = { draft = draft.copy(period = period.copy(endDay = ((period.endDay ?: 31) - 1).coerceIn(1, 30))) }) { Text("−") }
+                        com.bamnat.app.ui.components.GlyphStepButton("−", "정산 마감일 줄이기", onClick = { draft = draft.copy(period = period.copy(endDay = ((period.endDay ?: 31) - 1).coerceIn(1, 30))) })
                         Text(period.endDay?.let { "${it}일" } ?: "말일", style = MaterialTheme.typography.titleSmall,
                             modifier = Modifier.align(Alignment.CenterVertically).widthIn(min = 40.dp), textAlign = androidx.compose.ui.text.style.TextAlign.Center)
-                        OutlinedButton(onClick = {
+                        com.bamnat.app.ui.components.GlyphStepButton("+", "정산 마감일 늘리기", onClick = {
                             val next = (period.endDay ?: 30) + 1
                             draft = draft.copy(period = period.copy(endDay = next.takeIf { it <= 30 }))
-                        }) { Text("+") }
+                        })
                     }
                 }
                 Hint("${month.monthValue}월 급여는 ${period.label(month)} 근무로 계산해요.")
@@ -372,10 +372,10 @@ fun CompanyRulesEditor(
                     }
                     // PC 6da49f0b (−/+ 단추가 줄바꿈되면서 '말일'·'-' 글자만 혼자 남음): the stepper keeps together on one line.
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        OutlinedButton(onClick = { draft = draft.copy(period = period.withPayDay(((period.payDay ?: 26) - 1).coerceIn(1, 31))) }) { Text("−") }
+                        com.bamnat.app.ui.components.GlyphStepButton("−", "월급날 하루 앞으로", onClick = { draft = draft.copy(period = period.withPayDay(((period.payDay ?: 26) - 1).coerceIn(1, 31))) })
                         Text(period.payDay?.let { "${it}일" } ?: "없음", style = MaterialTheme.typography.titleSmall,
                             modifier = Modifier.align(Alignment.CenterVertically).widthIn(min = 40.dp), textAlign = androidx.compose.ui.text.style.TextAlign.Center)
-                        OutlinedButton(onClick = { draft = draft.copy(period = period.withPayDay(((period.payDay ?: 24) + 1).coerceIn(1, 31))) }) { Text("+") }
+                        com.bamnat.app.ui.components.GlyphStepButton("+", "월급날 하루 뒤로", onClick = { draft = draft.copy(period = period.withPayDay(((period.payDay ?: 24) + 1).coerceIn(1, 31))) })
                     }
                 }
                 if (period.payDay != null) {
@@ -735,9 +735,9 @@ fun CompanyRulesEditor(
                     if (policy.basis == com.bamnat.core.leave.LeaveBasis.FISCAL) {
                         Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 4.dp)) {
                             Text("회계연도 시작", style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
-                            OutlinedButton(onClick = { setRules(rules.copy(leave = policy.copy(fiscalStartMonth = (policy.fiscalStartMonth + 10) % 12 + 1))) }) { Text("−") }
+                            com.bamnat.app.ui.components.GlyphStepButton("−", "회계연도 시작 한 달 앞으로", onClick = { setRules(rules.copy(leave = policy.copy(fiscalStartMonth = (policy.fiscalStartMonth + 10) % 12 + 1))) })
                             Text("${policy.fiscalStartMonth}월 1일", style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(horizontal = 8.dp))
-                            OutlinedButton(onClick = { setRules(rules.copy(leave = policy.copy(fiscalStartMonth = policy.fiscalStartMonth % 12 + 1))) }) { Text("+") }
+                            com.bamnat.app.ui.components.GlyphStepButton("+", "회계연도 시작 한 달 뒤로", onClick = { setRules(rules.copy(leave = policy.copy(fiscalStartMonth = policy.fiscalStartMonth % 12 + 1))) })
                         }
                         Hint(say("회계연도 기준은 법이 아니라 회사 편의예요. 입사일 기준보다 적으면 안 되고, 그만둘 때 입사일 기준으로 다시 따져요(고용노동부 해석, 원문 확인 필요)."))
                     }
@@ -872,13 +872,13 @@ private fun NightWindowPicker(rules: CompanyRules, onChange: (java.time.LocalTim
     }
     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.padding(top = 4.dp)) {
         Text("직접", style = MaterialTheme.typography.labelLarge)
-        OutlinedButton(onClick = { onChange(t((start + 23) % 24), t(end)) }) { Text("−") }
+        com.bamnat.app.ui.components.GlyphStepButton("−", "시작 시각 한 시간 앞으로", onClick = { onChange(t((start + 23) % 24), t(end)) })
         Text("%02d시".format(start), style = MaterialTheme.typography.titleSmall)
-        OutlinedButton(onClick = { onChange(t((start + 1) % 24), t(end)) }) { Text("+") }
+        com.bamnat.app.ui.components.GlyphStepButton("+", "시작 시각 한 시간 뒤로", onClick = { onChange(t((start + 1) % 24), t(end)) })
         Text("~", style = MaterialTheme.typography.titleSmall)
-        OutlinedButton(onClick = { onChange(t(start), t((end + 23) % 24)) }) { Text("−") }
+        com.bamnat.app.ui.components.GlyphStepButton("−", "끝 시각 한 시간 앞으로", onClick = { onChange(t(start), t((end + 23) % 24)) })
         Text("%02d시".format(end), style = MaterialTheme.typography.titleSmall)
-        OutlinedButton(onClick = { onChange(t(start), t((end + 1) % 24)) }) { Text("+") }
+        com.bamnat.app.ui.components.GlyphStepButton("+", "끝 시각 한 시간 뒤로", onClick = { onChange(t(start), t((end + 1) % 24)) })
     }
 }
 

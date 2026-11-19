@@ -5,6 +5,7 @@ import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.bamnat.app.data.db.AppDatabase
+import com.bamnat.core.money.MoneyEntry
 import com.bamnat.core.money.MoneyKind
 import com.bamnat.core.money.Receivable
 import com.bamnat.core.money.ReceivableKind
@@ -57,6 +58,23 @@ class OwedAppTest {
         assertTrue(money.book.first().receivables.isEmpty())
         money.restore(saved, lines)
         assertEquals(60_000L, money.book.first().receivables.single().left)
+    }
+
+    /**
+     * 2.0.0 [RVL-66] (검토 DATA-18) A 카드값 withdrawal checked against its bill reads the bill's months (four back) and every 할부 line,
+     * not the whole ledger; a receivable's payment and its income line are one write.
+     */
+    @Test fun aBillReadsItsMonthsAndInstallmentsOnly() = runBlocking {
+        money.save(MoneyEntry(date = day.minusYears(2), kind = MoneyKind.EXPENSE, amount = 9_000, category = "식비"))
+        val plan = money.save(MoneyEntry(date = day.minusMonths(20), kind = MoneyKind.EXPENSE, amount = 2_400_000, category = "쇼핑", installments = 24))
+        val near = money.save(MoneyEntry(date = day.minusDays(40), kind = MoneyKind.EXPENSE, amount = 12_000, category = "식비"))
+        assertEquals(setOf(plan.id, near.id), money.billLines(day).map { it.id }.toSet())
+        // The receivable's payment and its line still go and come back together.
+        val r = money.save(Receivable(who = "예시정밀", amount = 100_000, date = day, kind = ReceivableKind.WORK))
+        val p = money.receive(r, 30_000, day)!!
+        assertEquals(p.entryId, money.entries.first().single { it.kind == MoneyKind.INCOME }.id)
+        money.delete(money.book.first().receivables.single())
+        assertTrue(money.entries.first().none { it.kind == MoneyKind.INCOME })
     }
 
     @Test fun owedGoesIntoTheBackupAndComesBack() = runBlocking {

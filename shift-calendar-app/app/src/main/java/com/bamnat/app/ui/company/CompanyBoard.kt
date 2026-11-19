@@ -700,15 +700,22 @@ fun TalkSheet(holder: TalkHolder) {
                 }
                 if (replyTo == null && kind != "proposal") myCard?.let { card ->
                     com.bamnat.app.ui.components.FilterChip(selected = withCard, onClick = { withCard = !withCard },
-                        label = { Text(if (withCard) "📅 근무 카드 붙임 · ${card.line()}" else "📅 이번 달 근무 카드 붙이기", maxLines = 1,
+                        label = { Text(if (withCard) "📅 ${card.name} 붙임 · ${card.line()}" else "📅 이번 달 ${card.name} 붙이기", maxLines = 1,
                             overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis) },
                         modifier = Modifier.padding(top = 2.dp))
                 }
                 }
+                // 2.0.0 [RVN-22] 검토 I10bb-03 보내기 전 폰 안 검사: what the server would not take (메일·전화·계좌번호, 방 글에 금액 받기가
+                // 꺼져 있으면 금액도) is marked in the box and said under it while typing, from the server's own table, and 보내기 waits.
+                val stopHere = remember(text, o.room, o.company) { com.bamnat.app.company.CompanyText.postHit(text, o.room, holder.roomMoney(o)) }
+                val stopPoll = if (o.room && kind == "question" && replyTo == null) remember(pollDraft, o.company) {
+                    pollDraft.firstNotNullOfOrNull { com.bamnat.app.company.CompanyText.postHit(it, o.room, holder.roomMoney(o)) }
+                } else null
                 Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 8.dp)) {
                     OutlinedTextField(
                         value = text,
                         onValueChange = { text = it.take(500); error = null },
+                        visualTransformation = com.bamnat.app.ui.components.rememberMarkLetters(stopHere?.range),
                         placeholder = { if (big) Text(when {
                             // HQ-38: one line at big letters (the chip above already says which kind).
                             replyTo != null -> "답글을 적어요"
@@ -769,18 +776,21 @@ fun TalkSheet(holder: TalkHolder) {
                               if (com.bamnat.core.plaza.PostNudge.needed(body)) nudge = go else go()
                             }
                         },
-                        enabled = !busy && text.trim().length >= 2,
+                        enabled = !busy && text.trim().length >= 2 && stopHere == null && stopPoll == null,
                     ) {
                         if (busy) CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp) else Icon(Icons.AutoMirrored.Filled.Send, "보내기")
                     }
                 }
+                com.bamnat.app.ui.components.TextStopLine((stopHere ?: stopPoll)?.let { h ->
+                    com.bamnat.app.company.CompanyText.stopLine(h, ::talkProblem) + if (stopHere == null) " (투표 보기)" else ""
+                }, Modifier.padding(top = 4.dp))
             }
             Spacer(Modifier.height(8.dp))
         }
     }
     // 2.0.0 [RVN-06] COMP-09[U10a-06] 신고 결과는 앱 띠로(오류 칸이 아니라, 쓰기 막힘·지난 판 토론에서도 보이게).
     FlagPostDialog(flagging, invest = o.company == com.bamnat.core.plaza.StylePlaza.INVEST, onDismiss = { flagging = null }) { p, reason ->
-        holder.flag(p.id, reason) { e -> note = (e ?: FLAGGED) to (e == null) }
+        holder.flag(p.id, reason) { e -> note = (e ?: FLAGGED) to (e == null || e == com.bamnat.app.company.SmallSends.FLAG_LINE) }
     }
 }
 
@@ -1023,7 +1033,7 @@ private fun PostRow(
                 }
             }
         }
-        p.poll?.let { v -> PollView(v, enabled = onPoll != null && p.hidden == null, onPick = { i -> onPoll?.invoke(if (v.mine == i) null else i) }) }
+        p.poll?.let { v -> PollView(v, enabled = onPoll != null && p.hidden == null, byFormOn = meToo, onPick = { i -> onPoll?.invoke(if (v.mine == i) null else i) }) }
         p.hidden?.let {
             // 2.0.0 [RVN-13] HQ-40 ① a caution in the app's one line shape (J ToneLine), not red: red is for danger only (조건 6).
             com.bamnat.app.ui.components.ToneLine("다른 분께는 가려졌어요 · $it", Modifier.padding(top = 2.dp))
@@ -1133,7 +1143,7 @@ internal fun awakeNow(posts: List<TalkPost>): Int {
  * do not lead the rest); after, each choice with its share as a bar, the picked one marked, and the same one again takes it back.
  */
 @Composable
-private fun PollView(v: com.bamnat.app.company.Poll, enabled: Boolean, onPick: (Int) -> Unit) {
+internal fun PollView(v: com.bamnat.app.company.Poll, enabled: Boolean, byFormOn: Boolean = false, onPick: (Int) -> Unit) {
     Column(Modifier.fillMaxWidth().padding(top = 6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
         v.options.forEachIndexed { i, label ->
             val picked = v.mine == i
@@ -1165,6 +1175,9 @@ private fun PollView(v: com.bamnat.app.company.Poll, enabled: Boolean, onPick: (
             Text("한 근무형태가 5명이 안 되면 '그 밖의 근무'로 합쳐요. 누가 무엇을 골랐는지는 보이지 않아요.",
                 style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
+        // 2.0.0 [RVN-24] 검토 U22c-08: before any 근무형태 has 5, one line says when the split comes (it no longer seems to come and go).
+        else if (v.mine != null && byFormOn) Text("근무형태별 결과는 같은 근무형태가 5명 모이면 보여요",
+            style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
 }
 

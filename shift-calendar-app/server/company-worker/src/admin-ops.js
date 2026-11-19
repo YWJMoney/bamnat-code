@@ -1,10 +1,10 @@
-import { BUDGET_WARN, LIMITS, audit, batch, can, cfPlan, json, one, randomId, readJson, stmt } from "./index.js";
+import { BUDGET_WARN, LIMITS, audit, batch, can, cfPlan, json, one, randomId, readJson, refuse, stmt } from "./index.js";
 import { DEV, actorName, devEvent } from "./inquiries.js";
 import { signalsOfDev } from "./observe.js";
-import { ROW_WHERE, SCREEN_ERROR, WATCH_SCHEMA, errorState, healthBoard, jobRow, recordScreenError, requiredSetup, setErrorState, speedState } from "./ops-watch.js";
+import { DB_FULL, DB_LIMIT, ROW_WHERE, SCREEN_ERROR, WATCH_SCHEMA, errorState, healthBoard, jobRow, recordScreenError, requiredSetup, setErrorState, speedState } from "./ops-watch.js";
 import { moneyBoard, moneyYesterday, savePriceTable } from "./money-board.js";
 import { findDevice, personView } from "./person.js";
-import { RELEASE_SCHEMA, changeMarks, releaseRoute, versionHealth } from "./release-desk.js";
+import { CHANGE_KINDS, RELEASE_SCHEMA, changeMarks, releaseRoute, versionHealth } from "./release-desk.js";
 import { KEEP_SCHEMA, backupTick, keepRoute, requestTick } from "./keep.js";
 import { securityView } from "./security-board.js";
 import { REVIEW_SCHEMA, reviewCounts, reviewRoute, reviewTick } from "./store-reviews.js";
@@ -94,6 +94,8 @@ export const OPS_ALERT_SQL = (now) => ({
   ops_meter: ["SELECT count FROM counters WHERE key = ?", `meter|${new Date(now).toISOString().slice(0, 10)}`],
   ops_jobq: ["SELECT value FROM settings WHERE key = 'job_queries'"],
   ops_sharekv: ["SELECT value FROM settings WHERE key = 'share_kv'"],
+  // 2.0.0 [RVQ-55] 검토 SVC-25: 매시 정리가 적은 DB 크기.
+  ops_dbsize: ["SELECT value FROM settings WHERE key = 'db_size'"],
 });
 
 /**
@@ -123,6 +125,13 @@ export function opsAlertsFrom(env, got, now = Date.now()) {
   const bad = (got.ops_jobs ?? []).map((r) => jobRow(r, now, env)).filter((j) => j.state === "fail" || j.state === "stale");
   if (bad.length) out.push({ key: `jobs:${bad.map((j) => j.step).join(",")}`, kind: "incident", tone: "bad", title: `정기 작업 ${bad.length}개 ${bad.some((j) => j.state === "fail") ? "실패" : "멈춤"}`, meta: bad.map((j) => j.name).join(" · "), to: "#/server" });
   if (got.ops_errors?.[0]?.n) out.push({ key: `errors:${got.ops_errors[0].n}`, kind: "spike", tone: "warn", title: `새 오류 ${got.ops_errors[0].n}가지`, meta: "하루 안에 난 서버 오류 묶음", to: "#/errors" });
+  // 2.0.0 [RVQ-55] 검토 SVC-25: DB가 한도의 80%를 넘으면 사진·글꼴 올리기가 쉬어요(서버 전체 쓰기가 멈추기 전에).
+  {
+    let size = null;
+    try { size = Number(JSON.parse(got.ops_dbsize?.[0]?.value ?? "{}")?.bytes) || null; } catch { size = null; }
+    if (size && size >= DB_LIMIT * DB_FULL) out.push({ key: `dbsize:${Math.floor((100 * size) / DB_LIMIT)}`, kind: "incident", tone: "bad",
+      title: `DB가 한도의 ${Math.floor((100 * size) / DB_LIMIT)}%예요`, meta: "사진·글꼴 올리기를 쉬고 있어요. 글꼴 저장소(R2)를 묶거나 오래된 기록을 정리해요", to: "#/server" });
+  }
   if (got.ops_reviews?.[0]?.n) out.push({ key: `reviews:${got.ops_reviews[0].n}`, kind: "spike", tone: "warn", title: `답 안 한 낮은 별점 리뷰 ${got.ops_reviews[0].n}개`, meta: "별 1~2개", to: "#/reviews" });
   if (got.ops_logins?.[0]?.n) out.push({ key: `logins:${got.ops_logins[0].n}`, kind: "spike", tone: "warn", title: `로그인 잠긴 곳 ${got.ops_logins[0].n}곳`,
     meta: "1시간 뒤 저절로 풀려요. 내가 잠긴 거면 내 계정 › 로그인에서 바로 풀어요", to: "#/account" });
@@ -344,6 +353,16 @@ export async function opsRoute(request, env, url, path, method, now, vitals) {
     const to = Number(url.searchParams.get("to")) || now;
     const from = Number(url.searchParams.get("from")) || to - 28 * DAY;
     return json({ marks: await changeMarks(env, Math.max(from, to - 400 * DAY), to) });
+  }
+  // 2.0.0 [RVN-24] 검토 SVC-105: 서버가 스스로 모르는 바뀜(사이트 서버·remote/ 파일·공개 페이지)을 한 줄 적어 두면 바꾼 것·사고 타임라인에 나와요.
+  if (path === "/changes" && method === "POST") {
+    if (!can(actor, "ops", "edit")) return json({ error: "no_permission", area: "ops" }, 403);
+    const body = await readJson(request, 1024);
+    const kind = Object.hasOwn(CHANGE_KINDS, body?.kind) ? body.kind : refuse("kind", "kind");
+    const text = String(body?.text ?? "").replace(/[\u0000-\u001f]/g, " ").trim().slice(0, 120);
+    if (!text) refuse("text", "text");
+    await audit(env, now, "change_note", kind, text);
+    return json({ ok: true, marks: await changeMarks(env, now - 28 * DAY, now + 1) });
   }
   if (path === "/data-requests" || path.startsWith("/data-requests/") || path === "/backup" || path.startsWith("/backup/")) {
     const r = await keepRoute(request, env, url, path, method, now);

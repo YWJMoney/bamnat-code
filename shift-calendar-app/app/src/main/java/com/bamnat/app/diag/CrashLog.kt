@@ -39,13 +39,28 @@ object CrashLog {
         installed = true
         val app = context.applicationContext
         val before = Thread.getDefaultUncaughtExceptionHandler()
-        Thread.setDefaultUncaughtExceptionHandler { thread, error ->
-            runCatching { write(app, thread.name, error, Today.millis()) }
-            // 1.32.1 [STAB-10] The stop on the 멈춤 관찰 trail too, with the memory then, written before the process ends.
-            runCatching { Trail.addNow(com.bamnat.core.diag.StopTrail.Kind.CRASH, "sig=${signature(error)} ${Trail.memoryNow()}") }
-            runCatching { noticeOnce(app, signature(error), Today.millis()) }
-            before?.uncaughtException(thread, error)
-        }
+        Thread.setDefaultUncaughtExceptionHandler { thread, error -> stopped(app, thread, error, before) }
+    }
+
+    /**
+     * What the handler [install] sets does, by name so a test can run it.
+     *
+     * 2.0.0 [RVL-87] (검토 PC-197, 통합 5차 PC: 닫힌 뒤 다시 열 때 '화면이 잠깐 멈춘 때 · 2.0초 · CrashLog.install$lambda$3:47'):
+     * that line was Android's own handler ([before]), which waits on the main thread while the system shows '계속 중단됨' and
+     * then ends the process. [MainStall]'s watcher, still running in the dying process, took that wait for a frozen screen
+     * and kept a note; the next start read it out as a freeze. Same code in 1.39.0 (the handler has not changed since 1.32.1).
+     * It never held the next start: this runs only in the process that stops. Now the watcher is told first
+     * ([MainStall.closing]) and keeps no note for the app's own last moments; the stop itself is the crash note.
+     */
+    internal fun stopped(app: Context, thread: Thread, error: Throwable, before: Thread.UncaughtExceptionHandler?) {
+        MainStall.closing = true
+        runCatching { write(app, thread.name, error, Today.millis()) }
+        // 1.32.1 [STAB-10] The stop on the 멈춤 관찰 trail too, with the memory then, written before the process ends.
+        runCatching { Trail.addNow(com.bamnat.core.diag.StopTrail.Kind.CRASH, "sig=${signature(error)} ${Trail.memoryNow()}") }
+        runCatching { noticeOnce(app, signature(error), Today.millis()) }
+        // 2.0.0 [RVL-90] 앱이 멈춘 곳 횟수 for 사용 통계, only once `stats.crash` is on (처리방침 3.14 문장표 6).
+        runCatching { CrashStats.current?.record(com.bamnat.core.stats.CrashMarks.CRASH, com.bamnat.core.stats.CrashMarks.at(error), now = true) }
+        before?.uncaughtException(thread, error)
     }
 
     fun dir(context: Context) = File(context.filesDir, DIR)
@@ -89,13 +104,17 @@ object CrashLog {
     /**
      * C 1.32 [STAB-03] Where it stopped, to tell one problem from another: the exception's class and the first frame of
      * the app's own code (no message, nothing typed).
+     * 2.0.0 [RVL-55] (검토 DATA-07) In the release build the app's lines are renamed (`a.b.c`) and none starts with
+     * com.bamnat, so this took the first line of the stack (the phone's) or a name without its package that no mapping
+     * turns back. Now [AppFrames.where]: the first line of ours by name, or a renamed one whole with the next after it.
      */
     fun signature(error: Throwable): String {
         var root: Throwable = error
         val seen = HashSet<Throwable>()
         while (root.cause != null && seen.add(root)) root = root.cause!!
-        val frame = (root.stackTrace.firstOrNull { it.className.startsWith("com.bamnat") } ?: root.stackTrace.firstOrNull())
-        return "${root.javaClass.simpleName}@${frame?.className?.substringAfterLast('.')}.${frame?.methodName}:${frame?.lineNumber}"
+        val where = com.bamnat.core.diag.AppFrames.where(root.stackTrace)
+            ?: root.stackTrace.firstOrNull()?.let { "${it.className.substringAfterLast('.')}.${it.methodName}:${it.lineNumber}" }
+        return "${root.javaClass.simpleName}@$where"
     }
 
     /**
@@ -165,7 +184,8 @@ object CrashLog {
         val trace = if (e.reason == ApplicationExitInfo.REASON_ANR) runCatching {
             e.traceInputStream?.bufferedReader()?.useLines { lines ->
                 lines.dropWhile { !it.startsWith("\"main\"") }.drop(1).filter { it.trimStart().startsWith("at ") }
-                    .map { it.trim().substringBefore('(') }.filter { it.startsWith("at com.bamnat") || it.startsWith("at android") || it.startsWith("at androidx") }
+                    // 2.0.0 [RVL-55] (검토 DATA-07) Ours by name or renamed (the release build), not only "com.bamnat".
+                    .map { it.trim().substringBefore('(') }.filter { com.bamnat.core.diag.AppFrames.kept(com.bamnat.core.diag.AppFrames.classOf(it)) }
                     .take(6).toList()
             }
         }.getOrNull().orEmpty() else emptyList()
@@ -184,7 +204,7 @@ object CrashLog {
         grouped(context).takeIf { it.isNotEmpty() }?.let { add("멈춘 곳별:"); addAll(it.map { l -> "  $l" }) }
         MainStall.lines(context).takeIf { it.isNotEmpty() }?.let { add("화면이 잠깐 멈춘 때:"); addAll(it) }
         add("남은 기록: ${notes.size}개")
-        notes.firstOrNull()?.let { add("가장 최근 기록:"); addAll(it.readLines().take(12)) }
+        notes.firstOrNull()?.let { add(com.bamnat.app.ui.diag.NEWEST_STOP); addAll(it.readLines().take(12)) }
     }
 
     private fun notice(context: Context, times: Int) {

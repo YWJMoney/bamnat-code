@@ -1,4 +1,4 @@
-import { all, run } from "./index.js";
+import { all, audit, cfPlan, one, run } from "./index.js";
 import { DAY, HOUR } from "./units.js";
 import { SERVER_VERSION } from "./version.js";
 
@@ -14,7 +14,9 @@ import { SERVER_VERSION } from "./version.js";
 export const WATCH = {
   /** 걸린 시간 칸의 위쪽 끝(ms). 마지막 칸은 그보다 긴 것. */
   edges: [50, 100, 200, 400, 800, 1600, 3200],
-  flushMs: 60 * 1000,
+  // 2.0.0 [RVN-24] 검토 SVC-111: 30 seconds (was a minute), and a 500 is written at the end of its own request (recordRequest marks it), so
+  // an isolate that goes away loses at most half a minute of plain counts and no error.
+  flushMs: 30 * 1000,
   keepStatsDays: 14,
   keepErrorDays: 90,
   /** 이 시간 안에 같은 단계가 성공하지 않았으면 '멈춤'. 매시 작업이라 3시간. */
@@ -86,7 +88,7 @@ export function watchQuantile(buckets, q, max = 0) {
   return max || null;
 }
 
-// ---- 응답 속도: isolate 메모리에 모았다가 1분마다 ----
+// ---- 응답 속도: isolate 메모리에 모았다가 30초마다(500은 그 요청 끝에 바로) ----
 
 const buffers = new WeakMap();
 
@@ -114,7 +116,10 @@ export function recordRequest(env, path, status, ms, now = Date.now()) {
   const t = Math.max(0, Math.round(Number(ms) || 0));
   r.n += 1;
   // 2.0.0 [RVN-03] 500만 오류로 세요(SVC-84): 일부러 쉬게 한 기능의 503과 Play·공유 서버가 안 닿을 때의 502·504는 서버가 망가진 것이 아니에요.
-  if (status === 500) r.err += 1;
+  if (status === 500) {
+    r.err += 1;
+    b.urgent = true;
+  }
   r.sum += t;
   r.max = Math.max(r.max, t);
   r.b[bucketOf(t)] += 1;
@@ -134,15 +139,16 @@ export function recordRequest(env, path, status, ms, now = Date.now()) {
 /** 2.0.0 [RVQ-03] UTC 분('2026-11-12T09:41'). */
 export const verMinute = (ms) => new Date(ms).toISOString().slice(0, 16);
 
-/** 모은 것을 더해요: 1분이 지났거나 [force](정기 작업). */
+/** 모은 것을 더해요: 30초가 지났거나, 500이 섞였거나, [force](정기 작업). */
 export async function flushWatch(env, now = Date.now(), force = false) {
   const b = bufferOf(env);
-  if (!b || (!b.rows.size && !b.vers.size) || (!force && now - b.at < WATCH.flushMs)) return 0;
+  if (!b || (!b.rows.size && !b.vers.size) || (!force && !b.urgent && now - b.at < WATCH.flushMs)) return 0;
   const rows = [...b.rows.values()];
   const vers = [...b.vers.values()];
   b.rows = new Map();
   b.vers = new Map();
   b.at = now;
+  b.urgent = false;
   if (vers.length) {
     const vsql = `INSERT INTO ver_stats (minute, ver, n, err, ms_sum) VALUES (?1, ?2, ?3, ?4, ?5)
       ON CONFLICT (minute, ver) DO UPDATE SET n = n + ?3, err = err + ?4, ms_sum = ms_sum + ?5`;
@@ -310,11 +316,13 @@ export async function canaryStats(env, ids, minutes, now = Date.now()) {
 /** 이름 있는 정기 작업 단계(매시 17분 작업의 순서대로). 화면은 이 이름으로 보여요. */
 export const JOB_NAMES = {
   prune: "오래된 기록 지우기", trials: "동의 없는 체험 멈추기", lapsed: "끝난 구독 다시 확인", rest: "D1 한도 전 쉬기", share: "공유 서버 스위치 맞추기",
-  flags: "기능 날짜·출시 알림", alerts: "주의 알림 보내기", digest: "아침·저녁 요약 알림", growth: "스튜디오 요구 정리", held: "보류 끝난 Claude 답 보내기",
-  play: "Play 출시 트랙 읽기", ship: "자동 출시 안내 보내기", live: "업데이트 없이 고친 것 닿음 보기", effect: "출시 2주 뒤 효과 판정",
+  flags: "기능 날짜·출시 알림", alerts: "주의 알림 보내기", digest: "아침·저녁 요약 알림", growth: "스튜디오 요구 정리", similar: "비슷한 회사 미리 찾기",
+  held: "보류 끝난 Claude 답 보내기",
+  play: "Play 출시 트랙 읽기", ship: "자동 출시 안내 보내기", live: "업데이트 없이 고친 것 닿음 보기", effect: "출시 2주 뒤 효과 판정", release: "출시 점검표 저절로 채우기", care: "마을 돌봄 숫자 굳히기",
   watch: "응답 속도 모으기·정리", reviews: "스토어 리뷰 가져오기", backup: "하루 백업", incident: "사고 살피기", requests: "데이터 요청 기한 알림",
   // 2.0.0 [RVQ-12] 검토 SRV-14: 5분 작업도 단계마다.
   held5: "보류 끝난 답 보내기(5분)", ship5: "출시 안내 보내기(5분)", surge: "광장 글 급증 살피기(5분)",
+  push5: "못 간 문의 답 알림 다시 보내기(5분)", // 2.0.0 [RVQ-51]
   // 1.39 [OBS2-01] 이름이 없어 서버 상태에 'observe'로 보였어요.
   observe: "Play 보고서·개선 신호 합치기",
   five: "5분 작업(보류 끝난 답·자동 출시 안내)", // 2.0.0 [RVN-02]
@@ -407,6 +415,36 @@ export async function setErrorState(env, sig, status, note, now = Date.now()) {
   return Boolean(r?.meta?.changes);
 }
 
+/**
+ * 2.0.0 [RVQ-55] 검토 SVC-25: D1 한도(유료 요금제 한 데이터베이스 10GB)와, 그 80%를 넘으면 사진·글꼴 올리기를 쉬는 선. 매시 정리가 크기를
+ * settings 'db_size'에 적고(dbSizeTick), 올리기는 그 값을 읽어요(한 시간 늦을 수 있어요). 오늘 › 주의 필요에도 떠요.
+ */
+export const DB_LIMIT = 10 * 1024 ** 3;
+export const DB_FULL = 0.8;
+export async function dbSizeTick(env, now = Date.now()) {
+  const bytes = await dbSize(env);
+  if (bytes) await env.DB.prepare("INSERT INTO settings (key, value) VALUES ('db_size', ?) ON CONFLICT (key) DO UPDATE SET value = excluded.value")
+    .bind(JSON.stringify({ bytes, at: now })).run();
+  return bytes;
+}
+/** 적어 둔 DB 크기가 한도의 [DB_FULL]을 넘었는지(모르면 false). */
+export async function uploadsFull(env) {
+  try {
+    const row = await env.DB.prepare("SELECT value FROM settings WHERE key = 'db_size'").first();
+    return dbFullFrom(row?.value);
+  } catch {
+    return false;
+  }
+}
+export function dbFullFrom(value) {
+  try {
+    const bytes = Number(JSON.parse(value ?? "{}")?.bytes);
+    return Number.isFinite(bytes) && bytes >= DB_LIMIT * DB_FULL;
+  } catch {
+    return false;
+  }
+}
+
 /** D1이 알려 주는 데이터베이스 크기(바이트). 알 수 없으면 null. */
 export async function dbSize(env) {
   try {
@@ -473,8 +511,10 @@ export async function sharePing(env) {
 export async function healthBoard(env, now = Date.now()) {
   await flushWatch(env, now, true).catch(() => {});
   const [jobs, speed, errors, size, share] = await Promise.all([jobState(env, now), speedState(env, now), errorState(env, now), dbSize(env), sharePing(env)]);
+  // 2.0.0 [RVN-24] 검토 SVC-111: the plan's database limit (Free is 500 MB, so '5%' of a fixed 10 GB hid a full database).
+  const plan = cfPlan(env);
   return { at: now, jobs, speed, errors: { counts: errors.counts, daily: errors.daily, days: errors.days, top: errors.groups.slice(0, 5) }, dbBytes: size,
-    dbLimit: 10 * 1024 ** 3, share, setup: requiredSetup(env), version: SERVER_VERSION };
+    dbLimit: plan.dbBytes, plan: plan.name, share, setup: requiredSetup(env), version: SERVER_VERSION };
 }
 
 /**
@@ -489,6 +529,26 @@ export function deployInfo(env) {
   return { version: SERVER_VERSION, commit: tag, id: typeof m.id === "string" ? m.id.slice(0, 8) : null, at };
 }
 
+/**
+ * 2.0.0 [RVN-24] 검토 SVC-105: 공유 서버는 회사 서버처럼 스스로 '배포'를 적지 못해요. 매시 공유 서버 판(판 이름 + 배포 번호, 없으면 커밋)을 보고
+ * 지난번과 다르면 활동 기록 'share_deployed'를 남겨 바꾼 것·사고 타임라인에 나와요. 처음 본 판은 적어 두기만 해요. 닿지 않으면 아무것도 안 해요.
+ */
+export async function noteShareDeploy(env, now = Date.now()) {
+  const { share } = await serverVersions(env);
+  if (!share?.ok || !share.version) return false;
+  const name = `${share.version}${share.id ? ` · ${share.id}` : share.commit ? ` · ${share.commit}` : ""}`;
+  const was = (await one(env, "SELECT value FROM settings WHERE key = 'share_version'"))?.value ?? null;
+  if (was === name) return false;
+  if (was === null) {
+    await run(env, "INSERT OR IGNORE INTO settings (key, value) VALUES ('share_version', ?)", name);
+    return false;
+  }
+  const r = await env.DB.prepare("UPDATE settings SET value = ? WHERE key = 'share_version' AND value = ?").bind(name, was).run();
+  if (!r?.meta?.changes) return false;
+  await audit(env, now, "share_deployed", name, `${was} → ${name}`);
+  return true;
+}
+
 export async function serverVersions(env) {
   const company = { ok: true, ...deployInfo(env) };
   const base = typeof env.SHARE_BASE_URL === "string" ? env.SHARE_BASE_URL.trim().replace(/\/+$/, "") : "";
@@ -497,8 +557,10 @@ export async function serverVersions(env) {
   const pick = (b) => ({ version: typeof b?.version === "string" ? b.version.slice(0, 20) : null,
     commit: typeof b?.commit === "string" && /^[0-9a-f]{7,40}$/.test(b.commit) ? b.commit.slice(0, 8) : null,
     id: typeof b?.id === "string" ? b.id.slice(0, 8) : null, at: Number.isFinite(b?.at) ? b.at : null });
+  // 2.0.0 [RVN-24] 검토 SVC-111: the admin token only goes over https (or to the PC's own loopback share server), never over plain http.
+  const safe = /^https:\/\//.test(base) || /^http:\/\/(127\.0\.0\.1|localhost)(:\d{2,5})?$/.test(base);
   try {
-    if (token.length >= 20) {
+    if (safe && token.length >= 20) {
       const res = await fetch(`${base}/api/admin/version`, { headers: { authorization: `Bearer ${token}` }, signal: AbortSignal.timeout(4000) });
       if (res.ok) return { company, share: { ok: true, ...pick(await res.json().catch(() => null)) } };
     }

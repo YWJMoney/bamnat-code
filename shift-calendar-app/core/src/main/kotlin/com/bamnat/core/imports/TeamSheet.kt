@@ -70,6 +70,8 @@ object TeamSheet {
                     is DutyCell.Shift -> labels[c.shiftTypeId] ?: r.raw[d] ?: return@mapNotNull null
                     DutyCell.Off -> r.raw[d]?.takeIf { common.read(it)?.first == DutyCell.Off } ?: "O"
                     is DutyCell.Leave -> r.raw[d]?.takeIf { common.read(it)?.first is DutyCell.Leave } ?: if (c.quarters < 4) "반차" else "연차"
+                    // 2.0.0 [RVL-72] A time or 공수 as written ("09:00-15:00", "1.5").
+                    is DutyCell.Hours, is DutyCell.Units -> r.raw[d] ?: TimeSheet.short(c) ?: return@mapNotNull null
                 }
                 month.atDay(d) to raw
             }.toMap()

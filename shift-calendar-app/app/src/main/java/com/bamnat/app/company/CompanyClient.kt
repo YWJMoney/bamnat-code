@@ -194,7 +194,16 @@ data class RoomPage(
     val stablePhones: Int = 3,
     val stableDays: Int = 30,
     val stableUses: Int = 0,
-)
+) {
+    /**
+     * [PLAZA-09] What the 고친 점 cards read: the department's other versions (and the base when it is not this phone's own).
+     * 2.0.0 [RVN-24] 검토 PC-21: a card says '데이를 뺀 사람 2명', so its people are the phones that sent a version with that
+     * change, each once; a 맞아요 is not a change (it read '2명' for one sender and one 맞아요 beside '쓰는 사람 1명').
+     */
+    val cardVersions: List<com.bamnat.core.plaza.RoomCards.Version>
+        get() = (others + listOfNotNull(base?.takeIf { !mine }))
+            .map { com.bamnat.core.plaza.RoomCards.Version(it.setup, it.text, it.senders.coerceAtLeast(1)) }
+}
 
 data class CompanyPage(
     val id: String,
@@ -358,14 +367,49 @@ data class Talk(val posts: List<TalkPost>, val mutedUntil: Instant? = null, val 
 /** 1.39 [PLZC-12] 머리 숫자 of a kind of work's plaza; [checkin] [PLZC-21] 오늘 출근 where the room has it. */
 data class Pulse(val today: Int, val waiting: Int, val working: Int, val checkin: Checkin? = null)
 
-/** 1.39 [PLZC-22] 선배 답 모음: an answer the operator picked, with its question; [form] the question's 근무형태 when it had one. */
-data class PlazaPick(val id: String, val title: String, val form: com.bamnat.core.pay.WorkForm?, val question: String, val answer: String)
+/**
+ * 1.39 [PLZC-22] 선배 답 모음: an answer the operator picked, with its question; [form] the question's 근무형태 when it had one.
+ * 2.0.0 [RVN-24] 검토 I22cb-02: [topic] what it is about (the server's PICK_TOPICS key: alarm, pay, leave, sleep, roster, money,
+ * health), so 도움말 on that subject shows it as '같은 근무 분들의 답'.
+ */
+data class PlazaPick(
+    val id: String, val title: String, val form: com.bamnat.core.pay.WorkForm?, val question: String, val answer: String,
+    val topic: String? = null,
+)
 
 internal fun plazaPicksOf(o: JSONObject): List<PlazaPick> = o.optJSONArray("items").objects().mapNotNull { p ->
     val id = p.optString("id").takeIf { it.isNotEmpty() } ?: return@mapNotNull null
     PlazaPick(id, p.optString("title"), p.optString("form").takeIf { it.isNotEmpty() }
-        ?.let { f -> com.bamnat.core.pay.WorkForm.entries.firstOrNull { it.name == f } }, p.optString("question"), p.optString("answer"))
+        ?.let { f -> com.bamnat.core.pay.WorkForm.entries.firstOrNull { it.name == f } }, p.optString("question"), p.optString("answer"),
+        p.optString("topic").takeIf { it in PlazaPickTopics.KEYS })
 }.filter { it.title.isNotBlank() && it.answer.isNotBlank() }
+
+/**
+ * 2.0.0 [RVN-24] 검토 I22cb-02: which 답 모음 subject a 도움말 answer is about, by its tag ("알람", "급여" …). The keys are the
+ * server's PICK_TOPICS (plaza-picks.js); a subject the app does not know is left out.
+ */
+object PlazaPickTopics {
+    val KEYS = setOf("alarm", "pay", "leave", "sleep", "roster", "money", "health")
+
+    private val BY_TAG = mapOf(
+        "알람" to "alarm",
+        "급여" to "pay", "추가 근무" to "pay", "실수령" to "pay", "선택근무" to "pay", "공무원 급여" to "pay", "공수" to "pay",
+        "연차" to "leave", "희망 오프" to "leave",
+        "수면" to "sleep",
+        "근무 주기" to "roster", "한 달 근무" to "roster", "연속 근무" to "roster", "근무표 점검" to "roster",
+        "가계부" to "money", "돈" to "money", "영수증" to "money", "연말정산" to "money", "소득 종류" to "money",
+    )
+
+    /** The subject of a 도움말 answer tagged [tag]; null when no 답 모음 subject fits. */
+    fun of(tag: String): String? = BY_TAG[tag]
+}
+
+/**
+ * 2.0.0 [RVN-22] 검토 I10bb-02 One kind of what the server has of this phone ([key]: settings, posts, votes, flags, inquiries,
+ * companies, rates, alerts, works, rewards, law, limits, other) and how many rows; [stays] "law" (결제·동의, 법으로 정한 기간) or
+ * "until" (진행 중인 제한, 끝날 때까지) when 모두 지우기 leaves it.
+ */
+data class MineRows(val key: String, val n: Int, val stays: String? = null)
 
 /** 1.39 [PLZC-21] 오늘 출근: today's taps by kind (day·night in 교대, go·rain in 현장) and this phone's own. */
 data class Checkin(val counts: Map<String, Int>, val mine: String? = null)
@@ -596,6 +640,8 @@ class CompanyException(
     val undoAgain: String? = null,
     /** 2.0.0 [RVM-30] SN-15: with rate_limited, the day's number when the server says it (장터 사진: 12, or 48 for a trusted phone). */
     val limit: Int? = null,
+    /** 2.0.0 [RVQ-42] 검토 U22b-05: with "update", the app (versionCode) a work needs. */
+    val minApp: Int? = null,
 ) : IOException(code) {
     /** [until] as epoch millis, or null. */
     val untilMillis: Long? get() = until?.let { runCatching { java.time.Instant.parse(it).toEpochMilli() }.getOrNull() }
@@ -680,6 +726,9 @@ interface CompanyApi {
 
     /** [INQ-05] I28: what [forgetMine] deleted, kind by kind, for "글 3·문의 1을 지웠어요". */
     suspend fun forgetMineCounts(device: String): ForgetCounts = ForgetCounts(reports = forgetMine(device))
+
+    /** 2.0.0 [RVN-22] 검토 I10bb-02 서버에 있는 내 정보: how many rows of this phone the server has, kind by kind ([MineRows]). */
+    suspend fun mineRows(device: String): List<MineRows> = throw CompanyException("not_yet")
     suspend fun vote(device: String, company: String, setup: String, ok: Boolean, verified: Boolean = false, why: String? = null): VoteResult
 
     /** 2.0.0 [RVN-18] 검토 COMP-22-1: this phone's 맞아요·달라요 on [setup] taken back (✓ pressed again); the counts without it. */
@@ -737,6 +786,9 @@ interface CompanyApi {
 
     /** 1.39 [PLZC-41] 같은 근무 새 질문 알림: watch [form] in [room] (교대·일근 광장), or stop with null. */
     suspend fun plazaWatch(device: String, room: String, form: String?) = Unit
+
+    /** 2.0.0 [RVN-24] I22ca-03 '내 질문에 답이 오면 바로 알림'을 끄면 서버도 이 폰을 깨우지 않게([off] false는 다시 켬). */
+    suspend fun plazaQuiet(device: String, off: Boolean) = Unit
 
     /** 1.39 [CARE-03] 마을을 열 때 한 번: 읽지 않은 안내, 지금 쉬기, 해명 상태. 서버가 모르면 빈 것. */
     suspend fun careStanding(device: String): com.bamnat.core.plaza.CareStanding = com.bamnat.core.plaza.CareStanding()
@@ -814,6 +866,12 @@ class CompanyClient(
      * goes only with a month that matched, and with just the month and yes or no (결정 D68, AI-D3).
      */
     private val proof: () -> com.bamnat.core.pay.SlipProof? = { null },
+    /**
+     * 2.0.0 [RVN-22] COMP-45·I10ba-01: where the whole list's two parts and the tagged reads are kept between runs with their
+     * ETags (the app's cache folder), so a new start asks "changed?" and a 304 costs a few hundred bytes. null keeps them in
+     * memory only, as before (tests that make a client per run).
+     */
+    private val keepDir: java.io.File? = null,
 ) : CompanyApi {
     override val enabled: Boolean get() = baseUrl.isNotBlank()
 
@@ -830,6 +888,14 @@ class CompanyClient(
             // 1.39 [PLZC-20] 근무 카드 on a top post, when the box asked for it.
             if (!has("parent") && has("body")) runCatching { roomCard?.invoke(company) }.getOrNull()?.let { put("card", it) }
         }
+    }
+
+    /** 2.0.0 [RVN-22] COMP-59 A vote's tag: the plaza's kind of work ("s", the server checks it) and 근무형태 ("f") only; null without one. */
+    internal suspend fun voteTag(room: String): JSONObject? {
+        if (!room.startsWith("style-")) return null
+        val t = runCatching { roomTag?.invoke(room) }.getOrNull() ?: return null
+        val f = t.optString("f").takeIf { t.has("f") && !t.isNull("f") && it.isNotEmpty() } ?: return null
+        return JSONObject().put("s", t.optString("s")).put("f", f)
     }
 
     // AS 1.29 [SRCH-06] A read the screen may stop waiting for (a new letter typed, a time limit) returns at once.
@@ -903,14 +969,17 @@ class CompanyClient(
         // [SPD-21] 1.31 R3: the names (they rarely change) and the counts (they change with every new user) each with its own
         // ETag, as one "names␟counts" tag: when only the counts changed, only they come. A 1.30 server sends the whole list.
         val tags = etag?.split(TAG_SEP)?.takeIf { it.size == 2 }
-        val names = namesKept?.takeIf { tags != null && it.first == tags[0] }
+        // 2.0.0 [RVN-22] COMP-45: a new run has nothing in memory; the parts kept on the phone with the same tags stand in, so
+        // the two reads are asked with their tags (before, a new start took the whole list and every count again).
+        val names = tags?.let { keptNames(it[0]) }
+        val counts0 = tags?.let { keptCounts(it[1]) }
         val namesRead = async {
             // A tag of the whole list (a 1.30 server's, or kept from before 1.31) is sent as it is: that server answers 304 to it.
             val tag = names?.first ?: etag?.takeIf { tags == null }
             exchange("GET", "/api/companies/all?part=names", headers = tag?.let { mapOf("If-None-Match" to it) }.orEmpty())
         }
         val countsRead = async {
-            runCatching { exchange("GET", "/api/companies/counts", headers = tags?.takeIf { countsKept != null }?.let { mapOf("If-None-Match" to it[1]) }.orEmpty()) }
+            runCatching { exchange("GET", "/api/companies/counts", headers = tags?.takeIf { counts0 != null }?.let { mapOf("If-None-Match" to it[1]) }.orEmpty()) }
         }
         val n = namesRead.await()
         if (n.code == 304 && names == null) {
@@ -925,8 +994,9 @@ class CompanyClient(
         val c = countsRead.await().getOrThrow()
         if (n.code == 304 && c.code == 304) return@readCall null
         val byId = if (n.code == 304) names!!.second
-        else n.json.optJSONArray("companies").objects().associateBy { it.optString("id") }.also { namesKept = (n.etag ?: "") to it }
-        val counts = if (c.code == 304) countsKept!! else c.json.optJSONArray("counts").objects().also { countsKept = it }
+        else n.json.optJSONArray("companies").objects().associateBy { it.optString("id") }.also { namesKept = (n.etag ?: "") to it; keepPart(NAMES_FILE, n) }
+        val counts = if (c.code == 304) counts0!!
+        else c.json.optJSONArray("counts").objects().also { countsKept = c.etag.orEmpty() to it; keepPart(COUNTS_FILE, c) }
         val list = counts.mapNotNull { k ->
             val name = byId[k.optString("id")] ?: return@mapNotNull null
             runCatching { knownCompany(JSONObject(name.toString()).also { j -> k.keys().forEach { key -> j.put(key, k.get(key)) } }) }.getOrNull()
@@ -934,9 +1004,41 @@ class CompanyClient(
         CompanyList(list, "${namesKept?.first.orEmpty()}$TAG_SEP${c.etag.orEmpty()}")
     }
 
-    /** [SPD-21] The names and counts last read (memory only), so a 304 for one is joined with the other. */
+    /**
+     * [SPD-21] The names and counts last read with their tags, so a 304 for one is joined with the other. 2.0.0 [RVN-22]
+     * COMP-45: also kept in [keepDir] ([keepPart]), read back when a new run has none in memory.
+     */
     @Volatile private var namesKept: Pair<String, Map<String, JSONObject>>? = null
-    @Volatile private var countsKept: List<JSONObject>? = null
+    @Volatile private var countsKept: Pair<String, List<JSONObject>>? = null
+
+    private fun keptNames(tag: String): Pair<String, Map<String, JSONObject>>? {
+        namesKept?.takeIf { it.first == tag }?.let { return it }
+        val o = readPart(NAMES_FILE, tag) ?: return null
+        return (tag to o.optJSONArray("companies").objects().associateBy { it.optString("id") }).also { namesKept = it }
+    }
+
+    private fun keptCounts(tag: String): List<JSONObject>? {
+        countsKept?.takeIf { it.first == tag }?.let { return it.second }
+        val o = readPart(COUNTS_FILE, tag) ?: return null
+        return o.optJSONArray("counts").objects().also { countsKept = tag to it }
+    }
+
+    /** 2.0.0 [RVN-22] An answer kept as its tag on the first line and the body after it; nothing when it has no tag. */
+    private fun keepPart(name: String, a: Answer) {
+        val dir = keepDir ?: return
+        val tag = a.etag?.takeIf { it.isNotBlank() && '\n' !in it } ?: return
+        runCatching { writeKept(java.io.File(dir, name), tag + "\n" + a.json.toString()) }
+    }
+
+    /** The body kept under [name] when its tag is [tag]; null when there is none, it is another tag's, or it does not read. */
+    private fun readPart(name: String, tag: String): JSONObject? {
+        val f = keepDir?.let { java.io.File(it, name) }?.takeIf { it.isFile } ?: return null
+        return runCatching {
+            val text = f.readText()
+            val cut = text.indexOf('\n')
+            if (cut < 0 || text.substring(0, cut) != tag) null else JSONObject(text.substring(cut + 1))
+        }.getOrNull()
+    }
 
     override suspend fun terms(): CompanyTerms = readCall {
         termsOf(request("GET", "/api/terms"))
@@ -1072,6 +1174,11 @@ class CompanyClient(
         Unit
     }
 
+    override suspend fun plazaQuiet(device: String, off: Boolean) = serverCall {
+        request("POST", "/api/plaza/quiet", JSONObject().put("device", device).put("kind", PlazaPush.ANSWER).put("off", off), device)
+        Unit
+    }
+
     override suspend fun careStanding(device: String): com.bamnat.core.plaza.CareStanding = serverCall {
         careStandingOf(exchange("GET", "/api/community/standing", device = device).json)
     }
@@ -1087,7 +1194,8 @@ class CompanyClient(
 
     override suspend fun pollVote(device: String, id: String, choice: Int?, room: String?): Poll = serverCall {
         val o = JSONObject().put("device", device).put("choice", choice ?: JSONObject.NULL)
-        if (choice != null && room != null) o.tagged(room, com.bamnat.core.plaza.StylePlaza.ROOM)
+        // 2.0.0 [RVN-22] 검토 COMP-59: only what the vote counts by (the plaza's kind and my 근무형태), not the whole tag.
+        if (choice != null && room != null) voteTag(room)?.let { o.put("tag", it) }
         pollOf(request("POST", "/api/posts/$id/poll", o).getJSONObject("poll"))
     }
 
@@ -1254,9 +1362,18 @@ class CompanyClient(
 
     override suspend fun forgetMineCounts(device: String): ForgetCounts = serverCall {
         val o = request("DELETE", "/api/mine", device = device)
+        // 2.0.0 [RVN-22] COMP-45: the pages read as this phone, kept with their tags, go with what the server forgot.
+        tagged.evictAll()
+        keepDir?.let { runCatching { java.io.File(it, TAGGED_DIR).deleteRecursively() } }
         ForgetCounts(o.optInt("reports"), o.optInt("votes"), o.optInt("posts"), o.optInt("inquiries"), inquiriesKept = o.optInt("inquiriesKept"),
             recipes = o.optInt("recipes"), profile = o.optInt("profile") > 0, follows = o.optInt("follows"), sets = o.optInt("sets"),
             adoptedKept = o.optInt("adoptedKept"), ratesKept = o.optInt("ratesKept"))
+    }
+
+    override suspend fun mineRows(device: String): List<MineRows> = readCall {
+        request("GET", "/api/mine", device = device).optJSONArray("groups").rows { g ->
+            MineRows(g.getString("key"), g.optInt("n").coerceAtLeast(0), g.optString("stays").ifEmpty { null })
+        }
     }
 
     /** 맞았어요 ([ok]) or 달라요 with what was wrong: order, time, pay (1.27 AH-D9), or wrong, old or name. */
@@ -1325,21 +1442,58 @@ class CompanyClient(
         // gave, and a 304 answers from what came last time: a few hundred bytes instead of the page.
         if (method != "GET" || headers.containsKey("If-None-Match") || UNTAGGED.any { path.startsWith(it) }) return serverExchange(baseUrl, method, path, body, device, headers, session)
         val key = "$path|${device.orEmpty()}|${headers["X-Hide"].orEmpty()}"
-        val kept = tagged.get(key)
+        val kept = tagged.get(key) ?: keptTagged(key)
         val a = serverExchange(baseUrl, method, path, body, device, kept?.let { headers + ("If-None-Match" to it.first) } ?: headers, session)
         if (a.code == 304 && kept != null) return Answer(200, JSONObject(kept.second), kept.first)
-        a.etag?.let { tagged.put(key, it to a.json.toString()) } ?: tagged.remove(key)
+        a.etag?.let { tagged.put(key, it to a.json.toString()); keepTagged(key, a) } ?: run { tagged.remove(key); dropTagged(key) }
         return a
     }
 
-    /** [SPD-23] The tagged answers last read, in memory only (the screens keep their own copies on the phone, [PageCache]). */
+    /**
+     * [SPD-23] The tagged answers last read. 2.0.0 [RVN-22] COMP-45: in memory and, when there is a [keepDir], on the phone
+     * ([TAGGED_KEEP] of them, the oldest let go), so a company's page or the plaza opened after a new start is a 304 too.
+     */
     private val tagged = android.util.LruCache<String, Pair<String, String>>(TAGGED_KEEP)
+
+    private fun taggedFile(key: String): java.io.File? = keepDir?.let { dir ->
+        val hash = java.security.MessageDigest.getInstance("SHA-256").digest(key.toByteArray()).joinToString("") { "%02x".format(it) }.take(32)
+        java.io.File(java.io.File(dir, TAGGED_DIR), hash)
+    }
+
+    private fun keptTagged(key: String): Pair<String, String>? {
+        val f = taggedFile(key)?.takeIf { it.isFile } ?: return null
+        return runCatching {
+            val text = f.readText()
+            // The key is kept too, so two keys that share a name never answer for each other.
+            val lines = text.split('\n', limit = 3)
+            if (lines.size < 3 || lines[0] != key) null else (lines[1] to lines[2]).also { tagged.put(key, it) }
+        }.getOrNull()
+    }
+
+    private fun keepTagged(key: String, a: Answer) {
+        val f = taggedFile(key) ?: return
+        val tag = a.etag?.takeIf { '\n' !in it } ?: return
+        if ('\n' in key) return
+        runCatching {
+            writeKept(f, key + "\n" + tag + "\n" + a.json.toString())
+            val all = f.parentFile?.listFiles()?.filter { it.isFile && !it.name.endsWith(".tmp") }.orEmpty()
+            if (all.size > TAGGED_KEEP) all.sortedBy { it.lastModified() }.take(all.size - TAGGED_KEEP).forEach { it.delete() }
+        }
+    }
+
+    private fun dropTagged(key: String) {
+        taggedFile(key)?.let { runCatching { it.delete() } }
+    }
 
     private companion object {
         const val TAGGED_KEEP = 60
+        const val NAMES_FILE = "all_names.json"
+        const val COUNTS_FILE = "all_counts.json"
+        const val TAGGED_DIR = "tagged"
+
         /** The whole list keeps its own tags ([allCompanies]); a search changes with each letter. */
         val UNTAGGED = listOf("/api/companies/all", "/api/companies/counts", "/api/companies?")
-        const val TAG_SEP = "\u241f"
+        const val TAG_SEP = LIST_TAG_SEP
         /** [SRV-08] What the server takes once per X-Request-Id: posts, replies, 신고 and reports. */
         val ONCE = listOf(Regex("/api/posts"), Regex("/api/posts/[^/]+/flag"), Regex("/api/reports"), Regex("/api/rates"), Regex("/api/members"))
     }
@@ -1375,6 +1529,8 @@ data class ForgetCounts(val reports: Int = 0, val votes: Int = 0, val posts: Int
     val recipes: Int = 0, val profile: Boolean = false, val follows: Int = 0, val sets: Int = 0,
     /** 1.39 [PRIV-06] 공유 서버: links cut with this phone's keys, and those left for want of a connection. */
     val links: Int = 0, val linksLeft: Int = 0,
+    /** 2.0.0 [RVL-58] (검토 DATA-22) Cutting the links stopped on something unexpected: they are not gone yet and are tried again. */
+    val linksFailed: Boolean = false,
     /** 2.0.0 [RVN-09] COMP-42·43 광장 바로 알림 and 저절로 나누기 were on and went off with the rest (the phone's, not the server's). */
     val alertsOff: Boolean = false, val autoShareOff: Boolean = false,
     /** 2.0.0 [RVN-09] U10b-04 채택된 규칙·시세 that stay for the people using them, cut loose from this phone. */
@@ -1388,13 +1544,18 @@ data class ForgetCounts(val reports: Int = 0, val votes: Int = 0, val posts: Int
             "팔로우 $follows".takeIf { follows > 0 }, "공유 링크 ${links}개".takeIf { links > 0 },
         )
         val kept = if (inquiriesKept > 0) " (결제·환불 문의 ${inquiriesKept}건은 법에 따라 운영자가 3년 보관해요)" else ""
-        val left = if (linksLeft > 0) ". 공유 링크 ${linksLeft}개는 인터넷이 끊겨 남았어요. 인터넷이 연결되면 저절로 마저 지워요" else ""
+        val left = com.bamnat.app.share.ShareForget.leftWords(linksLeft, linksFailed)?.let { ". $it" }.orEmpty()
         val stay = listOfNotNull("채택된 규칙 ${adoptedKept}개".takeIf { adoptedKept > 0 }, "채택된 시세 ${ratesKept}개".takeIf { ratesKept > 0 })
         val stayLine = if (stay.isEmpty()) "" else ". ${stay.joinToString("·")}는 다른 분들이 쓰고 있어 남고, 나와의 연결만 지웠어요"
         val off = listOfNotNull("광장 바로 알림".takeIf { alertsOff }, "저절로 나누기".takeIf { autoShareOff })
         val offLine = if (off.isEmpty()) "" else ". ${off.joinToString("과 ")}도 껐어요. 설정에서 다시 켤 수 있어요"
-        return (if (parts.isEmpty()) "서버에 지울 것이 없었어요" else parts.joinToString("·") + "${com.bamnat.app.ui.Fmt.obj(parts.last())} 지웠어요" + kept) +
-            stayLine + left + offLine
+        // 2.0.0 [RVL-58] Links still to cut are not "nothing to delete": then the words start with them.
+        val head = when {
+            parts.isNotEmpty() -> parts.joinToString("·") + "${com.bamnat.app.ui.Fmt.obj(parts.last())} 지웠어요" + kept
+            left.isNotEmpty() -> ""
+            else -> "서버에 지울 것이 없었어요"
+        }
+        return (head + stayLine + left + offLine).removePrefix(". ")
     }
 
     /** 2.0.0 [RVO-16] 검토 SET-09: how the last request went, in a few words under the row ([com.bamnat.app.ui.company.ForgetLog]). */
@@ -1574,7 +1735,9 @@ internal fun talkOf(o: JSONObject): Talk = Talk(
             tag = p.optJSONObject("tag")?.let { t -> com.bamnat.core.plaza.PlazaTag.of { k -> t.opt(k)?.takeIf { it != JSONObject.NULL } } },
             first = p.optBoolean("first", false),
             helped = p.optInt("helped", 0).coerceIn(0, 100_000),
-            card = p.optJSONObject("card")?.let { c -> com.bamnat.core.plaza.WorkCard.of { k -> c.opt(k) } },
+            // 2.0.0 [RVN-24] T22c-03: a 가게 광장's card says 영업.
+            card = p.optJSONObject("card")?.let { c -> com.bamnat.core.plaza.WorkCard.of { k -> c.opt(k) } }
+                ?.let { c -> if (p.optJSONObject("tag")?.optString("s") == "BUSINESS") c.copy(shop = true) else c },
             mark = com.bamnat.core.plaza.MakerMark.of(p.optString("mark", "").ifEmpty { null }),
         )
     },
@@ -1662,6 +1825,14 @@ internal fun serverRequest(
     baseUrl: String, method: String, path: String, body: JSONObject? = null, device: String? = null, headers: Map<String, String> = emptyMap(),
 ): JSONObject = serverExchange(baseUrl, method, path, body, device, headers).json
 
+/** 2.0.0 [RVN-22] Writes [text] to [f] whole or not at all (a half-written file would answer for a tag it does not hold). */
+internal fun writeKept(f: java.io.File, text: String) {
+    f.parentFile?.mkdirs()
+    val tmp = java.io.File(f.parentFile, f.name + ".tmp")
+    tmp.writeText(text)
+    if (!tmp.renameTo(f)) { f.delete(); tmp.renameTo(f) }
+}
+
 /** [SPD-11] An answer with what the app keeps of its headers: 304 (empty [json]) and the ETag. */
 internal class Answer(val code: Int, val json: JSONObject, val etag: String?)
 
@@ -1748,6 +1919,8 @@ private fun exchangeOnce(
         device?.let { conn.setRequestProperty("X-Device", it) }
         // 1.39 [PAYP-01] This app shows no one's pay way: the server sends none, and the way is taken when it is put in.
         conn.setRequestProperty(PAY_PRIVATE_HEADER, "1")
+        // 2.0.0 [RVN-22] This app knows the word "account" (계좌번호, [CompanyText.problem]); to an app before it the server says "amount".
+        conn.setRequestProperty(TEXT_CODES_HEADER, "account")
         session?.headers(method)?.forEach { (k, v) -> conn.setRequestProperty(k, v) }
         headers.forEach { (k, v) -> conn.setRequestProperty(k, v) }
         if (body != null) {
@@ -1772,7 +1945,7 @@ private fun exchangeOnce(
                 retry, err?.optStringOrNull("why"), err?.optStringOrNull("until"), undo = err?.optBoolean("undo") == true,
                 held = err?.optJSONObject("held")?.optString("name")?.takeIf { it.isNotBlank() },
                 undoAgain = err?.optStringOrNull("undoAgain"),
-                limit = err?.optInt("limit")?.takeIf { it > 0 })
+                limit = err?.optInt("limit")?.takeIf { it > 0 }, minApp = err?.optInt("minApp")?.takeIf { it > 0 })
         }
         result = NetTimings.Result.OK
         return Answer(code, if (text.isBlank()) JSONObject() else JSONObject(text), conn.getHeaderField("ETag"))
@@ -1797,6 +1970,9 @@ internal const val CONNECT_MS = 6_000
 /** 1.39 [PAYP-01] Says the app shows no shared pay way; the server then sends none (it is taken at putting it in). */
 internal const val PAY_PRIVATE_HEADER = "X-Pay-Private"
 
+/** 2.0.0 [RVN-22] The refusal words this app knows beyond email·phone·amount (server `textCode`). */
+internal const val TEXT_CODES_HEADER = "X-Text-Codes"
+
 /** [SPD-27] 1.31 R6: reads what is left of an answer and closes its stream, so the connection can be used again. */
 internal fun drain(conn: HttpURLConnection) {
     runCatching { conn.inputStream?.use { s -> val buf = ByteArray(1024); while (s.read(buf) >= 0) Unit } }
@@ -1813,6 +1989,9 @@ object ReadAhead : kotlin.coroutines.AbstractCoroutineContextElement(ReadAheadKe
 /** [ReadAhead]'s key: its own object, since an object cannot hand itself to its own constructor. */
 object ReadAheadKey : kotlin.coroutines.CoroutineContext.Key<ReadAhead>
 
+/** [SPD-21] The company list's two tags as one ("names␟counts"); 2.0.0 [RVN-22] I10bc-01 the digest's two tags are read with it. */
+internal const val LIST_TAG_SEP = "\u241f"
+
 /**
  * [COMM-01][COMM-02] The server's own rules for names and typed text, checked on the phone first so
  * a refusal never surprises: the same patterns as normName and personal in server/company-worker.
@@ -1820,39 +1999,42 @@ object ReadAheadKey : kotlin.coroutines.CoroutineContext.Key<ReadAhead>
 object CompanyText {
     private val forms = Regex("\\((주|株|유|사|재|합)\\)|주식회사|유한회사|유한책임회사|합자회사|합명회사|사단법인|재단법인|\\b(co|ltd|inc|corp|llc)\\b\\.?")
     private val marks = Regex("[^\\p{L}\\p{N}]")
-    private val personal = listOf(
-        "email" to Regex("[^\\s@]+@[^\\s@]+\\.[a-z]{2,}", RegexOption.IGNORE_CASE),
-        "phone" to Regex("(\\+?82[\\s.-]?0?|0)\\d{1,2}[\\s.-]?\\d{3,4}[\\s.-]?\\d{4}"),
-        "amount" to Regex(
-            "\\d[\\d,.]*\\s*(원|만\\s*원|천\\s*원|억\\s*원|won\\b|krw\\b)|[일이삼사오육칠팔구십백천]+\\s*만\\s*원|\\d{1,3}(,\\d{3})+|\\d{5,}",
-            RegexOption.IGNORE_CASE,
-        ),
-    )
-
     /** A name as search sees it: no spaces, marks or company forms such as (주), 주식회사, Co., Ltd. */
     fun norm(name: String): String =
         Normalizer.normalize(name, Normalizer.Form.NFKC).lowercase().replace(forms, "").replace(marks, "")
 
-    /** Why [text] cannot be shared: email, phone or amount; null when it can. */
-    fun personal(text: String): String? = personal.firstOrNull { (_, re) -> re.containsMatchIn(text) }?.first
+    /**
+     * 2.0.0 [RVN-22] 검토 I10bb-03: why [text] cannot be shared (메일·계좌번호·전화번호·금액), null when it can. The rules are core
+     * [com.bamnat.core.plaza.TextRules], the very table the company server reads (text-rules.js), so the phone and the server never part.
+     */
+    fun personal(text: String): String? = com.bamnat.core.plaza.TextRules.personal(text)
 
-    // 2.0.0 [RVN-17] 검토 COMP-14: the server's CONTACT. A real phone number's shape (010·02·031… then 3~4 and 4 digits, not inside a longer
-    // run), so "연봉 300000000원" is not taken for one.
-    private val contacts = listOf(
-        "email" to Regex("[^\\s@]+@[^\\s@]+\\.[a-z]{2,}", RegexOption.IGNORE_CASE),
-        "phone" to Regex("(?<!\\d)(\\+?82[\\s.-]?0?|0)(1[016789]|2|[3-6][1-5]|70)[\\s.-]?\\d{3,4}[\\s.-]?\\d{4}(?!\\d)"),
-    )
-
-    /** 2.0.0 [RVN-17] COMP-14 Why a room's post cannot go once 방 글에 금액 받기 is on: only a way to reach someone (email, phone). */
-    fun contact(text: String): String? = contacts.firstOrNull { (_, re) -> re.containsMatchIn(text) }?.first
+    /** 2.0.0 [RVN-17] COMP-14 Why a room's post cannot go once 방 글에 금액 받기 is on: a way to reach someone or to send money. */
+    fun contact(text: String): String? = com.bamnat.core.plaza.TextRules.contact(text)
 
     /** 2.0.0 [RVN-17] COMP-14 The check for a post: in a room with [roomMoney] on, contacts only; anywhere else, [personal]. */
-    fun post(text: String, room: Boolean, roomMoney: Boolean): String? = if (room && roomMoney) contact(text) else personal(text)
+    fun post(text: String, room: Boolean, roomMoney: Boolean): String? = postHit(text, room, roomMoney)?.code
+
+    /** 2.0.0 [RVN-22] I10bb-03 [personal] with where: the very letters, to mark in the box before sending. */
+    fun personalHit(text: String): com.bamnat.core.plaza.TextRules.Hit? =
+        com.bamnat.core.plaza.TextRules.find(text, com.bamnat.core.plaza.TextRules.personalRules)
+
+    /** 2.0.0 [RVN-22] I10bb-03 [post] with where. */
+    fun postHit(text: String, room: Boolean, roomMoney: Boolean): com.bamnat.core.plaza.TextRules.Hit? =
+        com.bamnat.core.plaza.TextRules.post(text, room, roomMoney)
+
+    /** 2.0.0 [RVN-22] I10bb-03 The line under a box: "‘010-1234-5678’ · 전화번호는 빼 주세요" (long letters cut to 24). */
+    fun stopLine(hit: com.bamnat.core.plaza.TextRules.Hit, words: (String) -> String): String {
+        val t = hit.text.trim().replace('\n', ' ')
+        return "‘${if (t.length > 24) t.take(23) + "…" else t}’ · ${words(hit.code)}"
+    }
 
     /** What to tell the user about a refused text or field. */
     fun problem(code: String): String = when (code) {
         "email" -> "메일 주소는 적지 말아 주세요"
         "phone" -> "전화번호는 적지 말아 주세요"
+        // 2.0.0 [RVN-22] 처리방침 3.14 N몫 ①: 은행 계좌·카드 번호처럼 보이는 숫자.
+        "account" -> "계좌번호는 적지 말아 주세요"
         "amount" -> "금액은 적지 말아 주세요. ‘기본급의 10%’처럼 비율로 적으면 돼요"
         else -> "보낼 수 없는 내용이 있어요"
     }

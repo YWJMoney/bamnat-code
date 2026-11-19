@@ -6,7 +6,7 @@ import com.bamnat.core.work.words
  * [UX-04] Plain-word search for settings and help: the words people use ("다크 모드", "알람이 안 울려요")
  * find the setting even when it is named another way. Korean endings (이·가·을·를·은·는·에서…) are
  * dropped from each word, and a word counts when it holds one of an entry's keywords, so "알람이" finds
- * "알람". No 초성 search.
+ * "알람". 초성 only ("ㄱㅂㄱ") finds by each syllable's first consonant ([initials]).
  */
 internal object SearchText {
     private val ENDINGS = listOf(
@@ -29,10 +29,6 @@ internal object SearchText {
         return long.ifEmpty { all }
     }
 
-    /**
-     * How well [query] fits: the whole query in [title] counts most, then each word found in the title,
-     * a keyword or [other] text. Half the words, at least one, must be found; 0 means no fit.
-     */
     private const val CHO = "ㄱㄲㄴㄷㄸㄹㅁㅂㅃㅅㅆㅇㅈㅉㅊㅋㅌㅍㅎ"
 
     /** U 1.32 [UX132-04] Each 한글 syllable as its first consonant: "기본급" → "ㄱㅂㄱ". Other letters stay. */
@@ -43,23 +39,40 @@ internal object SearchText {
     /** The query is 초성 only ("ㄱㅂㄱ"). */
     fun isInitials(q: String): Boolean = q.length >= 2 && q.all { it in CHO }
 
-    fun score(query: String, title: String, keywords: List<String>, other: String = ""): Int {
+    /**
+     * How well [query] fits: the whole query in [title] counts most, then each word found in the title,
+     * a keyword or [other] text. Half the words, at least one, must be found; 0 means no fit.
+     */
+    fun score(query: String, title: String, keywords: List<String>, other: String = ""): Int = fit(query, title, keywords, other).score
+
+    /**
+     * 2.0.0 [RVJ-93] 검토 BOSS-70·U05c-10 (두 낱말 가운데 하나만, 한 글자만 맞아도 '찾은 설정 5개'로 떴어요): a fit is [sure] when the
+     * whole query is in the name or a keyword, when two of its words are in the name or keywords ([SURE]), or when a keyword is in the
+     * query and every word of it is found; one word of two, or words only in the [other] text, is a near fit, shown apart as '비슷한 것'.
+     */
+    data class Fit(val score: Int, val sure: Boolean)
+
+    /** Words in the name and keywords worth this much together make a sure fit without the whole query (6 a name, 4 a keyword). */
+    private const val SURE = 8
+
+    fun fit(query: String, title: String, keywords: List<String>, other: String = ""): Fit {
         val q = norm(query)
-        if (q.isEmpty()) return 0
+        if (q.isEmpty()) return Fit(0, false)
         // U 1.32 [UX132-04] 초성 검색: "ㄱㅂㄱ" finds 기본급, "ㅇㄹ" 알람.
         if (isInitials(q)) {
             val t = initials(norm(title))
-            return when {
+            val s = when {
                 t.startsWith(q) -> 40
                 q in t -> 30
                 keywords.any { q in initials(norm(it)) } -> 20
                 else -> 0
             }
+            return Fit(s, s > 0)
         }
         val t = norm(title)
         val keys = keywords.map(::norm).filter { it.isNotEmpty() }
         val o = norm(other)
-        var score = when {
+        val whole = when {
             t.startsWith(q) -> 40
             q in t -> 30
             // A keyword that is the whole query beats one that only holds it ("일요일" is 한 주의 시작, not 요일 of 근무 주기).
@@ -68,22 +81,28 @@ internal object SearchText {
             keys.any { it.length >= 2 && it in q } -> 16
             else -> 0
         }
+        var score = whole
         val words = words(query)
         var found = 0
+        var named = 0
         for (w in words) {
             val n = norm(w)
             if (n.isEmpty()) continue
             val hit = when {
+                // [RVJ-93] A one-letter word counts only as the name's first letter or a whole keyword ('달' is 달력, not every 달).
+                n.length == 1 -> when { t.startsWith(n) -> 6; keys.any { it == n } -> 4; else -> 0 }
                 n in t -> 6
                 keys.any { n in it || (it.length >= 2 && it in n) } -> 4
                 n in o -> 1
                 else -> 0
             }
             if (hit > 0) found++
+            if (hit >= 4) named += hit
             score += hit
         }
         val needed = maxOf(1, (words.size + 1) / 2)
-        return if (score >= 20 || found >= needed) score else 0
+        val s = if (score >= 20 || found >= needed) score else 0
+        return Fit(s, s > 0 && (whole >= 20 || named >= SURE || (whole > 0 && found == words.size)))
     }
 
     /**
@@ -96,8 +115,31 @@ internal object SearchText {
         return scored.filter { it.second * BEHIND >= top }.take(limit).map { it.first }
     }
 
+    /**
+     * 2.0.0 [RVJ-93] The sure fits ([best] of them) and, apart, at most [nearLimit] near ones: all of them when nothing is sure, else
+     * only those not far behind the best sure one.
+     */
+    fun <T> split(items: List<T>, limit: Int, nearLimit: Int = NEAR, fit: (T) -> Fit): Split<T> {
+        val fits = items.map { it to fit(it) }.filter { it.second.score > 0 }
+        val sure = fits.filter { it.second.sure }.sortedByDescending { it.second.score }
+        val top = sure.firstOrNull()?.second?.score
+        val shown = sure.filter { top == null || it.second.score * BEHIND >= top }.take(limit).map { it.first }
+        val near = fits.filter { !it.second.sure && (top == null || it.second.score * BEHIND >= top) }
+            .sortedByDescending { it.second.score }.take(nearLimit).map { it.first }
+        return Split(shown, near)
+    }
+
+    /** What [split] found: what fits, and what only looks like it. */
+    data class Split<T>(val sure: List<T>, val near: List<T>) {
+        val all: List<T> get() = sure + near
+        fun isEmpty() = sure.isEmpty() && near.isEmpty()
+    }
+
     /** A fit a quarter as good as the best is still shown; less is noise. */
     private const val BEHIND = 4
+
+    /** [RVJ-93] At most three near fits ('비슷한 것'). */
+    const val NEAR = 3
 }
 
 /** [UX-04] Where a found setting is: one row of a group (lit when the group opens), or a screen of its own. */
@@ -153,8 +195,26 @@ internal object SettingsIndex {
                 /** 1.38 [SLEEP-19] `sleep.auto` and `sleep.sound` open: their switches and cards are found. */
                 sleepAuto: Boolean = true, sleepSound: Boolean = true,
                 /** 1.39 G6 (PC 12.5 가게·현장): 오늘의 흐름 put on the calendar by the user (카드 배치 › 더 보기), so its switch is found. */
-                flowAdded: Boolean = false): List<SettingEntry> =
-        all(board, share, company, sleepAuto, sleepSound).filter { fits(it, style, flowAdded) }.map { inWords(it, style) }
+                flowAdded: Boolean = false,
+                /** 2.0.0 [RVJ-93] 검토 BOSS-68: 설정 › 더 보기's 관리 row's name ('가게 관리', '팀 관리') while it is there, else null. */
+                manage: String? = null,
+                /** 2.0.0 [RVJ-96] A 급여 대장 on this phone: its 신고·지급 기한 알림 is found ([rememberLedgerOn]). */
+                ledger: Boolean = false,
+                /** 2.0.0 [RVIB-21] A 근무 종류 of the calendar has two parts: 둘째 구간 알림 is on the page ([NoticeBoard.shown]). */
+                gap: Boolean = false): List<SettingEntry> =
+        (all(board, share, company, sleepAuto, sleepSound) + listOfNotNull(manage?.let(::manageEntry), filingEntry.takeIf { ledger }))
+            .filter { fits(it, style, flowAdded) && (it.title != GAP_ROW || gap) }.map { inWords(it, style) }
+
+    /**
+     * 2.0.0 [RVJ-93] 검토 BOSS-68 (사장님·리더의 관리 화면이 찾기에 없어 '관리'를 찾으면 '결제 한눈에 보기'가 나왔어요): the 관리 screen by
+     * the words a boss or a leader uses, under its name as 더 보기 shows it.
+     */
+    /** 2.0.0 [RVJ-96] 검토 U05c-05: the 신고·지급 기한 알림, by a boss's words for it. */
+    private val filingEntry get() = row(SettingsPage.NOTICES, com.bamnat.app.boss.BossFilingNotice.ROW, "신고 알림", "신고 기한", "원천세 알림", "원천세 신고",
+        "4대보험 신고", "급여 지급일 알림", "지급명세서", "세금 신고 알림", "기한 알림")
+
+    private fun manageEntry(title: String) = screen("더 보기", title, SettingsGo.MANAGE, "관리", "관리 화면", "사장님", "리더", "팀장", "직원",
+        "직원 관리", "팀 관리", "가게 관리", "사업장 관리", "팀 근무표", "급여 대장", "직원 명세서", "할 일")
 
     /**
      * 2.0.0 [RVO-10] (검토 U11a-04·SET-03: 설정 찾기가 유형의 말을 몰라요): an entry reads as its row does on that kind of work's page.
@@ -179,6 +239,10 @@ internal object SettingsIndex {
         // 2.0.0 [RVG-40] 검토 PC-175: a shop, a field worker or an investor reads 다른 사람 달력 받기, as 달력 › 도구 says it.
         (e.place as? SettingPlace.Screen)?.go == SettingsGo.RECEIVE && e.title == "동료 근무표 받기" && com.bamnat.core.work.receiveTitle(style) != e.title ->
             e.copy(title = com.bamnat.core.work.receiveTitle(style), keywords = e.keywords + e.title)
+        // 2.0.0 [RVL-72] 알바·현장 read 한 달 근무 넣기 as their own row on 내 근무 says it.
+        (style == com.bamnat.core.work.WorkStyle.HOURLY || style == com.bamnat.core.work.WorkStyle.FIELD) &&
+            (e.place as? SettingPlace.Screen)?.go == SettingsGo.DUTY_ROSTER && e.title == "한 달 근무 넣기" ->
+            e.copy(title = if (style == com.bamnat.core.work.WorkStyle.HOURLY) HOURLY_ROSTER_ROW else FIELD_ROSTER_ROW, keywords = e.keywords + e.title)
         style == com.bamnat.core.work.WorkStyle.HOURLY && "회사 계산 방법" in e.title ->
             e.copy(title = e.title.replace("회사 계산 방법", "근무지 계산 방법"))
         // 1.38 PC 12.5 빈틈 2 (투자의 찾기 결과가 '잠금 화면 오늘 근무'): the result reads as the row does on that kind of work's page;
@@ -218,6 +282,8 @@ internal object SettingsIndex {
         if (style == com.bamnat.core.work.WorkStyle.HOURLY && e.title in HOURLY_HIDDEN) return false
         if (style == null || style.usesPayEngine) return true
         val place = e.place
+        // 2.0.0 [RVL-72] 현장's 공수표 goes in through 한 달 근무 넣기.
+        if (style == com.bamnat.core.work.WorkStyle.FIELD && place is SettingPlace.Screen && place.go == SettingsGo.DUTY_ROSTER) return true
         if (place is SettingPlace.Screen && place.go in WAGE_SCREENS) return false
         // 1.38 PC 12.4.1 빈틈 2: 현장·가게·투자 have no 오늘의 흐름 on the calendar, so no switch for it either.
         // 1.39 G6: unless the user put it on the calendar themselves.
@@ -258,7 +324,9 @@ internal object SettingsIndex {
         // [SHFT-06][SHFT-07][DAYW-06][DAYW-07]
         screen(W.title, "한 달 근무 넣기", SettingsGo.DUTY_ROSTER, "듀티표", "듀티표 넣기", "직접 입력", "키패드", "반차", "근무표 사진", "글자 인식", "사진으로 입력", "간호사", "한 달 입력",
             // [IMPORT-03]
-            "근무표 파일", "엑셀 근무표", "CSV", "불규칙 근무표", "편의점 근무표", "병동"),
+            "근무표 파일", "엑셀 근무표", "CSV", "불규칙 근무표", "편의점 근무표", "병동",
+            // 2.0.0 [RVL-72]
+            "시간표", "알바 시간표", "스케줄표", "공수표", "공수", "출력표"),
         screen(W.title, "연간 건강 지표", SettingsGo.HEALTH_REPORT, "야간 비율", "연속 야간", "건강", "1년", "연간 통계"),
         screen(W.title, "근태 엑셀 가져오기", SettingsGo.ATTENDANCE_IMPORT, "엑셀", "CSV", "근태", "출퇴근 기록", "회사 시스템", "xlsx").takeIf { company }, // [J133-77]
         screen(W.title, "출퇴근 자동 기록", SettingsGo.COMMUTE, "위치", "지오펜스", "자동 출근", "자동 퇴근", "GPS", "회사 위치"),
@@ -302,6 +370,8 @@ internal object SettingsIndex {
         row(N, "최근 3개월 한 주 평균 경고", "평균", "3개월"),
         // 1.32 [WTYP-16]
         row(N, "퇴근 시각 알림", "지금 퇴근", "퇴근 버튼", "잔업 기록", "야근 기록", "퇴근 알림"),
+        // 2.0.0 [RVIB-21]
+        row(N, "둘째 구간 시작 알림", "브레이크 타임", "비는 시간", "다시 시작", "두 구간", "브레이크 알림"),
         row(N, "퇴근 뒤 가계부 정리 알림", "하루 마감", "가계부 알림", "지출 적기 알림", "오늘 쓴 돈", "정리 알림"),
         row(N, "근무 전 한 줄 예고", "근무 전날 알림", "내일 돈 예고", "근무 날 지출", "야간 지출 예고"),
         // 1.32 [WTYP-12]
@@ -400,8 +470,12 @@ internal object SettingsIndex {
         row(D, "백업 안 한 지 30일 알림", "백업 알림", "마지막 백업", "백업 언제", "기록 잃어버림"), // 1.32 [STAB-08]
         row(D, "사진도 백업", "사진", "영수증 사진", "계약서 사진", "메모 사진", "백업 크기"), // [BACK-01]
         row(D, "파일 불러오기", "복원", "백업 불러오기", "되돌리기"),
+        // 2.0.0 [RVL-70][RVL-71] One row in its place (a row is found once): the weekly check's switch is on the screen it opens.
+        row(D, com.bamnat.app.ui.diag.DATA_CHECK_TITLE, "점검", "진단", "데이터 확인", "기록이 이상해요", "파일 깨짐", "온전한지", "백업 확인", "서버 연결",
+            com.bamnat.app.ui.diag.DATA_SELF_CHECK_ROW, "자동 점검", "스스로 점검", "매주 점검"),
         row(D, "최근 지운 기록", "휴지통", "되돌리기", "지운 달력", "실수로 지움", "복구"), // [UNDO-01]
-        screen(D.title, "캘린더에서 가져오기", SettingsGo.CALENDAR_IMPORT, "삼성 캘린더", "구글 캘린더", "가져오기", "일정"),
+        row(D, TIME_MACHINE_ROW, "어제로 되돌리기", "그때로", "실수로 바꿈", "실수로 지움", "근무 되돌리기", "가계부 되돌리기", "복구"), // 2.0.0 [RVL-76]
+        screen(D.title, "캘린더에서 가져오기", SettingsGo.CALENDAR_IMPORT, "삼성 캘린더", "구글 캘린더", "가져오기", "일정", "ics", "달력 파일", "다른 앱에서 옮기기"),
         row(D, "다른 앱에서 옮기기", "갈아타기", "다른 앱", "옮기기", "근무 앱 캡처", "화면 캡처", "스크린샷", "앱 바꾸기"), // [GROW-05]
         row(D, AUTO_BACKUP_ROW, "자동 백업", "매일 백업", "구글 드라이브", "드라이브", "클라우드", "백업 자동", "백업 폴더", "7일치"), // [PROV-03] 2.0.0 [RVL-52]
         row(D, "캘린더 앱으로 내보내기", "ics", "구글 캘린더", "내보내기"),
@@ -419,7 +493,7 @@ internal object SettingsIndex {
         row(V, "잠금 화면에 알람 띄우기", "전체 화면", "권한", "잠금 화면"),
         row(V, "결제 알림 읽기", "카드 알림", "은행 알림", "문자", "자동 기록", "가계부"),
         row(V, "사용 통계 보내기", "통계", "사용 기록", "익명", "보낼 내용"), // [STAT-01]
-        row(V, AUTO_SHARE_ROW, "회사 광장", "저절로 나누기", "자동 공유", "근무 순서 공유", "계산 방식 공유", "광장 참여", "공유 끄기").takeIf { board && company }, // [PLAZA-07]
+        row(V, AUTO_SHARE_ROW, "회사 광장", "저절로 나누기", "자동 공유", "근무 순서 공유", "근무 시간 공유", "계산 방식 공유", "광장 참여", "공유 끄기", "나누기 취소").takeIf { board && company }, // [PLAZA-07]
         row(V, "광고 개인정보 선택", "광고", "맞춤 광고", "광고 ID", "동의", "GDPR", "광고 끄기"), // [MON-07]
         // [MON-04][MON-05] 프로 and what paying for it agrees to.
         screen("설정", "프로", SettingsGo.PRO, "구독", "결제", "광고 없애기", "광고 제거", "무료 체험", "이용권", "환불", "해지", "유료"),
@@ -495,7 +569,11 @@ internal object SettingsIndex {
         // S 1.32 [SECX-04] 1.28's 진단 › 기능 상태 row is gone with the card (no developer words such as 다크머지 in search).
     )
 
-    /** The best fits for [query], best first. */
+    /** The best fits for [query], best first: the sure ones, then at most three near ones ([found]). */
     fun search(query: String, entries: List<SettingEntry> = entries(), limit: Int = 12): List<SettingEntry> =
-        SearchText.best(entries, limit) { SearchText.score(query, it.title, it.keywords, it.where) }
+        found(query, entries, limit).all.take(limit)
+
+    /** 2.0.0 [RVJ-93] 검토 BOSS-70·U05c-10: what fits [query], and apart, at most three that only look like it ('비슷한 설정'). */
+    fun found(query: String, entries: List<SettingEntry> = entries(), limit: Int = 12): SearchText.Split<SettingEntry> =
+        SearchText.split(entries, limit) { SearchText.fit(query, it.title, it.keywords, it.where) }
 }

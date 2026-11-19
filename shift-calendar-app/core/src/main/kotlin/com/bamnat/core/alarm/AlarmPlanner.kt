@@ -111,7 +111,25 @@ object AlarmPlanner {
                 }
             }
             if (type == null || start == null) return second.distinctBy { it.triggerAt }.sortedBy { it.triggerAt }
-            second + type.activeAlarms.map { spec ->
+            // 2.0.0 [RVIB-21] (결정 19, 설계 4-2절 1번) A day of two parts: the part after the 브레이크 타임 rings too only when the shift
+            // says so (둘째 구간도 알람, for those who sleep in it); otherwise a quiet line says it ([GapNotice]). An hour's leave in the
+            // middle is not a stop to ring after.
+            val again = if (!type.gapAlarm || day.gapFrom == null) emptyList() else day.segments.drop(1).flatMap { part ->
+                type.activeAlarms.map { spec ->
+                    val offset = spec.offsetMinutes.coerceIn(-MAX_OFFSET_MINUTES, MAX_OFFSET_MINUTES)
+                    PlannedAlarm(
+                        triggerAt = part.start.minusMinutes(offset.toLong()),
+                        shiftDate = date,
+                        shiftStart = part.start.toLocalTime(),
+                        shiftTypeId = type.id,
+                        shiftName = type.name,
+                        offsetMinutes = offset,
+                        soundUri = type.alarmSoundUri,
+                        colorArgb = type.colorArgb,
+                    )
+                }
+            }
+            second + again + type.activeAlarms.map { spec ->
                 val offset = spec.offsetMinutes.coerceIn(-MAX_OFFSET_MINUTES, MAX_OFFSET_MINUTES) // [EASE-18] below zero: after the start
                 PlannedAlarm(
                     triggerAt = date.atTime(start).minusMinutes(offset.toLong()),

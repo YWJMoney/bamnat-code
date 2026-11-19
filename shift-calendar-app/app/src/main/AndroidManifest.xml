@@ -268,6 +268,21 @@
             android:name=".alarm.LeaveTimeReceiver"
             android:exported="false" />
 
+        <!-- 2.0.0 [RVN-24] I10ac-03: '오늘 야간 어땠어요?' after a shift, and the line written on it. -->
+        <receiver
+            android:name=".company.PlazaAfterShiftReceiver"
+            android:exported="false" />
+
+        <!-- 2.0.0 [RVN-22] I10bb-04: '해결됐어요' on the notice of an answer. -->
+        <receiver
+            android:name=".company.InquiryFixedReceiver"
+            android:exported="false" />
+
+        <!-- 2.0.0 [RVIB-21] 둘째 구간 알림 (17:00 다시 시작). -->
+        <receiver
+            android:name=".alarm.GapNoticeReceiver"
+            android:exported="false" />
+
         <!-- 1.38 [LEDH-24] 근무 전 한 줄 예고. -->
         <receiver
             android:name=".money.ShiftPreviewReceiver"
@@ -276,6 +291,16 @@
         <!-- 1.37 [LEDH-09] 퇴근 뒤 가계부 정리 알림. -->
         <receiver
             android:name=".money.DayCloseReceiver"
+            android:exported="false" />
+
+        <!-- 2.0.0 [RVJ-96] 사장님 신고·지급 기한 3일 전 알림. -->
+        <receiver
+            android:name=".boss.BossFilingReceiver"
+            android:exported="false" />
+
+        <!-- 2.0.0 [RVJ-99] 검토 PAYU-15: a followed 리더 link is looked at once before the next work alarm. -->
+        <receiver
+            android:name=".share.RosterFollowAheadReceiver"
             android:exported="false" />
 
         <!-- 1.32 [WTYP-11][WTYP-29] 희망 오프 신청 마감, 코인 12월 31일 시가 기록. -->
@@ -471,6 +496,12 @@
             android:exported="false"
             android:permission="android.permission.BIND_JOB_SERVICE" />
 
+        <!-- 2.0.0 [RVL-71] 데이터 점검 once a week: only the system's job scheduler binds it. -->
+        <service
+            android:name=".diag.DataCheckJob"
+            android:exported="false"
+            android:permission="android.permission.BIND_JOB_SERVICE" />
+
         <!-- [COMM-10] 광장 소식 once a day: only the system's job scheduler binds it. -->
         <service
             android:name=".company.PlazaNewsJob"
@@ -513,6 +544,12 @@
         <!-- 2.0.0 [RVN-13] COMP-51 What a push asked for (문의 답, 광장 답), run as an expedited job so Doze does not hold it back. -->
         <service
             android:name=".company.PushCheckJob"
+            android:exported="false"
+            android:permission="android.permission.BIND_JOB_SERVICE" />
+
+        <!-- 2.0.0 [RVN-22] I10bc-02 회사·광장 read a little before a likely open, on Wi-Fi: only the system's job scheduler binds it. -->
+        <service
+            android:name=".company.ReadAheadJob"
             android:exported="false"
             android:permission="android.permission.BIND_JOB_SERVICE" />
 

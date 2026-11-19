@@ -177,7 +177,8 @@ enum class SettingsPage(
 internal fun SettingsPage.titleFor(style: com.bamnat.core.work.WorkStyle?): String = com.bamnat.core.guide.FeatureRegistry.settingsPage(title, style)
 
 /** A result to show once; [undo] offers to take an import back. */
-data class SettingsMessage(val text: String, val undo: Boolean = false)
+/** [undo] offers 되돌리기, which runs [onUndo] (2.0.0 [RVL-76]) or else takes back the last 불러오기. */
+data class SettingsMessage(val text: String, val undo: Boolean = false, val onUndo: (() -> Unit)? = null)
 
 class SettingsViewModel(private val container: AppContainer) : ViewModel() {
     val settings: StateFlow<AppSettings> = container.settingsRepository.settings
@@ -208,6 +209,18 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
 
     /** [UNDO-01][UNDO-02][UNDO-03] 최근 지운 기록, newest first. */
     val recentlyCleared: StateFlow<List<com.bamnat.app.data.RecordsTrash.Entry>> = container.recordsTrash.entries
+    /** 2.0.0 [RVL-76] 날짜별 되돌리기 went back; 되돌리기 on its message goes back to how it was just before. */
+    fun timeMachineDone(text: String, before: com.bamnat.app.data.TimeMachine.Point?) {
+        _message.value = SettingsMessage(text, undo = before != null, onUndo = before?.let { p ->
+            {
+                container.appScope.launch {
+                    val ok = runCatching { container.timeMachine.restore(p) }.isSuccess
+                    _message.value = SettingsMessage(if (ok) "되돌리기 전 모습으로 돌아왔어요" else "되돌리지 못했어요. 지금 기록은 그대로예요")
+                }
+            }
+        })
+    }
+
     fun restoreCleared(entry: com.bamnat.app.data.RecordsTrash.Entry) {
         container.appScope.launch {
             val ok = container.recordsTrash.restore(entry.id)
@@ -789,7 +802,7 @@ fun SettingsScreen(
         val result = snackbar.showSnackbar(m.text, actionLabel = if (m.undo) "되돌리기" else null,
             duration = if (m.undo) SnackbarDuration.Long else SnackbarDuration.Short)
         vm.consumeMessage(m)
-        if (result == SnackbarResult.ActionPerformed) vm.undoImport()
+        if (result == SnackbarResult.ActionPerformed) m.onUndo?.invoke() ?: vm.undoImport()
     }
 
     val pageContent: @Composable ColumnScope.(SettingsPage) -> Unit = { p ->
@@ -930,7 +943,7 @@ private fun SettingsHub(
         if (query.isNotBlank()) {
             val searchCalendar by vm.activeCalendar.collectAsStateWithLifecycle()
             val entries = rememberSettingsEntries(board = onOpenBoard != null, share = vm.shareOn, style = work.workStyle, calendar = searchCalendar)
-            SearchResults(query, remember(query, entries) { SettingsIndex.search(query, entries) }, vm.shareOn, pick, settings) { f -> vm.update(f) }
+            SearchResults(query, remember(query, entries) { SettingsIndex.found(query, entries) }, vm.shareOn, pick, settings) { f -> vm.update(f) }
             return@Column
         }
         // [UX-05] A new answer is said at the top, not only on the row at the end of the list.
@@ -972,17 +985,8 @@ private fun SettingsHub(
         val gate by vm.gate.collectAsStateWithLifecycle()
         GroupRow(Icons.Outlined.WorkspacePremium, "프로", proSummary(gate), false) { SettingsLinks.go(SettingsGo.PRO) }
         // 1.38 관리 화면: 리더·사장님 일은 개인 화면과 따로 한곳에.
-        val flagRows by context.appContainer.flags.byKey.collectAsStateWithLifecycle()
-        val leaderOn = flagRows[com.bamnat.core.flags.FlagCatalog.TEAM_LEADER]?.on == true
-        val bossOn = flagRows[com.bamnat.core.flags.FlagCatalog.BOSS_PAYROLL]?.on == true
-        // 2.0.0 [RVO-19] 검토 T11a-15·SET-06 (TYPE-20): named for what is on and the work's words ('팀 관리', '사업장 관리', 가게는 '가게
-        // 관리', [RVH-78]), never a shop to someone with none; an investor sees it only once leading a team or a 사업장 made on this phone.
-        val screenStyle = com.bamnat.app.ui.flags.rememberScreenStyle()
-        val leads by remember(context) { context.appContainer.phaseThree.teamList.map { it.isNotEmpty() } }.collectAsStateWithLifecycle(false)
-        val hasPlace by remember(context) { context.appContainer.phaseThree.workplaces.map { it.isNotEmpty() } }.collectAsStateWithLifecycle(false)
-        if ((leaderOn || bossOn) && (screenStyle != com.bamnat.core.work.WorkStyle.INVEST || leads || hasPlace))
-            GroupRow(Icons.Outlined.Groups, com.bamnat.app.ui.work.manageTitle(leaderOn, bossOn, screenStyle),
-                listOfNotNull("팀 근무표".takeIf { leaderOn }, "급여 대장·명세서·직원".takeIf { bossOn }, "할 일").joinToString(" · "), false) { SettingsLinks.go(SettingsGo.MANAGE) }
+        val manage = rememberManageRow()
+        if (manage != null) GroupRow(Icons.Outlined.Groups, manage.title, manage.summary, false) { SettingsLinks.go(SettingsGo.MANAGE) }
         // [INVITE-02] AE 1.26: 친구 초대 is on the 프로 screen; this row says it is there. AG 1.27 [INVITE-09]: the rules as meant.
         // [J133-77] 1.33 (유형별 점검: '친구 초대'가 설정에 두 번): not while the 함께 만들어요 card above says it.
         if (LocalContext.current.appContainer.inviteApi.enabled && !com.bamnat.app.ui.grow.rememberGrowCardShown()) {
@@ -1058,6 +1062,28 @@ private fun SettingsSearchField(query: String, onQuery: (String) -> Unit, focusR
     )
 }
 
+/** 2.0.0 [RVJ-93] 설정 › 더 보기's 관리 row as it is drawn: its name and summary line; null while it is not there. */
+internal data class ManageRow(val title: String, val summary: String)
+
+/**
+ * 1.38 관리 화면, with 2.0.0 [RVO-19] 검토 T11a-15·SET-06 (TYPE-20): named for what is on and the work's words ('팀 관리', '사업장 관리',
+ * 가게는 '가게 관리', [RVH-78]), never a shop to someone with none; an investor sees it only once leading a team or a 사업장 made on
+ * this phone. 2.0.0 [RVJ-93] 검토 BOSS-68: the same row is what 설정 찾기 finds for '관리'·'사장님'·'리더' ([SettingsIndex.entries]).
+ */
+@Composable
+internal fun rememberManageRow(): ManageRow? {
+    val context = LocalContext.current
+    val flagRows by context.appContainer.flags.byKey.collectAsStateWithLifecycle()
+    val leaderOn = flagRows[com.bamnat.core.flags.FlagCatalog.TEAM_LEADER]?.on == true
+    val bossOn = flagRows[com.bamnat.core.flags.FlagCatalog.BOSS_PAYROLL]?.on == true
+    val screenStyle = com.bamnat.app.ui.flags.rememberScreenStyle()
+    val leads by remember(context) { context.appContainer.phaseThree.teamList.map { it.isNotEmpty() } }.collectAsStateWithLifecycle(false)
+    val hasPlace by remember(context) { context.appContainer.phaseThree.workplaces.map { it.isNotEmpty() } }.collectAsStateWithLifecycle(false)
+    if (!(leaderOn || bossOn) || (screenStyle == com.bamnat.core.work.WorkStyle.INVEST && !leads && !hasPlace)) return null
+    return ManageRow(com.bamnat.app.ui.work.manageTitle(leaderOn, bossOn, screenStyle),
+        listOfNotNull("팀 근무표".takeIf { leaderOn }, "급여 대장·명세서·직원".takeIf { bossOn }, "할 일").joinToString(" · "))
+}
+
 /** [UX-04] What the search found: the setting, and where it lives, so the way there is learned too. */
 /** [J133-79] A result's place in the words its page is called by for this kind of work ("급여와 연차" is 가게's "매출과 경비"). */
 internal fun whereFor(where: String, style: com.bamnat.core.work.WorkStyle?): String {
@@ -1078,19 +1104,31 @@ internal fun rememberSettingsEntries(board: Boolean, share: Boolean, style: com.
         com.bamnat.app.ui.guide.rememberFitAdded(calendar))
     val sleepAuto = runCatching { c.flags.on(com.bamnat.core.flags.FlagCatalog.SLEEP_AUTO) }.getOrDefault(false)
     val sleepSound = runCatching { c.flags.on(com.bamnat.core.flags.FlagCatalog.SLEEP_SOUND) }.getOrDefault(false)
-    return remember(board, share, company, style, flowAdded, sleepAuto, sleepSound) {
-        SettingsIndex.entries(board = board, share = share, company = company, style = style, flowAdded = flowAdded, sleepAuto = sleepAuto, sleepSound = sleepSound)
+    val manage = rememberManageRow()?.title
+    val ledger = rememberLedgerOn()
+    // 2.0.0 [RVIB-21] 둘째 구간 알림 is found where the page draws it: with a 근무 종류 of two parts.
+    val gap = rememberHasGap()
+    return remember(board, share, company, style, flowAdded, sleepAuto, sleepSound, manage, ledger, gap) {
+        SettingsIndex.entries(board = board, share = share, company = company, style = style, flowAdded = flowAdded, sleepAuto = sleepAuto,
+            sleepSound = sleepSound, manage = manage, ledger = ledger, gap = gap)
     }
 }
 
 @Composable
-private fun SearchResults(query: String, results: List<SettingEntry>, share: Boolean, onFound: (SettingEntry) -> Unit,
+private fun SearchResults(query: String, found: SearchText.Split<SettingEntry>, share: Boolean, onFound: (SettingEntry) -> Unit,
                           settings: AppSettings? = null, onChange: ((AppSettings) -> AppSettings) -> Unit = {}) {
     val screenStyle = com.bamnat.app.ui.flags.rememberScreenStyle()
-    Text(if (results.isEmpty()) "‘$query’에 맞는 설정이 없어요" else "찾은 설정 ${results.size}개",
-        style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant,
+    val results = found.all
+    // 2.0.0 [RVJ-93] 검토 BOSS-70·U05c-10: what fits is counted; what only looks like it waits under its own small heading, three at most.
+    Text(when {
+        found.isEmpty() -> "‘$query’에 맞는 설정이 없어요"
+        found.sure.isEmpty() -> "‘$query’에 꼭 맞는 설정은 없어요"
+        else -> "찾은 설정 ${found.sure.size}개"
+    }, style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant,
         modifier = Modifier.padding(start = 4.dp, top = 8.dp, bottom = 4.dp).semantics { liveRegion = LiveRegionMode.Polite })
     for (e in results) {
+        if (e == found.near.firstOrNull()) Text("비슷한 설정", style = MaterialTheme.typography.labelMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(start = 4.dp, top = if (found.sure.isEmpty()) 0.dp else 8.dp, bottom = 2.dp))
         // 2.0.0 [RVO-21] 검토 U11a-03·I11aa-02: a found switch is turned here, without going in (the row still opens its page).
         val quick = (e.place as? SettingPlace.Row)?.let { WatchedSettings.switchOf(it.row) }?.takeIf { settings != null }
         val title = com.bamnat.core.work.TypeWords.say(screenStyle, e.title)
@@ -1114,7 +1152,10 @@ private fun SearchResults(query: String, results: List<SettingEntry>, share: Boo
     // [UX-05] The same words find the help answers too: "알람이 안 울려요" is a question more than a setting.
     val hiddenKinds = com.bamnat.app.ui.flags.rememberHiddenKinds()
     val inviteTerms = rememberInviteTerms()
-    val answers = remember(query, share, hiddenKinds, screenStyle, inviteTerms) { HelpFaq.search(query, HelpFaq.topics(share, inviteTerms).withoutKinds(hiddenKinds).forStyle(screenStyle), limit = 3) }
+    val helpExtras = rememberHelpExtras()
+    val answers = remember(query, share, hiddenKinds, screenStyle, inviteTerms, helpExtras) {
+        HelpFaq.search(query, HelpFaq.topics(share, inviteTerms, helpExtras).withoutKinds(hiddenKinds).forStyle(screenStyle), limit = 3)
+    }
     if (answers.isNotEmpty()) {
         Text("도움말의 답 ${answers.size}개", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.padding(start = 4.dp, top = 12.dp, bottom = 4.dp))

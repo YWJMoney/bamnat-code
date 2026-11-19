@@ -71,6 +71,26 @@ class FeatureGuideTest {
         val idea = FeatureSearch.ideaText(" 주식 계좌 ", WorkStyle.HOURLY)
         assertTrue(idea, idea.contains("찾던 기능: 주식 계좌") && idea.contains(WorkStyle.HOURLY.label))
     }
+    /**
+     * 2.0.0 [RVJ-88] 검토 BOSS-68: a 사장님's words find the boss's own tools in 급여 대장, ahead of the 알바's 근로계약서 보관 and 대타,
+     * and an 알바 still finds their own first.
+     */
+    @Test
+    fun aBossFindsTheBossTools() {
+        fun first(q: String, style: WorkStyle) = FeatureSearch.search(q, style, features = FeatureRegistry.everything).firstOrNull()?.id
+        assertEquals("boss.contract", first("근로계약서", WorkStyle.BUSINESS))
+        assertEquals("boss.cover", first("대타", WorkStyle.BUSINESS))
+        assertEquals("boss.filings", first("원천세 신고", WorkStyle.BUSINESS))
+        assertEquals("boss.filings", first("4대보험 신고", WorkStyle.BUSINESS))
+        assertEquals("boss.clock", first("출퇴근 기록", WorkStyle.BUSINESS))
+        assertEquals("hourly.contract", first("근로계약서", WorkStyle.HOURLY))
+        for (id in listOf("boss.contract", "boss.cover", "boss.filings", "boss.clock")) {
+            val f = FeatureRegistry.get(id)!!
+            assertEquals(id, "boss.payroll", f.flag)
+            assertEquals(id, com.bamnat.core.guide.FeatureRoute(Place.STATS, "payroll"), f.route)
+        }
+    }
+
     /** 1.39 8차 PC: '잠' in 설정 찾기 (기능 3개) finds 수면 기록 first for every kind of work, before its parts that start with 잠. */
     @Test
     fun sleepFindsTheSleepLogFirst() {

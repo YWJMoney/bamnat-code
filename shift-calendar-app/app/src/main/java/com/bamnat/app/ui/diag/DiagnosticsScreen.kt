@@ -114,7 +114,12 @@ data class DiagReport(val sections: List<Pair<String, List<String>>>) {
      */
     fun stopFirst(): DiagReport {
         val first = sections.filter { it.first == STOP_SECTION || it.first == STOP_TRAIL_SECTION }
-        return copy(sections = first + (sections - first.toSet()))
+        // 2.0.0 [RVL-84] (HQ-118) Within 앱 멈춤, the newest stop's own record first: a long count of stops never pushes it past the cut.
+        val newestFirst = first.map { (title, lines) ->
+            val at = lines.indexOf(NEWEST_STOP)
+            title to if (title != STOP_SECTION || at <= 0) lines else lines.subList(at, lines.size) + lines.subList(0, at)
+        }
+        return copy(sections = newestFirst + (sections - first.toSet()))
     }
 
     companion object {
@@ -131,6 +136,8 @@ const val SENT_RECORDS = "문의할 때 함께 보내는 기록"
 const val STOP_SECTION = "앱 멈춤"
 /** 1.32.1 [STAB-10] 멈춤 관찰 기록: the phone's screen and the app's memory before a stop ([com.bamnat.app.diag.Trail]). */
 const val STOP_TRAIL_SECTION = "앱 멈춤 관찰"
+/** 2.0.0 [RVL-84] The line before the newest stop's own record in [STOP_SECTION] ([com.bamnat.app.diag.CrashLog.reportLines]). */
+const val NEWEST_STOP = "가장 최근 기록:"
 
 /**
  * 2.0.0 [RVO-16] 검토 SET-02·U11a-02 ('알람 준비'를 네 곳이 서로 다른 기준으로 말해요): one verdict from [alarmChecks] for every place that
@@ -179,8 +186,10 @@ internal fun alarmChecks(container: AppContainer, context: Context): List<AlarmC
         }
         if (audio != null) add(AlarmCheck("알람 소리 크기", audio.getStreamVolume(android.media.AudioManager.STREAM_ALARM) > 0,
             "휴대폰의 알람 소리가 0이라 울려도 들리지 않아요(진동만 와요).", "70%로 올리기", Fix.AlarmVolume))
+        // 2.0.0 [RVIB-29] (PC-189) Not only late: without it Android lets no alarm start its ringing screen and sound from the
+        // background (the loud notice rings instead), and from 안드로이드 17 it is what lets an alarm's sound play from behind.
         if (Build.VERSION.SDK_INT >= 31) add(AlarmCheck("정확한 알람", container.alarmScheduler.canScheduleExact(),
-            "허용하지 않으면 알람이 몇 분 늦을 수 있어요.", "허용하러 가기", Fix.Open(Intent(Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM, pkg))))
+            "허용하지 않으면 알람이 몇 분 늦거나 알람 화면 없이 알림 소리로만 울릴 수 있어요.", "허용하러 가기", Fix.Open(Intent(Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM, pkg))))
         if (Build.VERSION.SDK_INT >= 34) add(AlarmCheck("잠금 화면 알람", Notifications.canUseFullScreen(context),
             "허용하면 화면이 꺼져 있어도 알람 화면이 바로 떠요.", "허용하러 가기", Fix.Open(Intent(Settings.ACTION_MANAGE_APP_USE_FULL_SCREEN_INTENT, pkg))))
         // [ALRM-07] 1.25 AB: the other reasons a ringing screen does not show on the lock screen.
@@ -311,8 +320,13 @@ class DiagnosticsViewModel(private val container: AppContainer) : ViewModel() {
             add("다음 알람: " + (next?.let { "${stamp(it.triggerAtMillis)} · ${it.plan.shiftName.ifBlank { "이 날 알람" }} · " +
                 if (it.exact) "정확" else "근사(정확한 알람 권한 없음)" } ?: "없음"))
             add("다시 울림: " + (snoozeAt.value?.let(::stamp) ?: "없음"))
-            val missed = EventBook.possiblyMissed(events, now)
+            // 2.0.0 [RVIB-28] (PC-188) A ring the app died in and could not ring again is a possible miss too; one rung again is said
+            // with how long it was silent.
+            val cuts = EventBook.cuts(events).filter { it.atMillis >= now - 30L * DAY_MILLIS }
+            val missed = (EventBook.possiblyMissed(events, now) + cuts.filter { it.lost }.map { it.trigger }).distinct().sorted()
             add("놓쳤을 수 있는 알람: " + if (missed.isEmpty()) "없음" else missed.joinToString { stamp(it) })
+            val again = cuts.filter { it.resumed }
+            if (again.isNotEmpty()) add("끊겼다 다시 울린 알람: " + again.joinToString { "${stamp(it.trigger)} (${it.silentSeconds}초 끊김)" })
             // [ALRM-01] M 4-1: how late alarms were over 30 days, and whether the system holds the next one.
             val lates = events.filter { it.name == com.bamnat.core.diag.DiagEvents.ALARM_FIRED && it.atMillis >= now - 30L * DAY_MILLIS }
                 .mapNotNull { EventBook.lateSeconds(it.detail) }
@@ -468,9 +482,10 @@ fun DiagnosticsScreen(vm: DiagnosticsViewModel, onBack: () -> Unit, testing: Boo
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             item {
-                // 2.0.0 [RVI-86] (디자인 품질 4) One line; the copy button says the rest.
+                // 2.0.0 [RVI-86] (디자인 품질 4) One line. [RVL-59] (검토 DATA-25) 복사 waits in ⋮, so the line names the button at the
+                // bottom that takes this report along.
                 Text(
-                    "알람이 안 울리거나 늦을 때 원인을 찾아요 · 위 복사 단추로 문의에 붙여요(메모·금액은 담지 않아요)",
+                    "알람이 안 울리거나 늦을 때 원인을 찾아요 · 맨 아래 ‘점검 내용과 함께 문의하기’로 이 내용이 함께 가요(메모·금액은 담지 않아요)",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -578,22 +593,9 @@ fun DiagnosticsScreen(vm: DiagnosticsViewModel, onBack: () -> Unit, testing: Boo
                     }
                 }
             }
-            // [QA-07] 330: the person checks their own data, as the release list does before a phone move.
-            item {
-                val lines by vm.dataCheck.collectAsStateWithLifecycle()
-                val checking by vm.checking.collectAsStateWithLifecycle()
-                SectionCard(title = "데이터 점검") {
-                    Text("근무·기록 데이터가 온전한지, 백업이 제대로 만들어지는지 휴대폰 안에서 살펴봐요. 아무것도 바꾸거나 보내지 않아요.",
-                        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    lines?.forEach { line ->
-                        Text((if (line.ok) "✓ " else "! ") + line.text, style = MaterialTheme.typography.bodySmall,
-                            color = if (line.ok) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.error)
-                    }
-                    OutlinedButton(onClick = { vm.runDataCheck() }, enabled = !checking) {
-                        Text(if (checking) "점검하는 중…" else if (lines == null) "데이터 점검" else "다시 점검")
-                    }
-                }
-            }
+            // [QA-07] 330: the person checks their own data, as the release list does before a phone move. 2.0.0 [RVL-70] The same card is
+            // 설정 › 데이터 › 데이터 점검 ([DataCheckScreen]).
+            item { DataCheckCard(vm) }
             // [UX-05] When the checks don't solve it, ask with this phone's alarm check attached.
             item {
                 SectionCard(title = "그래도 안 울리면") {
@@ -699,7 +701,8 @@ internal fun AlarmWeekCard(w: com.bamnat.core.diag.AlarmWeek, events: List<DiagE
         }
         if (w.missed.isNotEmpty()) OutlinedButton(onClick = {
             InquiryLinks.ask(InquiryStart(about = "알람", kind = InquiryKind.BUG, withCheck = true))
-        }) { Text("놓친 알람 문의로 보내기") }
+        // 2.0.0 [RVN-22] 검토 PC-27: it opens with the check ticked, so it says the check goes with it.
+        }) { Text("놓친 알람을 점검 내용과 함께 문의") }
     }
 }
 

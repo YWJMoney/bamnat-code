@@ -31,7 +31,7 @@ object FactText {
             FactKey.HOLIDAY_PAY -> when (v) { HolidayPayMode.FULL -> "하루치 + 가산"; HolidayPayMode.PREMIUM_ONLY -> "가산분만"; else -> SET }
             FactKey.FIVE_OR_MORE -> if (v == true) "5명 이상" else "4명 이하"
             FactKey.HIRE_DATE -> v.toString()
-            FactKey.TAX_MODE -> when (v) { TaxMode.INSURANCE_4 -> "4대보험"; TaxMode.WITHHOLDING_3_3 -> "3.3%"; TaxMode.NONE -> "안 떼요"; else -> SET }
+            FactKey.TAX_MODE -> when (v) { TaxMode.INSURANCE_4 -> "4대보험"; TaxMode.WITHHOLDING_3_3 -> "3.3%"; TaxMode.NONE -> "안 떼요"; TaxMode.DAILY_WORKER -> "일용근로"; else -> SET }
             FactKey.TAX_FAMILY -> ((v as? Pair<*, *>)?.first ?: v).let { "${it}명" }
             FactKey.SLEEP_TARGET -> (v as? Int)?.let { hours(it) } ?: SET
             FactKey.COMMUTE -> "${v}분"

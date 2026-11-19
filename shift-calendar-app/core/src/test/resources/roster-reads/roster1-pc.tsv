@@ -1,4 +1,9 @@
 # roster1.jpg as ML Kit read it on the emulator (17310ee3), five reads; "# read" starts each
+# 2.0.0 [RVL-68] What the photo says (RosterReadsY9Test), for DeviceReadsTest: D 데이·N 나이트·O 오프
+truth	김간호	D,D,N,N,O,O,D,D,N,N,O,O,D,D,N,N,O,O,D,D,N,N,O,O,D,D,N,N,O,O,D
+truth	홍길동	N,N,O,O,D,D,N,N,O,O,D,D,N,N,O,O,D,D,N,N,O,O,D,D,N,N,O,O,D,D,D
+truth	이수진	O,O,D,D,N,N,O,O,D,D,N,N,O,O,D,D,N,N,O,O,D,D,N,N,O,O,D,D,D,N,N
+truth	박민수	D,D,N,N,O,O,D,D,N,N,O,O,D,D,N,N,O,O,D,D,N,N,O,O,D,D,D,N,N,O,O
 # read 0 of 5
 word	42	27	134	58	0.0	2026년	2026년
 word	152	27	209	58	0.0	12월	12월

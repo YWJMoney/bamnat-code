@@ -75,6 +75,33 @@ class RemoteSignTest(unittest.TestCase):
         self.assertEqual(1, code)
         self.assertIn(".sig2 맞지 않음 (파일이 서명 뒤 바뀌었거나 RemoteKeys에 없는 열쇠)", out)
 
+    def test_a_pinned_key_counts_only_for_the_file_it_is_pinned_to(self):
+        """2.0.0 [RVL-57] (검토 DATA-14) A key no longer held (RemoteKeys.PINNED) vouches for those exact bytes and nothing new."""
+        import hashlib
+        old = self.dir / "old.pem"
+        with contextlib.redirect_stdout(io.StringIO()):
+            rs.cmd_keygen(argparse.Namespace(out=str(old), encrypt=False))
+        old_key = rs.load_private(old)
+        old_pub = base64.b64encode(rs.raw_public(old_key.public_key())).decode()
+        sha = hashlib.sha256(self.file.read_bytes()).hexdigest()
+        text = rs.KEYS_KT.read_text(encoding="utf-8").replace("\n}\n", f'\n    val PINNED = mapOf(\n        "{old_pub}" to setOf(\n            "{sha}", // rates.json\n        ),\n    )\n}}\n')
+        rs.KEYS_KT.write_text(text, encoding="utf-8")
+        self.assertEqual({old_pub: {sha}}, rs.pinned_keys())
+        self.file.with_name("rates.json.sig2").write_text(base64.b64encode(old_key.sign(self.file.read_bytes())).decode() + "\n", encoding="ascii")
+        code, out = self.run_cmd(rs.cmd_check, files=[str(self.file)], need_sig2=True)
+        self.assertEqual(0, code, out)
+        self.assertIn("맞음(옛 열쇠, 이 내용에만)", out)
+        # The same old key on new bytes: refused.
+        self.file.write_text(self.file.read_text(encoding="utf-8").replace('"version": 1', '"version": 2'), encoding="utf-8")
+        self.file.with_name("rates.json.sig2").write_text(base64.b64encode(old_key.sign(self.file.read_bytes())).decode() + "\n", encoding="ascii")
+        code, out = self.run_cmd(rs.cmd_check, files=[str(self.file)], need_sig2=True)
+        self.assertEqual(1, code, out)
+        # Signed again with the held key: taken, and the pin is spent.
+        self.run_cmd(rs.cmd_sign, key=str(self.pem), files=[str(self.file)])
+        code, out = self.run_cmd(rs.cmd_check, files=[], need_sig2=True)
+        self.assertEqual(0, code, out)
+        self.assertIn("can be removed", out)
+
     def test_a_file_outside_the_repository_is_named_by_its_path(self):
         code, out = self.run_cmd(rs.cmd_sign, key=str(self.pem), files=[str(self.file)])
         self.assertEqual(0, code, out)

@@ -127,17 +127,20 @@ class MoneyRepository(
         saves++
         val entry = settled(line)
         if (entry.id == 0L) return entry.copy(id = dao.insertEntry(entry.toEntity(clock())))
-        val before = dao.entry(entry.id)?.toModel()
-        if (before != null && entry.merchant.isNotBlank() && entry.kind == MoneyKind.EXPENSE && before.category != entry.category) {
-            dao.upsertRule(CategoryRuleEntity(entry.merchant, entry.category))
+        // 2.0.0 [RVL-66] (검토 DATA-18) The learned place and the line are one write: a stop between them kept the rule only.
+        return db.withTransaction {
+            val before = dao.entry(entry.id)?.toModel()
+            if (before != null && entry.merchant.isNotBlank() && entry.kind == MoneyKind.EXPENSE && before.category != entry.category) {
+                dao.upsertRule(CategoryRuleEntity(entry.merchant, entry.category))
+            }
+            // 2.0.0 [RVK-39] (검토 MONEY-42) A bank 출금 the app read as spending, told back to be the user's own money moving: that receiver
+            // stays a move from now on (a transfer category in the rule keeps [PaymentParser.withdrawSpending] from calling it spending).
+            if (before != null && entry.merchant.isNotBlank() && entry.kind == MoneyKind.TRANSFER && before.kind == MoneyKind.EXPENSE &&
+                com.bamnat.core.money.LedgerSmarts.fromWithdraw(before)) {
+                dao.upsertRule(CategoryRuleEntity(entry.merchant, entry.category))
+            }
+            entry.also { dao.restoreEntry(it.toEntity(clock())) }
         }
-        // 2.0.0 [RVK-39] (검토 MONEY-42) A bank 출금 the app read as spending, told back to be the user's own money moving: that receiver
-        // stays a move from now on (a transfer category in the rule keeps [PaymentParser.withdrawSpending] from calling it spending).
-        if (before != null && entry.merchant.isNotBlank() && entry.kind == MoneyKind.TRANSFER && before.kind == MoneyKind.EXPENSE &&
-            com.bamnat.core.money.LedgerSmarts.fromWithdraw(before)) {
-            dao.upsertRule(CategoryRuleEntity(entry.merchant, entry.category))
-        }
-        return entry.also { dao.restoreEntry(it.toEntity(clock())) }
     }
 
     /**
@@ -261,6 +264,7 @@ class MoneyRepository(
 
     /** [LEDG-14] Saves the user's categories for [kind] in their order; null names are dropped. */
     suspend fun saveCategories(kind: MoneyKind, list: List<CategoryEdit>) = db.withTransaction {
+        // 2.0.0 [RVL-66] (검토 DATA-18) Cleared and written as one: a stop between the two left the user with no categories.
         // 2.0.0 [RVK-60] (검토 I06ab-01) Each keeps its fixed id: one given none takes the id its name had here, else its name's, else
         // (a name taken by another id) a new one. Lines under an id follow its name, so a rename by id never leaves a line behind.
         val had = dao.allCategories().filter { it.kind == kind.name }
@@ -427,14 +431,15 @@ class MoneyRepository(
         if (r.id == 0L) r.copy(id = owedDao.insert(r.toEntity(clock()))) else r.also { owedDao.restore(it.toEntity(clock())) }
 
     /** [RECV-01] Removes a receivable with its payments and the income lines they wrote. */
-    suspend fun delete(r: Receivable) {
+    suspend fun delete(r: Receivable) = db.withTransaction {
+        // 2.0.0 [RVL-66] (검토 DATA-18) The lines, the payments and the receivable go together, or none of them.
         owedDao.paymentsOf(r.id).forEach { p -> p.entryId?.let { dao.deleteEntry(it) } }
         owedDao.deletePaymentsOf(r.id)
         owedDao.delete(r.id)
     }
 
     /** [RECV-01] Puts a receivable back as it was, payments and income lines included (undo). */
-    suspend fun restore(r: Receivable, lines: List<MoneyEntry>) {
+    suspend fun restore(r: Receivable, lines: List<MoneyEntry>) = db.withTransaction {
         owedDao.restore(r.toEntity(clock()))
         lines.forEach { dao.restoreEntry(it.toEntity(clock())) }
         r.payments.forEach { owedDao.restorePayment(it.copy(receivableId = r.id).toEntity()) }
@@ -451,13 +456,17 @@ class MoneyRepository(
         val paid = Receivables.clampPayment(r, amount)
         if (paid <= 0) return null
         // 2.0.0 [RVK-46] Paying 줄 돈 is spending under what it was for in this calendar's kind of work.
-        val entry = Receivables.incomeEntry(r, paid, date, if (r.toPay) currentStyle() else null)?.let { save(it) }
-        val p = ReceivablePayment(receivableId = r.id, date = date, amount = paid, entryId = entry?.id)
-        return p.copy(id = owedDao.insertPayment(p.toEntity()))
+        // 2.0.0 [RVL-66] (검토 DATA-18) The income line and its payment are one write: a stop between them left a line nothing pointed at.
+        val style = if (r.toPay) currentStyle() else null
+        return db.withTransaction {
+            val entry = Receivables.incomeEntry(r, paid, date, style)?.let { save(it) }
+            val p = ReceivablePayment(receivableId = r.id, date = date, amount = paid, entryId = entry?.id)
+            p.copy(id = owedDao.insertPayment(p.toEntity()))
+        }
     }
 
     /** [RECV-01] Takes a payment back, with its income line. */
-    suspend fun delete(p: ReceivablePayment) {
+    suspend fun delete(p: ReceivablePayment) = db.withTransaction {
         p.entryId?.let { dao.deleteEntry(it) }
         owedDao.deletePayment(p.id)
     }
@@ -502,6 +511,14 @@ class MoneyRepository(
 
     /** Lines from the last month, enough to find a duplicate or the payment a cancellation undoes. */
     suspend fun recent(date: LocalDate): List<MoneyEntry> = dao.entriesFrom(date.minusDays(31).toEpochDay()).map { it.toModel() }
+
+    /**
+     * 2.0.0 [RVL-66] (검토 DATA-18) The lines a card bill paid around [date] can hold: the last [BILL_LOOKBACK_DAYS] (a bill is paid
+     * at most a month after its period, which is a month long, and the bill checked is the one due within a month of [date]) and
+     * every 할부 line (up to 60 months back). A 카드값 withdrawal used to read the whole ledger.
+     */
+    suspend fun billLines(date: LocalDate): List<MoneyEntry> =
+        dao.billLines(date.minusDays(BILL_LOOKBACK_DAYS).toEpochDay()).map { it.toModel() }
 
     enum class Outcome { SAVED, DUPLICATE, KEPT, IGNORED }
 
@@ -598,7 +615,8 @@ class MoneyRepository(
             // 1.32 [LEDX-20] A top-up goes onto the pay balance the user keeps as an account (페이·충전).
             ?.let { e -> if (parsed.charge) e.copy(toAccountId = payAccount(parsed.merchant, accounts)) else e }
             // 1.32 [LEDX-14] A 카드값 withdrawal says how it compares with what the card's lines add up to.
-            ?.let { e -> LedgerChecks.billCheck(e, accounts, allEntries())?.let { b ->
+            // 2.0.0 [RVL-66] (검토 DATA-18) Only a move with a card that has a bill reads lines, and only those a bill can hold.
+            ?.let { e -> (if (e.kind == MoneyKind.TRANSFER && accounts.any { it.hasBill && !it.hidden }) LedgerChecks.billCheck(e, accounts, billLines(e.date)) else null)?.let { b ->
                 e.copy(toAccountId = e.toAccountId ?: b.card.id, category = "카드값",
                     note = listOf(e.note, LedgerChecks.billNote(b)).filter { it.isNotBlank() }.joinToString(" · "))
             } ?: e }
@@ -619,7 +637,8 @@ class MoneyRepository(
         // [RVK-12] (MONEY-60) Not when both name someone else; [RVK-13] and a join can be taken apart again from '자동으로 정리한 것'.
         com.bamnat.core.money.LedgerSmarts.ownTransfer(entry, recent, tuned.myNames)?.let { other ->
             val joined = com.bamnat.core.money.LedgerSmarts.joinTransfer(other, entry)
-            val saved = if (joined.id == 0L) { dao.deleteEntry(other.id); save(joined) } else save(joined)
+            // 2.0.0 [RVL-66] (검토 DATA-18) The two lines become one in one write: a stop between them lost both.
+            val saved = if (joined.id == 0L) db.withTransaction { dao.deleteEntry(other.id); save(joined) } else save(joined)
             joinedKept(saved, other, entry)
             return Outcome.SAVED
         }
@@ -707,6 +726,8 @@ class MoneyRepository(
     suspend fun purgeCaptures(now: Long = Today.millis()) = kept.purge(now - KEEP_MILLIS)
 
     companion object {
+        /** 2.0.0 [RVL-66] How far back [billLines] reads besides 할부 lines: four months. */
+        const val BILL_LOOKBACK_DAYS = 124L
         const val KEEP_MILLIS = 30L * 24 * 60 * 60 * 1000
         const val LEARN_EVERY = 20
 

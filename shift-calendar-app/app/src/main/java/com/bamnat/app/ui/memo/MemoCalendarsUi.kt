@@ -1,6 +1,7 @@
 package com.bamnat.app.ui.memo
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -115,7 +116,8 @@ internal fun MemoCalendarsDialog(
         text = {
             Column(Modifier.verticalScroll(rememberScrollState())) {
                 Row(
-                    Modifier.fillMaxWidth().heightIn(min = 56.dp).clickable(role = Role.Switch) { all = !all },
+                    // 2.0.0 [RVJ-87] 검토 BOSS-66 같은 모양: one focus that says 켜짐·꺼짐.
+                    Modifier.fillMaxWidth().heightIn(min = 56.dp).toggleable(value = all, role = Role.Switch, onValueChange = { all = it }),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Column(Modifier.weight(1f)) {
@@ -123,7 +125,7 @@ internal fun MemoCalendarsDialog(
                         Text("나중에 만드는 달력에도 보이는 공용 메모예요", style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
-                    Switch(checked = all, onCheckedChange = { all = it })
+                    Switch(checked = all, onCheckedChange = null)
                 }
                 HorizontalDivider()
                 calendars.forEach { cal ->

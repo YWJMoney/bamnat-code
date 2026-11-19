@@ -108,7 +108,7 @@ fun AskArea(
         if (current.isNew && !folded) c.asks.set(calendar, AskScheduler.shown(c.asks.of(calendar), current, today))
     }
     val scope = rememberCoroutineScope()
-    val question = Questions.of(current.missing.key, hasPay = pay != null)
+    val question = Questions.of(current.missing.key, hasPay = pay != null, daily = pay?.wageType == com.bamnat.core.pay.WageType.DAILY)
     var opened by rememberSaveable(current.missing.key) { mutableStateOf(false) }
     if (compact && !opened) {
         AskLine(

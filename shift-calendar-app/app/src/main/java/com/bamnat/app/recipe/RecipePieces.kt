@@ -40,6 +40,9 @@ import java.time.LocalTime
  * one away or turns a mission off; amounts come only from what the receiver filled in; categories and templates are added,
  * never removed. [restore] puts a value back only while it is still what the recipe set, so a change the user made since stays.
  */
+/** 2.0.0 [RVL-80] 회사 설정 as a 레시피 조각 carries it: the roster's codes (처리방침 3.14 1항·1-2항) taken out. */
+internal fun recipeSetup(export: String): String = org.json.JSONObject(export).apply { remove("dutyCodes") }.toString()
+
 class RecipePieces(private val c: AppContainer) {
 
     /** One line of what a piece changes; [skipped] lines say what it could not use here. */
@@ -142,7 +145,8 @@ class RecipePieces(private val c: AppContainer) {
                 "journal" to (c.memoTemplates.items.value.firstOrNull { it.title == JOURNAL_TITLE }?.check ?: emptyList<String>()))
         }
         PieceKind.COMPANY -> if (cal != PersonalCalendar.MAIN) null else
-            runCatching { mapOf("setup" to c.companyShare.export("", withAmounts = false)) }.getOrNull()
+            // 2.0.0 [RVL-80] The roster's codes go only with 회사 설정 보내기 and a 근무표 링크 (처리방침 3.14 1항·1-2항), never in a 레시피.
+            runCatching { mapOf("setup" to recipeSetup(c.companyShare.export("", withAmounts = false))) }.getOrNull()
         // [RCX-11] A bundle is made of codes on 만들기, not taken from the phone.
         PieceKind.BUNDLE -> null
         // 1.37 [LEDH-18] 가계부 틀: names and plans only, never a line, a balance or an account.
@@ -1642,7 +1646,10 @@ class RecipePieces(private val c: AppContainer) {
 
     private fun cellLabel(c: String?) = when (c) { "fill" -> "진하게"; "dot" -> "칠하지 않기"; "tint" -> "옅게"; else -> "그대로" }
 
-    private fun taxLabel(t: String) = when (t) { "WITHHOLDING_3_3" -> "3.3% 떼기"; "INSURANCE_4" -> "4대보험"; else -> "떼지 않음" }
+    // 2.0.0 [RVJ-80] A 일당 setup's 일용근로 (the 'before' side of a 작품); a 작품 itself picks only the three.
+    private fun taxLabel(t: String) = when (t) {
+        "WITHHOLDING_3_3" -> "3.3% 떼기"; "INSURANCE_4" -> "4대보험"; "DAILY_WORKER" -> com.bamnat.app.tax.TaxWay.DAILY_CHOICE; else -> "떼지 않음"
+    }
 
     private fun dayShort(d: String) = "월화수목금토일"[DayOfWeek.valueOf(d).value - 1].toString()
 

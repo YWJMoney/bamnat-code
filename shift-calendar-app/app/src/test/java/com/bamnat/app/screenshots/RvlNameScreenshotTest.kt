@@ -91,6 +91,9 @@ class RvlNameScreenshotTest : ScreenshotBase() {
     @Test fun namesFoldLight() = shoot("rvl46_names_fold_light_100", FOLDED, names())
     @Test fun namesFoldDarkHuge() = shoot("rvl46_names_fold_dark_200", FOLDED_NIGHT, fontScale = 2f, names())
     @Test fun namesOpenLight() = shoot("rvl46_names_open_light_100", UNFOLDED, names())
+    // 2.0.0 [RVL-46] (HQ-149 ②) At 150% in a fold's cover width 지급 and 공제 go one over the other; side by side on the open fold.
+    @Test fun namesFoldLightBig() = shoot("rvl46_names_fold_light_150", FOLDED, fontScale = 1.5f, names())
+    @Test fun namesOpenDarkBig() = shoot("rvl46_names_open_dark_150", UNFOLDED_NIGHT, fontScale = 1.5f, names())
 
     private fun asking(backUp: Boolean = false): Screen.() -> Unit = check(true, emptySet()) {
         reveal("야간수당인가요?")
@@ -189,6 +192,7 @@ class RvlNameScreenshotTest : ScreenshotBase() {
     companion object {
         const val FOLDED = "w369dp-h905dp-port-420dpi"
         const val FOLDED_NIGHT = "w369dp-h905dp-port-night-420dpi"
+        const val UNFOLDED_NIGHT = "w707dp-h823dp-port-night-420dpi"
         const val UNFOLDED = "w707dp-h823dp-port-420dpi"
     }
 }

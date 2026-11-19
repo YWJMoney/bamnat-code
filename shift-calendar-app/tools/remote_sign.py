@@ -23,10 +23,15 @@ Usage (from shift-calendar-app/):
   python3 tools/remote_sign.py sign --key <pem> [files]   # default: every remote/v1/*.json -> <name>.json.sig2
   python3 tools/remote_sign.py check [--need-sig2] [files] # exit 1 when a signature is missing or wrong
 
+2.0.0 [RVL-57] (검토 DATA-14): RemoteKeys.TRUSTED is only the keys the project holds (2026-11-05 and its spare); the
+2026-10-26 key that still signs six .sig2 is in RemoteKeys.PINNED, trusted only for those exact bytes. 'check' reads both
+and says "맞음(옛 열쇠, 이 내용에만)" for a pinned one; a file that changes must be signed again with a held key.
+
 Needs the 'cryptography' package (pip install cryptography).
 """
 import argparse
 import base64
+import hashlib
 import json
 import os
 import pathlib
@@ -97,13 +102,43 @@ def trusted_keys():
     return re.findall(r'"([A-Za-z0-9+/=]{40,})"', block)
 
 
+# 2.0.0 [RVL-57] The keys apps up to 1.26 trust for .sig (the 2022-10-22 key and spare, lost with the old project). Only to
+# say whether those apps still get a file; RemoteKeys no longer trusts them.
+OLD_APP_KEYS = ("6e6J4SWfNWAY8142S4+UDOjBJz+4/njmfjxATwAl55I=", "fzoA27EsvTUDa4EA/xtL/z4039vz1TSwmTr48lksmXQ=")
+
+
+def pinned_keys():
+    """2.0.0 [RVL-57] (검토 DATA-14) RemoteKeys.PINNED: {public key: set of SHA-256 hex} — a key no longer held, trusted only
+    for the exact files it signed."""
+    text = KEYS_KT.read_text(encoding="utf-8")
+    if "val PINNED" not in text:
+        return {}
+    block = text[text.index("val PINNED"):]
+    block = block[: block.index("\n    )")]
+    out, key = {}, None
+    for line in block.splitlines():
+        line = re.sub(r'"[^"]*"|//.*', lambda m: m.group(0) if m.group(0).startswith('"') else "", line)
+        k = re.search(r'"([A-Za-z0-9+/=]{40,})"\s*to', line)
+        if k:
+            key = k.group(1)
+            out[key] = set()
+            continue
+        for h in re.findall(r'"([0-9a-f]{64})"', line):
+            if key:
+                out[key].add(h)
+    return out
+
+
 # [RVR-09] What a signature file says about a file: 맞음, 없음 (no such file), 깨짐 (not a base64 Ed25519 signature) or
 # 맞지 않음 (a signature, but no trusted key signed these bytes: the file changed after it was signed, or the key is not in
 # RemoteKeys.TRUSTED).
 OK, MISSING, BROKEN, MISMATCH = "맞음", "없음", "깨짐", "맞지 않음"
 
 
-def verdict(sig_path, data, keys):
+PINNED_OK = "맞음(옛 열쇠, 이 내용에만)"
+
+
+def verdict(sig_path, data, keys, pinned=None):
     if not sig_path.exists():
         return MISSING
     try:
@@ -118,13 +153,23 @@ def verdict(sig_path, data, keys):
             return OK
         except InvalidSignature:
             pass
+    # 2.0.0 [RVL-57] A pinned key counts only for the bytes it is pinned to.
+    sha = hashlib.sha256(data).hexdigest()
+    for k, shas in (pinned or []):
+        if sha not in shas:
+            continue
+        try:
+            k.verify(sig, data)
+            return PINNED_OK
+        except InvalidSignature:
+            pass
     return MISMATCH
 
 
-def verifies(sig_path, data, keys):
+def verifies(sig_path, data, keys, pinned=None):
     """True, False or None (no file), as before 2.0.0."""
-    v = verdict(sig_path, data, keys)
-    return None if v == MISSING else v == OK
+    v = verdict(sig_path, data, keys, pinned)
+    return None if v == MISSING else v in (OK, PINNED_OK)
 
 
 def files(args):
@@ -181,19 +226,31 @@ def cmd_sign(a):
 
 def cmd_check(a):
     keys = [Ed25519PublicKey.from_public_bytes(base64.b64decode(k)) for k in trusted_keys()]
+    pinned = [(Ed25519PublicKey.from_public_bytes(base64.b64decode(k)), v) for k, v in pinned_keys().items()]
+    # 2.0.0 [RVL-57] The 2022-10 pair is out of RemoteKeys, but apps up to 1.26 still check .sig with it: whether they get a file.
+    old_app = [Ed25519PublicKey.from_public_bytes(base64.b64decode(k)) for k in OLD_APP_KEYS]
+    good = (OK, PINNED_OK)
     bad = 0
+    used = set()
     for p in files(a.files):
         check_shape(p)
         data = p.read_bytes()
-        new = verdict(p.with_name(p.name + ".sig2"), data, keys)
-        old = verdict(p.with_name(p.name + ".sig"), data, keys)
-        ok = new == OK or (new == MISSING and old == OK)
-        if a.need_sig2 and new != OK:
+        new = verdict(p.with_name(p.name + ".sig2"), data, keys, pinned)
+        old = verdict(p.with_name(p.name + ".sig"), data, keys, pinned)
+        for_old_apps = verdict(p.with_name(p.name + ".sig"), data, old_app)
+        if PINNED_OK in (new, old):
+            used.add(hashlib.sha256(data).hexdigest())
+        ok = new in good or (new == MISSING and old in good)
+        if a.need_sig2 and new not in good:
             ok = False
-        later = "1.26 이하 앱도 받음" if old == OK else "1.26 이하 앱은 앱 안 값"
+        later = "1.26 이하 앱도 받음" if for_old_apps == OK else "1.26 이하 앱은 앱 안 값"
         why = {MISMATCH: " (파일이 서명 뒤 바뀌었거나 RemoteKeys에 없는 열쇠)", BROKEN: " (서명 모양이 아님)"}.get(new, "")
-        print(("ok   " if ok else "BAD  ") + rel(p) + f"  .sig2 {new}{why}" + f"  · old .sig {old} ({later})")
+        print(("ok   " if ok else "BAD  ") + rel(p) + f"  .sig2 {new}{why}" + f"  · old .sig {for_old_apps} ({later})")
         bad += 0 if ok else 1
+    # 2.0.0 [RVL-57] A pin whose file changed (and was signed again with a held key) is spent: say so, it can go from RemoteKeys.
+    spent = sorted(h for _, v in pinned for h in v if h not in used)
+    if spent and not a.files:
+        print("note: RemoteKeys.PINNED holds " + ", ".join(h[:12] for h in spent) + " that no file uses now (can be removed)")
     if bad:
         fail(f"{bad} file(s) without a matching signature: run 'sign' with the release key (see each line for why).")
 

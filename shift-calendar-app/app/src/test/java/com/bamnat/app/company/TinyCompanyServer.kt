@@ -40,6 +40,8 @@ class TinyCompanyServer(private val companies: List<String>, @Volatile var laten
     val seen = CopyOnWriteArrayList<Seen>()
     /** The whole list's ETag; another value makes it a new list. */
     @Volatile var etag = "\"list1\""
+    /** 2.0.0 [RVN-22] When set, a company's page carries this ETag and answers 304 to it. */
+    @Volatile var pageTag: String? = null
     /** The bookmark the next answer carries. */
     private val bookmarks = AtomicInteger()
 
@@ -156,9 +158,10 @@ class TinyCompanyServer(private val companies: List<String>, @Volatile var laten
         if (company != null && at.endsWith("/room")) return Triple(if (member) 200 else 403, if (member) room(company).toString() else "{\"error\":\"member\"}", emptyMap())
         if (company != null && at.endsWith("/posts")) return Triple(200, talk().toString(), emptyMap())
         if (company != null) {
+            pageTag?.let { t -> if (headers["if-none-match"] == t) return Triple(304, "", mapOf("ETag" to t)) }
             val p = page(company, member)
             if (!old && member && path.contains("with=room,talk")) p.put("room", room(company)).put("talk", talk())
-            return Triple(200, p.toString(), emptyMap())
+            return Triple(200, p.toString(), pageTag?.let { mapOf("ETag" to it) }.orEmpty())
         }
         val list = when {
             path.startsWith("/api/companies/top") -> companies.withIndex().take(60)

@@ -348,9 +348,13 @@ abstract class ScreenshotBase {
             var found: SemanticsNode? = null
             scenario.onActivity { activity ->
                 val root = rootOf(topWindow(activity)) ?: return@onActivity
+                // A no-break space (that keeps '·' with the words before it) reads as a space, as a person sees it: either way
+                // on both sides.
+                val said = text.replace('\u00A0', ' ')
                 val shown = root.semanticsOwner.getAllSemanticsNodes(mergingEnabled = true).filter { n ->
                     val b = n.boundsInWindow
-                    b.width > 1f && b.height > 1f && n.words().any { w -> if (exact) w == text else if (prefix) w.startsWith(text) else text in w }
+                    b.width > 1f && b.height > 1f && n.words().any { raw -> val w = raw.replace('\u00A0', ' ')
+                        if (exact) w == said else if (prefix) w.startsWith(said) else said in w }
                 }
                 found = shown.firstOrNull { it.config.contains(SemanticsActions.OnClick) } ?: shown.firstOrNull()
             }
@@ -530,6 +534,16 @@ abstract class ScreenshotBase {
 
         /** Whether [text] is on screen now, without scrolling or waiting. */
         fun shows(text: String, exact: Boolean = false): Boolean = find(text, exact, prefix = false) != null
+
+        /**
+         * 2.0.0 [RVN-22] HQ-115 Whether what shows [text] is whole where it is: its part on screen (cut by what holds it: a row that slides,
+         * the window) is as big as it is. False when it is not shown.
+         */
+        fun whole(text: String, exact: Boolean = false): Boolean {
+            val n = find(text, exact, prefix = false) ?: return false
+            val b = n.boundsInWindow
+            return b.width >= n.size.width - 1f && b.height >= n.size.height - 1f
+        }
 
         /** [RVJ-40] A button with [text] on screen that can be pressed (false when it is there but greyed out, or not there). */
         fun enabled(text: String): Boolean =
@@ -1497,6 +1511,22 @@ abstract class ScreenshotBase {
     )
 
     /** After the 정식 출시 switch, with Play's plans, as a phone without 프로 sees it. */
+    /**
+     * 2.0.0 [RVJ-81][RVJ-82][RVJ-83] 처리방침 3.14 in force by the server's clock (posted a month and a half ago, every line past): the
+     * rows that wait for it ([com.bamnat.core.flags.FlagCatalog.PAY_BIRTH_YEAR], SLIP_COUNT, TEAM_APP_COUNT) are on.
+     */
+    internal fun policy314() {
+        val now = Today.instant()
+        val day = Today.date()
+        // The server's clock on 3.14's 30-day day (the shots' own day is 10-14): its 7-day rows ([PolicyConsent.REVISION14_EFFECTIVE]) are on too.
+        val after = com.bamnat.core.ops.PolicyConsent.REVISION14_EFFECTIVE_30.atTime(10, 30).atZone(com.bamnat.core.flags.KST).toInstant()
+        app.container.remoteConfig.save(com.bamnat.app.tier.LaunchConfig(
+            // 3.11 (Phase 3 and 사장님 급여 대장, boss.payroll) has long been in force too, as on a phone after 정식 출시.
+            policy = listOf(com.bamnat.core.flags.PolicyVersion("3.11", day.minusDays(70), day.minusDays(60)),
+                com.bamnat.core.flags.PolicyVersion("3.14", day.minusDays(45), day.minusDays(15))), serverTime = maxOf(now, after), fetchedAt = now))
+        repeat(200) { if (app.container.flags.on(com.bamnat.core.flags.FlagCatalog.TEAM_APP_COUNT) && app.container.flags.on(com.bamnat.core.flags.FlagCatalog.PAY_BIRTH_YEAR)) return; Thread.sleep(20) }
+    }
+
     internal fun launched(config: com.bamnat.app.tier.LaunchConfig = com.bamnat.app.tier.LaunchConfig(billingLive = true),
                          then: Screen.() -> Unit = {}): Screen.() -> Unit = {
         val c = app.container
@@ -1830,6 +1860,9 @@ internal class FakeShareApi : com.bamnat.app.share.ShareApi {
     override suspend fun update(state: com.bamnat.app.share.ShareLinkState, payload: org.json.JSONObject) = state
     override suspend fun delete(state: com.bamnat.app.share.ShareLinkState) = Unit
     override suspend fun read(id: String) = links[id] ?: throw com.bamnat.app.share.ShareLinkException("not_found")
+    /** 2.0.0 [RVJ-83] SPREAD-38: how many of the leader's links the server says are read by the app (null: under 3). */
+    var apps: Int? = null
+    override suspend fun appCount(links: List<Pair<String, String>>) = com.bamnat.app.share.AppCount(apps, 3)
 }
 
 /** [COMM-04] The company rules server for screenshots: made-up companies, answers at once. */
@@ -1918,7 +1951,14 @@ internal class FakeCompanyApi : com.bamnat.app.company.CompanyApi {
 
     override suspend fun status(id: String) = mine.firstOrNull { it.id == id }
     override suspend fun takeBack(device: String, id: String) = Unit
-    override suspend fun forgetMine(device: String) = mine.size
+    override suspend fun forgetMine(device: String) = mine.size.also { forgot = true }
+    /** 2.0.0 [RVN-22] I10bb-02 서버에 있는 내 정보 as a phone that wrote, voted and asked has it (after 모두 지우기 the law's only). */
+    private var forgot = false
+    override suspend fun mineRows(device: String) = if (forgot) listOf(com.bamnat.app.company.MineRows("law", 1, "law")) else listOf(
+        com.bamnat.app.company.MineRows("settings", 1), com.bamnat.app.company.MineRows("posts", 4), com.bamnat.app.company.MineRows("votes", 12),
+        com.bamnat.app.company.MineRows("inquiries", 2), com.bamnat.app.company.MineRows("companies", 2), com.bamnat.app.company.MineRows("alerts", 1),
+        com.bamnat.app.company.MineRows("law", 1, "law"), com.bamnat.app.company.MineRows("other", 3), com.bamnat.app.company.MineRows("flags", 0),
+    )
     override suspend fun vote(device: String, company: String, setup: String, ok: Boolean, verified: Boolean, why: String?) =
         com.bamnat.app.company.VoteResult(4, 3, 1, 3, true)
     /** 2.0.0 [RVN-18] COMP-22-1 What a second tap on ✓ 맞아요 took back. */

@@ -119,8 +119,8 @@ private fun PayTaxLines(view: TakeHomeView?, onTaxWay: (com.bamnat.core.pay.TaxM
     if (view != null && view.taxUnknown) {
         // [J133-01] The 세전 alone, and the way to pick, never the 세전 called 실수령.
         view.gross?.let { TaxLine("${view.month.monthValue}월 세전 예상", Fmt.won(it)) }
-        Muted("${com.bamnat.app.tax.TaxWay.UNKNOWN}. 월급에서 무엇을 떼나요?")
-        com.bamnat.app.tax.TaxWayChips(null, Modifier.padding(top = 4.dp), onTaxWay)
+        Muted("${com.bamnat.app.tax.TaxWay.UNKNOWN}. ${if (view.daily) "일당" else "월급"}에서 무엇을 떼나요?")
+        com.bamnat.app.tax.TaxWayChips(null, Modifier.padding(top = 4.dp), daily = view.daily, onPick = onTaxWay)
         return
     }
     if (view == null || f == null) {
@@ -395,9 +395,9 @@ internal fun BusinessTaxSheet(
                 AmountField("작년 종합소득세 (11월 중간예납용)", lastTax, { lastTax = it })
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text("기본공제 사람 수 (나 포함)", modifier = Modifier.weight(1f))
-                    TextButton(onClick = { p = p.copy(family = (p.family - 1).coerceAtLeast(1)) }) { Text("−") }
+                    com.bamnat.app.ui.components.GlyphStepButton("−", "기본공제 사람 수 줄이기", onClick = { p = p.copy(family = (p.family - 1).coerceAtLeast(1)) }, outlined = false)
                     Text("${p.family}명")
-                    TextButton(onClick = { p = p.copy(family = (p.family + 1).coerceAtMost(10)) }) { Text("+") }
+                    com.bamnat.app.ui.components.GlyphStepButton("+", "기본공제 사람 수 늘리기", onClick = { p = p.copy(family = (p.family + 1).coerceAtMost(10)) }, outlined = false)
                 }
                 SwitchRow("올해 처음 시작한 사업", p.newBusiness) { p = p.copy(newBusiness = it) }
                 SwitchRow("성실사업자 (표준세액공제 12만 원)", p.sincere) { p = p.copy(sincere = it) }

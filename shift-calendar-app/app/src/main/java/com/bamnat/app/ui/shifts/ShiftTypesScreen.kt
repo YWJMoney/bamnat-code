@@ -628,15 +628,22 @@ fun ShiftTypeEditorDialog(
     var canPost by remember { mutableStateOf(Notifications.canPost(context)) }
     LifecycleEventEffect(Lifecycle.Event.ON_RESUME) { canPost = Notifications.canPost(context) }
 
-    // Leaving with changes keeps them: alarms added or times picked are never lost to a back press.
-    val close: () -> Unit = {
-        if (draft != initial && draft.name.isNotBlank()) {
-            onSave(saved())
-            Toast.makeText(context, "저장했어요", Toast.LENGTH_SHORT).show()
-        } else {
-            onDismiss()
-        }
-    }
+    // 2.0.0 [RVH-100] 검토 PC-216 (조건 10): 바꾼 것이 있는데 X·뒤로·바깥으로 나가면 말없이 저장하지 않고 한 번 물어요(저장 / 나가기 / 계속 고치기는
+    // 바깥·뒤로). 알람 시각 창에서 고른 값도 이 창의 '저장'을 눌러야 저장돼요. Before, leaving saved it with only a Toast.
+    var quitAsk by rememberSaveable { mutableStateOf(false) }
+    val changed = draft != initial
+    com.bamnat.app.ui.components.Busy.Writing(changed)
+    val close: () -> Unit = { if (changed) quitAsk = true else onDismiss() }
+    if (quitAsk) com.bamnat.app.ui.components.AlertDialog(
+        onDismissRequest = { quitAsk = false },
+        title = { Text("저장하지 않고 나갈까요?") },
+        text = { Text("바꾼 내용이 사라져요.", style = MaterialTheme.typography.bodyMedium) },
+        confirmButton = {
+            TextButton(onClick = { quitAsk = false; onSave(saved()); Toast.makeText(context, "저장했어요", Toast.LENGTH_SHORT).show() },
+                enabled = draft.name.isNotBlank()) { Text("저장") }
+        },
+        dismissButton = { TextButton(onClick = { quitAsk = false; onDismiss() }) { Text("나가기", color = MaterialTheme.colorScheme.error) } },
+    )
     Dialog(onDismissRequest = close, properties = DialogProperties(usePlatformDefaultWidth = false)) {
         Surface(
             modifier = Modifier.fillMaxSize(),

@@ -24,6 +24,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -196,7 +197,8 @@ private class PaySetupState(val initial: PayProfile?, val thisMonth: YearMonth, 
     var yearly by mutableStateOf(initial?.annual?.yearly)
     var split13 by mutableStateOf(initial?.annual?.split == 13)
     var annualOt by mutableStateOf(initial?.annual?.fixedOvertimeMonthly?.takeIf { it > 0 })
-    var annualOtHours by mutableIntStateOf(initial?.items?.firstOrNull { it.id == ANNUAL_OT }?.fixedOvertimeMinutes?.div(60) ?: 0)
+    /** 2.0.0 [RVJ-76] (검토 PAYU-49) In minutes: a contract's 22.5시간 fits. 0 is 몇 시간분인지 몰라요. */
+    var annualOtMinutes by mutableIntStateOf(initial?.items?.firstOrNull { it.id == ANNUAL_OT }?.fixedOvertimeMinutes ?: 0)
     var annualBonus by mutableStateOf(initial?.annual?.regularBonusYearly?.takeIf { it > 0 })
     var annualBonusMonths by mutableStateOf(initial?.items?.firstOrNull { it.id == ANNUAL_BONUS }?.months?.takeIf { it.isNotEmpty() } ?: setOf(6, 12))
     var annualOther by mutableStateOf(initial?.annual?.otherMonthly?.takeIf { it > 0 })
@@ -292,8 +294,10 @@ private class PaySetupState(val initial: PayProfile?, val thisMonth: YearMonth, 
                 val fixedOt = Regex("고정.*(연장|시간외|OT)", RegexOption.IGNORE_CASE).containsMatchIn(line.name)
                 val welfare = Regex("식대|식비|교통|차량|복지|통신|자녀|가족|학자").containsMatchIn(line.name)
                 val id = "custom-" + System.nanoTime()
+                // 2.0.0 [RVJ-76] (검토 I05ba-02) The hours a 고정연장 line says ("고정연장수당 22.5시간 300,000") come in with it.
                 rows += ItemRow(id, line.name.take(20), Cadence.MONTHLY, ordinary = !fixedOt && (OrdinaryGuess.of(line.name, Cadence.MONTHLY) ?: !welfare), hint = "명세서에서", suggested = 0,
-                    checked = true, amount = line.amount)
+                    checked = true, amount = line.amount,
+                    fixedOvertimeMinutes = if (fixedOt) line.minutes?.takeIf { it in 30..FixedOtHoursRules.MAX_MINUTES } ?: 0 else 0)
                 if (fixedOt) covers[id] = setOf(LineKind.OVERTIME)
             }
             added += line.name
@@ -415,8 +419,8 @@ private class PaySetupState(val initial: PayProfile?, val thisMonth: YearMonth, 
         return listOfNotNull(
             annual.fixedOvertimeMonthly.takeIf { it > 0 }?.let { v ->
                 // Hours not known still stand in for 연장 only, the way a 고정 연장수당 does.
-                PayItem(ANNUAL_OT, "고정 연장수당", money(v), Cadence.MONTHLY, fixedOvertimeMinutes = annualOtHours * 60,
-                    covers = if (annualOtHours > 0) covers[ANNUAL_OT] else setOf(LineKind.OVERTIME))
+                PayItem(ANNUAL_OT, "고정 연장수당", money(v), Cadence.MONTHLY, fixedOvertimeMinutes = annualOtMinutes,
+                    covers = if (annualOtMinutes > 0) covers[ANNUAL_OT] else setOf(LineKind.OVERTIME))
             },
             annual.regularBonusYearly.takeIf { it > 0 && annualBonusMonths.isNotEmpty() }?.let { v ->
                 PayItem(ANNUAL_BONUS, "정기상여", money(Math.round(v.toDouble() / annualBonusMonths.size)), Cadence.BONUS,
@@ -460,7 +464,7 @@ private fun WizardDraft.encode(s: PaySetupState, step: String, initial: PayProfi
     line("i", initialText(initial))
     line("st", step)
     line("w", s.wage.name); line("wc", flag(s.wageChosen)); line("a", s.amount); line("r", flag(s.rough)); line("si", s.since)
-    line("dh", s.dailyHours); line("y", s.yearly); line("s13", flag(s.split13)); line("ao", s.annualOt); line("aoh", s.annualOtHours)
+    line("dh", s.dailyHours); line("y", s.yearly); line("s13", flag(s.split13)); line("ao", s.annualOt); line("aom", s.annualOtMinutes)
     line("ab", s.annualBonus); line("abm", s.annualBonusMonths.joinToString(",")); line("aot", s.annualOther)
     line("oc", s.occupation?.name); line("ba", s.bonusAnnual); line("bm", s.bonusMonths.joinToString(",")); line("bo", flag(s.bonusOrdinary))
     if (s.bonusAnnual != null) line("bid", s.bonusId)
@@ -499,7 +503,7 @@ private fun WizardDraft.fill(raw: String, s: PaySetupState): String? {
                 "y" -> s.yearly = v.toLongOrNull()
                 "s13" -> s.split13 = v == "1"
                 "ao" -> s.annualOt = v.toLongOrNull()
-                "aoh" -> s.annualOtHours = v.toInt()
+                "aom" -> s.annualOtMinutes = v.toInt()
                 "ab" -> s.annualBonus = v.toLongOrNull()
                 "abm" -> s.annualBonusMonths = months(v)
                 "aot" -> s.annualOther = v.toLongOrNull()
@@ -975,14 +979,8 @@ private fun AnnualFields(s: PaySetupState) {
     RuleToggle("13으로 나눠 받아요", "13번째 몫을 퇴직금으로 떼어 두는 계약이에요. 연말에 상여로 주는 몫이면 통상임금이라 결과 화면 ‘확인 필요’에서 골라요. 모르면 끈 채로 두세요", s.split13) { s.split13 = it }
     Label("연봉 안에 따로 나오는 돈이 있나요? (있으면)")
     MoneyField("매달 고정 연장수당", s.annualOt, { s.annualOt = it }, Modifier.fillMaxWidth(), placeholder = "없으면 비워 두세요")
-    if ((s.annualOt ?: 0) > 0) {
-        FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-            listOf(0, 10, 20, 30, 40, 52).forEach { h ->
-                FilterChip(selected = s.annualOtHours == h, onClick = { s.annualOtHours = h },
-                    label = { Text(if (h == 0) "몇 시간분인지 몰라요" else "${h}시간분") })
-            }
-        }
-    }
+    // 2.0.0 [RVJ-76] (검토 PAYU-49·T05b-02) The hours with '직접' (12·22.5·45시간), the same picker as 수당 창·빠른 설정.
+    if ((s.annualOt ?: 0) > 0) FixedOtHours(s.annualOtMinutes, { s.annualOtMinutes = it }, none = "몇 시간분인지 몰라요")
     MoneyField("1년 정기 상여 합계", s.annualBonus, { s.annualBonus = it }, Modifier.fillMaxWidth(), placeholder = "없으면 비워 두세요")
     if ((s.annualBonus ?: 0) > 0) {
         FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -1234,9 +1232,9 @@ private fun QuestionStep(
             }
         }
         Row(verticalAlignment = Alignment.CenterVertically) {
-            OutlinedButton(onClick = { s.answer(key) { s.monthlyHours = (s.monthlyHours - 1).coerceAtLeast(100) } }) { Text("−") }
+            com.bamnat.app.ui.components.GlyphStepButton("−", "한 달 일하는 시간 줄이기", onClick = { s.answer(key) { s.monthlyHours = (s.monthlyHours - 1).coerceAtLeast(100) } })
             Text("${s.monthlyHours}시간", style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(horizontal = 16.dp))
-            OutlinedButton(onClick = { s.answer(key) { s.monthlyHours = (s.monthlyHours + 1).coerceAtMost(320) } }) { Text("+") }
+            com.bamnat.app.ui.components.GlyphStepButton("+", "한 달 일하는 시간 늘리기", onClick = { s.answer(key) { s.monthlyHours = (s.monthlyHours + 1).coerceAtMost(320) } })
         }
     }
     answers.forEach { a -> AnswerCard(a.title, a.detail, a.selected, a.pick) }
@@ -1303,7 +1301,8 @@ private fun PaySetupQuestion.answerText(s: PaySetupState, p: PayProfile): String
 @Composable
 private fun SummaryRow(label: String, value: String, check: Boolean = false, onClick: () -> Unit) {
     Row(
-        Modifier.fillMaxWidth().clip(MaterialTheme.shapes.small).clickable(role = Role.Button, onClick = onClick).padding(vertical = 8.dp),
+        // 2.0.0 [RVJ-106] 검토 PAYU-25: a row you press is 48dp tall at least (it was 40dp).
+        Modifier.fillMaxWidth().clip(MaterialTheme.shapes.small).heightIn(min = 48.dp).clickable(role = Role.Button, onClick = onClick).padding(vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Text(label, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.labelWidth(112.dp))
@@ -1455,10 +1454,10 @@ private fun RuleToggle(title: String, subtitle: String, checked: Boolean, onChan
 @Composable
 internal fun MonthStepper(month: YearMonth, onChange: (YearMonth) -> Unit, modifier: Modifier = Modifier) {
     Row(modifier, verticalAlignment = Alignment.CenterVertically) {
-        OutlinedButton(onClick = { onChange(month.minusMonths(1)) }) { Text("‹") }
+        com.bamnat.app.ui.components.GlyphStepButton("‹", "이전 달", onClick = { onChange(month.minusMonths(1)) })
         Text(Fmt.month(month), style = MaterialTheme.typography.titleMedium,
             modifier = Modifier.padding(horizontal = 16.dp))
-        OutlinedButton(onClick = { onChange(month.plusMonths(1)) }) { Text("›") }
+        com.bamnat.app.ui.components.GlyphStepButton("›", "다음 달", onClick = { onChange(month.plusMonths(1)) })
     }
 }
 

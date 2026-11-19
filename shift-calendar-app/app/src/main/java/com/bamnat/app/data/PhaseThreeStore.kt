@@ -136,9 +136,16 @@ class PhaseThreeStore(private val db: AppDatabase, private val clock: () -> Long
     /** [TEAM-13] 확정: the month CONFIRMED one version up, and the board as it was confirmed, for 바뀐 칸 next time. */
     suspend fun confirm(teamId: String, b: TeamBoard, was: TeamMonth): TeamMonth {
         val m = was.copy(state = MonthState.CONFIRMED, version = was.version + 1, confirmedAt = clock())
-        teams.upsertMonth(TeamMonthEntity(teamId, b.month.toString(), m.state.name, m.version, m.confirmedAt, encodeConfirmed(b)))
+        // 2.0.0 [RVJ-102] 검토 PAYU-10: the board confirmed until now is kept beside the new one, so sending the same 판 again can still say what
+        // the last 확정 changed ('바뀜' on each link) and not only the changes since it.
+        val before = teams.monthNow(teamId, b.month.toString())?.confirmed
+        teams.upsertMonth(TeamMonthEntity(teamId, b.month.toString(), m.state.name, m.version, m.confirmedAt, encodeConfirmed(b, before?.let(::decodeConfirmed))))
         return m
     }
+
+    /** [RVJ-102] The board confirmed before the last 확정 (empty after the first), the one its 바뀜 marks were worked out against. */
+    suspend fun confirmedBefore(teamId: String, month: YearMonth): Map<Pair<String, LocalDate>, Long> =
+        teams.monthNow(teamId, month.toString())?.confirmed?.let(::decodePrior).orEmpty()
 
     // ---- 사업장 ----
 
@@ -187,6 +194,15 @@ class PhaseThreeStore(private val db: AppDatabase, private val clock: () -> Long
     suspend fun saveWorkplace(p: Workplace) = pay.upsertWorkplace(p.toEntity(pay.workplaces().firstOrNull { it.id == p.id }?.createdAt ?: clock()))
 
     suspend fun workplaceNow(id: String): Workplace? = pay.workplaces().firstOrNull { it.id == id }?.toModel()
+
+    /** 2.0.0 [RVJ-100] 검토 T05-05: a 가게 with no 직원 and no month written or closed, which can be taken away again. */
+    suspend fun placeIsEmpty(id: String): Boolean =
+        pay.staff().none { it.workplaceId == id } && pay.months().none { it.workplaceId == id } && pay.lines().none { it.workplaceId == id }
+
+    /** [RVJ-100] Takes [id] away only while it is empty and another 가게 is left; true when it went. */
+    suspend fun removeWorkplace(id: String): Boolean = db.withTransaction {
+        if (pay.workplaces().size < 2 || !placeIsEmpty(id)) false else { pay.deleteWorkplace(id); true }
+    }
 
     /** The place as it is now, changed by [f] in one go (대타 요청 and 사업장 설정 never write over each other). */
     suspend fun updateWorkplace(id: String, f: (Workplace) -> Workplace): Workplace? = db.withTransaction {
@@ -311,7 +327,8 @@ class PhaseThreeStore(private val db: AppDatabase, private val clock: () -> Long
                     .put("gap", JSONObject().put("m", c.gap.memberId).put("d", c.gap.date.toString()).put("s", c.gap.shiftId))
                     .put("people", JSONArray(c.people)).put("urls", JSONArray(c.urls))
                     .put("answers", JSONObject(c.answers.mapValues { it.value })).put("seen", JSONArray(c.seen.toList()))
-                    .putOpt("taken", c.taken).put("created", c.createdAt).put("expires", c.expiresAt))
+                    .putOpt("taken", c.taken).put("created", c.createdAt).put("expires", c.expiresAt)
+                    .putOpt("hours", c.hours?.let { "${it.start}-${it.end}" }))
             }
         }.toString()
 
@@ -325,7 +342,8 @@ class PhaseThreeStore(private val db: AppDatabase, private val clock: () -> Long
                     com.bamnat.core.team.TeamCover.Gap(g.getString("m"), LocalDate.parse(g.getString("d")), g.getLong("s")),
                     strings(o.optJSONArray("people")), strings(o.optJSONArray("urls")),
                     o.optJSONObject("answers")?.let { x -> x.keys().asSequence().associateWith { x.getBoolean(it) } }.orEmpty(),
-                    strings(o.optJSONArray("seen")).toSet(), o.optString("taken").takeIf { it.isNotEmpty() }, o.optLong("created"), o.optLong("expires"))
+                    strings(o.optJSONArray("seen")).toSet(), o.optString("taken").takeIf { it.isNotEmpty() }, o.optLong("created"), o.optLong("expires"),
+                    o.optString("hours").takeIf { it.contains('-') }?.let { h -> runCatching { com.bamnat.core.work.StaffShift(LocalTime.parse(h.substringBefore('-')), LocalTime.parse(h.substringAfter('-'))) }.getOrNull() })
             }
         }.getOrDefault(emptyList())
 
@@ -407,9 +425,20 @@ class PhaseThreeStore(private val db: AppDatabase, private val clock: () -> Long
             JSONObject(t).let { o -> o.keys().asSequence().associate { it.toLong() to o.getInt(it) } }
         }.getOrDefault(emptyMap())
 
-        fun encodeConfirmed(b: TeamBoard): String = JSONObject().apply {
+        fun encodeConfirmed(b: TeamBoard, prior: Map<Pair<String, LocalDate>, Long>? = null): String = JSONObject().apply {
             b.cells.values.forEach { c -> put("${c.memberId}:${c.date.toEpochDay()}", c.shiftId) }
+            // [RVJ-102] The board before this 확정, under a key no cell has (a cell key is "member:day"); an older reader skips it.
+            if (!prior.isNullOrEmpty()) put("~prior", JSONObject().apply { prior.forEach { (k, v) -> put("${k.first}:${k.second.toEpochDay()}", v) } })
         }.toString()
+
+        fun decodePrior(t: String): Map<Pair<String, LocalDate>, Long> = if (t.isBlank()) emptyMap() else runCatching {
+            JSONObject(t).optJSONObject("~prior")?.let { o ->
+                o.keys().asSequence().mapNotNull { k ->
+                    val i = k.lastIndexOf(':').takeIf { it > 0 } ?: return@mapNotNull null
+                    (k.substring(0, i) to LocalDate.ofEpochDay(k.substring(i + 1).toLong())) to o.getLong(k)
+                }.toMap()
+            }.orEmpty()
+        }.getOrDefault(emptyMap())
 
         fun decodeConfirmed(t: String): Map<Pair<String, LocalDate>, Long> = if (t.isBlank()) emptyMap() else runCatching {
             JSONObject(t).let { o ->

@@ -70,6 +70,9 @@ internal fun WorkTypeDayRow(day: ResolvedDay, snapshot: ScheduleSnapshot, vm: Ca
 /** [DAYW-03] Until when after midnight 지금 퇴근 still ends yesterday's working day. */
 internal val LEAVE_NIGHT_END: LocalTime = LocalTime.of(6, 0)
 
+/** 2.0.0 [RVH-98] 검토 PC-50: yesterday's 어제 퇴근 is offered only this many hours after its planned end (잔업 of '+11.5h' at 05:33 is no one's night). */
+internal const val LEAVE_LATE_HOURS = 8L
+
 /**
  * [DAYW-03] The working day 지금 퇴근 on [day]'s sheet ends, or null for no chip, on a day calendar:
  * today's; before [LEAVE_NIGHT_END], yesterday's (work run past midnight), from its own sheet or from
@@ -79,10 +82,12 @@ internal fun leaveNowDay(style: WorkStyle?, day: ResolvedDay, today: LocalDate, 
     if (style != WorkStyle.DAY) return null
     fun working(d: ResolvedDay) = d.isWorkDay && d.shiftFrom != null
     val night = now.toLocalDate() == today && now.toLocalTime().isBefore(LEAVE_NIGHT_END)
+    // [RVH-98] A shift that ended long ago is not one still being clocked out of.
+    fun recent(d: ResolvedDay) = d.shiftTo?.let { !now.isAfter(it.plusHours(LEAVE_LATE_HOURS)) } == true
     return when (day.date) {
-        today -> yesterday().takeIf { y -> night && working(y) && (!working(day) || now.isBefore(day.shiftFrom)) }
+        today -> yesterday().takeIf { y -> night && working(y) && recent(y) && (!working(day) || now.isBefore(day.shiftFrom)) }
             ?: day.takeIf(::working)
-        today.minusDays(1) -> day.takeIf { night && working(it) }
+        today.minusDays(1) -> day.takeIf { night && working(it) && recent(it) }
         else -> null
     }
 }

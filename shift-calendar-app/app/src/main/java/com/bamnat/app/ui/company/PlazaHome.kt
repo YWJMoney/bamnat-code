@@ -343,9 +343,7 @@ class PlazaHomeViewModel(
         if (r == null) return next
         return withContext(Dispatchers.Default) {
             val mine = runCatching { scope.share.exportForServer().toString() }.getOrNull()
-            val versions = (r.others + listOfNotNull(r.base?.takeIf { !r.mine }))
-                .map { com.bamnat.core.plaza.RoomCards.Version(it.setup, it.text, maxOf(it.senders, it.persons)) }
-            val cards = mine?.let { runCatching { com.bamnat.core.plaza.RoomCards.cards(it, versions, max = 3) }.getOrNull() }.orEmpty()
+            val cards = mine?.let { runCatching { com.bamnat.core.plaza.RoomCards.cards(it, r.cardVersions, max = 3) }.getOrNull() }.orEmpty()
             val base = r.base?.text ?: mine
             val facts = base?.let { t -> runCatching { SetupFacts.read(t) }.getOrNull() }.orEmpty()
                 .filter { it.key.startsWith("cycle:") || it.key.startsWith("shift:") || it.key.startsWith("rate:") }
@@ -494,6 +492,10 @@ fun PlazaHomeScreen(
                 if (people) PlazaHead(title = homeTitle.takeIf { onBack == null }, today = state.talk?.pulse?.today, model = head,
                     menuInBar = onBack != null, mainInBar = mainInBar)
                 RefreshLine(state.refreshing, state.stale, onRetry = vm::load)
+                // 2.0.0 [RVN-22] I10bb-01 What was pressed without a connection and waits to go, one line.
+                WaitingSendsLine(vm.container)
+                // 2.0.0 [RVN-22] I10bc-03 What goes to the 광장 by itself tomorrow morning, with 취소.
+                HeldShareLine(vm.container)
                 header?.invoke()
                 vm.note?.let { n ->
                     SoftCard(highlighted = true) {
@@ -624,7 +626,7 @@ private fun TalkCard(plan: StylePlaza.Plan, state: PlazaHomeViewModel.State, see
             // and what to write, one tap each, in place of one line of text.
             val quiet = talk != null && talk.posts.count { it.parent == null && it.hidden == null } < STARTER_POSTS
             // 1.36 [VIL-11] 이번 주 이야기 주제: a door to the talk when there is nothing to say.
-            (talk?.topic ?: com.bamnat.core.plaza.StarterTopics.of(com.bamnat.core.time.Today.date()).takeIf { quiet })?.let { t ->
+            (talk?.topic ?: com.bamnat.core.plaza.StarterTopics.of(com.bamnat.core.time.Today.date(), style).takeIf { quiet })?.let { t ->
                 Text("이번 주 주제 · $t", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.primary,
                     modifier = Modifier.clickable(onClickLabel = "주제로 글 쓰기", onClick = onOpen).padding(vertical = 4.dp))
             }

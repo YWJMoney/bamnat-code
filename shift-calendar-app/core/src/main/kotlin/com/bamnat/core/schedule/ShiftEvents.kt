@@ -70,9 +70,18 @@ object ShiftEvents {
      * [WIDG-05] I 리뷰 N6(a): the countdown widget's line, "야간까지 3시간 20분 · 22:00" or, while working,
      * "근무 중 · 07:00에 끝나요 (2시간 10분 남음)". Null when nothing is booked in [days].
      */
-    fun countdown(days: List<ResolvedDay>, now: LocalDateTime): String? {
-        current(days, now)?.let { e -> return "${e.title} 중 · ${hm(e.end!!)}에 끝나요 (${left(now, e.end)} 남음)" }
+    fun countdown(days: List<ResolvedDay>, now: LocalDateTime, gap: String = "비는 시간"): String? {
+        val events = of(days)
+        // 2.0.0 [RVIB-21] (결정 19) A day of two parts: the first part counts to the [gap] (가게·알바 '브레이크 타임', 일근·교대 '비는 시간'),
+        // not to an end of work that is not one, and in the gap the line says when work starts again.
+        fun laterPart(e: ShiftEvent) = events.any { it.date == e.date && it.key.startsWith("${e.date}-p") && it.start != null && !it.start.isBefore(e.end) }
+        current(days, now)?.let { e ->
+            return if (laterPart(e)) "${e.title} 중 · ${hm(e.end!!)}부터 $gap (${left(now, e.end)} 남음)"
+            else "${e.title} 중 · ${hm(e.end!!)}에 끝나요 (${left(now, e.end)} 남음)"
+        }
         val e = next(days, now) ?: return null
+        if (e.key.startsWith("${e.date}-p") && events.any { it.date == e.date && it.end != null && !it.end.isAfter(now) && it.key == "${e.date}" })
+            return "$gap · ${hm(e.start!!)} 다시 시작 (${left(now, e.start)} 뒤)"
         val day = if (e.start!!.toLocalDate() == now.toLocalDate()) "" else if (e.start.toLocalDate() == now.toLocalDate().plusDays(1)) "내일 " else "${e.start.monthValue}/${e.start.dayOfMonth} "
         return "${e.title}까지 ${left(now, e.start)} · $day${hm(e.start)}"
     }

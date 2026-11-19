@@ -38,6 +38,8 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.ui.Alignment
 import androidx.compose.runtime.Composable
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -258,6 +260,10 @@ private fun RuleCardsSection(cards: List<com.bamnat.core.guide.RuleCards.Card>, 
 
 private const val RULES_FOLDED = 6
 
+/** 2.0.0 [RVL-72] 내 근무's row to 한 달 근무 넣기 on an 알바·현장 calendar, the same words in 설정 찾기. */
+internal const val HOURLY_ROSTER_ROW = "시간표로 한 달 넣기"
+internal const val FIELD_ROSTER_ROW = "공수표로 한 달 넣기"
+
 /** [SHFT-06][SHFT-07][DAYW-06][DAYW-07] Tools of the calendar's own kind of work, for the calendar picked above. */
 @Composable
 private fun WorkTools(style: com.bamnat.core.work.WorkStyle?) {
@@ -276,6 +282,14 @@ private fun WorkTools(style: com.bamnat.core.work.WorkStyle?) {
             NavRow("출퇴근 자동 기록", if (commute.enabled) "켜져 있어요 · 회사 위치에 들어오고 나갈 때 적어요" else "꺼져 있어요 · 회사 위치로 출근·퇴근 시각을 적어요") {
                 open(com.bamnat.app.NoticeLinks.Target.COMMUTE)
             }
+        }
+        // 2.0.0 [RVL-72] (검토 T07b-01·T07b-02) 알바 시간표·현장 공수표도 한 달 근무 넣기가 읽어요: those calendars had no row to it
+        // (only 교대 had), so the reading was found only through 설정 찾기.
+        com.bamnat.core.work.WorkStyle.HOURLY -> SectionCard(title = "알바 도구") {
+            NavRow(HOURLY_ROSTER_ROW, "가게 시간표 사진·엑셀·글을 읽어 일한 날과 시간을 한 번에 넣어요") { open(com.bamnat.app.NoticeLinks.Target.DUTY_ROSTER) }
+        }
+        com.bamnat.core.work.WorkStyle.FIELD -> SectionCard(title = "현장 도구") {
+            NavRow(FIELD_ROSTER_ROW, "공수표 사진·엑셀·글을 읽어 날마다 공수(1·0.5·1.5)를 한 번에 넣어요") { open(com.bamnat.app.NoticeLinks.Target.DUTY_ROSTER) }
         }
         else -> Unit
     }
@@ -1076,6 +1090,26 @@ private fun DataPage(vm: SettingsViewModel, files: SettingsFiles, settings: AppS
         NavRow("최근 지운 기록", if (cleared.isEmpty()) "지운 기록·달력은 7일, 가계부 기록은 30일 동안 여기서 되돌릴 수 있어요"
             else "${cleared.size}개 · 남은 날 안에 되돌릴 수 있어요") { showCleared = true }
         if (showCleared) RecordsTrashDialog(cleared, onRestore = vm::restoreCleared, onDismiss = { showCleared = false })
+        // 2.0.0 [RVL-76] (검토 I12b-02) 날짜별 되돌리기: a calendar's 근무 or 가계부 as it was at a moment of the last week.
+        HorizontalDivider()
+        var goingBack by rememberSaveable { mutableStateOf(false) }
+        NavRow(TIME_MACHINE_ROW, "실수로 바꾼 근무·가계부를 ${com.bamnat.app.data.TimeMachine.KEEP_DAYS}일 안의 그때 모습으로 돌려요") { goingBack = true }
+        if (goingBack) {
+            val list by vm.calendars.collectAsStateWithLifecycle()
+            val active by vm.activeCalendar.collectAsStateWithLifecycle()
+            TimeMachineDialog(c.timeMachine, list, active,
+                onDone = { text, before -> goingBack = false; vm.timeMachineDone(text, before) }, onDismiss = { goingBack = false })
+        }
+        // 2.0.0 [RVL-70][RVL-71] (검토 U12-09·T12-07) 데이터 점검 where the records and backups are, for every kind of work (not only inside
+        // 알람 점검), with what the weekly check last did said on the row. In this card, not one of its own: a card titled as its one row
+        // said the name twice.
+        HorizontalDivider()
+        val self by c.dataSelfCheck.state.collectAsStateWithLifecycle()
+        NavRow(com.bamnat.app.ui.diag.DATA_CHECK_TITLE,
+            if (settings.dataSelfCheck) com.bamnat.app.diag.DataSelfCheck.words(self)
+            else "근무·기록과 백업이 온전한지 휴대폰 안에서 살펴봐요") {
+            com.bamnat.app.NoticeLinks.open(com.bamnat.app.NoticeLinks.Target.DATA_CHECK)
+        }
     }
     SectionCard(title = "다른 캘린더 앱과") {
         // [GROW-05] 1.38 다른 앱에서 옮기기: the two ways that read only what is on the phone — a screenshot, the phone's calendar.
@@ -1088,7 +1122,7 @@ private fun DataPage(vm: SettingsViewModel, files: SettingsFiles, settings: AppS
         if (moving) MoveFromOtherApp(onDismiss = { moving = false })
         HorizontalDivider()
         // [IMPORT-01]
-        NavRow("캘린더에서 가져오기", "삼성·구글 캘린더 일정을 읽어 ${com.bamnat.app.ui.shifts.lockNoun(movedStyle).let { if (it == "근무") "근무와" else it + "과" }} 메모로 옮겨요") {
+        NavRow("캘린더에서 가져오기", "삼성·구글 캘린더나 달력 파일(.ics)을 읽어 ${com.bamnat.app.ui.shifts.lockNoun(movedStyle).let { if (it == "근무") "근무와" else it + "과" }} 메모로 옮겨요") {
             com.bamnat.app.NoticeLinks.open(com.bamnat.app.NoticeLinks.Target.CALENDAR_IMPORT)
         }
         HorizontalDivider()
@@ -1212,30 +1246,39 @@ internal fun UsageStatsRow(on: Boolean, onChange: (Boolean) -> Unit) {
     }
 }
 
-/** [PLAZA-07] 설정 › 개인정보: 회사 광장에 저절로 나누기. */
-internal const val AUTO_SHARE_ROW = "회사 광장에 저절로 나누기"
+/** [PLAZA-07] 설정 › 개인정보: 회사 광장에 나누기 (2.0.0 [RVN-22] I10bc-03: one way for each part, no longer one switch). */
+internal const val AUTO_SHARE_ROW = "회사 광장에 나누기"
 
+/**
+ * 2.0.0 [RVN-22] 검토 I10bc-03 (COMP-44): each part that can go to the company's 광장, with its own way (저절로·묻기·안 함), so the
+ * consent says exactly what it reaches. 저절로 goes the next morning and can be cancelled until then ([HeldShareLine], under it).
+ */
 @Composable
 internal fun AutoShareRow() {
     val c = LocalContext.current.appContainer
-    val on by c.companyStore.autoShare.collectAsStateWithLifecycle()
-    // 2.0.0 [RVN-11] COMP-44 A yes for the cycle only (근무주기 나누기) says so: the pay way is asked each time.
-    val payToo by c.companyStore.autoPay.collectAsStateWithLifecycle()
+    val ways by c.companyStore.shareWays.collectAsStateWithLifecycle()
     val member by c.companyStore.member.collectAsStateWithLifecycle()
     val place = member?.second?.ifEmpty { null } ?: "다니는 회사"
-    // [PLAZA-34] 1.27 AI: on is 저절로 나누기; off asks each time a change is saved, unless 다시 묻지 않기 was chosen.
-    SwitchRow(
-        AUTO_SHARE_ROW,
-        when (on) {
-            true -> if (payToo) "근무 순서와 계산 방식을 바꾸면 묻지 않고 하루 한 번 $place 광장에 고쳐 올려요."
-                else "근무 순서를 바꾸면 묻지 않고 하루 한 번 $place 광장에 고쳐 올려요. 계산 방식은 바꿀 때마다 물어요."
-            null -> "꺼 두면 바꿀 때마다 ‘$place 광장에 나눌까요?’ 하고 물어요."
-            false -> "‘다시 묻지 않기’로 두셨어요. 바꿔도 묻지 않고 나누지 않아요."
-        } + " 금액·이름·연락처·입사일·명세서·사진은 보내지 않아요",
-        on == true,
-        onChange = { c.autoShare.set(if (it) true else null) },
-    )
-    if (on == false) TextButton(onClick = { c.autoShare.set(null) }) { Text("바꿀 때마다 묻기로 되돌리기") }
+    Column(Modifier.focusMark(AUTO_SHARE_ROW).fillMaxWidth().padding(vertical = 6.dp)) {
+        Text(said(AUTO_SHARE_ROW), style = MaterialTheme.typography.bodyLarge)
+        Text(said("바꾼 것을 $place 광장에 어떻게 나눌지 부분마다 골라요. 금액·이름·연락처·입사일·명세서·사진은 보내지 않아요"),
+            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        com.bamnat.core.plaza.SharePart.entries.forEach { part ->
+            ChoiceRow(part.label, sharePartHint(part), com.bamnat.core.plaza.ShareWay.entries.map { it to it.label }, ways[part], group = part.label) { way ->
+                c.autoShare.setWay(part, way)
+            }
+        }
+        Text("저절로: 다음 날 오전에 나눠요. 그 전에 취소할 수 있어요", style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 4.dp))
+        com.bamnat.app.ui.company.HeldShareLine(c)
+    }
+}
+
+/** What each part is, under its name. */
+internal fun sharePartHint(part: com.bamnat.core.plaza.SharePart): String = when (part) {
+    com.bamnat.core.plaza.SharePart.CYCLE -> "근무 이름과 순서(교대 순서·요일별 근무·근무표)"
+    com.bamnat.core.plaza.SharePart.TIMES -> "근무마다 시작·끝·휴게 시간"
+    com.bamnat.core.plaza.SharePart.PAY -> "가산율·수당·휴일 같은 계산하는 법(금액은 빼고)"
 }
 
 @Composable
@@ -1637,6 +1680,16 @@ internal const val BACKUP_NUDGE_ROW = "백업 안 한 지 30일 알림"
 internal const val STRETCH_ROW = "연속 근무 경고"
 /** 1.32 [WTYP-16] */
 internal const val LEAVE_TIME_ROW = "퇴근 시각 알림"
+/** 2.0.0 [RVIB-21] 둘째 구간 알림's row, for 설정 찾기. */
+internal const val GAP_ROW = "둘째 구간 시작 알림"
+
+/** 2.0.0 [RVIB-21] Some 근무 종류 of the open calendar has a 브레이크 타임·비는 시간 between two parts. */
+@Composable
+internal fun rememberHasGap(): Boolean {
+    val c = androidx.compose.ui.platform.LocalContext.current.appContainer
+    val flow = remember(c) { c.scheduleRepository.snapshot.map { s -> s.shiftTypes.any { it.hasGap } }.distinctUntilChanged() }
+    return flow.collectAsStateWithLifecycle(false).value
+}
 /** 2.0.0 [RVIB-05] 설정 › 알림 › 메모·할 일. */
 internal const val MEMO_HOLD_ROW = "근무 중 메모 알림 모으기"
 internal const val MEMO_REST_ROW = "쉬는 날 아침 지난 할 일"
@@ -1645,6 +1698,8 @@ internal const val SHIFT_PREVIEW_ROW = "근무 전 한 줄 예고"
 
 /** [BAK-01] 설정 › 데이터's row for moving to a new phone. */
 internal const val MOVE_ROW = "새 휴대폰으로 옮기기"
+/** 2.0.0 [RVL-76] 설정 › 데이터의 날짜별 되돌리기 줄. */
+internal const val TIME_MACHINE_ROW = "날짜별 되돌리기"
 
 /**
  * [BAK-01] 1.25 Z (U8): the steps, what travels, and what stays on this phone and why (결정 Z-D3).
@@ -1661,19 +1716,35 @@ internal fun MoveToNewPhoneDialog(onSend: () -> Unit, onSave: () -> Unit, onDism
                 Text("1. ‘$SEND_BACKUP’를 누르고 암호를 정하면, 보낼 곳(카톡 나에게 보내기, 메일, 드라이브)을 바로 골라요.\n" +
                     "2. 새 휴대폰에 밤낮을 깔고 받은 파일을 누르면 ‘이 백업으로 시작할까요?’가 떠요.",
                     style = MaterialTheme.typography.bodyMedium)
+                // 2.0.0 [RVL-49] HQ-149 ③ (조건 4) The three lists start as one line each with ⓘ: at 글자 200% on the folded width they
+                // made the dialog read like a page before 만들고 보내기. The whole list is one tap away, and opens in full the first time
+                // only where it says what is left behind (the thing a mover needs to know before the old phone is gone). The summaries fit
+                // one line at 글자 200% on the folded width (about 12 letters), so nothing ends in '…'.
                 Text("옮겨지는 것", style = MaterialTheme.typography.titleSmall)
-                Text("모든 달력의 근무·바꾼 날·추가 근무, 메모, 돈 기록, 수면 기록, 급여·연차 설정, 근무 형태별 연장 상한·세금 방식, " +
-                    "적용한 회사 규칙과 보낸 제보, 광장 시세용 내 직종·지역, 앱의 모든 설정과 화면 배치, 결제 알림으로 적기 조정, 우리 조 모아 보기, " +
-                    "마을 › 테마의 내 서랍(입은 테마·입어 본 테마·내 테마·담아 둔 조각·묶음)·받은 작품·만들던 것",
-                    style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                com.bamnat.app.ui.components.Explain(
+                    key = "move.goes",
+                    summary = "모든 기록과 설정",
+                    text = "모든 달력의 근무·바꾼 날·추가 근무, 메모, 돈 기록, 수면 기록, 급여·연차 설정, 근무 형태별 연장 상한·세금 방식, " +
+                        "적용한 회사 규칙과 보낸 제보, 광장 시세용 내 직종·지역, 앱의 모든 설정과 화면 배치, 결제 알림으로 적기 조정, 우리 조 모아 보기, " +
+                        "마을 › 테마의 내 서랍(입은 테마·입어 본 테마·내 테마·담아 둔 조각·묶음)·받은 작품·만들던 것",
+                    iconOnly = false, firstInFull = false,
+                )
                 // 2.0.0 [RVL-13] (검토 T12-02·T12-08) What goes only on a condition, said where the user decides.
                 Text("이럴 때만 옮겨지는 것", style = MaterialTheme.typography.titleSmall)
-                Text("영수증·계약서·메모 사진은 ‘사진도 백업’을 켰을 때. 사업장·직원·급여 대장, 내가 만든 공유 링크(고치는 열쇠), 프로 복구 코드는 백업에 암호를 걸었을 때",
-                    style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                com.bamnat.app.ui.components.Explain(
+                    key = "move.if",
+                    summary = "사진·대장·링크 열쇠",
+                    text = "영수증·계약서·메모 사진은 ‘사진도 백업’을 켰을 때. 사업장·직원·급여 대장, 내가 만든 공유 링크(고치는 열쇠), 프로 복구 코드는 백업에 암호를 걸었을 때",
+                    iconOnly = false, firstInFull = false,
+                )
                 Text("이 휴대폰에만 남는 것", style = MaterialTheme.typography.titleSmall)
-                Text("밤 소리 클립, 출퇴근 장소의 지도 위 좌표, 알람 소리 파일, 문의 기록, 동의 기록과 알림 권한(새 휴대폰에서 다시 물어요), " +
-                    "자동 백업 폴더와 열쇠, ‘밤낮이 한 일’ 기록. 받은 동료 달력은 새 휴대폰에서 다시 이어요",
-                    style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                com.bamnat.app.ui.components.Explain(
+                    key = "move.stays",
+                    summary = "소리·좌표·권한 등",
+                    text = "밤 소리 클립, 출퇴근 장소의 지도 위 좌표, 알람 소리 파일, 문의 기록, 동의 기록과 알림 권한(새 휴대폰에서 다시 물어요), " +
+                        "자동 백업 폴더와 열쇠, ‘밤낮이 한 일’ 기록. 받은 동료 달력은 새 휴대폰에서 다시 이어요",
+                    iconOnly = false,
+                )
             }
         },
         // 조건 2: the one filled button is the thing to do now; 파일로 저장 and 닫기 stay text buttons.
@@ -1740,7 +1811,7 @@ internal fun MoveFromOtherApp(onDismiss: () -> Unit) {
 @Composable
 internal fun NightLookRow(key: String, onPick: (String) -> Unit) {
     val now = com.bamnat.core.design.NightLook.of(key)
-    ChoiceRow(NIGHT_LOOK_ROW, now.detail, com.bamnat.core.design.NightLook.entries.map { it.key to it.label }, now.key, onPick)
+    ChoiceRow(NIGHT_LOOK_ROW, now.detail, com.bamnat.core.design.NightLook.entries.map { it.key to it.label }, now.key, onSelect = onPick)
 }
 
 internal const val NIGHT_LOOK_ROW = "밤 색"

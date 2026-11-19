@@ -68,4 +68,16 @@ class LateClockOutTest {
         // Only on a day calendar.
         assertNull(leaveNowDay(WorkStyle.SHIFT, tomorrowWork, today, at(today, 1)) { work })
     }
+
+    /** [RVH-98] 검토 PC-50: at 05:33 a 9~18 day is not still being clocked out of (+11.5h); an hour or two past midnight still is. */
+    @Test fun aDayWorkersYesterdayChipDoesNotReachBackAcrossTheNight() {
+        val work = day(yesterday, 9, 18)
+        val tomorrowWork = day(today, 9, 18)
+        assertEquals(yesterday, leaveNowDay(WorkStyle.DAY, tomorrowWork, today, at(today, 1)) { work }?.date)
+        assertEquals(today, leaveNowDay(WorkStyle.DAY, tomorrowWork, today, at(today, 5, 33)) { work }?.date)
+        assertNull(leaveNowDay(WorkStyle.DAY, work, today, at(today, 5, 33)) { work })
+        // A shift that really ran to 02:00 is still clocked out of at 05:30.
+        val late = day(yesterday, 18, 2)
+        assertEquals(yesterday, leaveNowDay(WorkStyle.DAY, tomorrowWork, today, at(today, 5, 30)) { late }?.date)
+    }
 }

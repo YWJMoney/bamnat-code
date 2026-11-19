@@ -75,6 +75,12 @@ internal fun CompareCard(vm: StatsViewModel, calc: WorkHoursCalculator, snap: Sc
             } else {
                 CompareTable(now, lastYear, "작년 ${lastYear.month.monthValue}월")
             }
+            // 2.0.0 [RVJ-105] 검토 U05b-10: this month is counted by the roster to its last day, extra work only to today, so the
+            // middle of a month can read '−' against the last one; said once, only for the month that is not over.
+            if (month == java.time.YearMonth.from(com.bamnat.core.time.Today.date())) {
+                Text("이번 달은 근무표대로 말일까지 센 예상이고, 추가 근무는 오늘까지만 들어가요.",
+                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 8.dp))
+            }
             // 2.0.0 [RVH-93] 검토 PC-210 (일근에게 '야간과 급여도'): 야간 for 교대 and 알바 (야간수당), only 급여 for 일근, nothing for the
             // kinds whose money is 돈 (현장·가게·투자 have no 급여 to set here).
             val pays = style?.usesPayEngine != false

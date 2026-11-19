@@ -212,6 +212,8 @@ private object Routes {
     fun calendarSetup(id: String) = "calendar_setup/$id"
     const val MEMO_TRASH = "memo_trash"
     const val DIAGNOSTICS = "diagnostics?testing={testing}"
+    /** 2.0.0 [RVL-70] 설정 › 데이터 › 데이터 점검. */
+    const val DATA_CHECK = "data_check"
 
     fun diagnostics(testing: Boolean) = "diagnostics?testing=$testing"
     /** [MCAL-06] The pay of one of the user's calendars; without one, the main calendar's. */
@@ -609,7 +611,14 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
                 }
             }
             NoticeLinks.Target.MONEY -> { nav.navigateTopLevel(TopLevel.MONEY.route); NoticeLinks.consume(target) }
-            NoticeLinks.Target.MANAGE -> { nav.navigate(Routes.MANAGE) { launchSingleTop = true }; NoticeLinks.consume(target) }
+            NoticeLinks.Target.MANAGE -> {
+                // 2.0.0 [RVJ-96] The 신고·지급 notice opens the 급여 대장 on its 다가올 신고·지급.
+                // [RVJ-100] 검토 T05-05: on that 가게's 대장.
+                com.bamnat.app.boss.BossFilingNotice.placeOf(NoticeLinks.payload.value)?.let { place ->
+                    com.bamnat.app.imports.SharedToManage.openLedger(com.bamnat.app.boss.BossFilingNotice.OPENS, place.ifEmpty { null })
+                }
+                nav.navigate(Routes.MANAGE) { launchSingleTop = true }; NoticeLinks.consume(target)
+            }
             // [INV-08] An investor notice opens its calendar's 투자 tab, which opens the trade itself.
             NoticeLinks.Target.INVEST, NoticeLinks.Target.INVEST_TRADE -> {
                 // [MCAL-03] No calendar named is the main one; its 투자 tab takes the notice only once it is shown.
@@ -671,6 +680,14 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
             }
             // [TOWN-01] 1.37: a 소식 opens 마을 on the part it speaks of, not on the part last seen (장터·테마·공방 hid the answer).
             NoticeLinks.Target.PLAZA -> {
+                // 2.0.0 [RVN-24] I22cc-02: a new question's notice opens 광장 on '답 기다리는 질문'.
+                if (NoticeLinks.payload.value == com.bamnat.app.company.PlazaPush.WAITING) {
+                    com.bamnat.app.ui.company.PlazaLensLink.next = com.bamnat.app.ui.company.Lens.WAITING
+                }
+                // 2.0.0 [RVN-24] I10ac-03: '오늘 야간 어땠어요?' opens on 나와 같은 근무 (only when my tag shows a 근무형태).
+                if (NoticeLinks.payload.value == com.bamnat.app.company.PlazaAfterShift.SAME) {
+                    com.bamnat.app.ui.company.PlazaLensLink.next = com.bamnat.app.ui.company.Lens.SAME
+                }
                 com.bamnat.app.ui.company.TalkSheets.closeAll()
                 com.bamnat.app.ui.hub.HubLinks.open(com.bamnat.app.ui.hub.HubSection.TALK)
                 nav.navigateTopLevel(TopLevel.PLAZA.route); NoticeLinks.consume(target)
@@ -722,7 +739,11 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
             }
             NoticeLinks.Target.SETUP_AGAIN -> { nav.navigate(Routes.SETUP_AGAIN) { launchSingleTop = true }; NoticeLinks.consume(target) }
             // [INQ-05] 밤낮 소식's answer line opens 내 문의 (문의하기 opens there when an answer is new).
-            NoticeLinks.Target.INQUIRY -> { nav.navigate(Routes.INQUIRY) { launchSingleTop = true }; NoticeLinks.consume(target) }
+            // 2.0.0 [RVN-22] U10b-01: the notice of one question's answer opens that question.
+            NoticeLinks.Target.INQUIRY -> {
+                com.bamnat.app.ui.settings.InquiryLinks.openMine(NoticeLinks.payload.value)
+                nav.navigate(Routes.INQUIRY) { launchSingleTop = true }; NoticeLinks.consume(target)
+            }
             // 1.32.1 [STAB-13] Not 알람 점검: a 앱 멈춤 문의 whose 점검 기록 starts with the stop.
             NoticeLinks.Target.STOP_REPORT -> {
                 com.bamnat.app.ui.grow.GrowAsk.feedback(com.bamnat.app.ui.grow.STOP_ABOUT, kind = com.bamnat.app.company.InquiryKind.BUG, withCheck = true)
@@ -744,6 +765,8 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
                 NoticeLinks.consume(target)
             }
             // [SET-01] Settings takes the target itself, to open on the alarm's state from wherever it was.
+            // 2.0.0 [RVL-70][RVL-71] From 설정 › 데이터's row and from the weekly check's notice.
+            NoticeLinks.Target.DATA_CHECK -> { nav.navigate(Routes.DATA_CHECK) { launchSingleTop = true }; NoticeLinks.consume(target) }
             NoticeLinks.Target.ALARM_CHECK -> {
                 val current = nav.currentBackStackEntry?.destination?.route
                 when {
@@ -930,8 +953,10 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
         runCatching { container.inquiryApi.mine(container.companyStore.device) }.onSuccess {
             container.inquiryStore.update(it)
             // [J133-24] A question still waiting is looked at every few hours, so its answer is told at once.
-            if (it.any { q -> q.waiting } && container.settingsRepository.current.plazaNews) com.bamnat.app.company.InquiryReplyJob.schedule(container.appContext,
-                soon = it.any { q -> q.waiting && java.time.Duration.between(q.updatedAt, com.bamnat.core.time.Today.instant()).toDays() < 1 })
+            // 2.0.0 [RVN-22] COMP-55: how often by how long the newest waiting question has waited, and whether push reaches this phone.
+            it.filter { q -> q.waiting }.maxOfOrNull { q -> q.updatedAt }?.takeIf { container.settingsRepository.current.plazaNews }?.let { newest ->
+                com.bamnat.app.company.InquiryReplyJob.schedule(container.appContext, java.time.Duration.between(newest, com.bamnat.core.time.Today.instant()))
+            }
             // 1.36 [GRW-03] PC 확인 a4899e83: 스튜디오 부탁이 풀렸으면 앱을 열 때 한 번 '보러 가기'로 알려요(설정 탭까지 가지 않아도).
             val prefs = container.appContext.getSharedPreferences("studio_solved", android.content.Context.MODE_PRIVATE)
             val told = prefs.getStringSet("told", emptySet()).orEmpty()
@@ -1031,6 +1056,8 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
         else com.bamnat.app.ui.guide.WhatsNewDialog(
             releases = whatsNew.value,
             style = settingsNow.workStyle,
+            // 검토 PC-200: news of another kind of work only when the user keeps a calendar of that kind.
+            also = calendarList.filterNot { it.isExample }.mapNotNull { container.calendars.styleOf(it.id, settingsNow.workStyle) }.toSet(),
             slip = slipLine,
             onSlip = { closeNew(); com.bamnat.app.ui.calendar.TurnSlipAsk.show() },
             recommendOff = recommendOff,
@@ -2502,6 +2529,10 @@ private fun AppNavHost(
             ExtraKindsScreen(vm = vm, onBack = { nav.popFrom(Routes.EXTRA_KINDS) }, start = entry.arguments?.getString("start"),
                 // Back to the pay screen when it opened this one, so the stack does not grow.
                 onOpenPay = { if (!nav.popBackStack(Routes.PAY, inclusive = false)) nav.navigate(Routes.pay(calendar)) { launchSingleTop = true } })
+        }
+        composable(Routes.DATA_CHECK) {
+            val vm = appViewModel(key = "data_check") { DiagnosticsViewModel(it) }
+            com.bamnat.app.ui.diag.DataCheckScreen(vm = vm, onBack = { nav.popFrom(Routes.DATA_CHECK) })
         }
         composable(
             Routes.DIAGNOSTICS,

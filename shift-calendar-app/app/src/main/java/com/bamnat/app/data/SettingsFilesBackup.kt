@@ -23,17 +23,25 @@ class SettingsFilesBackup(
     private val onRestored: () -> Unit = {},
 ) {
 
-    /** One preferences file: all of its keys, or only [keys]. */
-    internal class Part(val name: String, val keys: Set<String>? = null)
+    /**
+     * One preferences file: all of its keys, or only [keys]. 2.0.0 [RVL-77] (검토 I12b-03) [sealedOnly]: a key to something (the 우리 조
+     * code lets anyone in the group see its schedules) goes only into a file saved with a password, and the phone-to-phone copy.
+     */
+    internal class Part(val name: String, val keys: Set<String>? = null, val sealedOnly: Boolean = false)
 
-    fun export(): JSONObject {
+    /** [sealed]: the file is saved with a password ([Part.sealedOnly] parts go in too). [onlySealed]: those parts alone. */
+    fun export(sealed: Boolean = true, onlySealed: Boolean = false): JSONObject {
         val prefs = JSONObject()
         for (part in PARTS) {
+            if (part.sealedOnly && !sealed) continue
+            if (onlySealed && !part.sealedOnly) continue
             val p = context.getSharedPreferences(part.name, Context.MODE_PRIVATE)
             val o = JSONObject()
             for ((k, v) in p.all) {
                 if (part.keys != null && k !in part.keys) continue
-                encode(v)?.let { o.put(k, it) }
+                // [RVL-77] A value sealed by this phone's key goes as it reads (another phone could not open it).
+                val value = if (v is String) com.bamnat.app.backup.Vault.open(v) ?: continue else v
+                encode(value)?.let { o.put(k, it) }
             }
             // [J133B-05] 1.33 빌드 9 확인 ("복원했는데 회사 적용이 그대로예요"): an empty part is written too, so a restore knows the
             // backup had none of it (no company applied) and takes away what came after, instead of keeping it.
@@ -60,8 +68,12 @@ class SettingsFilesBackup(
             }
             if (o.length() > 0) companies.put(id, o)
         }
+        if (onlySealed) return JSONObject().put("prefs", prefs)
         return JSONObject().put("prefs", prefs).put("recurringMarks", marks).apply { if (companies.length() > 0) put("calendarCompany", companies) }
     }
+
+    /** 2.0.0 [RVL-77] Whether a file saved without a password would leave something of a [Part.sealedOnly] part out. */
+    fun plainLeavesOut(): Boolean = PARTS.any { part -> part.sealedOnly && context.getSharedPreferences(part.name, Context.MODE_PRIVATE).all.isNotEmpty() }
 
     /** Puts back what [export] wrote; a part the file does not have keeps what this phone has. */
     fun restore(o: JSONObject?) {
@@ -160,7 +172,7 @@ class SettingsFilesBackup(
             Part("plaza_rate_hint", keys = setOf("own")),
             Part("calendar_view"),
             Part("auto_record"),
-            Part("share_group"),
+            Part("share_group", sealedOnly = true),
             Part("calendar_import", keys = setOf("auto")),
             // [READ-19] 1.27 AJ: 사진 읽기에서 고친 명세서 줄 이름·듀티표 글자.
             Part("read_fixes"),
@@ -220,6 +232,10 @@ class SettingsFilesBackup(
          * travel. The test holds every preferences file in the app to [PARTS], [ELSEWHERE] or this list.
          */
         val DEVICE_ONLY = mapOf(
+            // 2.0.0 [RVL-77] (검토 I12b-03) 열쇠 금고가 이 휴대폰의 열쇠로 잘 열리는지 보는 작은 값: 다른 휴대폰의 열쇠로는 열리지 않아요.
+            "key_vault" to "열쇠 금고 확인 값, 이 휴대폰의 열쇠로만 열려요",
+            // 2.0.0 [RVL-78] (검토 I12c-02) 받은 달력의 '끝나 가요' 카드를 닫은 것: 받은 달력이 이 휴대폰에만 있어 함께 남아요.
+            "received_health" to "받은 달력의 링크 안내 카드를 닫은 기록, 받은 달력과 함께 이 휴대폰에만",
             // 2.0.0 [RVI-17] 낮잠 깨우기: 이 휴대폰에 맞춘 알람 하나의 날·시각이라, 새 휴대폰에서 다시 울리지 않게 옮기지 않아요.
             "nap_wake" to "낮잠 깨우기 알람의 날과 시각, 이 휴대폰에 맞춘 알람의 것",
             // 2.0.0 [RVI-22] 꺼져 있던 사이 지나간 메모 알림을 어디까지 알렸는지: 이 휴대폰이 꺼져 있던 때의 일이라 옮기지 않아요.
@@ -319,6 +335,12 @@ class SettingsFilesBackup(
             // 2.0.0 [RVN-10][RVN-11][RVN-13] COMP-44·46·47: this phone's yes and what waits for its connection.
             "company:auto_pay" to "저절로 나누기에 계산 방식도 넣을지, 이 휴대폰에서 답한 것(새 휴대폰에서 다시 물어요)",
             "company:auto_once" to "인터넷이 없을 때 누른 '나눌게요', 연결되면 한 번 보내는 이 휴대폰의 대기",
+            // 2.0.0 [RVN-22] 검토 I10bc-03: the way for each part and what is held for the morning, this phone's (asked again on a new phone).
+            "company:share_ways" to "근무주기·근무 시간·급여 계산 방식을 저절로·묻기·안 함 가운데 어떻게 나눌지, 이 휴대폰에서 고른 것(새 휴대폰에서 다시 물어요)",
+            "company:plaza_has" to "광장에 마지막으로 나눈 설정(금액 없음), 한 부분만 나눌 때 나머지를 채우는 이 휴대폰의 것",
+            "company:held_parts" to "다음 날 오전에 나눌 부분, 이 휴대폰의 보내기 대기",
+            "company:held_line" to "다음 날 오전에 나눌 바뀐 것의 한 줄, 이 휴대폰의 보내기 대기",
+            "company:held_until" to "다음 날 오전에 나눌 때, 이 휴대폰의 보내기 대기",
             "company:take_back_later" to "인터넷이 없을 때 누른 되돌리기, 연결되면 거두는 이 휴대폰의 대기",
             "company:kept_calls" to "인터넷이 없을 때 누른 쓰고 있어요·맞아요·회사 빼기, 연결되면 보내는 이 휴대폰의 대기",
             "company:member" to "참여한 회사는 이 휴대폰의 설치 번호로 서버에 있어요",
@@ -327,11 +349,15 @@ class SettingsFilesBackup(
             "inquiry" to "문의 기록은 이 휴대폰의 설치 번호로 열려요",
             "commute" to "출퇴근 장소의 지도 위 좌표는 다니는 파일에 넣지 않아요",
             "auto_backup" to "자동 백업 폴더와 열쇠(비밀값)",
+            // 2.0.0 [RVL-71] What this phone's weekly 데이터 점검 last found; the switch itself is in the settings (dataSelfCheck).
+            "data_self_check" to "데이터 점검이 이 휴대폰에서 마지막으로 살펴본 때와 찾은 것이에요",
             "device" to "동의 기록은 새 휴대폰에서 다시 물어요",
             "usage_stats" to "사용 통계는 이 휴대폰에서 동의한 만큼만",
             "alarm_state" to "알람 예약 상태는 설정에서 다시 만들어요",
             "alarm_guard" to "알람 지킴이가 오늘 알린 문제(하루 한 번 알리기 위한 표시)일 뿐이에요", // [ALRM-27]
             "boot_alarms" to "알람 예약 상태는 설정에서 다시 만들어요",
+            // 2.0.0 [RVIB-28] (PC-188)
+            "ring_keeper" to "지금 울리는 알람 하나, 앱이 꺼져도 이어 울리게 이 휴대폰에만 둬요",
             "alarms_off" to "‘오늘 남은 알람 모두 끄기’는 이 휴대폰의 오늘 하루 것",
             // [ALRM-21] 1.35.
             "alarm_soon" to "‘이번 알람 끄기’는 이 휴대폰에 곧 울릴 알람 하나의 것",
@@ -356,6 +382,10 @@ class SettingsFilesBackup(
             "plaza_news" to "이 휴대폰이 받은 광장 소식",
             // 2.0.0 [RVN-14] 알림함 '사람들 반응' 줄에 아직 더해 갈 반응 수: 이 휴대폰의 알림함 줄이라 옮기지 않아요.
             "plaza_inbox" to "알림함 ‘사람들 반응’ 줄에 더해 갈 반응 수, 이 휴대폰의 알림함 것",
+            // 2.0.0 [RVN-22] (검토 COMP-60) 달력마다 저절로 나누기 작업 번호: 이 휴대폰의 예약 작업 번호라 옮기지 않아요.
+            "outbox_ids" to "달력마다 저절로 나누기 예약 작업의 번호, 이 휴대폰의 예약 작업 것",
+            // 2.0.0 [RVN-22] (검토 I10bc-02) 앱을 연 30분 칸(14일): 이 휴대폰을 쓰는 버릇이라 옮기지 않고, 서버로도 가지 않아요.
+            "open_times" to "앱을 주로 여는 30분 칸(최근 14일), 미리 받기 시각을 고르려고 이 휴대폰에만",
             "app_state" to "앱을 마지막으로 연 때(화면 되살리기)",
             // [INVITE-02] 1.26 AE: tied to this install on the company server; the months move with the recovery code.
             "invite" to "친구 초대: 이 설치에 묶인 초대 코드와 받은 초대(이용권은 복구 코드로 옮겨요)",
@@ -370,6 +400,8 @@ class SettingsFilesBackup(
             // C 1.32 [STAB-03][STAB-04]: this phone's stops, counted, and whether it opened safely.
             "crash_notice" to "같은 곳에서 멈춘 횟수와 마지막으로 알린 날, 이 휴대폰에서만",
             "start_guard" to "연달아 멈춘 시작 수(안전 모드), 이 휴대폰에서만",
+            // 2.0.0 [RVL-90] 사용 통계에 실어 보낼 멈춤 표시(날짜별 숫자뿐), 사용 통계와 같이 이 휴대폰의 것.
+            "crash_stats" to "사용 통계로 보낼 멈춘 날의 표시, 이 휴대폰에서만",
             // [PERF-15][PERF-16] 1.28 AO: how long this phone took to open; 보내기 대기는 사용 통계와 같이 이 휴대폰의 것.
             "startup_stats" to "앱을 여는 데 걸린 시간, 이 휴대폰에서 잰 것",
             // AQ 1.29 [PHOTO-09]: '사진이 달라요' counts waiting to be sent (60 days), this phone's only.

@@ -156,7 +156,9 @@ class PhaseThreeBackupTest {
      */
     @Test fun rvjFieldsComeBackAsSaved() = runBlocking {
         ScheduleRepository(db).ensureDefaults()
-        val call = com.bamnat.core.team.TeamCall("B1", "btok", com.bamnat.core.team.TeamCover.Gap("s1", month.atDay(7), 0), listOf("s1"), listOf("https://s.example/v/V2"))
+        // [RVJ-101] The hours a 대타 was asked for are kept with the call ("HH:mm-HH:mm"); a call without them reads as none.
+        val call = com.bamnat.core.team.TeamCall("B1", "btok", com.bamnat.core.team.TeamCover.Gap("s1", month.atDay(7), 0), listOf("s1"), listOf("https://s.example/v/V2"),
+            hours = com.bamnat.core.work.StaffShift(java.time.LocalTime.of(9, 30), java.time.LocalTime.of(18, 0)))
         store.saveWorkplace(Workplace("w1", "가나다카페", fivePlus = true, payday = 25, payNextMonth = false, owner = "김사장", address = "서울 어딘가 1", calls = listOf(call)))
         val back = store.workplaceNow("w1")!!
         assertEquals(25, back.payday)
@@ -164,6 +166,8 @@ class PhaseThreeBackupTest {
         assertEquals("김사장", back.owner)
         assertEquals("서울 어딘가 1", back.address)
         assertEquals(listOf("B1"), back.calls.map { it.id })
+        assertEquals(call.hours, back.calls.single().hours)
+        assertEquals(null, PhaseThreeStore.decodeCalls(PhaseThreeStore.encodeCalls(listOf(call.copy(hours = null)))).single().hours)
         assertEquals(java.time.LocalDate.of(2026, 11, 25), back.payDate(month))
         // A place saved before 2.0.0 (plain payday, calls as a list) reads as the next month with no 대표자.
         store.saveWorkplace(Workplace("w2", "옛가게", fivePlus = false, payday = 10))

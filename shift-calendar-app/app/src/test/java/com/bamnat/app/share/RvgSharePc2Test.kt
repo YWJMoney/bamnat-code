@@ -203,8 +203,10 @@ class RvgSharePc2Test {
         c.scheduleRepository.setOverride(Today.date().plusDays(3), ShiftOverride.Shift(dayType().id))
         assertEquals(ShareSync.Result.Refused, sync.sync())
         assertNull("said once", c.shareLinks.dropped.value)
-        // Sent at last: the count starts again.
+        // Sent at last: the count starts again. 2.0.0 [RVL-56] The refused change itself is not sent again by itself; the next change is.
         server.down = null
+        assertEquals(ShareSync.Result.Refused, sync.sync())
+        c.scheduleRepository.setOverride(Today.date().plusDays(5), ShiftOverride.Shift(dayType().id))
         assertEquals(ShareSync.Result.Sent, sync.sync())
         server.down = ShareLinkException("title")
         c.scheduleRepository.setOverride(Today.date().plusDays(4), ShiftOverride.Shift(dayType().id))
@@ -224,8 +226,14 @@ class RvgSharePc2Test {
         assertTrue(c.shareLinks.refused.value)
         assertTrue(c.shareLinks.unsent.value)
         assertTrue(c.shareLinks.link.value != null)
-        for (busy in listOf("rate_limited", "paused", "server", "http_429", "http_503", "bad_response")) {
+        // 2.0.0 [RVL-56] (검토 DATA-12) The same change is not sent again by itself (no call to the server); a change to it is.
+        val calls = server.calls
+        assertEquals(ShareSync.Result.Refused, sync.sync())
+        assertEquals(calls, server.calls)
+        var day = 2L
+        for (busy in listOf("rate_limited", "paused", "server", "http_429", "http_503", "http_408", "bad_response")) {
             server.down = ShareLinkException(busy)
+            c.scheduleRepository.setOverride(Today.date().plusDays(day++), ShiftOverride.Shift(dayType().id))
             assertEquals(busy, ShareSync.Result.Offline, sync.sync())
             assertFalse(busy, ShareLinkPayload.refused(ShareLinkException(busy)))
         }
@@ -235,6 +243,29 @@ class RvgSharePc2Test {
         assertEquals(ShareSync.Result.Sent, sync.sync())
         assertFalse("sent: the refusal is over", c.shareLinks.refused.value)
         assertFalse(c.shareLinks.unsent.value)
+    }
+
+    /**
+     * 2.0.0 [RVL-56] (검토 DATA-12·U12-07) A 근무 이름 with a phone number: the share card says which line and where to mend it in one
+     * line (not '인터넷이 되면'), the outbox does not send it again, and a bare 4xx with no word of the server's is a refusal too.
+     */
+    @Test fun aContactRefusalSaysTheLineAndWhereAndIsNotSentAgain() = runBlocking {
+        c.shareLinks.save(link())
+        val sync = ShareSync(c)
+        server.down = ShareLinkException("contact", why = "phone", text = "주간 010-1234-5678", key = "labels")
+        assertEquals(ShareSync.Result.Refused, sync.sync())
+        assertEquals("‘주간 010-1234-5678’에 전화번호가 있어 못 보냈어요. 근무 이름에서 빼 주세요.", c.shareLinks.refusedWhy.value)
+        val calls = server.calls
+        assertTrue("a refusal is not left for the outbox", sync.sendUnsent())
+        assertEquals("the outbox did not send it again", calls, server.calls)
+        // Mended (the server takes it now): sent with the next change, and the line goes.
+        server.down = null
+        c.scheduleRepository.setOverride(Today.date().plusDays(2), ShiftOverride.Shift(dayType().id))
+        assertEquals(ShareSync.Result.Sent, sync.sync())
+        assertNull(c.shareLinks.refusedWhy.value)
+        for (code in listOf("http_400", "http_413", "http_422")) assertTrue(code, ShareLinkPayload.refused(ShareLinkException(code)))
+        for (code in listOf("http_408", "http_425", "http_429", "http_500", "http_502")) assertFalse(code, ShareLinkPayload.refused(ShareLinkException(code)))
+        assertNull("no reason the app can say", ShareLinkPayload.refusedWhy(ShareLinkException("title")))
     }
 
     /** SN-13 / SN-14: what can be left out is; what cannot gives null (said as refused). */

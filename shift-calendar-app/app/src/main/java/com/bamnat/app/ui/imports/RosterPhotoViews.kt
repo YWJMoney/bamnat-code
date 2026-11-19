@@ -17,7 +17,8 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ZoomIn
 import androidx.compose.material.icons.filled.ZoomOut
-import com.bamnat.app.ui.components.FilledTonalIconButton
+import androidx.compose.material3.IconButton
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import com.bamnat.app.ui.components.OutlinedButton
@@ -72,13 +73,14 @@ internal fun WhichLine(rows: List<RosterRow>, types: List<ShiftType>, onPick: (I
     val byId = types.associateBy { it.id }
     Surface(color = MaterialTheme.colorScheme.tertiaryContainer, shape = MaterialTheme.shapes.medium) {
         Column(Modifier.fillMaxWidth().padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            Text("어느 줄(조)이 내 것인가요?", style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.onTertiaryContainer)
+            // 2.0.0 [RVL-72] A 시간표·공수표 has people's lines, not 조.
+            Text(if (rows.any { it.timed }) "어느 줄이 내 것인가요?" else "어느 줄(조)이 내 것인가요?", style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.onTertiaryContainer)
             Text("근무표에서 ${rows.size}개 줄을 읽었어요. 고르면 다음 달 근무표에서는 같은 줄을 먼저 골라 둬요.",
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onTertiaryContainer)
             rows.forEachIndexed { i, r ->
                 OutlinedButton(onClick = { onPick(i) }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
                     Column(Modifier.fillMaxWidth()) {
-                        Text(r.label.ifBlank { "${i + 1}번째 줄" } + " · ${r.cells.size}일", maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        Text(r.label.ifBlank { "${i + 1}번째 줄" } + (if (r.weekly.isNotEmpty()) " · 매주 ${r.weekly.size}일" else " · ${r.cells.size}일"), maxLines = 1, overflow = TextOverflow.Ellipsis)
                         Text(preview(r, byId), style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis,
                             color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
@@ -90,8 +92,17 @@ internal fun WhichLine(rows: List<RosterRow>, types: List<ShiftType>, onPick: (I
 
 /** The first days of a line as they were written: "1일부터 D D E E N N O". */
 internal fun preview(r: RosterRow, byId: Map<Long, ShiftType>): String {
+    // 2.0.0 [RVL-72] A 요일표: "월 9–15 · 수 9–15"; a 시간표·공수표: the days worked with their times ("3일 9–15 · 5일 18–23").
+    if (r.weekly.isNotEmpty()) return r.weekly.toSortedMap().entries.joinToString(" · ") { (d, c) ->
+        d.getDisplayName(java.time.format.TextStyle.SHORT, java.util.Locale.KOREAN) + " " + short(c, byId) }
+    if (r.timed) return r.cells.toSortedMap().entries.filter { it.value != DutyCell.Off }.take(4).joinToString(" · ") { (d, c) -> "${d}일 ${short(c, byId)}" }
     val first = r.cells.keys.minOrNull() ?: return ""
-    return "${first}일부터 " + (first until first + 10).mapNotNull { d -> r.cells[d]?.let { short(it, byId) } }.joinToString(" ")
+    val last = minOf(first + 9, r.cells.keys.max())
+    // 2.0.0 [PC-185] (통합 4차 PC) Each day in its place, as the photo wrote it: a blank keeps its place with '·' (the line read on one
+    // day to the left of the photo before), and a word is the photo's own ('O' on every line, not 'ㅇ' on one and '휴' on another).
+    return "${first}일부터 " + (first..last).joinToString(" ") { d ->
+        r.raw[d]?.trim()?.takeIf { it.isNotEmpty() } ?: r.cells[d]?.let { short(it, byId) } ?: "·"
+    }
 }
 
 private fun short(c: DutyCell, byId: Map<Long, ShiftType>): String = when (c) {
@@ -99,6 +110,8 @@ private fun short(c: DutyCell, byId: Map<Long, ShiftType>): String = when (c) {
     DutyCell.Off -> "휴"
     is DutyCell.Leave -> "연"
     is DutyCell.Unknown -> c.raw
+    // 2.0.0 [RVL-72] "9–15", "1.5공".
+    is DutyCell.Hours, is DutyCell.Units -> com.bamnat.core.imports.TimeSheet.short(c).orEmpty()
 }
 
 /**
@@ -214,69 +227,72 @@ private fun RosterPhoto(
         val fit = startZoom(box, image.width, image.height)
         if (fit > 1f) { zoom = fit; offset = place(Offset.Zero, fit) }
     }
-    Box(
-        modifier.clipToBounds().onSizeChanged { box = it }
-            .semantics {
-                contentDescription = if (onTap != null) "근무표 사진, 줄을 눌러 골라요" else "근무표 사진"
-                customActions = listOf(
-                    CustomAccessibilityAction("크게") { zoomBy(STEP); true },
-                    CustomAccessibilityAction("작게") { zoomBy(1 / STEP); true },
-                    CustomAccessibilityAction("사진을 왼쪽으로") { move(box.width / 4f, 0f) },
-                    CustomAccessibilityAction("사진을 오른쪽으로") { move(-box.width / 4f, 0f) },
-                    CustomAccessibilityAction("사진을 위로") { move(0f, box.height / 4f) },
-                    CustomAccessibilityAction("사진을 아래로") { move(0f, -box.height / 4f) },
-                )
-            }
-            .pointerInput(scan) {
-                detectTransformGestures { centroid, pan, z, _ ->
-                    val next = (zoom * z).coerceIn(1f, MAX_ZOOM)
-                    val from = place(offset, zoom)
-                    offset = place(centroid - (centroid - from) * (next / zoom) + pan, next)
-                    zoom = next
+    // 2.0.0 [RVL-92] (HQ-105) ⊖ ⊕ and the zoom in words sat on the photo's lower right and hid the lines being read: they go in a
+    // band of their own under it (as the payslip photo's PhotoBand, HQ-102), and the photo gives the band its height, so what is
+    // under the photo keeps its place.
+    Column(modifier) {
+        Box(
+            Modifier.weight(1f).fillMaxWidth().clipToBounds().onSizeChanged { box = it }
+                .semantics {
+                    contentDescription = if (onTap != null) "근무표 사진, 줄을 눌러 골라요" else "근무표 사진"
+                    customActions = listOf(
+                        CustomAccessibilityAction("크게") { zoomBy(STEP); true },
+                        CustomAccessibilityAction("작게") { zoomBy(1 / STEP); true },
+                        CustomAccessibilityAction("사진을 왼쪽으로") { move(box.width / 4f, 0f) },
+                        CustomAccessibilityAction("사진을 오른쪽으로") { move(-box.width / 4f, 0f) },
+                        CustomAccessibilityAction("사진을 위로") { move(0f, box.height / 4f) },
+                        CustomAccessibilityAction("사진을 아래로") { move(0f, -box.height / 4f) },
+                    )
                 }
-            }
-            .pointerInput(scan, onTap != null) {
-                detectTapGestures(
-                    onTap = { p -> onTap?.let { tap -> photoTap(p, place(offset, zoom), zoom, box.width.toFloat() / image.width, scan.scale).let { (x, y) -> tap(x, y) } } },
-                    onDoubleTap = { p -> if (zoom > 1.01f) { zoom = 1f; offset = place(Offset.Zero, 1f) } else zoomBy(DOUBLE_TAP, p) },
-                )
-            },
-    ) {
-        Canvas(Modifier.matchParentSize()) {
-            if (size.width <= 0f) return@Canvas
-            val fit = size.width / image.width
-            val at = place(offset, zoom)
-            val s = zoom * fit
-            withTransform({ translate(at.x, at.y); scale(s, s, pivot = Offset.Zero) }) {
-                drawImage(bitmap, dstSize = IntSize(image.width, image.height), filterQuality = FilterQuality.Medium)
-                // The words' pixels → the photo's.
-                val k = 1f / scan.scale
-                lines.forEach { l ->
-                    val color = when (l.kind) {
-                        RosterPhotoRead.Kind.DAYS, RosterPhotoRead.Kind.WEEKDAYS -> days
-                        RosterPhotoRead.Kind.DUTIES -> duties
-                        RosterPhotoRead.Kind.OTHER -> other
+                .pointerInput(scan) {
+                    detectTransformGestures { centroid, pan, z, _ ->
+                        val next = (zoom * z).coerceIn(1f, MAX_ZOOM)
+                        val from = place(offset, zoom)
+                        offset = place(centroid - (centroid - from) * (next / zoom) + pan, next)
+                        zoom = next
                     }
-                    drawRect(color, Offset(l.left * k, l.top * k), Size((l.right - l.left) * k, (l.bottom - l.top) * k), style = Stroke(2.dp.toPx() / s))
                 }
-                marks.forEach { (x, y) -> drawCircle(mark, 8.dp.toPx() / s, Offset(x * k, y * k)) }
+                .pointerInput(scan, onTap != null) {
+                    detectTapGestures(
+                        onTap = { p -> onTap?.let { tap -> photoTap(p, place(offset, zoom), zoom, box.width.toFloat() / image.width, scan.scale).let { (x, y) -> tap(x, y) } } },
+                        onDoubleTap = { p -> if (zoom > 1.01f) { zoom = 1f; offset = place(Offset.Zero, 1f) } else zoomBy(DOUBLE_TAP, p) },
+                    )
+                },
+        ) {
+            Canvas(Modifier.matchParentSize()) {
+                if (size.width <= 0f) return@Canvas
+                val fit = size.width / image.width
+                val at = place(offset, zoom)
+                val s = zoom * fit
+                withTransform({ translate(at.x, at.y); scale(s, s, pivot = Offset.Zero) }) {
+                    drawImage(bitmap, dstSize = IntSize(image.width, image.height), filterQuality = FilterQuality.Medium)
+                    // The words' pixels → the photo's.
+                    val k = 1f / scan.scale
+                    lines.forEach { l ->
+                        val color = when (l.kind) {
+                            RosterPhotoRead.Kind.DAYS, RosterPhotoRead.Kind.WEEKDAYS -> days
+                            RosterPhotoRead.Kind.DUTIES -> duties
+                            RosterPhotoRead.Kind.OTHER -> other
+                        }
+                        drawRect(color, Offset(l.left * k, l.top * k), Size((l.right - l.left) * k, (l.bottom - l.top) * k), style = Stroke(2.dp.toPx() / s))
+                    }
+                    marks.forEach { (x, y) -> drawCircle(mark, 8.dp.toPx() / s, Offset(x * k, y * k)) }
+                }
             }
+            // 2.0.0 [RVL-35] (검토 HQ-80) More to the side: the edge it goes on past fades.
+            val at = place(offset, zoom)
+            val shade = MaterialTheme.colorScheme.surface
+            if (at.x < -1f) Box(Modifier.align(Alignment.CenterStart).fillMaxHeight().width(24.dp)
+                .background(androidx.compose.ui.graphics.Brush.horizontalGradient(listOf(shade.copy(alpha = 0.85f), Color.Transparent))))
+            if (at.x + box.width * zoom > box.width + 1f) Box(Modifier.align(Alignment.CenterEnd).fillMaxHeight().width(24.dp)
+                .background(androidx.compose.ui.graphics.Brush.horizontalGradient(listOf(Color.Transparent, shade.copy(alpha = 0.85f)))))
         }
-        // 2.0.0 [RVL-35] (검토 HQ-80) More to the side: the edge it goes on past fades.
-        val at = place(offset, zoom)
-        val shade = MaterialTheme.colorScheme.surface
-        if (at.x < -1f) Box(Modifier.align(Alignment.CenterStart).fillMaxHeight().width(24.dp)
-            .background(androidx.compose.ui.graphics.Brush.horizontalGradient(listOf(shade.copy(alpha = 0.85f), Color.Transparent))))
-        if (at.x + box.width * zoom > box.width + 1f) Box(Modifier.align(Alignment.CenterEnd).fillMaxHeight().width(24.dp)
-            .background(androidx.compose.ui.graphics.Brush.horizontalGradient(listOf(Color.Transparent, shade.copy(alpha = 0.85f)))))
-        // ⊕ ⊖ for one hand, TalkBack and Switch Access; the zoom in words while zoomed.
-        Row(Modifier.align(Alignment.BottomEnd).padding(4.dp), verticalAlignment = Alignment.CenterVertically) {
-            if (zoom > 1.01f) Text("${(zoom * 100).roundToInt()}%", style = MaterialTheme.typography.labelMedium,
-                color = MaterialTheme.colorScheme.inverseOnSurface,
-                modifier = Modifier.padding(end = 4.dp).background(MaterialTheme.colorScheme.inverseSurface.copy(alpha = 0.7f), MaterialTheme.shapes.small)
-                    .padding(horizontal = 8.dp, vertical = 4.dp))
-            FilledTonalIconButton(onClick = { zoomBy(1 / STEP) }, enabled = zoom > 1.01f) { Icon(Icons.Filled.ZoomOut, contentDescription = "사진 작게") }
-            FilledTonalIconButton(onClick = { zoomBy(STEP) }, enabled = zoom < MAX_ZOOM - 0.01f) { Icon(Icons.Filled.ZoomIn, contentDescription = "사진 크게") }
+        // ⊕ ⊖ for one hand, TalkBack and Switch Access, under the photo; the zoom in words while zoomed, up to 130% letters (HQ-105).
+        Row(Modifier.fillMaxWidth().heightIn(min = 48.dp).padding(horizontal = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+            IconButton(onClick = { zoomBy(1 / STEP) }, enabled = zoom > 1.01f) { Icon(Icons.Filled.ZoomOut, contentDescription = "사진 작게") }
+            IconButton(onClick = { zoomBy(STEP) }, enabled = zoom < MAX_ZOOM - 0.01f) { Icon(Icons.Filled.ZoomIn, contentDescription = "사진 크게") }
+            if (zoom > 1.01f && LocalDensity.current.fontScale <= 1.3f) Text("${(zoom * 100).roundToInt()}%", style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(horizontal = 4.dp))
         }
     }
 }

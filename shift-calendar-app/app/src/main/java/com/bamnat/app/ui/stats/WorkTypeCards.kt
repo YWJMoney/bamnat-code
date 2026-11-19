@@ -283,8 +283,8 @@ private fun DayFirstCard(
             if (profile?.publicGrade != null) Text(DayWork.PUBLIC_RULE_NOTE, style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(bottom = 8.dp))
         }
-        com.bamnat.app.tax.TaxWayChips(mode) { m -> taxScope.launch { com.bamnat.app.tax.TaxWay.pick(container, calendarId, m) } }
-        if (mode == TaxMode.INSURANCE_4 && profile != null) TaxFamilyRow(calendarId, profile)
+        com.bamnat.app.tax.TaxWayChips(mode, daily = com.bamnat.app.tax.TaxWay.daily(profile)) { m -> taxScope.launch { com.bamnat.app.tax.TaxWay.pick(container, calendarId, m) } }
+        if (mode == TaxMode.INSURANCE_4 && profile != null) TaxFamilyRow(calendarId, profile, month)
         takeHome?.takeIf { it.deductions.isNotEmpty() }?.let { r ->
             Text(
                 r.deductions.joinToString(" · ") { (name, v) -> "$name ${Fmt.won(v)}" },
@@ -305,7 +305,7 @@ private fun DayFirstCard(
  */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun TaxFamilyRow(calendarId: String, profile: PayProfile) {
+private fun TaxFamilyRow(calendarId: String, profile: PayProfile, month: YearMonth) {
     val store = LocalContext.current.appContainer.calendars.pay(calendarId)
     val scope = rememberCoroutineScope()
     fun set(change: (PayProfile) -> PayProfile) = scope.launch { store.update(change) }
@@ -321,8 +321,8 @@ private fun TaxFamilyRow(calendarId: String, profile: PayProfile) {
         }
         Text("근로소득세는 국세청 간이세액표 값이에요. 가족 수는 본인·배우자를 포함해 세어 주세요.",
             style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        // 1.39 [PAYX-59] 만 60세 이상·65세 이후 고용·주 15시간 미만: 그 보험은 떼지 않아요.
-        com.bamnat.app.ui.pay.InsuranceOffRow(profile.insuranceOff) { off -> set { it.copy(insuranceOff = off) } }
+        // 1.39 [PAYX-59] 만 60세 이상·65세 이후 고용·주 15시간 미만: 그 보험은 떼지 않아요. 2.0.0 [RVJ-81] 생년으로 저절로.
+        com.bamnat.app.ui.pay.InsuranceOffRow(profile, month) { change -> set(change) }
     }
 }
 
@@ -368,7 +368,9 @@ private fun PayGapCard(
             profile != null && payTotal != null && mode == null && !fromRecords -> {
                 Text("${com.bamnat.app.tax.TaxWay.UNKNOWN}. ${payWord}에서 무엇을 떼나요?", style = MaterialTheme.typography.bodyMedium)
                 val c = context.appContainer
-                com.bamnat.app.tax.TaxWayChips(null, Modifier.padding(top = 6.dp)) { m -> scope.launch { com.bamnat.app.tax.TaxWay.pick(c, calendarId, m) } }
+                com.bamnat.app.tax.TaxWayChips(null, Modifier.padding(top = 6.dp), daily = com.bamnat.app.tax.TaxWay.daily(profile)) { m ->
+                    scope.launch { com.bamnat.app.tax.TaxWay.pick(c, calendarId, m) }
+                }
             }
             profile == null || expected == null -> {
                 Text("급여 계산을 먼저 맞추면, 들어온 급여와 계산한 급여의 차이를 알려 드려요.",
@@ -433,6 +435,7 @@ private fun TaxMode.gapLabel(): String = when (this) {
     TaxMode.INSURANCE_4 -> "4대보험·세금 뺀 참고값"
     TaxMode.WITHHOLDING_3_3 -> "3.3% 뺀 값"
     TaxMode.NONE -> "세전"
+    TaxMode.DAILY_WORKER -> "일용근로 세금·고용보험 뺀 참고값"
 }
 
 /** [PAYX-48] 들어온 급여: the amount that reached the account and the day, kept as a 급여 line in 돈. */
@@ -449,9 +452,9 @@ private fun AddPayDialog(start: LocalDate, onDismiss: () -> Unit, onSave: (Local
                     color = MaterialTheme.colorScheme.onSurfaceVariant)
                 com.bamnat.app.ui.pay.MoneyField("들어온 급여", amount, onChange = { amount = it })
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    TextButton(onClick = { date = date.minusDays(1) }) { Text("‹") }
+                    com.bamnat.app.ui.components.GlyphStepButton("‹", "하루 전", onClick = { date = date.minusDays(1) }, outlined = false)
                     Text(Fmt.shortDate(date), style = MaterialTheme.typography.titleSmall, modifier = Modifier.weight(1f))
-                    TextButton(onClick = { date = date.plusDays(1) }, enabled = date.isBefore(Today.date())) { Text("›") }
+                    com.bamnat.app.ui.components.GlyphStepButton("›", "다음 날", onClick = { date = date.plusDays(1) }, enabled = date.isBefore(Today.date()), outlined = false)
                 }
             }
         },

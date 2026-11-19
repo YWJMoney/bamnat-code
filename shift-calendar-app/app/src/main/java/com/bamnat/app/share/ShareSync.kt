@@ -96,6 +96,7 @@ class ShareSync(
     suspend fun sync(key: String = PersonalCalendar.MAIN): Result = lock.withLock {
         val store = c.shareLinksOf(key)
         store.expire()
+        sayEnded(store)
         val link = store.link.value ?: return@withLock Result.Same
         if (!store.auto) return@withLock Result.Same
         // [TRY-06] A work only being tried never goes out; once it is put back, the change sends what is there.
@@ -214,6 +215,9 @@ class ShareSync(
             if (store.unsent.value) store.sendResult(clock())
             return Result.Same
         }
+        // 2.0.0 [RVL-56] (검토 DATA-12) The very change the server turned down is not sent again by itself on every other edit or
+        // every outbox run (1.39 sent it again each time and was turned down each time); a change to it, or 지금 보내기, goes.
+        if (byItself && ttlDays == null && store.refusedPrint == sent) return Result.Refused
         return try {
             // 2.0.0 [RVG-27] 검토 SN-13: a part the server turns down for what it carries goes without, said once above the calendar.
             val went = sendLeavingOut(payload, store.leaveOut()) { c.shareApi.update(link, it) }
@@ -226,12 +230,13 @@ class ShareSync(
             Result.Sent
         } catch (e: ShareLinkException) {
             when {
-                e.message == "not_found" || e.message == "forbidden" -> { store.clear(); Result.Gone }
+                // 2.0.0 [RVL-78] (검토 I12c-02) Not forgotten without a word: the share sheet and the 알림함 say it ended.
+                e.message == "not_found" || e.message == "forbidden" -> { store.ended(clock()); sayEnded(store); Result.Gone }
                 // [RVG-27] Turned down for something that cannot be left out: not tried again by itself (it would be turned down
                 // again); the share card says so, and the second time running above the calendar too (검토 S7-3).
                 ShareLinkPayload.refused(e) -> {
                     c.telemetry.event("share_link_refused", e.message.orEmpty().take(24))
-                    store.refusedNow()
+                    store.refusedNow(ShareLinkPayload.refusedWhy(e), sent)
                     if (byItself && store.refusedAgain(e.message)) store.setDropped(ShareLinkPayload.REFUSED_AGAIN)
                     Result.Refused
                 }
@@ -240,6 +245,14 @@ class ShareSync(
         } catch (e: IOException) {
             store.sendResult(null)
             Result.Offline
+        }
+    }
+
+    /** 2.0.0 [RVL-78] A link that stopped by itself goes in the 알림함 once. */
+    private fun sayEnded(store: ShareLinkStore) {
+        val at = store.endedToSay() ?: return
+        runCatching {
+            ShareExpiryReminder.postEnded(c.appContext, store.key, at, c.calendars.get(store.calendarId)?.name)
         }
     }
 

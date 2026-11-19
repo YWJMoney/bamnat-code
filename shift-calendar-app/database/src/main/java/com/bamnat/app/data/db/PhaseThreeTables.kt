@@ -210,6 +210,10 @@ interface TeamDao {
     @Query("SELECT * FROM team_month WHERE teamId = :teamId AND month = :month")
     fun observeMonth(teamId: String, month: String): Flow<TeamMonthEntity?>
 
+    /** 2.0.0 [RVJ-102] One month once (the board confirmed so far, and the one before it). */
+    @Query("SELECT * FROM team_month WHERE teamId = :teamId AND month = :month")
+    suspend fun monthNow(teamId: String, month: String): TeamMonthEntity?
+
     @Query("SELECT * FROM team_month")
     suspend fun months(): List<TeamMonthEntity>
 
@@ -318,6 +322,10 @@ interface PayrollDao {
 
     @Query("DELETE FROM payroll_line WHERE workplaceId = :workplaceId AND month = :month")
     suspend fun deleteLines(workplaceId: String, month: String)
+
+    /** 2.0.0 [RVJ-100] An empty 가게 taken away (the store checks it has no 직원 and no 대장 first). */
+    @Query("DELETE FROM workplace WHERE id = :id")
+    suspend fun deleteWorkplace(id: String)
 
     /** 대장 닫기: the month's lines as they are now, and the month CLOSED, in one step. */
     @Transaction

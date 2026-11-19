@@ -77,20 +77,35 @@ object PublicSetup {
  * placeholders marked 확인 필요 ([Unknowns.item]) until the user or a payslip says (D70: nothing the user set is cleared).
  */
 object PublicPay {
-    /** The job of an 업종; null leaves the form's own. */
+    /**
+     * The job of an 업종; null leaves the form's own. 2.0.0 [RVN-22] 검토 T10b-01·T10b-02: 제조 only for a factory's 업종 (운수·호텔·
+     * 물류·관제 and an 업종 not known here keep the form's own, no factory allowances to check), and 간호사 only for a nurse's row (a
+     * hospital's 방사선사·원무·시설 or a 교대 부서 not said keep the form's own).
+     */
     fun occupation(cycle: PublicCycle): Occupation? {
         val i = cycle.industry
+        val role = cycle.site + " " + cycle.display
         return when {
             "경찰" in i -> Occupation.POLICE
             "소방" in i -> Occupation.FIRE
-            i in setOf("교정", "지자체", "기상") -> Occupation.PUBLIC
+            i in setOf("교정", "지자체", "기상", "세관", "공항 검역") -> Occupation.PUBLIC
+            "간호" in role && ("병원" in i || "요양" in i || "의료" in i) -> Occupation.NURSE
             "요양" in i -> Occupation.CARE
-            "병원" in i -> Occupation.NURSE
+            "병원" in i -> null
             i in setOf("보안", "경비", "시설관리", "공항 보안") || cycle.formKey in setOf("격일제", "3조1교대") -> Occupation.SECURITY
             cycle.formKey == "고정" -> null
-            else -> Occupation.MANUFACTURING
+            "물류" in i -> null
+            FACTORY.any { it in i } -> Occupation.MANUFACTURING
+            else -> null
         }
     }
+
+    /** 업종 words of a factory or plant, whose usual allowances (교대·야간 근무 수당) are the 제조·생산 교대 ones. */
+    private val FACTORY = listOf(
+        "제조", "화학", "식품", "발전", "정유", "반도체", "전자", "가스", "철강", "자동차", "제지", "배터리", "전지", "섬유", "에너지",
+        "금속", "PCB", "소재", "캐스팅", "디스플레이", "바이오", "포장", "의료용품", "제약", "담배", "펌프", "주류", "원자력", "전력", "시멘트",
+        "목재", "환경",
+    )
 
     /** The 간편 급여 form a public row points to. */
     fun form(cycle: PublicCycle, codes: String = cycle.codes): WorkForm {

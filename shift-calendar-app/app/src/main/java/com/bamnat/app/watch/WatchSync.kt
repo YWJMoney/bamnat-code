@@ -97,7 +97,8 @@ object WatchSync {
             clock = clock, alarmToday = alarmToday, ringOnWatch = settings.watchAlarm != com.bamnat.app.data.AppSettings.WATCH_ALARM_OFF,
             hourly = settings.workStyle == com.bamnat.core.work.WorkStyle.HOURLY, noun = noun, recentAmounts = recentAmounts,
             sleepOn = settings.sleepTips, asleepSince = asleepSince.takeIf { settings.sleepTips },
-            tasks = com.bamnat.core.work.WatchTask.of(taskRows, nowTime), taskHead = com.bamnat.core.memo.TaskList.headline(taskRows, nowTime))
+            tasks = com.bamnat.core.work.WatchTask.of(taskRows, nowTime), taskHead = com.bamnat.core.memo.TaskList.headline(taskRows, nowTime),
+            gap = com.bamnat.core.sleep.TodayFlow.WorkTalk.of(settings.workStyle).gap)
         val sameDays = WatchDays.encode(payload(LocalDateTime.of(2000, 1, 1, 0, 0), 0))
         val now = Today.millis()
         if (!force && sameDays == lastBody && now - lastAt < RESEND_MILLIS) return@withLock

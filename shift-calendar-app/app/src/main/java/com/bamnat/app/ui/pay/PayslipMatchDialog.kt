@@ -622,7 +622,7 @@ private fun ColumnScope.AmountsStage(
         val before = remember(gross, profile, month) {
             // 1.39 [PAYX-56] 실수령액 is after 사택관리비·회비 too: they are added back before the tax is worked back.
             com.bamnat.core.pay.TakeHome.grossFromNet(gross + com.bamnat.core.pay.TakeHome.afterTax(profile, month).sumOf { it.second }, mode,
-                profile.taxFamily, month.atDay(1), profile.taxChildren, com.bamnat.core.pay.TakeHome.nonTaxable(profile, month), profile.insuranceOff)
+                profile.taxFamily, month.atDay(1), profile.taxChildren, com.bamnat.core.pay.TakeHome.nonTaxable(profile, month), profile.insuranceOffOn(month))
         }
         if (before > gross) TextButton(onClick = { form.gross = before }) {
             Text("실수령액이었다면: 공제 전 약 ${won(before)}으로 바꾸기")
@@ -954,7 +954,12 @@ private fun ColumnScope.DoneStage(changed: Boolean) {
  */
 @Composable
 internal fun DraftResumeLine(text: String, onFresh: () -> Unit) {
-    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+    // 2.0.0 [RVJ-78] (총괄 J-518 사진: 어두운 200%에서 '넣던 10월 명세서를 이어서 적어요'가 세 줄) at a big font the words take the whole
+    // width and '처음부터' goes under them at the end, as [com.bamnat.app.ui.components.StepperRow] does.
+    if (androidx.compose.ui.platform.LocalDensity.current.fontScale >= 1.5f) Column(Modifier.fillMaxWidth()) {
+        Text(text, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        TextButton(onClick = onFresh, modifier = Modifier.align(Alignment.End).heightIn(min = 48.dp)) { Text("처음부터") }
+    } else Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
         Text(text, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.weight(1f))
         TextButton(onClick = onFresh, modifier = Modifier.heightIn(min = 48.dp)) { Text("처음부터") }
     }

@@ -21,7 +21,7 @@ object BossCallSync {
     suspend fun open(c: AppContainer, place: Workplace, gap: TeamCover.Gap, shift: StaffShift, people: List<StaffMember>): Pair<Workplace, TeamCall> {
         val made = c.shareApi.callCreate(place.name, title(gap, shift), "먼저 '일할 수 있어요'를 누른 사람 중에서 사장님이 정해 알려 드려요.",
             people.map { it.name.ifBlank { "직원" } }, TeamCallSync.hours(gap))
-        val call = TeamCall(made.id, made.token, gap, people.map { it.id }, made.urls, createdAt = Today.millis(), expiresAt = made.expiresAt.toEpochMilli())
+        val call = TeamCall(made.id, made.token, gap, people.map { it.id }, made.urls, createdAt = Today.millis(), expiresAt = made.expiresAt.toEpochMilli(), hours = shift)
         val next = c.phaseThree.updateWorkplace(place.id) { p -> p.copy(calls = TeamCallSync.tidy(p.calls.filterNot { it.gap == gap && it.taken == null }) + call) }
             ?: place.copy(calls = place.calls + call)
         return next to call

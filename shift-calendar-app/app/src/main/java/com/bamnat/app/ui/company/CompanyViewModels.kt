@@ -54,7 +54,7 @@ private object TermsCache {
 internal fun cachedTerms(): CompanyTerms? = TermsCache.value
 
 /** [SPD-13] The terms this run read, else the ones kept on the phone (a screen starts with them, no request). */
-private fun AppContainer.termsNow(): CompanyTerms? = TermsCache.value ?: companySearch.cache.terms()?.value
+internal fun AppContainer.termsNow(): CompanyTerms? = TermsCache.value ?: companySearch.cache.terms()?.value
 
 /**
  * [SPD-13] 1.30 AP1: the terms, read once a run and kept on the phone for a day (they change rarely): a run within a day of the
@@ -148,7 +148,45 @@ class CompanyFindViewModel(
         again.value++
     }
 
+    /**
+     * 2.0.0 [RVN-24] 검토 I10ac-02 내 달력이 회사를 찾아 주기: companies (their 대표 주기 by the whole list the phone read) and public
+     * rows with the same order as this calendar's 근무 순서, three at most, the companies with a pay way first. Worked out on the
+     * phone; null when the calendar has no 교대 order to go by.
+     */
+    data class SameWork(val companies: List<CompanyHit>, val rows: List<com.bamnat.core.plaza.PublicCycle>)
+
+    private val _same = MutableStateFlow<SameWork?>(null)
+    val same: StateFlow<SameWork?> = _same.asStateFlow()
+
+    init {
+        viewModelScope.launch(kotlinx.coroutines.Dispatchers.Default) {
+            _same.value = runCatching { sameWork() }.getOrNull()
+            // The whole list may come a moment later (warmCompanies above).
+            c.companySearch.warmed()
+            runCatching { sameWork() }.getOrNull()?.let { _same.value = it }
+        }
+    }
+
+    private suspend fun sameWork(): SameWork? {
+        val repo = c.calendars.repository(calendar)
+        val today = com.bamnat.core.time.Today.date()
+        val rotation = repo.patterns.first().filterIsInstance<com.bamnat.core.model.WorkPattern.Rotation>()
+            .firstOrNull { it.endDate?.isBefore(today) != true } ?: return null
+        val types = repo.shiftTypes.first().associateBy { it.id }
+        val mine = com.bamnat.core.plaza.CalendarCycles.codes(rotation.steps, types) ?: return null
+        val times = com.bamnat.core.plaza.CalendarCycles.times(rotation.steps, types)
+        val companies = if (!server) emptyList() else c.companySearch.withOrders().filter { h ->
+            val l = h.lead ?: return@filter false
+            com.bamnat.core.plaza.CalendarCycles.nameCodes(l.steps ?: return@filter false, l.offs)
+                ?.let { com.bamnat.core.plaza.CalendarCycles.same(mine, it) } == true
+        }.sortedWith(compareByDescending<CompanyHit> { it.lead?.pay == true || it.lead?.payWay != null }.thenByDescending { it.users }).take(2)
+        val rows = com.bamnat.core.plaza.CalendarCycles.publicRows(mine, com.bamnat.core.plaza.PublicCycles.all, times, max = SAME_MAX - companies.size)
+        return SameWork(companies, rows).takeIf { companies.isNotEmpty() || rows.isNotEmpty() }
+    }
+
     private companion object {
+        /** [I10ac-02] How many companies and rows 내 근무와 같은 곳 shows. */
+        const val SAME_MAX = 3
         /** [SPD-15] How long a list stays before its first companies are read ahead (not each letter's list). */
         const val PREFETCH_AFTER_MS = 400L
     }
@@ -418,9 +456,7 @@ class CompanyDetailViewModel(
 
     private suspend fun roomCards(r: com.bamnat.app.company.RoomPage): List<com.bamnat.core.plaza.RoomCard> {
         val mine = runCatching { scope.share.exportForServer().toString() }.getOrNull() ?: return emptyList()
-        val versions = (r.others + listOfNotNull(r.base?.takeIf { !r.mine }))
-            .map { com.bamnat.core.plaza.RoomCards.Version(it.setup, it.text, maxOf(it.senders, it.persons)) }
-        return com.bamnat.core.plaza.RoomCards.cards(mine, versions)
+        return com.bamnat.core.plaza.RoomCards.cards(mine, r.cardVersions)
     }
 
     /** 이 값 쓰기: one value of the version behind [card], the rest of the user's setup as it was. */
@@ -881,8 +917,13 @@ class TalkHolder(
         com.bamnat.app.ui.guide.FeatureLinks.open(com.bamnat.core.guide.FeatureRoute(com.bamnat.core.guide.Place.PAY, fixFocus(fields).key))
     }
 
-    /** 2.0.0 [RVN-17] COMP-14 Whether [o]'s posts may hold an amount: a room, with the server's 방 글에 금액 받기 on. */
-    fun roomMoney(o: Open? = _open.value): Boolean = o?.room == true && c.termsNow()?.roomMoney == true
+    /**
+     * 2.0.0 [RVN-17] COMP-14 Whether [o]'s posts may hold an amount: a room, with the server's 방 글에 금액 받기 on (from the 3.14 7일 줄,
+     * the server says when). [RVN-22] Only on a phone already under 운영 규칙 2판 (마을 돌봄): 3판 stands on it ([PlazaRules.money]),
+     * so a phone still on 1판 keeps its '금액은 임금표에만' until then.
+     */
+    fun roomMoney(o: Open? = _open.value): Boolean = o?.room == true &&
+        com.bamnat.core.plaza.PlazaRules.money(c.termsNow()?.roomMoney == true, rulesCare(c))
 
     fun voteLine(): String {
         val t = c.termsNow()
@@ -968,9 +1009,10 @@ class TalkHolder(
         // 2.0.0 [RVN-17] 검토 COMP-14: a room's post (and its poll) may say an amount once the server's 방 글에 금액 받기 is on; a rule's talk
         // keeps the amounts out, as the server does.
         val money = roomMoney(o)
-        poll.firstNotNullOfOrNull { CompanyText.post(it, o.room, money) }?.let { return done(talkProblem(it)) }
-        CompanyText.post(text, o.room, money)?.let { return done(talkProblem(it)) }
-        change.flatMap { listOf(it.now, it.want, it.why) }.firstNotNullOfOrNull(CompanyText::personal)?.let { return done(talkProblem(it)) }
+        // 2.0.0 [RVN-22] 검토 I10bb-03: said with the very letters ("‘010-1234-5678’ · 전화번호는 빼 주세요"), from the server's own table.
+        poll.firstNotNullOfOrNull { CompanyText.postHit(it, o.room, money) }?.let { return done(CompanyText.stopLine(it, ::talkProblem)) }
+        CompanyText.postHit(text, o.room, money)?.let { return done(CompanyText.stopLine(it, ::talkProblem)) }
+        change.flatMap { listOf(it.now, it.want, it.why) }.firstNotNullOfOrNull(CompanyText::personalHit)?.let { return done(CompanyText.stopLine(it, ::talkProblem)) }
         // [COMM-13] 같은 글 되풀이 is held back here, before the server's own limits.
         val talkKey = "${o.company}/${o.setup}"
         val now = com.bamnat.core.time.Today.instant()
@@ -1108,8 +1150,14 @@ class TalkHolder(
             val error = try {
                 c.companyApi.flag(c.companyStore.device, id, reason)
                 null
-            } catch (e: CompanyException) {
-                talkProblem(e)
+            } catch (e: Exception) {
+                if (e is kotlinx.coroutines.CancellationException) throw e
+                // 2.0.0 [RVN-22] 검토 I10bb-01: no connection keeps the 신고 on the phone; it goes once online.
+                // [done] gets its line ([com.bamnat.app.company.SmallSends.FLAG_LINE], not an error) to say instead of 신고했어요.
+                if (com.bamnat.app.company.SmallSends.waits(e)) {
+                    com.bamnat.app.company.SmallSends.later(c, c.companyStore, com.bamnat.app.company.SmallSends.flag(id, reason))
+                    com.bamnat.app.company.SmallSends.FLAG_LINE
+                } else talkProblem(e as? CompanyException ?: CompanyException("server"))
             }
             done(error)
             reload()
@@ -1130,6 +1178,8 @@ fun talkProblem(code: String): String = when (code) {
     "amount" -> "금액은 빼 주세요. ‘기본급의 10%’, ‘1.5배’처럼 비율로 적으면 돼요"
     "phone" -> "전화번호는 빼 주세요"
     "email" -> "메일 주소는 빼 주세요"
+    // 2.0.0 [RVN-22] 처리방침 3.14 N몫 ①: 방 글에 금액 받기를 켜도 계좌번호는 받지 않아요.
+    "account" -> "계좌번호는 빼 주세요"
     "body" -> "두 글자 이상, 500자 안으로 적어 주세요"
     "muted" -> com.bamnat.core.plaza.CommunityCare.mutedText(null)
     "repeat" -> com.bamnat.core.plaza.CommunityCare.REPEAT
@@ -1372,7 +1422,7 @@ class ActivityHolder(
     fun setNick(nick: String, done: (String?) -> Unit) {
         val t = nick.trim()
         if (t.isNotEmpty() && (t.length < 2 || t.length > 12)) return done("마을 이름은 2~12자로 정해 주세요")
-        CompanyText.personal(t)?.let { return done(talkProblem(it)) }
+        CompanyText.personalHit(t)?.let { return done(CompanyText.stopLine(it, ::talkProblem)) }
         scope.launch {
             val error = try {
                 val saved = c.companyApi.nick(c.companyStore.device, t)
@@ -1442,8 +1492,7 @@ class RatesViewModel(
         val u = com.bamnat.app.company.Plaza.RATE_UNITS[unit] ?: return done("일당·시급·월급 가운데 골라 주세요")
         if (trade.trim().length < 2) return done("직종을 두 글자 이상 적어 주세요 (예: 형틀목수)")
         if (amount !in u.min..u.max) return done("${u.name}은 ${won(u.min)}~${won(u.max)} 사이로 적어 주세요")
-        CompanyText.personal(trade)?.let { return done(talkProblem(it)) }
-        CompanyText.personal(note)?.let { return done(talkProblem(it)) }
+        (CompanyText.personalHit(trade) ?: CompanyText.personalHit(note))?.let { return done(CompanyText.stopLine(it, ::talkProblem)) }
         viewModelScope.launch {
             val error = try {
                 c.companyApi.addRate(c.companyStore.device, f.job, f.region, trade, unit, amount, note)
@@ -1807,7 +1856,8 @@ class CompanyReportViewModel(
                 // [PLAZA-07] Sending a company's setup joins it (결정 D79).
                 status.member?.takeIf { it.joined }?.let { store.setMember(status.companyId, status.company) }
                 // [PLAZA-34] 1.27 AI: what went is what the plaza has of this calendar; the same values saved again ask nothing.
-                if (!topic) store.autoBase = setup.toString()
+                // 2.0.0 [RVN-22] I10bc-03 and the file the parts not sent by themselves later are taken from.
+                if (!topic) store.markShared(setup.toString())
                 _statuses.value = _statuses.value + (status.id to status)
                 store.setDraft(null)
                 // [SPAT-05] The way on from a public row ends here; the plaza page it went to opens next.
@@ -1890,6 +1940,24 @@ class CompanyReportViewModel(
             val counts = forgetEverythingSent(c)
             if (counts != null) _statuses.value = emptyMap()
             done(counts != null, counts?.words())
+            // 2.0.0 [RVN-22] I10bb-02 What is left on the server, read again: 0 but what stays by law or until it ends.
+            if (counts != null) loadMine()
+        }
+    }
+
+    /** 2.0.0 [RVN-22] 검토 I10bb-02 서버에 있는 내 정보, kind by kind; null while reading, [mineFailed] when it could not be read. */
+    private val _mine = MutableStateFlow<List<com.bamnat.app.company.MineRows>?>(null)
+    val mine: StateFlow<List<com.bamnat.app.company.MineRows>?> = _mine.asStateFlow()
+    private val _mineFailed = MutableStateFlow(false)
+    val mineFailed: StateFlow<Boolean> = _mineFailed.asStateFlow()
+
+    fun loadMine() {
+        if (!c.companyApi.enabled) return
+        _mineFailed.value = false
+        _mine.value = null
+        viewModelScope.launch {
+            runCatching { c.companyApi.mineRows(c.companyStore.device) }
+                .onSuccess { _mine.value = it }.onFailure { if (it is kotlinx.coroutines.CancellationException) throw it; _mineFailed.value = true }
         }
     }
 }
@@ -1904,7 +1972,8 @@ suspend fun forgetEverythingSent(c: AppContainer): com.bamnat.app.company.Forget
 private suspend fun forgetEverythingSentNow(c: AppContainer): com.bamnat.app.company.ForgetCounts? {
     val counts = runCatching { c.companyApi.forgetMineCounts(c.companyStore.device) }.getOrNull() ?: return null
     // 2.0.0 [RVN-09] COMP-43 저절로 나누기 goes back to 묻기 with the rest (CompanyStore.forgetSent), said in the result.
-    val autoWas = c.companyStore.autoShare.value == true
+    // [RVN-22] I10bc-03 any part that went by itself.
+    val autoWas = c.companyStore.shareWays.value.of(com.bamnat.core.plaza.ShareWay.AUTO).isNotEmpty()
     // [CALI-08] The server forgot everything this phone sent, from every calendar.
     c.forgetSentEverywhere()
     // [SPD-13] and 내 활동 kept on the phone with it; 2.0.0 COMP-43 with the company pages, boards and talks it kept.
@@ -1920,8 +1989,9 @@ private suspend fun forgetEverythingSentNow(c: AppContainer): com.bamnat.app.com
     c.recipes.hasProfile(false)
     c.recipes.peopleChanged()
     // 1.39 [PRIV-06] and every link this phone made on the share server, with the keys it holds (달력·팀·가게 링크).
-    val links = runCatching { com.bamnat.app.share.ShareForget.all(c) }.getOrNull()
-    return counts.copy(links = links?.cut ?: 0, linksLeft = links?.left ?: 0, alertsOff = pushWas, autoShareOff = autoWas)
+    // 2.0.0 [RVL-58] (검토 DATA-22) Not runCatching: a stop there read as "0 links" and could skip keeping what was left to try again.
+    val links = com.bamnat.app.share.ShareForget.allOrLater(c)
+    return counts.copy(links = links.cut, linksLeft = links.left, linksFailed = links.failed, alertsOff = pushWas, autoShareOff = autoWas)
 }
 
 /**

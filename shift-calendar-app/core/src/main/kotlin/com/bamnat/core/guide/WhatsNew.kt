@@ -30,15 +30,19 @@ object WhatsNew {
     /** Kinds that keep a team's roster: a leader's changes reach them. */
     private val TEAMS = setOf(WorkStyle.SHIFT, WorkStyle.DAY, WorkStyle.HOURLY)
 
+    /** 2.0.0 검토 PC-28·PC-200 The date fix in one short line; [what] is what that kind of work puts on a day ('근무를', '일정을'). */
+    private fun dateFix(what: String) = "일부 휴대폰에서 날짜를 누르면 4주 뒤 날짜가 열리던 문제를 고쳤어요. 최근에 넣은 $what 한 번 봐 주세요"
+
     val releases: List<Release> = listOf(
         // 2.0.0 (docs/plans/1.40-개발계획.md, docs/plans/2.0.0-검토-추적.csv). 줄은 통합 브랜치에서만 더해요(총괄). 판 마무리 때 다시 고르고
         // 다듬어요. 유형마다 먼저 보이는 것은 다섯 줄이라(MINE) 모두가 봐야 할 줄을 맨 앞에 둬요.
         Release(54, "2.0.0", listOf(
             // 검토 PC-28 (1.36.1~1.39.0, 통합 5e17cce2). 사용자 2026-11-12: 2.0.0에서만 고치고 소식에 '최근에 넣은 근무를 한 번 봐 주세요'.
-            Line("‘달 넘길 때’ 효과를 고르거나 ‘움직임 끄기’를 쓰는 휴대폰에서, 날짜를 누르면 4주 뒤 날짜가 열리던 문제를 고쳤어요. 최근에 넣은 근무를 한 번 봐 주세요", own = mapOf(
-                WorkStyle.FIELD to "‘달 넘길 때’ 효과를 고르거나 ‘움직임 끄기’를 쓰는 휴대폰에서, 날짜를 누르면 4주 뒤 날짜가 열리던 문제를 고쳤어요. 최근에 넣은 일정을 한 번 봐 주세요",
-                WorkStyle.BUSINESS to "‘달 넘길 때’ 효과를 고르거나 ‘움직임 끄기’를 쓰는 휴대폰에서, 날짜를 누르면 4주 뒤 날짜가 열리던 문제를 고쳤어요. 최근에 넣은 영업일과 매출을 한 번 봐 주세요",
-                WorkStyle.INVEST to "‘달 넘길 때’ 효과를 고르거나 ‘움직임 끄기’를 쓰는 휴대폰에서, 날짜를 누르면 4주 뒤 날짜가 열리던 문제를 고쳤어요. 최근에 넣은 기록을 한 번 봐 주세요",
+            // 검토 PC-200 (조건 4): '달 넘길 때 효과'·'움직임 끄기'라는 설정 이름을 알아야 읽히던 긴 줄을 줄였어요. 맞는 날인지는 창 위의 '확인' 줄이 물어요.
+            Line(dateFix("근무를"), own = mapOf(
+                WorkStyle.FIELD to dateFix("일정을"),
+                WorkStyle.BUSINESS to dateFix("영업일과 매출을"),
+                WorkStyle.INVEST to dateFix("기록을"),
             )),
             // 사용자 2026-11-12 알림함: 달력 위 안내는 종으로, 전체 지움·다시 보지 않기, 달력 위에는 꼭 봐야 하는 것만 (검토 HQ-91·PC-139).
             Line("달력 위에 뜨던 안내가 종 모양 알림함으로 모였어요. ‘전체 지움’으로 한 번에 비우고 줄마다 ‘다시 보지 않기’를 고를 수 있어요. 알람에 꼭 필요한 것만 달력 위에 남아요"),
@@ -436,6 +440,12 @@ object WhatsNew {
      */
     data class ForStyle(val mine: List<Release>, val moreMine: List<Line>, val others: List<Line>) {
         val isEmpty: Boolean get() = mine.isEmpty() && moreMine.isEmpty() && others.isEmpty()
+
+        /**
+         * 2.0.0 검토 PC-200 (조건 13) Of [others], the lines for a kind of work the user keeps on another calendar ([also]). A shift worker
+         * who does not invest is not told of investing; one with an investing calendar still is ('투자 줄은 투자를 켠 사람에게만').
+         */
+        fun othersFor(also: Set<WorkStyle>): List<Line> = others.filter { line -> also.any { line.fits(it) } }
     }
 
     fun forStyle(releases: List<Release>, style: WorkStyle?): ForStyle {

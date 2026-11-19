@@ -16,6 +16,14 @@ import com.bamnat.core.time.Today
 /** Receives the shift alarm and snooze alarms set by [AlarmScheduler]. */
 class AlarmReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
+        // 2.0.0 [RVIB-28] (PC-188) The keeping alarm of a ring the app was killed in: the same ring again, from where it was.
+        if (intent.action == RingKeeper.ACTION) {
+            (context.getSystemService(Context.POWER_SERVICE) as android.os.PowerManager)
+                .newWakeLock(android.os.PowerManager.PARTIAL_WAKE_LOCK, "bamnat:keeper").acquire(10_000L)
+            val log: ((String, String) -> Unit)? = if (BootAlarms.isLocked(context)) null else { n, d -> context.appContainer.telemetry.event(n, d) }
+            RingKeeper.wentOff(context, BootAlarms.ringSettings(context).ringMinutes, log) { startRinging(context, it) }
+            return
+        }
         val ring = RingRequest.fromIntent(intent)
         if (BootAlarms.isLocked(context)) {
             // [REL-10] Rebooted and not unlocked yet: ring from the intent and line up the next one
@@ -176,8 +184,14 @@ class SystemEventReceiver : BroadcastReceiver() {
                 runCatching { com.bamnat.app.logic.LogicRunner.fire(container) }
                 // 1.32 [WTYP-16] 퇴근 시각 알림.
                 LeaveTimeNotice.reschedule(context)
+                // 2.0.0 [RVN-24] I10ac-03 근무가 끝나면 한 줄 묻기.
+                runCatching { com.bamnat.app.company.PlazaAfterShift.reschedule(context) }
+                // 2.0.0 [RVIB-21] 둘째 구간 알림.
+                GapNotice.reschedule(context)
                 com.bamnat.app.money.DayCloseNotice.reschedule(context)
                 com.bamnat.app.money.ShiftPreviewNotice.reschedule(context)
+                // 2.0.0 [RVJ-96] 신고·지급 기한 알림.
+                com.bamnat.app.boss.BossFilingNotice.reschedule(context)
                 // 1.32 [WTYP-11][WTYP-29] 희망 오프 마감, 코인 12월 31일.
                 com.bamnat.app.calendar.DateNoticeAlarm.reschedule(context, com.bamnat.app.calendar.DateNoticeAlarm.gather(container))
                 com.bamnat.app.sleep.DayNoticeScheduler.reschedule(context, container.scheduleRepository.snapshot.first(), settings)
@@ -199,6 +213,7 @@ class SystemEventReceiver : BroadcastReceiver() {
     }
 
     companion object {
+        /** 2.0.0 [RVL-64] (검토 DATA-23) The actions in the manifest's filter, the only ones it works for (RvlOutsideTest matches them). */
         internal val ACCEPTED = setOf(
             Intent.ACTION_BOOT_COMPLETED,
             Intent.ACTION_MY_PACKAGE_REPLACED,

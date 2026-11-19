@@ -18,7 +18,22 @@ import org.junit.runner.RunWith
 class CrashLogTest {
     private val app get() = ApplicationProvider.getApplicationContext<BamnatApp>()
 
-    @After fun clean() = CrashLog.clear(app)
+    @After fun clean() {
+        CrashLog.clear(app)
+        com.bamnat.app.diag.MainStall.closing = false
+    }
+
+    /**
+     * 2.0.0 [RVL-87] (검토 PC-197) Android's own handler waits on the main thread for the process to end; the stall watcher is told
+     * before that, so the wait is no '화면이 잠깐 멈춘 때' on the next start, and the stop is still written.
+     */
+    @Test fun theAppsLastMomentsAreNoFrozenScreen() {
+        var closingWhenAndroidTookOver: Boolean? = null
+        val android = Thread.UncaughtExceptionHandler { _, _ -> closingWhenAndroidTookOver = com.bamnat.app.diag.MainStall.closing }
+        CrashLog.stopped(app, Thread.currentThread(), IllegalStateException(), android)
+        assertEquals(true, closingWhenAndroidTookOver)
+        assertEquals(1, CrashLog.notes(app).size)
+    }
 
     @Test fun aStopLeavesWhereButNotWhatWasTyped() {
         val error = IllegalStateException("회사 이름 우리병원", RuntimeException("홍길동 근무"))

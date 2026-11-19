@@ -359,6 +359,9 @@ test("[ADMX-01] every activity code the server writes has words, and an unknown 
   const codes = new Set([
     ...[...src.matchAll(/audit\(env, [^,]+, "([a-z_]+)"/g)].map((m) => m[1]),
     ...[...src.matchAll(/audit\(env, [^,]+, [^,]*\? "([a-z]+_[a-z_]+)" : "([a-z]+_[a-z_]+)"/g)].flatMap((m) => [m[1], m[2]]),
+    // 2.0.0 [RVN-24] SVC-96: 답 모음 writes its own (log is audit with its answer and title).
+    ...[...src.matchAll(/await log\("([a-z]+_[a-z_]+)"/g)].map((m) => m[1]),
+    ...[...src.matchAll(/await log\([^,]*\? "([a-z]+_[a-z_]+)" : "([a-z]+_[a-z_]+)"/g)].flatMap((m) => [m[1], m[2]]),
     // Codes made from a status: rate_${status}, reward_${status}, ${what}_bulk; and flag_migrate written in SQL.
     "rate_adopted", "rate_hidden", "rate_pending", "reward_paid", "reward_void", "reward_owed", "post_bulk", "rate_bulk", "flag_migrate",
   ]);
@@ -367,6 +370,10 @@ test("[ADMX-01] every activity code the server writes has words, and an unknown 
   assert.equal(L.actionName("reward_auto"), "보상 저절로 지급");
   assert.equal(L.actionName("invite_something_new"), "친구 초대 처리");
   assert.equal(L.actionName("zzz"), "그 밖의 처리");
+  for (const c of ["plaza_pick", "plaza_pick_title", "plaza_pick_remove", "plaza_pick_gone"]) assert.ok(codes.has(c), c);
+  // 2.0.0 [RVN-24] U22c-02: what no admin did is the server's own ('자동') unless an app user started it.
+  assert.equal(L.origin("incident_open"), "auto");
+  assert.equal(L.origin("loop_fixed_yes"), "app");
 });
 
 test("[ADMX-01][ADMX-07] change, sparkline and a week that rose", () => {

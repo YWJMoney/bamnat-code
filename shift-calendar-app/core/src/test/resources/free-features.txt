@@ -302,3 +302,4 @@ shift.progress
 invest.holdingShot
 invest.quantity
 invest.story
+data.check

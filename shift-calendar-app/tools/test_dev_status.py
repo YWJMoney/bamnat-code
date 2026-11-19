@@ -93,6 +93,15 @@ class DevStatusTest(unittest.TestCase):
         with self.assertRaises(SystemExit):
             ds.payload([], "1.39", "", 0)
 
+    def test_a_title_is_no_longer_than_the_server_takes(self):
+        # 2.0.0 총괄 11-19: 서버는 새 줄의 제목을 DEV.title(100자)까지만 받아요. 그보다 길면 동기화가 '줄 오류'로 떨어져요.
+        import re
+        src = (ds.ROOT / "server" / "company-worker" / "src" / "inquiries.js").read_text(encoding="utf-8")
+        server = int(re.search(r"export const DEV = \{.*?\btitle: (\d+),", src, re.S).group(1))
+        self.assertEqual(ds.LIMITS["title"], server)
+        self.assertEqual(ds.check_item(1, {**GOOD, "title": "가" * server}), [])
+        self.assertTrue(any("title" in e for e in ds.check_item(1, {**GOOD, "title": "가" * (server + 1)})))
+
     def test_payloads_split_under_the_servers_limit(self):
         # 2.0.0 [HQ-77] 574줄을 한 덩어리로 보내면 서버가 통째로 거절해요(한 번에 200줄까지).
         rows = list(enumerate([{**GOOD, "track": f"LOOP-{n}"} for n in range(1, 575)], 1))

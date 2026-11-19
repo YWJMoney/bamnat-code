@@ -27,6 +27,8 @@ data class TeamCall(
     val taken: String? = null,
     val createdAt: Long = 0,
     val expiresAt: Long = 0,
+    /** 2.0.0 [RVJ-101] 검토 U05c-08: the hours a 사장님 asked for (set in the window before sending, else the day's own); a leader's call has none. */
+    val hours: com.bamnat.core.work.StaffShift? = null,
 )
 
 object TeamCover {

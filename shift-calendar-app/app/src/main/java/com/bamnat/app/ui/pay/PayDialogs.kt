@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
@@ -393,12 +394,13 @@ fun RaiseDialog(vm: PayViewModel, profile: PayProfile, target: ValueTarget, onDi
     val timeline = remember(profile, target) { vm.timelineOf(profile, target) }
     val closedMonths by vm.closed.collectAsState()
     val existing = timeline.raise
-    var month by remember { mutableStateOf(existing?.month ?: 1) }
-    var byPercent by remember { mutableStateOf(existing?.amount == null) }
-    var text by remember { mutableStateOf(existing?.let { it.percent?.toString() ?: it.amount?.toString() } ?: "") }
-    var unit by remember { mutableStateOf(existing?.unit ?: 10L) }
-    var rounding by remember { mutableStateOf(existing?.rounding ?: Rounding.UP) }
-    var scale by remember { mutableStateOf(false) }
+    // 2.0.0 [RVJ-77] (조건 10) What is being put in stays when the screen is made again (dark theme, Android closing the app behind).
+    var month by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf(existing?.month ?: 1) }
+    var byPercent by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf(existing?.amount == null) }
+    var text by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf(existing?.let { it.percent?.toString() ?: it.amount?.toString() } ?: "") }
+    var unit by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf(existing?.unit ?: 10L) }
+    var rounding by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf(existing?.rounding ?: Rounding.UP) }
+    var scale by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf(false) }
     if (scale) {
         PayScaleDialog(vm, profile, onDismiss = { scale = false; onDismiss() })
         return
@@ -570,11 +572,9 @@ fun AddBonusDialog(
                             FilterChip(selected = annual == null && percent == p, onClick = { percent = p; annual = null }, label = { Text("$p%") })
                         }
                         // PC 6da49f0b (−/+ 단추가 줄바꿈되면서 '말일'·'-' 글자만 혼자 남음): the stepper keeps together on one line.
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            OutlinedButton(onClick = { percent = (percent - 10).coerceAtLeast(10); annual = null }) { Text("−") }
-                            Text("$percent%", style = MaterialTheme.typography.titleSmall, modifier = Modifier.align(Alignment.CenterVertically))
-                            OutlinedButton(onClick = { percent = (percent + 10).coerceAtMost(1000); annual = null }) { Text("+") }
-                        }
+                        // 2.0.0 [RVJ-78] (총괄 J-518 사진: '− 100% +'가 붙어 좁음) the app's one − 값 + (48dp 단추, 값 칸 고정 폭, 누르고 있으면 계속).
+                        com.bamnat.app.ui.components.CountStepper(percent, { percent = it; annual = null }, name = "한 번에 기본급의",
+                            range = 10..1000, step = 10, format = { "$it%" }, valueWidth = 88.dp)
                     }
                 } else {
                     MoneyField("1회 금액", amount, { amount = it })
@@ -643,39 +643,82 @@ fun AddBonusDialog(
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun PayScaleDialog(vm: PayViewModel, profile: PayProfile, onDismiss: () -> Unit) {
-    // 기본급 by row, 1호봉 first; a blank row is null.
-    val rows = remember { androidx.compose.runtime.mutableStateListOf<Long?>(null, null) }
-    var other by remember { mutableStateOf(false) }
-    var text by remember { mutableStateOf("") }
-    var stepMonth by remember { mutableStateOf(1) }
-    var step by remember { mutableStateOf(1) }
+    // 2.0.0 [RVJ-77] 검토 PAYU-46·T05b-05·I05ba-01: the table last put in comes back (기본급 by 호봉, 승급 달, and the 호봉 it is at
+    // today), so a year's new table is a few changes or one '모든 호봉 n% 올리기', not 20~30 rows typed again.
+    val saved = profile.payScale
     val since = remember { Today.date().withDayOfMonth(1) }
+    // 기본급 by row, 1호봉 first; a blank row is null. Kept when the screen is made again (조건 10).
+    val rows = androidx.compose.runtime.saveable.rememberSaveable(saver = ScaleRowsSaver) {
+        androidx.compose.runtime.mutableStateListOf<Long?>().apply {
+            if (saved == null) { add(null); add(null) } else (1..saved.top.coerceAtMost(MAX_STEPS)).forEach { n -> add(saved.steps[n]) }
+        }
+    }
+    var other by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf(false) }
+    var text by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf("") }
+    val stepMonth0 = saved?.stepMonth ?: 1
+    val step0 = saved?.stepOn(since) ?: 1
+    var stepMonth by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf(stepMonth0) }
+    var step by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf(step0) }
+    val rows0 = remember(saved) { if (saved == null) listOf(null, null) else (1..saved.top.coerceAtMost(MAX_STEPS)).map { n -> saved.steps[n] } }
+    // The rows as they were before '모든 호봉 n% 올리기', for its 되돌리기; null when there is nothing to put back.
+    var beforeRaise by androidx.compose.runtime.saveable.rememberSaveable(saver = ScaleUndoSaver) { mutableStateOf<List<Long?>?>(null) }
+    var raising by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf(false) }
+    var raisePercent by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf(3.0) }
     val steps = rows.mapIndexedNotNull { i, a -> a?.takeIf { it > 0 }?.let { (i + 1) to it } }.toMap()
     val scale = steps.takeIf { it.isNotEmpty() }?.let {
         runCatching { PayScale(it, stepMonth, step.coerceIn(it.keys.min(), it.keys.max()), since) }.getOrNull()
     }
     // 2.0.0 [RVJ-63] 검토 PAYU-45: 호봉표는 40줄까지 넣어요. 밖을 누르거나 뒤로·취소 한 번에 넣은 줄이 사라지지 않게 한 번 물어요.
     val guard = com.bamnat.app.ui.components.rememberCloseGuard(
-        unsaved = rows.any { it != null } || text.isNotBlank() || stepMonth != 1 || step != 1, onLeave = onDismiss)
+        unsaved = rows.toList() != rows0 || text.isNotBlank() || stepMonth != stepMonth0 || step != step0, onLeave = onDismiss)
     AlertDialog(
         onDismissRequest = guard::close,
         title = { Text("호봉표로 기본급 넣기") },
         text = {
             Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                Text("호봉마다 기본급을 넣어요. 아래 줄을 더하면 위 호봉만큼 오른 금액으로 채워 둬요.", style = MaterialTheme.typography.bodySmall,
+                Text(if (saved != null) "지난번에 넣은 호봉표예요. 올해 표로 바뀐 줄만 고치거나, 아래에서 모든 호봉을 한 번에 올려요."
+                    else "호봉마다 기본급을 넣어요. 아래 줄을 더하면 위 호봉만큼 오른 금액으로 채워 둬요.", style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant)
                 rows.forEachIndexed { i, amount ->
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text("${i + 1}호봉", style = MaterialTheme.typography.titleSmall, modifier = Modifier.width(64.dp))
-                        StepAmountField(i + 1, amount, { rows[i] = it }, Modifier.weight(1f))
-                        if (rows.size > 1) androidx.compose.material3.IconButton(onClick = { rows.removeAt(i) }) {
+                    // 2.0.0 [RVJ-78] (총괄 J-518 사진: '1호봉' 이름표가 칸에 붙음) a gap after the name, which grows rather than wrapping at a big font.
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Text("${i + 1}호봉", style = MaterialTheme.typography.titleSmall, maxLines = 1, softWrap = false,
+                            modifier = Modifier.widthIn(min = 56.dp))
+                        // [RVJ-77] A row changed by hand after '모두 올리기' ends its 되돌리기, so 되돌리기 never takes back the user's own change.
+                        StepAmountField(i + 1, amount, { rows[i] = it; beforeRaise = null }, Modifier.weight(1f))
+                        if (rows.size > 1) androidx.compose.material3.IconButton(onClick = { rows.removeAt(i); beforeRaise = null }) {
                             androidx.compose.material3.Icon(androidx.compose.material.icons.Icons.Filled.Close, "${i + 1}호봉 줄 지우기")
                         }
                     }
                 }
                 if (rows.size < MAX_STEPS) com.bamnat.app.ui.components.AddButton("${rows.size + 1}호봉 더하기", onClick = {
+                    beforeRaise = null
                     rows += PayScale.nextAmount(rows.filterNotNull().filter { it > 0 })
                 })
+                // 2.0.0 [RVJ-77] (검토 I05ba-01) 호봉제는 해마다 표 전체가 올라요: every 호봉 by one percent, with 되돌리기 for that one change.
+                val filled = rows.count { (it ?: 0) > 0 }
+                val undo = beforeRaise
+                if (undo != null) Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("모든 호봉을 ${com.bamnat.app.ui.components.decimalText(raisePercent)}% 올렸어요", style = MaterialTheme.typography.bodyMedium,
+                        modifier = Modifier.weight(1f))
+                    TextButton(onClick = { rows.clear(); rows.addAll(undo); beforeRaise = null }) { Text("되돌리기") }
+                } else if (filled >= 2) {
+                    TextButton(onClick = { raising = !raising }) { Text(if (raising) "모든 호봉 올리기 접기" else "모든 호봉 % 올리기") }
+                    if (raising) {
+                        com.bamnat.app.ui.components.QuickDecimalChips(
+                            value = raisePercent, onChange = { raisePercent = it }, name = "올릴 비율",
+                            quick = listOf(2.0, 2.5, 3.0, 3.5, 5.0), step = 0.1, range = 0.1..30.0, unit = "%",
+                        )
+                        OutlinedButton(onClick = {
+                            beforeRaise = rows.toList()
+                            val raised = PayScale.raised(rows.toList(), raisePercent)
+                            rows.clear(); rows.addAll(raised)
+                            raising = false
+                        }) { Text("모든 호봉 ${com.bamnat.app.ui.components.decimalText(raisePercent)}% 올리기") }
+                        Text("원 단위에서 반올림해요. 회사 표와 다른 줄은 고쳐 주세요.", style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                }
                 TextButton(onClick = { other = !other }) { Text(if (other) "사진·글로 넣기 접기" else "사진·글로 넣기") }
                 if (other) {
                     var scanned by remember { mutableStateOf(false) }
@@ -686,7 +729,7 @@ fun PayScaleDialog(vm: PayViewModel, profile: PayProfile, onDismiss: () -> Unit)
                         placeholder = { Text("1호봉 2,400,000\n2호봉 2,480,000") }, minLines = 3, modifier = Modifier.fillMaxWidth())
                     val read = remember(text) { PayScale.parse(text) }
                     OutlinedButton(enabled = read.isNotEmpty(), onClick = {
-                        rows.clear()
+                        rows.clear(); beforeRaise = null
                         (1..read.keys.max().coerceAtMost(MAX_STEPS)).forEach { n -> rows += read[n] }
                         other = false
                     }) { Text(if (read.isEmpty()) "읽을 호봉이 없어요" else "${read.size}개 호봉을 줄에 채우기") }
@@ -710,7 +753,9 @@ fun PayScaleDialog(vm: PayViewModel, profile: PayProfile, onDismiss: () -> Unit)
         },
         confirmButton = {
             Button(enabled = scale != null, onClick = {
-                scale?.let { sc -> vm.update { p -> p.copy(base = sc.applyTo(p.base, since.plusYears(40)), estimatedFields = p.estimatedFields - Unknowns.BASE) } }
+                scale?.let { sc ->
+                    vm.update { p -> p.copy(base = sc.applyTo(p.base, since.plusYears(40)), estimatedFields = p.estimatedFields - Unknowns.BASE, payScale = sc) }
+                }
                 onDismiss()
             }) { Text("적용") }
         },
@@ -720,6 +765,18 @@ fun PayScaleDialog(vm: PayViewModel, profile: PayProfile, onDismiss: () -> Unit)
 
 /** Tables past this are not 호봉표 any more (공무원 봉급표 goes to 32). */
 private const val MAX_STEPS = 40
+
+/** 2.0.0 [RVJ-77] The 호봉표 rows through a screen made again: amounts, -1 for a blank row. */
+private val ScaleRowsSaver = androidx.compose.runtime.saveable.listSaver<androidx.compose.runtime.snapshots.SnapshotStateList<Long?>, Long>(
+    save = { list -> list.map { it ?: -1L } },
+    restore = { saved -> androidx.compose.runtime.mutableStateListOf<Long?>().apply { addAll(saved.map { it.takeIf { v -> v >= 0 } }) } },
+)
+
+/** 2.0.0 [RVJ-77] The rows before a raise, for 되돌리기, through a screen made again. */
+private val ScaleUndoSaver = androidx.compose.runtime.saveable.Saver<androidx.compose.runtime.MutableState<List<Long?>?>, LongArray>(
+    save = { st -> st.value?.map { it ?: -1L }?.toLongArray() },
+    restore = { a -> mutableStateOf(a.map { it.takeIf { v -> v >= 0 } }) },
+)
 
 /** [PAYX-47] One 호봉's 기본급: digits on the number pad, shown grouped (2,480,000) with no line under it. */
 @Composable

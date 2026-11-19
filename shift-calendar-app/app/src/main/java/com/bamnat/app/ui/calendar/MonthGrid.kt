@@ -1003,12 +1003,15 @@ private fun DayCell(
             verticalArrangement = Arrangement.SpaceBetween,
         ) {
             // Inside the column's 2dp at either side.
-            SizedBox(inside - 4.dp, Modifier.fillMaxWidth().height(20.dp)) { maxWidth ->
+            // 2.0.0 [RVH-95] 검토 HQ-157 (접은 폭 글자 200%: 오늘 날짜 동그라미 윗부분이 잘리고 '22'가 밖으로 나감): the circle is 20dp as before
+            // and grows with the number it holds (the date line's height + 6dp), so a 17dp '22' stays inside it.
+            val ring = maxOf(20.dp, with(density) { dateSize.toDp() } + 6.dp)
+            SizedBox(inside - 4.dp, Modifier.fillMaxWidth().height(ring)) { maxWidth ->
                 val dots = maxWidth < DOT_CELL_WIDTH || density.fontScale >= 1.5f
                 Box(
                     Modifier
                         .align(Alignment.Center)
-                        .size(20.dp)
+                        .size(ring)
                         .clip(CircleShape)
                         .background(if (isToday) look.today ?: scheme.primary else Color.Transparent),
                     contentAlignment = Alignment.Center,

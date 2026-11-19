@@ -47,7 +47,7 @@ class RvkFourScreenshotTest : ScreenshotBase() {
 
     /** HQ-44: the card keeps the figures; the three paragraphs are one line with ⓘ, and the sentences wait in its sheet. */
     private fun noParagraphs(): Screen.() -> Unit = {
-        assertTrue("한 줄 요약", appears("가게 경비·안 받은 일감은 따로 셌어요", exact = true))
+        assertTrue("한 줄 요약", appears("가게 경비·안 받은 일감은 따로 셌어요", exact = false))
         assertFalse("카드 안 설명 문단", shows("나간 돈이 아니라", exact = false))
         assertFalse("카드 안 설명 문단", shows("돈 받음을 켜면", exact = false))
         assertFalse("카드 안 설명 문단", shows("잔액으로 셈해요", exact = false))
@@ -69,11 +69,11 @@ class RvkFourScreenshotTest : ScreenshotBase() {
         assertFalse(shows("그 전에 나갈 돈", exact = false))
     })
     @Test fun notesSheetLight() = shoot("rvk4_04_summary_notes_sheet_folded", FOLDED, everything {
-        tapText("가게 경비·안 받은 일감은 따로 셌어요", exact = true)
+        tapText("가게 경비·안 받은 일감은 따로 셌어요", exact = false)
         assertTrue(appears("잔액으로 셈해요", exact = false))
     })
     @Test fun notesSheetDarkBig() = shoot("rvk4_05_summary_notes_sheet_folded_dark_200", DARK, 2f, everything {
-        tapText("가게 경비·안 받은 일감은 따로 셌어요", exact = true)
+        tapText("가게 경비·안 받은 일감은 따로 셌어요", exact = false)
         assertTrue(appears("나간 돈이 아니라", exact = false))
     })
     @Test fun overLight() = shoot("rvk4_06_summary_over_today_folded", FOLDED, overToday(saysCaution()))

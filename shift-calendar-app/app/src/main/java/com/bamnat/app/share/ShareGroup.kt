@@ -1,6 +1,8 @@
 package com.bamnat.app.share
 
 import android.content.Context
+import com.bamnat.app.backup.putSecret
+import com.bamnat.app.backup.secret
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -36,15 +38,16 @@ data class ShareGroup(val code: String, val expiresAt: Instant?, val links: List
 /** [SHR-14] The group this phone is in, and which of its own links it put in (null: only looking). */
 class ShareGroupStore(context: Context) {
     private val prefs = context.applicationContext.getSharedPreferences("share_group", Context.MODE_PRIVATE)
-    private val _code = MutableStateFlow(prefs.getString("code", null))
+    // 2.0.0 [RVL-77] (검토 I12b-03) The code lets anyone in: sealed by the phone's key.
+    private val _code = MutableStateFlow(prefs.secret("code"))
     val code: StateFlow<String?> = _code.asStateFlow()
     val ownKey: String? get() = prefs.getString("own", null)
 
     /** [BAK-01] After a restore wrote the file anew. */
-    fun reload() { _code.value = prefs.getString("code", null) }
+    fun reload() { _code.value = prefs.secret("code") }
 
     fun save(code: String, ownKey: String?) {
-        prefs.edit().putString("code", code).putString("own", ownKey).apply()
+        prefs.edit().putSecret("code", code).putString("own", ownKey).apply()
         _code.value = code
     }
 

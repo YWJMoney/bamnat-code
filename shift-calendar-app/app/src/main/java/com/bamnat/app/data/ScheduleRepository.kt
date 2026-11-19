@@ -345,6 +345,22 @@ class ScheduleRepository(
         }
     }
 
+    /**
+     * 2.0.0 [RVL-71] (검토 I12b-01) Days set to a kind of work that is not in the list any more follow the pattern again, the way deleting
+     * a kind leaves its days ([removeShiftType]); a day with nothing else of its own goes. The days it put back. The weekly 데이터 점검
+     * ([com.bamnat.app.diag.DataSelfCheck]) calls it and says so in '밤낮이 한 일'.
+     */
+    suspend fun releaseLostShiftDays(): List<java.time.LocalDate> = db.withTransaction {
+        val kinds = shiftTypeDao.getAll().mapTo(HashSet()) { it.id }
+        val lost = dayEntryDao.getAll().filter { e -> e.overrideShiftTypeId?.let { it !in kinds } == true }
+        for (e in lost) {
+            if (e.overrideMode != com.bamnat.app.data.db.DayEntryEntity.MODE_SHIFT) { dayEntryDao.upsert(e.copy(overrideShiftTypeId = null)); continue }
+            val updated = e.toModel().copy(override = ShiftOverride.None)
+            if (updated.isEmpty) dayEntryDao.delete(e.epochDay) else dayEntryDao.upsert(updated.toEntity())
+        }
+        lost.map { java.time.LocalDate.ofEpochDay(it.epochDay) }
+    }
+
     private suspend fun removeShiftType(id: Long) {
         run {
             for (p in patternDao.getAll()) {

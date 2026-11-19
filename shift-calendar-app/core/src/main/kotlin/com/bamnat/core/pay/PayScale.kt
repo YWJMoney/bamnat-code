@@ -62,6 +62,18 @@ data class PayScale(
         }
 
         /**
+         * 2.0.0 [RVJ-77] (검토 I05ba-01) 호봉제는 해마다 표 전체가 올라요: every amount raised by [percent]%, 원 단위에서 반올림; a blank
+         * row (null or 0) stays as it is.
+         */
+        fun raised(amounts: List<Long?>, percent: Double): List<Long?> {
+            val times = java.math.BigDecimal.valueOf(100.0 + percent)
+            return amounts.map { a ->
+                if (a == null || a <= 0) a
+                else java.math.BigDecimal.valueOf(a).multiply(times).divide(java.math.BigDecimal(100), 0, java.math.RoundingMode.HALF_UP).toLong()
+            }
+        }
+
+        /**
          * Reads a table pasted as text: one step per line, "1호봉 2,400,000" or "1 2400000" (the 호봉 and the
          * amount, tabs or spaces between).
          */

@@ -15,8 +15,12 @@ export function adminLib() {
     link: "링크·주소는 적을 수 없어요",
     chat: "단톡방·오픈 채팅 안내는 적을 수 없어요",
     title_first: "부탁 글 그대로는 올리지 않아요. 누구나 알아볼 짧은 제목으로 다듬어 주세요",
+    // 2.0.0 [RVQ-52] 검토 SVC-67: 밤낮 Q&A 공개 글.
+    public_text: "누구나 보는 글이라 AI·자동 답 말, 링크·연락처, 보안 정보, 빈 {…} 칸은 넣을 수 없어요",
     notice_risk: "판이 나갈 때 그대로 나가는 글이라 링크·전화번호·이메일, AI·자동 답이라는 말, 서버·주소 같은 보안 정보는 넣을 수 없어요",
     version_unknown: "Play에서도 서버에서도 아직 못 본 판이에요. 판 번호를 다시 봐 주세요",
+    // 2.0.0 [RVN-24] 검토 SVC-102 출시 점검표의 '24시간 뒤 판 건강'
+    health_early: "판 건강은 나간 판을 저장하고 하루가 지난 뒤에 볼 수 있어요",
     // 2.0.0 [RVD-15][RVD-16] 보상 1년 12달, 이미 바뀐 보상
     cap: "이분은 1년에 받을 수 있는 보상 12개월을 넘어요. 남은 개월만 드리거나 취소해 주세요",
     state: "그사이 다른 곳에서 바뀌었어요. 새로 고친 뒤 다시 해 주세요",
@@ -856,7 +860,8 @@ export function adminLib() {
   const flagDay = (ms) => new Date(ms + FLAG_KST).toISOString().slice(0, 10);
   const FLAG_DATE = /^20\d\d-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])$/;
   const WORK_TYPES = ["SHIFT", "DAY", "HOURLY", "FIELD", "BUSINESS", "INVEST"];
-  const WORK_NAMES = { SHIFT: "교대", DAY: "일근", HOURLY: "시급", FIELD: "현장", BUSINESS: "자영업", INVEST: "투자" };
+  // 2.0.0 [RVN-24] T22c-06: '알바' like 관측·개발사항·자동 순환 (core FlagEval.TYPE_WORDS).
+  const WORK_NAMES = { SHIFT: "교대", DAY: "일근", HOURLY: "알바", FIELD: "현장", BUSINESS: "자영업", INVEST: "투자" };
   /** What a 동의 (consent) condition can name, and how the screens say it (core FlagEval.CONSENTS). */
   const CONSENT_NAMES = { ads: "광고 동의(Google 동의 화면)", usage: "사용 통계 보내기 동의", "usage.stats.more": "사용 통계 더 보내기 동의(켜진 기능 목록·앱 시작 시간)",
     "usage.stats.lookup": "사용 통계 더 보내기 동의(조회 시간, 1.31부터)" };
@@ -1359,7 +1364,7 @@ export function adminLib() {
    * code still reads as words: its first part (reward_x → 보상) and "처리".
    */
   const ACTION_NAMES = {
-    login: "로그인", login_failed: "로그인 실패", login_unlock: "로그인 잠금 풀기", server_deployed: "서버 배포", logout_all: "모든 기기에서 로그아웃", password: "비밀번호 바꿈",
+    login: "로그인", login_failed: "로그인 실패", login_unlock: "로그인 잠금 풀기", server_deployed: "서버 배포", share_deployed: "공유 서버 배포", change_note: "바뀐 것 적어 둠", logout_all: "모든 기기에서 로그아웃", password: "비밀번호 바꿈",
     second_on: "두 번째 확인 켬", second_off: "두 번째 확인 끔", // R131 1.31 [ADMX-16]
     passkey_add: "패스키 만듦", passkey_remove: "패스키 지움", session_end: "로그인 하나 끊음", // 2.0.0 [RVQ-06][RVQ-07]
     invite: "관리자 초대", invite_remove: "초대 취소", join: "관리자 계정 만듦", admin_update: "관리자 권한·상태 바꿈", admin_remove: "관리자 삭제",
@@ -1367,7 +1372,7 @@ export function adminLib() {
     alias_add: "다른 이름 넣음", alias_remove: "다른 이름 지움", merge: "회사 합침", company_not_same: "다른 회사로 둠", claude_draft: "Claude 추천", claude_draft_done: "추천과 맞춰 봄", obs_signal: "개선 신호 처리", market_health: "장터 건강 결과 올림", rule_withdraw: "규칙 내림", rule_restore: "규칙 다시 올림", rule_promote: "이전 판을 다시 대표로",
     post_bulk: "토론 글 한 번에 처리", rate_bulk: "임금표 한 번에 처리",
     reward_paid: "보상 지급", reward_void: "보상 취소", reward_owed: "보상 대기로 되돌림", reward_auto: "보상 저절로 지급", settings: "채택 설정 바꿈",
-    post_autohide: "신고로 글이 가려짐", post_show: "글 다시 보이기", post_hide: "글 가림", post_delete: "글 지움", post_mute: "글쓴이 30일 쓰기 막음", write_limit_lift: "신고 누적 쓰기 제한 풀어 줌", care_warn: "마을 경고 보냄", care_opinion: "의견 쉬기 걸음", care_community: "마을 쉬기 걸음", care_lift: "마을 경고·쉬기 거둠", care_undo: "마을 경고·쉬기 되돌림(1분 안)", care_appeal_accept: "해명 받아들여 풀어 줌", care_appeal_keep: "해명 보고 그대로 둠", village_topic: "광장 이번 주 주제 바꿈", plaza_pick: "광장 답 모음 바꿈", village_contest: "이달의 주제 공모 바꿈",
+    post_autohide: "신고로 글이 가려짐", post_show: "글 다시 보이기", post_hide: "글 가림", post_delete: "글 지움", post_mute: "글쓴이 30일 쓰기 막음", write_limit_lift: "신고 누적 쓰기 제한 풀어 줌", care_warn: "마을 경고 보냄", care_opinion: "의견 쉬기 걸음", care_community: "마을 쉬기 걸음", care_lift: "마을 경고·쉬기 거둠", care_undo: "마을 경고·쉬기 되돌림(1분 안)", care_appeal_accept: "해명 받아들여 풀어 줌", care_appeal_keep: "해명 보고 그대로 둠", village_topic: "광장 이번 주 주제 바꿈", plaza_pick: "광장 답 모음에 넣음", plaza_pick_title: "광장 답 모음 제목 고침", plaza_pick_remove: "광장 답 모음에서 뺌", plaza_pick_gone: "지워진 답을 답 모음에서 뺌", village_contest: "이달의 주제 공모 바꿈",
     inquiry_reply: "문의에 답함", inquiry_status: "문의 상태 바꿈", inquiry_close: "문의 닫음", inquiry_open: "문의 다시 엶",
     inquiry_hide: "모두의 문의 숨김", inquiry_show: "모두의 문의 다시 보이기", inquiry_assign: "문의 맡음", inquiry_autohide: "신고로 모두의 문의가 가려짐", inquiry_billing: "결제·환불 기록 바꿈", ask_miss: "자동 판정이 틀렸다고 적음",
     dev_create: "개발사항 만듦", dev_edit: "개발사항 고침", dev_status: "개발사항 처리", dev_bulk: "개발사항 한 번에 처리",
@@ -1380,7 +1385,7 @@ export function adminLib() {
     play_voided: "Play에서 환불된 결제를 읽음",
     notice_add: "공지 올림", notice_edit: "공지 고침", notice_remove: "공지 내림", switch_off: "기능 끔", switch_on: "기능 다시 켬",
     ops_done: "이달 할 일 마침", ops_undo: "이달 할 일 되돌림", share_remove: "공유 링크 내림",
-    inquiry_bulk: "문의 한 번에 처리", reject_undo: "거절 되돌림", template_edit: "자주 쓰는 답 고침", sla: "답 목표 바꿈",
+    inquiry_bulk: "문의 한 번에 처리", reject_undo: "거절 되돌림", template_edit: "자주 쓰는 답 고침", template_public: "밤낮 Q&A 공개 글 바꿈", sla: "답 목표 바꿈",
     inquiry_copy: "문의 개발로 복사함", rate_set: "임금표 처리", rate_adopted: "임금표 채택", rate_hidden: "임금표 숨김", rate_pending: "임금표 다시 검토로",
     invite_credit: "친구 초대 보상 쌓임", invite_capped: "친구 초대 보상 한도에 닿음", invite_refused: "친구 초대 보상 거절", invite_burst: "친구 초대가 몰려 멈춤",
     invite_settings: "친구 초대 규칙 바꿈",
@@ -1401,7 +1406,7 @@ export function adminLib() {
     maker_reward_owed: "제작자 보상 줄 것 생김", price_table: "가격표 바꿈", earned_days: "제보 보상 날 줌", pro_share_code: "프로 나눔 코드 만듦",
     pro_share_claim: "프로 나눔 받음", link_guess: "연결·가족 코드 맞히기가 많아 10분 쉼", old_pay_cut: "옛 결제 정리", release_start: "출시 점검표 시작",
     release_step: "출시 점검표 단계", review_reply: "스토어 리뷰에 답함", review_draft: "스토어 리뷰 답 초안",
-    material_add: "스튜디오 재료 올림", material_free: "스튜디오 재료 무료·광고 나눔", material_state: "스튜디오 재료 공개·숨김",
+    material_add: "스튜디오 재료 올림", material_free: "스튜디오 재료 무료·광고 나눔", material_state: "스튜디오 재료 공개·숨김", material_undo: "스튜디오 재료 바꿈 되돌림",
     sync_key_make: "개발 기록 맞춤 열쇠 만듦", ops_key_make: "운영 열쇠 만듦", ops_key_ship: "운영 열쇠로 나간 판 저장(10분 보류)", need_ready: "꾸미기 부탁 올리기 전 확인에 옴", loop_fixed_yes: "문의한 분이 해결됐다고 함", loop_fixed_no: "문의한 분이 아직이라고 함",
     // 2.0.0 갈래 Q1 #478의 보관 장부(keep.js): 백업 되살려 보기와 개인정보 요청 처리.
     backup_drill: "백업 되살려 보기(저절로)", backup_drill_run: "백업 되살려 보기 지금 함", data_request_run: "개인정보 요청 처리함",
@@ -1409,6 +1414,16 @@ export function adminLib() {
   const ACTION_AREAS = { login: "로그인", admin: "관리자", invite: "친구 초대", reward: "보상", post: "토론 글", rate: "임금표", inquiry: "문의", dev: "개발사항",
     template: "자주 쓰는 답", device: "관리자 휴대폰", notice: "공지", ops: "이달 할 일", flag: "기능", rule: "규칙", company: "회사", alias: "다른 이름",
     purchase: "구매", type: "근무 유형", launch: "정식 출시", share: "공유 링크" };
+
+  /**
+   * 2.0.0 [RVN-24] 검토 U22c-02: who did a thing no admin did. What an app user started (a 로그인 시도, 프로 함께 쓰기 받기, 문의한 분의
+   * 해결됐어요·아직이에요, 데이터 요청) reads '앱 사용자'; the rest the server did by itself, and the log marks it '자동'.
+   */
+  const BY_APP_USERS = new Set(["login_failed", "pro_share_claim", "purchase_rebind", "purchase_rebind_refused", "loop_fixed_yes", "loop_fixed_no",
+    "invite_refused", "data_request"]);
+  function origin(code) {
+    return BY_APP_USERS.has(String(code ?? "")) ? "app" : "auto";
+  }
 
   /** [ADMX-01] An activity code in words; a code nobody named yet reads "<area> 처리", never the code itself. */
   function actionName(code) {
@@ -1564,7 +1579,7 @@ export function adminLib() {
     // AT 1.29 [ADMCP-01][ADMCP-02][ADMCP-03]
     inquiryCopyText, copyDevItem, copyTitle, sameGroups, kstTime, COPY_KINDS,
     // AX 1.30 [ADMX-01][ADMX-02][ADMX-03][ADMX-07]
-    ACTION_NAMES, actionName, change, spark, tokenHtml, compareRows, trendTone,
+    ACTION_NAMES, actionName, origin, change, spark, tokenHtml, compareRows, trendTone,
     // 1.38 [CYC-03]
     cycleCsvRow,
   };

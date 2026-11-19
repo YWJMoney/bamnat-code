@@ -328,7 +328,10 @@ box-shadow:var(--shadow);text-decoration:none;color:inherit;min-height:6.5rem;tr
 .bubble-meta.admin{align-self:flex-end}
 .composer{position:sticky;bottom:calc(4.4rem + env(safe-area-inset-bottom));background:var(--surface);border:1px solid var(--line);border-radius:var(--r-lg);
 padding:.75rem;box-shadow:var(--shadow)}
-@media (min-width:600px){.composer{bottom:1rem}}
+@media (min-width:600px){.composer{bottom:1rem}
+  /* [RVQ-50] 글자 200%에서 답 칸이 화면을 덮지 않게 */
+  .composer{max-height:48dvh;overflow:auto;overscroll-behavior:contain}
+  .composer .actions{position:sticky;bottom:-.75rem;z-index:2;background:var(--surface);margin:.5rem -.75rem -.75rem;padding:.6rem .75rem;border-top:1px solid var(--line)}}
 /* [J133-40] 순번 720 (1.32 실사용 테스트, 관리자 휴대폰 화면): on a phone the reply box stays in the page, under the talk, instead of
    floating over the last bubbles; the actions under it are never behind the bottom tabs. */
 @media (max-width:599px){.composer{position:static;margin-bottom:1rem}
@@ -1214,7 +1217,7 @@ form[data-form="dev-ship-note"] textarea{min-height:5rem}
 .banner.bad{background:var(--bad-bg);color:var(--bad)}
 .incident-band{justify-content:flex-start;text-align:left;text-decoration:none;gap:.5rem}
 .incident-band svg{flex:none;width:1.15rem;height:1.15rem}
-.incident-band span{flex:1;min-width:0}
+.incident-band span{flex:1;min-width:0;display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;overflow:hidden}
 .incident-open{border-color:color-mix(in srgb,var(--bad) 45%,var(--line))}
 .day-bars circle.mark{fill:var(--gold);stroke:var(--surface);stroke-width:1.5}
 .key.mark{background:var(--gold);border-radius:50%}
@@ -1408,7 +1411,7 @@ details.card>summary{display:flex;flex-wrap:wrap;gap:.25rem .75rem;align-items:b
 @media (hover:hover){.gl-more a:hover{border-color:var(--accent);transform:translateY(-1px)}}
 .ob-cols{display:flex;flex-direction:column;gap:.9rem;min-width:0}.ob-main,.ob-side{display:contents}.ob-signals{order:-1}.ob-gaps{order:9}
 
-.ob-tiles{display:grid;grid-template-columns:minmax(0,1fr);gap:.6rem}
+.ob-tiles{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(100%,13rem),1fr));gap:.6rem}
 .ob-tile{--s:var(--accent);position:relative;display:flex;flex-direction:column;gap:.2rem;min-width:0;padding:.85rem .9rem .7rem;border-radius:var(--r);background:var(--soft);border-top:3px solid var(--s)}
 .ob-tile.out{--s:var(--bad)}.ob-tile.out.plus{--s:var(--ok)}.ob-tile.keep{--s:var(--ok)}.ob-tile.ver{--s:var(--info)}.ob-tile.star{--s:var(--gold)}
 .ob-tile.need{border-top-style:dashed;--s:var(--faint)}.ob-tile.need small{color:var(--fg)}.ob-tile.wide{grid-column:1/-1}.ob-tile.wide>b{font-size:1.2rem}.ob-tile.voice{--s:var(--accent)}
@@ -1432,27 +1435,35 @@ details.card>summary{display:flex;flex-wrap:wrap;gap:.25rem .75rem;align-items:b
 .ob-better li{display:grid;gap:.1rem;padding:.55rem .7rem;border-radius:var(--r);background:var(--ok-bg)}
 .ob-gap-list li{display:grid;gap:.15rem;padding:.65rem .8rem;border-radius:var(--r);border:1px dashed var(--line)}.ob-gap-list li.policy{border-color:color-mix(in srgb,var(--info) 45%,var(--line))}
 .ob-gap-list li b{font-size:.88rem;line-height:1.4}.ob-gap-list li .pill{justify-self:start;margin-top:.2rem}
-@media (min-width:600px){.ob-tiles{grid-template-columns:repeat(2,minmax(0,1fr))}}
-@media (min-width:1100px){.ob-cols{display:grid;grid-template-columns:minmax(0,1.75fr) minmax(19rem,1fr);align-items:start}.ob-main,.ob-side{display:grid;gap:.9rem;align-content:start;min-width:0}.ob-signals,.ob-gaps{order:0}.ob-tiles{grid-template-columns:repeat(3,minmax(0,1fr))}}
-@media (min-width:1500px){.ob-tiles{grid-template-columns:repeat(5,minmax(0,1fr))}}
+/* 2.0.0 [RVQ-56] 두 칸은 화면 폭이 아니라 한눈에 판의 폭(글자 크기를 따르는 rem)으로 나눠요: 글자 200%의 1440 폭에서 옆 칸(19rem)이
+   본 칸을 240px쯤으로 눌러 표 숫자가 한 자씩 섰어요(조건 12, HQ-138). 100%에서는 예전 1100px 화면에서 그대로 두 칸이에요(50rem).
+   정상도 넷·먼저 볼 것·흐름 단계·더 보기 칸과 전체 사용자 칸(.ob-tiles, 13rem 넘게 들어가는 만큼)도 같은 판 폭으로 나눠요(Q2와 함께).
+   .gl-hero 여백·제목, .gl-pulse, .gl-gauge .gl-v는 '오늘' 화면도 써서 화면 폭(@media) 그대로예요. */
+.glance{container:glance/inline-size}
+@container glance (min-width:50rem){.ob-cols{display:grid;grid-template-columns:minmax(0,1.75fr) minmax(19rem,1fr);align-items:start}.ob-main,.ob-side{display:grid;gap:.9rem;align-content:start;min-width:0}.ob-signals,.ob-gaps{order:0}}
 @media (min-width:600px){
   .gl-hero{padding:1.4rem 1.4rem 1.25rem}
   .gl-hero h2{font-size:1.75rem}
-  .gl-gauges{grid-template-columns:repeat(4,minmax(0,1fr))}
-  .gl-early-grid{grid-template-columns:repeat(3,minmax(0,1fr))}
-  .gl-steps{grid-template-columns:repeat(2,minmax(0,1fr))}
-  .gl-more{grid-template-columns:repeat(3,minmax(0,1fr))}
 }
 @media (min-width:1024px){
   .gl-hero{padding:1.6rem 1.75rem 1.5rem}
   .gl-hero h2{font-size:2rem}
   .gl-pulse{width:3rem;height:3rem}
   .gl-gauge .gl-v{font-size:1.6rem}
+}
+@container glance (min-width:36rem){
+  .gl-gauges{grid-template-columns:repeat(4,minmax(0,1fr))}
+  .gl-early-grid{grid-template-columns:repeat(3,minmax(0,1fr))}
+  .gl-steps{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .gl-more{grid-template-columns:repeat(3,minmax(0,1fr))}
+}
+@container glance (min-width:45rem){
   .gl-steps{grid-template-columns:minmax(0,.8fr) minmax(0,1.6fr) minmax(0,.8fr) minmax(0,1fr);gap:1.1rem}
   .gl-step:not(:last-child)::after{content:"›";position:absolute;right:-.85rem;top:50%;transform:translateY(-50%);color:var(--faint);font-size:1.1rem;font-weight:900}
   .gl-more{grid-template-columns:repeat(5,minmax(0,1fr))}
 }
-@media (max-width:599.98px){.gl-steps{grid-template-columns:repeat(2,minmax(0,1fr));grid-auto-flow:row dense}.gl-step.keep,.gl-step.back{grid-column:1/-1}.gl-step>b{font-size:1.5rem}}
+@container glance (max-width:35.99rem){.gl-steps{grid-template-columns:repeat(2,minmax(0,1fr));grid-auto-flow:row dense}.gl-step.keep,.gl-step.back{grid-column:1/-1}.gl-step>b{font-size:1.5rem}}
+@container glance (max-width:14rem){.gl-gauges{grid-template-columns:minmax(0,1fr)}}
 @media (max-width:399.98px){.gl-ring svg{width:3.5rem;height:3.5rem}.gl-ring b{top:1.27rem;font-size:.8rem}.gl-hero h2{font-size:1.3rem}}
 .gl-trend{display:inline-flex;align-items:center;gap:.15rem;margin-left:.35rem;padding:.05rem .4rem;border-radius:999px;font-size:.7rem;font-weight:800;letter-spacing:0;vertical-align:1px}
 .gl-trend.up{background:var(--ok-bg);color:var(--ok)}.gl-trend.down{background:var(--bad-bg);color:var(--bad)}.gl-trend.flat{background:var(--soft);color:var(--muted)}
@@ -1521,6 +1532,18 @@ details.card>summary{display:flex;flex-wrap:wrap;gap:.25rem .75rem;align-items:b
   .gl-cohort td{display:flex;flex-direction:column;gap:.1rem;font-size:.86rem}
   .gl-cohort td::before{content:attr(data-label);font-size:.75rem;font-weight:700;color:var(--muted)}
 }
+/* 2.0.0 [RVQ-56] 유형별 흐름·기능과 머묾 표는 카드 폭으로 바꿔요: 넓은 화면의 반쪽 카드에서 글자 200%면 칸이 좁아 숫자가 한 자씩 섰어요(조건 12).
+   표 둘레(ob-tw)가 폭의 기준이라 카드 자체의 크기는 그대로예요. 아주 좁으면(글자 200%의 접은 폭) 한 줄에 두 칸. */
+.ob-tw{container-type:inline-size}
+@container (max-width:36rem){
+  .ob-kinds .gl-cohort thead,.ob-keep .gl-cohort thead{display:none}
+  .ob-kinds .gl-cohort,.ob-kinds .gl-cohort tbody,.ob-keep .gl-cohort,.ob-keep .gl-cohort tbody{display:block}
+  .ob-kinds .gl-cohort tr,.ob-keep .gl-cohort tr{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:3px;margin-bottom:.5rem}
+  .ob-kinds .gl-cohort tbody th,.ob-keep .gl-cohort tbody th{grid-column:1/-1;padding:.2rem 0}
+  .ob-kinds .gl-cohort td,.ob-keep .gl-cohort td{display:flex;flex-direction:column;gap:.1rem;font-size:.86rem}
+  .ob-kinds .gl-cohort td::before,.ob-keep .gl-cohort td::before{content:attr(data-label);font-size:.75rem;font-weight:700;color:var(--muted)}
+}
+@container (max-width:18rem){.ob-kinds .gl-cohort tr,.ob-keep .gl-cohort tr{grid-template-columns:repeat(2,minmax(0,1fr))}}
 /* 1.39 [ADM3-45] 같은 회사일까요? 짝 카드: 넓으면 두 이름이 한 줄, 접힌 폭이면 위아래. */
 .similar-rows li{display:flex;flex-direction:column;gap:.35rem;padding:.75rem 0;border-top:1px solid var(--line)}
 .similar-rows li:first-child{border-top:0}
@@ -1809,6 +1832,11 @@ details.fold-field[open]>summary{margin-bottom:.5rem}
   .dl-pill:not(.warn,.bad){width:min(.7rem,12px);height:min(.7rem,12px);padding:0;font-size:0;line-height:0;background:var(--muted)}
   .dl-pill.live{background:var(--accent)}
   .bar h1 .t{-webkit-line-clamp:1}
+}
+/* 2.0.0 [RVQ-56] 총괄 4c 사진(380·글자 100%): 로컬 서버 알약 '로컬 2.0.0'은 실서버 '2.0.0'보다 두 글자 길어 380 폭에서 제목 '사람과 글'을
+   두 줄로 꺾었어요. 로컬 알약만 조금 더 넓은 막대(24rem)까지 점으로 줄여요. 실서버·판 다름·닿지 않음 알약은 그대로예요. */
+@container bar (width < 24rem){
+  .dl-pill:not(.warn,.bad,.live){width:min(.7rem,12px);height:min(.7rem,12px);padding:0;font-size:0;line-height:0;background:var(--muted)}
 }
 @media (pointer:coarse){
   .waiting a,.alert-list a,.stage-strip a{min-height:2.75rem}

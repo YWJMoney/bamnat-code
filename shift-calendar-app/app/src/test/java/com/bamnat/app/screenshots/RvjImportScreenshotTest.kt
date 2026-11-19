@@ -6,6 +6,7 @@ import com.bamnat.core.boss.StaffImport
 import com.bamnat.core.boss.StaffMember
 import com.bamnat.core.boss.WageForm
 import com.bamnat.core.boss.Workplace
+import com.bamnat.core.imports.StaffRow
 import com.bamnat.core.imports.StaffSheets
 import com.bamnat.core.time.Today
 import com.bamnat.core.work.StaffRoster
@@ -80,6 +81,51 @@ class RvjImportScreenshotTest : ScreenshotBase() {
     @Test fun theColumnsReadAreSaidFirst() = shoot("rvj_102_import_reads_folded", FOLDED) {
         ledger(false).invoke(this)
         assertTrue(scrolledTo("읽는 칸: 이름·시급·일급·월급"))
+    }
+
+    // ---- 2.0.0 [RVJ-97] 검토 U05c-02: 읽은 줄을 그 자리에서 고치기, 4대보험은 법대로 다시 ----
+    private fun editing(fix: Boolean): Screen.() -> Unit = {
+        val nineToSix = LocalTime.of(9, 0) to LocalTime.of(18, 0)
+        val rows = listOf(
+            StaffRow("김알바", WageForm.HOUR, 9_800, listOf(DayOfWeek.MONDAY, DayOfWeek.WEDNESDAY, DayOfWeek.FRIDAY).associateWith { LocalTime.of(10, 0) to LocalTime.of(14, 0) },
+                job = "홀", doubtful = setOf("base")),
+            StaffRow("이주방", WageForm.HOUR, 11_000, DayOfWeek.entries.take(5).associateWith { nineToSix }, job = "주방"),
+            StaffRow("박매니저", WageForm.MONTH, 2_500_000, DayOfWeek.entries.take(5).associateWith { nineToSix }, job = "매니저"),
+        )
+        val lines = StaffImport.lines(rows, emptyList(), Today.date())
+        content { com.bamnat.app.ui.work.StaffImportDialog(lines, true, 10, onDismiss = {}, onApply = { _, _ -> }) }
+        settle()
+        tapText("김알바 고치기", exact = true)
+        settle()
+        if (fix) fixKim()
+    }
+
+    /** Two more days (주 17시간 30분) and the 최저시급 over: the line is in all three 4대보험 now. */
+    private fun Screen.fixKim() {
+        tapText("화", exact = true)
+        settle()
+        tapText("목", exact = true)
+        settle()
+        typeInto("시급 금액", "10500")
+        repeat(2) { settle() }
+    }
+
+    @Test fun importEdit() = shoot("rvj_350_import_edit_folded", FOLDED, editing(false))
+    @Test fun importEditDarkBig() = shoot("rvj_351_import_edit_folded_dark_200", DARK, 2f, editing(false))
+    @Test fun importEditWide() = shoot("rvj_352_import_edit_unfolded", UNFOLDED, editing(false))
+
+    @Test fun aFixedLineIsInsuredByTheLawAgain() = shoot("rvj_353_import_edit_fixed_folded", FOLDED) {
+        val before = "4대보험 없음 · 주 15시간 미만이라 빠져요"
+        editing(false).invoke(this)
+        assertTrue("주 10시간 30분은 4대보험이 빠진 까닭을 말해요", appears(before))
+        assertTrue(appears("확인: 금액, 2026년 최저시급 10,320원보다 적어요"))
+        assertTrue("고치는 칸은 직원 정보와 같아요", appears("근로소득(간이세액표)") && appears("일하는 요일"))
+        fixKim()
+        assertTrue(scrolledTo("월화수목금 10:00~14:00 · 주 17시간 30분"))
+        assertTrue("주 15시간을 넘으면 법대로 다시 채워요", gone(before))
+        assertTrue("고친 금액의 확인은 지워요", gone("최저시급"))
+        assertTrue(scrolledTo("읽은 대로 되돌리기"))
+        assertTrue(enabled("3명 더하기"))
     }
 
     // ---- [RVJ-42] 검토 PC-104 ----

@@ -126,6 +126,25 @@ object ShareExpiryReminder {
         Notifications.post(context, Notifications.SHARE_ID, notification, tag(key))
     }
 
+    /**
+     * 2.0.0 [RVL-78] (검토 I12c-02) A link that stopped by itself (its end date passed, or the server no longer has it): a row in the
+     * 알림함, once for that end, which opens the share sheet where '링크로 보내기' makes the new one. Nothing on the lock screen: the
+     * reminder before it closed was the notice.
+     */
+    fun postEnded(context: Context, key: String, at: Instant, name: String? = null) {
+        val word = wordOf(context, key)
+        com.bamnat.app.inbox.Inbox.get(context).post(com.bamnat.app.inbox.InboxRow(
+            key = "share.ended:$key", kind = ENDED_KIND, section = com.bamnat.app.inbox.InboxSection.NOTICE,
+            title = "${what(key, name, word)}${Fmt.iga(what(key, name, word))} ${dateText(at)}에 끝났어요",
+            line = "받은 분들은 새 링크를 받아야 이어서 봐요 · 공유에서 다시 보내요",
+            target = NoticeLinks.Target.SHARE, calendar = key.takeUnless { it == PersonalCalendar.MAIN },
+            at = at.toEpochMilli(),
+        ))
+    }
+
+    /** 2.0.0 [RVL-78] What '다시 보지 않기' turns off for [postEnded]'s rows. */
+    const val ENDED_KIND = "share.ended"
+
     /** [PROV-04] A second to fifth link without 프로 says when it closes, with no button: keeping it open is 프로's. */
     fun postLocked(context: Context, link: ShareLinkState, key: String, name: String? = null) {
         val notification = NotificationCompat.Builder(context, Notifications.SHARE_CHANNEL_ID)
