@@ -21,6 +21,19 @@ data class Motion(
     /** How long a move takes, in ms, at [speed] ([base] the app's own). */
     fun millis(base: Int): Int = when (speed) { "s" -> base * 3 / 2; "f" -> base * 2 / 3; else -> base }
 
+    /**
+     * 2.0.0 [RVS-15] In a few words for the 넣기 창's 지금 → 넣으면 ('달 넘김 책장 넘기기 · 오늘 칸 은은한 빛'), '기본 움직임' for the app's
+     * own and '움직이지 않기' when it is off.
+     */
+    fun said(): String = when {
+        off -> "움직이지 않기"
+        isDefault -> "기본 움직임"
+        else -> listOfNotNull(
+            turn?.let { "달 넘김 ${TURN_NAMES[it] ?: it}" }, today?.let { "오늘 칸 ${TODAY_NAMES[it] ?: it}" },
+            wear?.let { "입을 때 ${WEAR_NAMES[it] ?: it}" }, speed?.takeIf { it != "n" }?.let { SPEED_NAMES[it] },
+        ).joinToString(" · ").ifEmpty { "기본 움직임" }
+    }
+
     /** What is drawn when [systemOff] (the phone's own setting) or [off]: nothing moves. */
     fun effective(systemOff: Boolean): Motion = if (systemOff || off) Motion(turn = "none", today = "none", wear = "none", off = true) else this
 

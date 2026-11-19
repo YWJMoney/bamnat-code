@@ -20,6 +20,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
@@ -58,7 +59,10 @@ internal fun BoardPartSample(id: String, bp: Blueprint) {
         id == "night" || id.startsWith("night.") -> "night"
         else -> return
     }
-    CompositionLocalProvider(LocalBlueprint provides bp) {
+    // 2.0.0 [RVS-06] SD-02: the sample keeps the floors the phone keeps, on the card it is drawn on.
+    val ground = MaterialTheme.colorScheme.surface.toArgb().toLong() and 0xFFFFFFFFL
+    val shown = androidx.compose.runtime.remember(bp, ground) { bp.floored(ground) }
+    CompositionLocalProvider(LocalBlueprint provides shown) {
         Column(
             Modifier.fillMaxWidth().border(1.dp, MaterialTheme.colorScheme.outlineVariant, MaterialTheme.shapes.medium)
                 .background(MaterialTheme.colorScheme.surface, MaterialTheme.shapes.medium).padding(10.dp)

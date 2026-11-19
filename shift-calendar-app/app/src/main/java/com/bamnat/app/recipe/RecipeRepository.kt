@@ -192,6 +192,39 @@ class RecipeRepository(private val c: AppContainer, context: Context) {
     suspend fun inUse(): List<AppliedRecipeEntity> = dao.applied().filter { it.code.isNotEmpty() && it.undoneAt == null && it.replacedAt == null }
         .groupBy { it.code }.map { (_, list) -> list.maxBy { it.appliedAt } }
 
+    /** 2.0.0 [RVS-15] One of my settings a work changed, what it was before ([before]) and is now ([now]), in words too. */
+    data class FeelBack(val key: String, val what: String, val before: String, val now: String, val beforeSaid: String, val nowSaid: String)
+
+    /**
+     * 2.0.0 [RVS-15] 검토 SN-04·SD-05 (설정 › 화면과 글자 '작품이 바꾼 내 설정 되돌리기', 7일이 지나도): my own settings (밝기·글자 크기·
+     * 누르기·시계·하루 순서·급여 기간…) that works put on this phone changed and that are still as a work left them, each with what I had
+     * before the first of those works (a work put on over another one goes back through it). A setting I changed since is mine and is not
+     * offered; a work taken back already put its own back.
+     */
+    suspend fun feelChanged(): List<FeelBack> {
+        val chains = HashMap<String, MutableList<Pair<String, String>>>()
+        dao.applied().filter { it.undoneAt == null }.sortedBy { it.appliedAt }.forEach { e ->
+            val sets = runCatching { JSONObject(e.before).optJSONObject(PieceKind.APP_FEEL.key)?.optJSONObject("settings") }.getOrNull() ?: return@forEach
+            sets.keys().forEach { k ->
+                if (k !in RecipePieces.MY_FEEL_SETTINGS) return@forEach
+                val pair = sets.optJSONArray(k) ?: return@forEach
+                chains.getOrPut(k) { ArrayList() } += pair.optString(0) to pair.optString(1)
+            }
+        }
+        val now = pieces.feelSnapshot()
+        return chains.mapNotNull { (k, list) ->
+            val cur = now[k] ?: return@mapNotNull null
+            val last = list.indexOfLast { it.second == cur }.takeIf { it >= 0 } ?: return@mapNotNull null
+            var back = list[last].first
+            for (i in last - 1 downTo 0) if (list[i].second == back) back = list[i].first
+            if (back == cur) null
+            else FeelBack(k, RecipePieces.SETTING_NAMES[k] ?: k, back, cur, pieces.feelWords(k, back), pieces.feelWords(k, cur))
+        }.sortedBy { f -> RecipePieces.FEEL_SETTINGS.values.indexOf(f.key) }
+    }
+
+    /** 2.0.0 [RVS-15] Puts [list] back as it was before the works; how many went back. */
+    fun putFeelBack(list: List<FeelBack>): Int = pieces.putFeelBack(list.associate { it.key to (it.before to it.now) })
+
     /**
      * 2.0.0 [RVS-12] 총괄 HQ-57 ②: works put on in 1.36~1.39 whose 부품 꾸미기 has a formula (`{"fx"}`) went on without it (넣기 could
      * not read its own formula back and let the piece go without a word, 장터 144개). Nothing is put back by itself, so no one's calendar

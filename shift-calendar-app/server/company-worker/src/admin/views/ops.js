@@ -339,8 +339,11 @@ export function opsViews(A) {
       sp.failed ? `묶기 실패 ${sp.failed}번(오류를 적다가 또 실패)` : ""].filter(Boolean);
     const loose = d.loose ? `<p class="note warn" data-loose-errors>지난 14일 서버 오류 ${d.loose}번은 묶음에 없어요: ${parts.join(" · ")}. 주소·이유를 몰라요.</p>` : "";
     const jobs = sp.jobs ? `<p class="note" data-job-errors>정기 작업 실패 ${sp.jobs}번은 요청 오류가 아니라 여기 없어요. 관리 › 서버 상태의 정기 작업에서 단계마다 봐요.</p>` : "";
-    const what = `<p class="hint" data-error-kinds>세는 것: 날마다 서버 오류 = 요청 하나가 500으로 끝난 수 · 묶음 = 그 가운데 주소·이유로 묶인 것 · 응답 속도의 오류 = 모든 5xx(쉬는 기능 503, Play·공유 서버 502·504 포함)</p>`;
-    return `${tabs}${loose}${jobs}${chart}<section class="card">${head("묶음", "고친 뒤 다시 나면 '다시 남'으로 올라와요")}${what}${list}</section>`;
+    // 2.0.0 [RVQ-34] 검토 SVC-32: 오류가 아닌 5xx는 따로 한 줄(서버 오류 숫자에도 묶음에도 들지 않아요).
+    const rest = d.rest ?? { busy: 0, far: 0 };
+    const restLine = rest.busy || rest.far ? `<p class="note" data-rest-5xx>오류가 아닌 거절: ${[rest.busy ? `쉬는 기능 503 ${rest.busy}번` : "", rest.far ? `Play·공유 서버가 안 닿은 502·504 ${rest.far}번` : ""].filter(Boolean).join(" · ")} (지난 14일)</p>` : "";
+    const what = `<p class="hint" data-error-kinds>세는 것: 서버 오류 = 요청 하나가 500으로 끝난 수(던진 오류든 돌려준 500이든) · 묶음 = 그것을 주소·이유로 묶은 것 · 응답 속도의 오류 = 500만. 쉬는 기능의 503과 바깥 서버의 502·504는 오류가 아니라 따로 세요.</p>`;
+    return `${tabs}${loose}${jobs}${restLine}${chart}<section class="card">${head("묶음", "고친 뒤 다시 나면 '다시 남'으로 올라와요")}${what}${list}</section>`;
   }
 
   // ---- [ADM3-04][ADM3-05][ADM3-19] 서버 상태 판(관리 › 서버 상태 위) ----

@@ -162,7 +162,7 @@ internal fun AskCard(
         if (notOpened.isNotEmpty() && open) Text("아직 안 연 사람: " + notOpened.joinToString(", ") { it.name }, style = MaterialTheme.typography.bodySmall,
             color = Tone.Caution.color())
         if (over.isNotEmpty()) {
-            Text("자리보다 많이 신청한 날 ${over.size}일", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.error)
+            Text("자리보다 많이 신청한 날 ${over.size}일", style = MaterialTheme.typography.labelLarge, color = Tone.Caution.color()) // [RVJ-66] 정할 일: 주의
             over.take(6).forEach { d ->
                 Text("${Fmt.monthDay(d.date)} (${d.cap}자리): " + d.inside.joinToString(", ") { names[it.memberId].orEmpty() } +
                     " | 넘침 " + d.over.joinToString(", ") { names[it.memberId].orEmpty() }, style = MaterialTheme.typography.bodySmall)
@@ -178,7 +178,7 @@ internal fun AskCard(
         if (shiftWishes > 0) Text("근무 희망 ${shiftWishes}개(" + shifts.filter { s -> linked.any { it.shiftId == s.id } }.joinToString(" ") { s -> "${s.label} ${linked.count { it.shiftId == s.id }}" } +
             ")는 자동 채우기가 먼저 넣어요.", style = MaterialTheme.typography.bodySmall)
         if (round.token == null) Text("이 휴대폰에 신청 링크 열쇠가 없어요(암호 없는 백업에서 되살림). 새로 열어 주세요.", style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.error)
+            color = Tone.Caution.color()) // [RVJ-66]
         FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             OutlinedButton(onClick = onPull, enabled = !busy && round.token != null) { Text("신청 가져오기") }
             OutlinedButton(onClick = onSend) { Text("링크 다시 보내기") }
