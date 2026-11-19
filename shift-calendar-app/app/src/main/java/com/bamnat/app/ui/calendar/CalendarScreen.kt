@@ -3639,9 +3639,12 @@ internal val ScheduleSnapshot.backDone: String
         else -> "근무 주기대로 되돌렸어요"
     }
 
-/** [EASE-03] Cards above the month that wait for the day after the first setup. */
-private val FIRST_DAY_WAITS = setOf(
-    "statsMore", "crashAsk", "review", "holiday", "alarmSuggest", "recap", "plazaShare", "publicCycle",
+/**
+ * [EASE-03] Cards above the month that wait for the day after the first setup. 2.0.0 [RVL-85] (PC-190) Not 'crashAsk': the app closing
+ * on the day it was put on is when a person most easily leaves, and the one way to say so must be there that day.
+ */
+internal val FIRST_DAY_WAITS = setOf(
+    "statsMore", "review", "holiday", "alarmSuggest", "recap", "plazaShare", "publicCycle",
     "plazaRoom", "inviteNudge", "proMoment", "backupNudge", "journal", "discover", "shareHint",
 )
 

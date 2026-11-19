@@ -74,6 +74,46 @@ class RvlCrashReportScreenshotTest : ScreenshotBase() {
         com.bamnat.app.diag.CrashLog.clear(app)
     }
 
+    /** Opens 도움말과 문의 as 설정 › 문의하기 does. */
+    private fun Screen.openHelp() {
+        com.bamnat.app.ui.settings.InquiryLinks.ask(com.bamnat.app.ui.settings.InquiryStart(help = true))
+        settle()
+    }
+
+    /** PC-191: the card pressed and left without a word; 문의하기 later still finishes it with the record on. */
+    private fun leftUnsent(): Screen.() -> Unit = style(WorkStyle.SHIFT) {
+        c.inquiryApi = FakeInquiryApi()
+        com.bamnat.app.diag.CrashLog.write(app, "main", IllegalStateException("stopped"), Today.millis() - 60_000)
+        tab(1, wide = false); tab(0, wide = false)
+        openNotice("불편한 점 알려 주기")
+        reveal("앱이 갑자기 닫혔어요")
+        tapText("멈춤 기록과 함께 알려 주기")
+        assertTrue(appears("새 문의"))
+        back()
+        openHelp()
+        assertTrue(appears("앱이 닫힌 것을 아직 알리지 않았어요"))
+        tapText("이어 쓰기", exact = true)
+        reveal("멈춤 기록이 함께 가요")
+        assertTrue(appears("멈춤 기록이 함께 가요"))
+        com.bamnat.app.diag.CrashLog.clear(app)
+    }
+
+    /** PC-191 ②: a stop of the last days, no draft: 문의하기 offers to tell it, with the record. */
+    private fun toldFromHelp(): Screen.() -> Unit = style(WorkStyle.SHIFT) {
+        c.inquiryApi = FakeInquiryApi()
+        com.bamnat.app.diag.CrashLog.write(app, "main", IllegalStateException("stopped"), Today.millis() - 60_000)
+        app.container.inquiryStore.clearDraft()
+        openHelp()
+        assertTrue(appears("최근에 앱이 닫힌 적이 있어요"))
+        tapText("알리기", exact = true)
+        reveal("멈춤 기록이 함께 가요")
+        assertTrue(appears("멈춤 기록이 함께 가요"))
+        com.bamnat.app.diag.CrashLog.clear(app)
+    }
+
+    @Test fun leftUnsentFoldLight() = shoot("rvl86_left_unsent_fold_light_100", FOLDED, leftUnsent())
+    @Test fun toldFromHelpFoldLight() = shoot("rvl86_told_from_help_fold_light_100", FOLDED, toldFromHelp())
+
     @Test fun reportFoldLight() = shoot("rvl84_crash_report_fold_light_100", FOLDED, reported())
 
     /** The form as it stands before 보내기: the line says the stop's record goes with it. */
