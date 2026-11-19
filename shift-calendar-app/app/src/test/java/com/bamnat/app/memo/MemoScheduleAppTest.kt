@@ -1,5 +1,8 @@
 package com.bamnat.app.memo
 
+import com.bamnat.app.TestClock
+import org.junit.After
+import org.junit.Before
 import android.Manifest
 import android.app.AlarmManager
 import android.app.Application
@@ -31,6 +34,11 @@ import java.time.ZoneId
 @RunWith(AndroidJUnit4::class)
 @Config(sdk = [35])
 class MemoScheduleAppTest {
+    // 2.0.0 [RVR-44] (총괄 HQ-123): the hour is set (10:00 today, ticking) so the result does not hang on when the run starts.
+    @Before fun hourOfDay() = TestClock.at(10)
+
+    @After fun clockBack() = Today.reset()
+
     private val context: Application = ApplicationProvider.getApplicationContext()
     private val nm = context.getSystemService(NotificationManager::class.java)
     private val alarms = shadowOf(context.getSystemService(AlarmManager::class.java))
