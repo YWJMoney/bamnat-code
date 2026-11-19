@@ -26,6 +26,14 @@ object AdRules {
     fun sdkMayStart(live: Boolean, pro: Boolean, installedAt: Instant?, now: Instant, quietDays: Int = QUIET_DAYS): Boolean =
         live && !pro && quietOver(installedAt, now, quietDays)
 
+    /**
+     * 2.0.0 [RVM-60] 검토 RCP-14·U09b-05 (깐 지 3일 안에 세 번째 테마를 입으면 '광고를 준비하는 중…' 15초 뒤에야 그냥 입혀짐): in the
+     * quiet days ([sdkMayStart] false while ads would otherwise run) no ad can come, since the SDK never starts. What would ask for one
+     * goes ahead at once and says so, with the same days and counts it got after the wait.
+     */
+    fun quiet(live: Boolean, pro: Boolean, installedAt: Instant?, now: Instant, quietDays: Int = QUIET_DAYS): Boolean =
+        live && !pro && !quietOver(installedAt, now, quietDays)
+
     /** G 1.32 [WTYP-01] 603: every ad starts muted. */
     const val MUTED = true
 

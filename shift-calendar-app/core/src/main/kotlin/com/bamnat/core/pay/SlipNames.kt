@@ -14,10 +14,21 @@ object SlipNames {
 
     fun key(name: String): String = PayslipReader.ocrFix(name.filter { it.isLetter() })
 
-    /** [read] with every line whose name the user taught read as they said. */
+    /**
+     * [read] with every line whose name the user taught read as they said. 2.0.0 [RVL-46] (검토 SCAN-29) A name looked at
+     * ([SlipLine.check]) that the user answered before is not asked again: the letters as printed when those were taught
+     * (숙비 kept as 숙비, not 식비), else the name shown when that was.
+     */
     fun apply(read: PayslipRead, book: Map<String, SlipRole>): PayslipRead {
         if (book.isEmpty()) return read
-        val lines = read.lines.map { l -> book[key(l.name)]?.takeIf { it != l.role }?.let { l.copy(role = it) } ?: l }
+        val lines = read.lines.map { l ->
+            val printed = l.check?.printed?.let(::key)?.takeIf { it.length >= MIN_KEY }
+            when {
+                printed != null && book[printed] != null -> l.copy(name = l.check!!.printed, role = book[printed]!!, check = null)
+                book[key(l.name)] != null -> l.copy(role = book[key(l.name)]!!, check = null)
+                else -> l
+            }
+        }
         return if (lines == read.lines) read else read.copy(lines = lines)
     }
 
@@ -30,8 +41,10 @@ object SlipNames {
         for (a in after.lines) {
             val k = key(a.name)
             if (k.length < MIN_KEY) continue
-            val was = before.lines.firstOrNull { key(it.name) == k } ?: continue
-            if (was.role != a.role) out[k] = a.role
+            // 2.0.0 [RVL-46] A line put back to its printed letters (숙비 for 식비) is found by them.
+            val was = before.lines.firstOrNull { key(it.name) == k } ?: before.lines.firstOrNull { it.check?.printed?.let(::key) == k } ?: continue
+            // 2.0.0 [RVL-46] A name looked at and answered teaches its kind too, so next month it is not asked again.
+            if (was.role != a.role || was.check != null && a.check == null) out[k] = a.role
         }
         return out
     }
