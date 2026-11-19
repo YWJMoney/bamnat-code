@@ -557,7 +557,11 @@ private fun InquiryForm(
     var withPay by rememberSaveable { mutableStateOf(pay != null) }
     var showPay by rememberSaveable { mutableStateOf(false) }
     var text by rememberSaveable { mutableStateOf(draft?.text ?: given) }
-    var withCheck by rememberSaveable { mutableStateOf(start?.withCheck == true) }
+    // 2.0.0 [RVL-86] (PC-191) A draft left after '멈춤 기록과 함께 알려 주기' is that choice still: coming back to it keeps the record on
+    // (the user can untick it), since the ticking by itself on 앱 오류 is gone (RVN-22).
+    var withCheck by rememberSaveable {
+        mutableStateOf(start?.withCheck == true || (draft != null && start?.text.isNullOrEmpty() && com.bamnat.core.diag.StopTrail.aboutStop(null, draft.text)))
+    }
     var showCheck by rememberSaveable { mutableStateOf(false) }
     var check by remember { mutableStateOf<String?>(null) }
     var error by remember { mutableStateOf<String?>(null) }
