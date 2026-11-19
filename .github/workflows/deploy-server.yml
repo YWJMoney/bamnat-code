@@ -1,7 +1,9 @@
 # 1.39 [DEPLOY-01] 서버 자동 배포 (크롬·대시보드 붙여 넣기 없이). 사용자 결정 2026-11-08: Claude가 시작해 끝까지(승인 단계 없음).
 # 시작: Actions › deploy-server › Run workflow (main에서), 배포할 브랜치를 ref에. Claude는 GitHub 도구로 같은 일을 해요.
 # 안전장치는 shift-calendar-app/tools/deploy_worker.py 맨 위 설명: 시험 → 올리기만 → 바인딩 대조 → 100% → health 5번 → 실패면 앞 판으로.
-# 열쇠: 저장소 Settings › Secrets › Actions의 CLOUDFLARE_API_TOKEN(Cloudflare 'Workers 편집' 토큰, 밤낮 계정만).
+# 2.0.0 [RVD-33] Durable Object 클래스를 새로 만드는 판은 mode migrate-check → migrate로 한 서버씩 따로(wrangler deploy, 앞 판으로 되돌리기 없음).
+#   보통 deploy는 그런 판을 올리기 전에 멈춰요. 순서와 까닭은 같은 도구 맨 위 설명의 'Durable Object 첫 배포'.
+# 열쇠: 저장소 Settings › Secrets › Actions의 CLOUDFLARE_API_TOKEN(Cloudflare 'Workers 편집' 토큰, 밤낮 계정만. DO도 이 권한으로 돼요).
 # 고를 수 있는 값: Variables의 CLOUDFLARE_ACCOUNT_ID(토큰이 닿는 계정이 하나면 없어도 됨), BAMNAT_API·BAMNAT_SHARE(health 주소, 기본 api.·s.bamnat.app).
 name: deploy-server
 on:
@@ -17,9 +19,9 @@ on:
         options: [both, company, share]
         default: both
       mode:
-        description: check는 올리고 대조까지만(손님은 앞 판), deploy는 끝까지
+        description: check는 올리고 대조까지만(손님은 앞 판), deploy는 끝까지. migrate-check·migrate는 DO 첫 배포(한 서버만, 되돌리기 없음)
         type: choice
-        options: [check, deploy]
+        options: [check, deploy, migrate-check, migrate]
         default: check
       reason:
         description: 왜 배포하는지 한 줄 (배포 기록에 남아요)
@@ -74,6 +76,9 @@ jobs:
           sha=$(git -C target rev-parse HEAD)
           echo "## 서버 배포 ${IN_MODE}: ${IN_REF} (${sha:0:8})" >> "$GITHUB_STEP_SUMMARY"
           older=(); [ "$IN_OLDER" = "true" ] && older=(--allow-older)
+          case "$IN_MODE:$IN_TARGET" in
+            migrate*:both) echo "DO 첫 배포(migrate)는 한 서버씩: target을 company나 share로 골라요" >> "$GITHUB_STEP_SUMMARY"; exit 1;;
+          esac
           case "$IN_TARGET" in both) workers="company share";; *) workers="$IN_TARGET";; esac
           for w in $workers; do
             BAMNAT_SERVER_ROOT="$GITHUB_WORKSPACE/target/shift-calendar-app/server" \
