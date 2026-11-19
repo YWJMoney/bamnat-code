@@ -370,7 +370,8 @@ internal fun CalendarLegendSheet(
                 LegendRow("업종 기념일", "날짜 밑 강조색 글자 · ${orgDays.first().name}처럼 업종의 날이고, 공휴일과 달리 쉬는 날은 아니에요") {
                     Text(orgDays.first().name, color = scheme.primary, fontSize = 10.sp, maxLines = 1)
                 }
-            } else if (focus == CalendarFocus.SHIFTS) {
+            } else if (focus == CalendarFocus.SHIFTS && com.bamnat.app.ui.settings.orgDaysFit(style)) {
+                // 2.0.0 [RVO-27] HQ-141: not for 알바 (설정에 그 줄이 없어요).
                 // 1.38 통합 8차 (안내의 경로와 실제 자리가 달라요): the place opens from here, no path to follow.
                 LegendRow("업종 기념일", "꺼져 있어요 · 켜면 소방의 날 같은 날이 날짜 밑에 강조색 글자로 보여요",
                     action = "켜러 가기" to { onDismiss(); com.bamnat.app.ui.settings.SettingsLinks.open(com.bamnat.app.ui.settings.SettingsPage.CALENDAR, "우리 업종 기념일") }) {

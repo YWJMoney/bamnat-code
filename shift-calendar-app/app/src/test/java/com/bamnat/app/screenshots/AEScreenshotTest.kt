@@ -29,7 +29,7 @@ import java.time.Instant
 /**
  * [INVITE-02][INVITE-03][INVITE-05][INVITE-07][INVITE-08] 1.26 묶음 AE's screenshots, numbers 1040~1059, each an end-to-end check:
  * a tap, what the screen shows, and what was sent and kept. 1040~1043 the inviter (nothing goes before the line is
- * agreed, the share sheet carries the link and code, the progress "3/5명 · 2명은 사용 기간 채우는 중"), 1044~1047 the
+ * agreed, the share sheet carries the link and code, the progress "친구 2명이 더 7일 쓰면 프로 1개월 · 3명 셌어요 · 2명은 7일 채우는 중"), 1044~1047 the
  * friend's card from Play's referrer (알리기 sends, 괜찮아요 sends nothing, the period of use counted once a day),
  * 1048~1050 초대 코드 넣기 within 7 days (2.0.0: the 코드를 받으셨나요? box), 1051~1052 settings and search, 1053~1055 small, landscape, dark with 200%
  * text, 1056 the developer app's rules said before anything is sent. The real server's round trip is InviteAppTest.
@@ -118,8 +118,9 @@ class AEScreenshotTest : ScreenshotBase() {
         assertNotNull("the share sheet opened", text)
         assertTrue(text!!.contains("https://company.example/i/ABCD2345"))
         assertTrue(text.contains("ABCD-2345"))
-        reveal("0/5명")
-        assertTrue(appears("초대한 친구 0명 · 프로 0개월"))
+        reveal("친구 5명이 더 7일 쓰면 프로 1개월", exact = true)
+        assertTrue(appears("초대한 친구 0명", exact = true))
+        assertFalse(appears("프로 0개월", ms = 0))
         assertTrue(appears("초대 링크 보내기", exact = true))
     }
 
@@ -127,12 +128,28 @@ class AEScreenshotTest : ScreenshotBase() {
         api.viewAnswer = view(progress = 3, waiting = 2, friends = 8, given = 1)
         runBlocking { app.container.invites.makeLink() }
         openPro()
-        reveal("3/5명 · 2명은 사용 기간 채우는 중", exact = true)
+        reveal("친구 2명이 더 7일 쓰면 프로 1개월 · 3명 셌어요 · 2명은 7일 채우는 중", exact = true)
         assertTrue(appears("초대한 친구 8명 · 프로 1개월", exact = true))
         assertTrue(appears("내 초대 코드 ABCD-2345"))
         // Opening the screen asked the server afresh, once.
         assertTrue("view" in api.calls)
         noCuts("counts")
+    }
+
+    // 2.0.0 [RVO-25] (PC-151) A friend counted, the month waiting on the 운영팀: that first, the next goal under it, no '0/1명'·'프로 0개월'.
+    @Test fun aMonthBeingLookedAtComesFirst() = shoot("1043_ae_invite_pending", PHONE_393) {
+        api.viewAnswer = view(progress = 0, friends = 1, given = 0).copy(pending = 1)
+        runBlocking { app.container.invites.makeLink() }
+        openPro()
+        reveal(InviteRules.pending(1), exact = true)
+        assertTrue(appears("친구 5명이 더 7일 쓰면 프로 1개월", exact = true))
+        assertTrue(appears("초대한 친구 1명", exact = true))
+        assertFalse(appears("0/1명", ms = 0))
+        assertFalse(appears("프로 0개월", ms = 0))
+        fun top(t: String) = nodes(merged = false).first { n ->
+            n.config.getOrElseNullable(androidx.compose.ui.semantics.SemanticsProperties.Text) { null }?.joinToString("") { it.text } == t
+        }.boundsInRoot.top
+        assertTrue("the month being looked at is said first", top(InviteRules.pending(1)) < top("친구 5명이 더 7일 쓰면 프로 1개월"))
     }
 
     @Test fun overTheCapFriendsStillCount() = shoot("1043_ae_invite_cap", PHONE_393) {
@@ -314,7 +331,7 @@ class AEScreenshotTest : ScreenshotBase() {
         api.viewAnswer = view(progress = 1, friends = 6, given = 1)
         runBlocking { app.container.invites.makeLink() }
         openPro(wide = true)
-        reveal("1/5명", across = 0.7f)
+        reveal("친구 4명이 더 7일 쓰면 프로 1개월 · 1명 셌어요", exact = true, across = 0.7f)
         assertTrue(appears("초대한 친구 6명 · 프로 1개월"))
     }
 
@@ -322,7 +339,7 @@ class AEScreenshotTest : ScreenshotBase() {
         api.viewAnswer = view(progress = 3, waiting = 2, friends = 3)
         runBlocking { app.container.invites.makeLink() }
         openPro()
-        reveal("3/5명 · 2명은 사용 기간 채우는 중")
+        reveal("3명 셌어요")
         reveal("초대 링크 보내기", exact = true)
         noCuts("huge")
     }

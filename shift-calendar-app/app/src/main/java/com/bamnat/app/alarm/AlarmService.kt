@@ -177,6 +177,8 @@ class AlarmService : Service() {
                     if (minutes > 0 && !ring.recheck && ring.label == null && !allOff && !AlarmsOff.isOff(this)) WakeCheck.schedule(this, ring, minutes)
                     // [ALRM-16] 1.31 N3: the day at a glance, after a shift alarm (not a memo's schedule).
                     if (ring.label == null && !ring.recheck) AfterAlarmCard.postSoon(this)
+                    // 2.0.0 [RVO-14] PRO-29 '아침 한 줄': it rang without the 끄기 미션 set for it, once, after it is turned off.
+                    if (ring.label == null && !ring.recheck) runCatching { com.bamnat.app.tier.ProEndNotice.afterRing(this, ring) }
                     // [SLEEP-01] The alarm turned off is the likely end of a sleep the phone saw.
                     if (ring.label == null && !ring.recheck) com.bamnat.app.sleep.SleepAutoWatch.alarmOff(this)
                     // 2.0.0 [RVI-96] (검토 I03c-01) And the night that began at the charger, asked about in the morning.

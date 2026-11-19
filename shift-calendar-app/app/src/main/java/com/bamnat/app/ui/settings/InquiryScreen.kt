@@ -122,7 +122,6 @@ import com.bamnat.app.ui.components.ConfirmDialog
 import kotlinx.coroutines.launch
 import java.time.Instant
 import java.time.ZoneId
-import java.time.format.DateTimeFormatter
 import com.bamnat.core.time.Today
 
 /**
@@ -473,10 +472,13 @@ private fun Inquiry.label(unread: Boolean): Pair<String, Tone> = when {
     else -> "답을 기다려요" to Tone.WAIT
 }
 
-private val stamp = DateTimeFormatter.ofPattern("M월 d일 HH:mm")
-
-/** "10월 18일 21:05" in this phone's time zone. */
-private fun stampOf(at: Instant): String = at.atZone(Today.zone()).format(stamp)
+/**
+ * "10월 18일 21:05" (or "10월 18일 오후 9:05") in this phone's time zone. 2.0.0 [RVO-17] 검토 SET-12: the time as 오전/오후로 보기 says,
+ * as every time in the app ([com.bamnat.app.ui.Fmt.time]).
+ */
+private fun stampOf(at: Instant): String = at.atZone(Today.zone()).let {
+    "${com.bamnat.app.ui.Fmt.monthDay(it.toLocalDate())} ${com.bamnat.app.ui.Fmt.time(it.toLocalTime())}"
+}
 
 /** "[달력] " and the like at the start of a question: the screen it was asked from. */
 private val TAG = Regex("^\\[[^\\]]{1,30}]\\s*")
@@ -1342,20 +1344,34 @@ private fun HelpHome(
                 SectionLabel("‘${about.orEmpty().substringAfterLast("> ").trim()}’ 도움말")
                 here.forEach { t -> FaqCard(t, expanded == t.id, { toggle(t) }, onAsk = { onAsk("", t) }) }
             }
+            // 2.0.0 [RVO-21] 검토 U11a-13 (답 109개가 한 번에 그려졌어요): the five this kind of work asks most ([forStyle] puts them
+            // first), then the rest only when asked for, twenty at a time.
+            val rest = remember(topics, here) { topics - here.toSet() }
             SectionLabel("자주 묻는 질문")
-            (topics - here.toSet()).forEach { t -> FaqCard(t, expanded == t.id, { toggle(t) }, onAsk = { onAsk("", t) }) }
+            rest.take(HELP_FIRST).forEach { t -> FaqCard(t, expanded == t.id, { toggle(t) }, onAsk = { onAsk("", t) }) }
+            var shown by rememberSaveable { mutableStateOf(0) }
+            // An answer opened from a link stays in view even when it is past the first five.
+            val open = rest.indexOfFirst { it.id == expanded }
+            val upTo = maxOf(shown, if (open >= HELP_FIRST) open + 1 else 0).coerceAtMost(rest.size - HELP_FIRST).coerceAtLeast(0)
+            rest.drop(HELP_FIRST).take(upTo).forEach { t -> FaqCard(t, expanded == t.id, { toggle(t) }, onAsk = { onAsk("", t) }) }
+            val left = rest.size - HELP_FIRST - upTo
+            if (left > 0) TextButton(onClick = { shown = upTo + HELP_PAGE }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
+                Text(if (upTo == 0) "질문 모두 보기 (${left}개 더)" else "더 보기 (${left}개 남음)")
+            }
         } else {
             val found = remember(query, topics) { HelpFaq.search(query, topics) }
-            val settings = remember(query) {
-                SettingsIndex.search(query, SettingsIndex.entries(board = false, share = vm.shareOn), limit = 3)
+            // [GUIDE-07] The features first: where each is, what it does, and whether it is off on this calendar.
+            val guideContainer = LocalContext.current.appContainer
+            // 2.0.0 [RVO-10] (검토 T11a-06): the settings of the calendar on screen's kind of work, as 설정 찾기 finds them.
+            val (helpCalendar, helpStyle) = remember(query) { guideContainer.guideCalendar() }
+            val index = rememberSettingsEntries(board = false, share = vm.shareOn, style = helpStyle, calendar = helpCalendar)
+            val settings = remember(query, index) {
+                SettingsIndex.search(query, index, limit = 3)
                     .filter { (it.place as? SettingPlace.Screen)?.go != SettingsGo.INQUIRY }
             }
             val posts = remember(query, board) { boardMatches(query, board?.items.orEmpty()) }
-            // [GUIDE-07] The features first: where each is, what it does, and whether it is off on this calendar.
-            val guideContainer = LocalContext.current.appContainer
-            val features = remember(query, hiddenKinds) {
-                val (_, style) = guideContainer.guideCalendar()
-                com.bamnat.app.ui.guide.FeatureSearch.search(query, style, hidden = hiddenKinds)
+            val features = remember(query, hiddenKinds, helpStyle) {
+                com.bamnat.app.ui.guide.FeatureSearch.search(query, helpStyle, hidden = hiddenKinds)
             }
             val total = found.size + settings.size + posts.size + features.size
             Text(if (total == 0) "‘$query’에 맞는 답을 찾지 못했어요" else "찾은 답 ${total}개",
@@ -1369,7 +1385,7 @@ private fun HelpHome(
             found.forEach { t -> FaqCard(t, expanded == t.id, { toggle(t) }, onAsk = { onAsk(query, t) }) }
             if (settings.isNotEmpty()) {
                 SectionLabel("설정에서 찾기")
-                settings.forEach { e -> HelpSettingRow(e) }
+                settings.forEach { e -> HelpSettingRow(e, helpStyle) }
             }
             if (posts.isNotEmpty()) {
                 SectionLabel("모두의 문의에서")
@@ -1435,7 +1451,7 @@ private fun FaqCard(topic: HelpTopic, expanded: Boolean, onToggle: () -> Unit, o
 
 /** [UX-05] A setting the help search found, with where it lives; it opens there. */
 @Composable
-private fun HelpSettingRow(e: SettingEntry) {
+private fun HelpSettingRow(e: SettingEntry, style: com.bamnat.core.work.WorkStyle?) {
     Row(
         Modifier.fillMaxWidth().heightIn(min = 56.dp).clip(MaterialTheme.shapes.medium)
             .clickable(role = Role.Button) {
@@ -1449,7 +1465,8 @@ private fun HelpSettingRow(e: SettingEntry) {
     ) {
         Column(Modifier.weight(1f)) {
             Text(e.title, style = MaterialTheme.typography.bodyLarge)
-            Text(settingsPath(e.where), style = MaterialTheme.typography.bodySmall,
+            // [RVO-10] The page in the kind of work's words, as 설정 찾기 says it (가게 '매출과 경비', not '급여와 연차').
+            Text(settingsPath(whereFor(e.where, style)), style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
         Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, null, tint = MaterialTheme.colorScheme.outline)
@@ -1512,3 +1529,7 @@ private fun AskCard(vm: InquiryViewModel, query: String, list: List<Inquiry>?, o
         }
     }
 }
+
+/** 2.0.0 [RVO-21] 검토 U11a-13: the answers shown before 질문 모두 보기, and how many each 더 보기 adds. */
+private const val HELP_FIRST = 5
+private const val HELP_PAGE = 20

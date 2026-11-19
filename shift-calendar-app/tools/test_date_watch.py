@@ -119,5 +119,29 @@ class DateWatchTest(unittest.TestCase):
         self.assertIn("못 읽었어요", buf.getvalue())
 
 
+    def test_shift_lands_on_the_hour_and_the_month_end(self):
+        """[RVR-44] 시험 시계를 그날 23:40(자정 몇 분 전)으로, 이달 끝날로, 지난 시각이면 뒤로."""
+        utc = datetime.timezone.utc
+        now = datetime.datetime(2026, 11, 18, 22, 0, 0, tzinfo=utc)
+        self.assertEqual(("PT6000S", "11월 18일 23:40"), w.shift_to(now, datetime.time(23, 40)))
+        self.assertEqual(("PT1042800S", "11월 30일 23:40"), w.shift_to(now, datetime.time(23, 40), month_end=True))
+        dec = datetime.datetime(2026, 12, 31, 23, 50, tzinfo=utc)
+        self.assertEqual(("PT-600S", "12월 31일 23:40"), w.shift_to(dec, datetime.time(23, 40), month_end=True))
+        feb = datetime.datetime(2028, 2, 3, 0, 0, tzinfo=utc)
+        self.assertEqual("2월 29일 23:40", w.shift_to(feb, datetime.time(23, 40), month_end=True)[1])
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            self.assertEqual(0, w.main(["shift", "--at", "06:00", "--days", "1"]))
+        self.assertRegex(buf.getvalue(), r"^PT-?\d+S\t\d+월 \d+일 06:00\n$")
+
+    def test_report_can_name_the_hour(self):
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            w.main(["report", "--label", "앱 (unit)", "--head", "11월 30일 23:40", "/nonexistent"])
+        self.assertIn("11월 30일 23:40", buf.getvalue())
+        # Nothing ran (a test hung and the step timed out): not '깨질 시험 없음'.
+        self.assertIn("결과 없음", buf.getvalue())
+        self.assertNotIn("깨질 시험 없음", buf.getvalue())
+
 if __name__ == "__main__":
     unittest.main()

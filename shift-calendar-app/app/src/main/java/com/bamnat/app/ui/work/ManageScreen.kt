@@ -44,6 +44,7 @@ import com.bamnat.app.data.WorkToolsStore
 import com.bamnat.app.ui.Fmt
 import com.bamnat.app.ui.components.SectionCard
 import com.bamnat.app.ui.components.StatTile
+import com.bamnat.app.ui.components.StatTiles
 import com.bamnat.core.boss.PayrollLedger
 import com.bamnat.core.flags.FlagCatalog
 import com.bamnat.core.manage.ManageDesk
@@ -96,9 +97,13 @@ fun ManageScreen(calendarId: String, onBack: () -> Unit,
     val shopGlances = remember { mutableStateMapOf<String, ManageDesk.ShopGlance>() }
     val liveTeams = teams.orEmpty().filter { !it.archived }
     val livePlaces = places.orEmpty()
+    // 2.0.0 [RVO-19] 검토 T11a-15: the same name as the 설정 row that opened it (팀 관리, 직원 관리, 가게는 가게 관리).
+    val manageFlags by c.flags.byKey.collectAsStateWithLifecycle()
+    val manageName = com.bamnat.app.ui.settings.manageTitle(manageFlags[FlagCatalog.TEAM_LEADER]?.on == true,
+        manageFlags[FlagCatalog.BOSS_PAYROLL]?.on == true, c.calendars.styleOf(calendarId, c.settingsRepository.current.workStyle))
     Scaffold(topBar = {
         TopAppBar(
-            title = { Text("팀·가게 관리") },
+            title = { Text(manageName) },
             navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "뒤로") } },
             // Its own color, so it never reads as the personal calendar.
             colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.secondaryContainer,
@@ -217,7 +222,7 @@ private fun TeamGlanceCard(team: Team, calendarId: String, now: YearMonth, onOpe
     SectionCard(title = team.name, trailing = { TextButton(onClick = onOpen) { Text("열기") } }) {
         // 1.39 [FLOW-23] one number first: who is at work today and how many places are empty.
         if (today != null && members > 0 && !unpainted) com.bamnat.app.ui.team.TeamTodayHead(today, Modifier.padding(bottom = 8.dp))
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        StatTiles {
             StatTile("${now.monthValue}월", if (g.confirmed) "확정 ${g.version}판" else if (unpainted) "아직 안 짬" else "짜는 중", Modifier.weight(1f),
                 // 2.0.0 [RVJ-66] (HQ-103, 조건 6) 짜는 중인 달은 할 일이지 위험이 아니에요(가게 칸 RVJ-50과 같이): 빨간 칸 대신 주의 글.
                 caption = if (unpainted) null else if (g.empty > 0) "빈칸 ${g.empty}" else "다 채움",
@@ -250,7 +255,7 @@ private fun ShopGlanceCard(place: com.bamnat.core.boss.Workplace, now: YearMonth
     androidx.compose.runtime.LaunchedEffect(g) { report(g) }
     if (!show) return
     SectionCard(title = place.name, trailing = { TextButton(onClick = onOpen) { Text("급여 대장") } }) {
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        StatTiles {
             // 2.0.0 [RVJ-50] 검토 PC-118: a month not closed yet is a to-do (할 일 says it with the 지급일), not a danger: the tile
             // was red. It is a plain tile whose caption says '닫기 전' (조건 6, 빨강은 위험만).
             StatTile("${last.monthValue}월 인건비", Fmt.won(ledger.total), Modifier.weight(1f), caption = "${staff.size}명 · " + if (isClosed) "닫음" else "닫기 전")

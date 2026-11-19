@@ -1,6 +1,7 @@
 package com.bamnat.app.ui.settings
 
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -39,6 +40,18 @@ data class LockedBackup(val text: String, val working: Boolean = false, val erro
 
 const val MIN_BACKUP_PASSWORD = 4
 
+/** 2.0.0 [RVO-17] 검토 SET-11·I11aa-05: from this many letters a backup password is not called short (4~7 are allowed, with a word). */
+const val GOOD_BACKUP_PASSWORD = 8
+
+/** 2.0.0 [RVO-17] What is said under a new backup password: nothing yet, short (allowed), or good. */
+internal fun passwordWords(password: String): String? = when {
+    // 2.0.0 [RVO-17] 권하는 길이는 칸 아래 한 줄로(칸 이름은 '암호' 하나: 긴 이름이었을 때 접은 폭·글자 200%에서 입력하면 창이 그리기를 멈추지 않았어요).
+    password.isEmpty() -> "${GOOD_BACKUP_PASSWORD}자 이상 권해요"
+    password.length < MIN_BACKUP_PASSWORD -> "${MIN_BACKUP_PASSWORD}자 이상 넣어 주세요"
+    password.length < GOOD_BACKUP_PASSWORD -> "짧아요 · ${GOOD_BACKUP_PASSWORD}자 이상이면 더 안전해요"
+    else -> "좋아요"
+}
+
 /** [FEAT-08] Optional password for a backup, typed twice. Null means no password. */
 @Composable
 fun ExportPasswordDialog(onDismiss: () -> Unit, onExport: (CharArray?) -> Unit) {
@@ -60,7 +73,8 @@ fun ExportPasswordDialog(onDismiss: () -> Unit, onExport: (CharArray?) -> Unit) 
         onDismissRequest = onDismiss,
         title = { Text("백업에 암호를 걸까요?") },
         text = {
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            // 2.0.0 [RVO-17] 접은 폭·글자 200%에서 창이 화면보다 길어요: 글과 칸은 창 안에서 내려 봐요(단추는 늘 보여요).
+            Column(Modifier.verticalScroll(androidx.compose.foundation.rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 gaps?.takeIf { !it.isEmpty }?.let { g ->
                     Row(verticalAlignment = androidx.compose.ui.Alignment.Top, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         Icon(Icons.Outlined.WarningAmber, contentDescription = null,
@@ -80,22 +94,32 @@ fun ExportPasswordDialog(onDismiss: () -> Unit, onExport: (CharArray?) -> Unit) 
                         color = MaterialTheme.colorScheme.primary,
                     )
                 }
-                PasswordField(first, { first = it }, "암호 (${MIN_BACKUP_PASSWORD}자 이상)")
+                PasswordField(first, { first = it }, "암호", hint = passwordWords(first))
                 PasswordField(second, { second = it }, "암호 한 번 더", error = if (mismatch) "두 암호가 달라요" else null)
+                // 2.0.0 [RVO-17] 검토 U11a-07: 암호 없이 is a small line of its own under the fields, not a third button in the row.
+                TextButton(onClick = { onExport(null) }, contentPadding = androidx.compose.foundation.layout.PaddingValues(0.dp)) {
+                    Text("암호 없이 저장", style = MaterialTheme.typography.bodySmall)
+                }
             }
         },
-        // 총괄 검토 #458 (조건 2, 같은 무게의 글자 단추 셋이 줄지어 있었어요): the one filled button is the safer save; 취소 and
-        // 암호 없이 stay text buttons.
+        // 총괄 검토 #458 (조건 2): the one filled button is the safer save. 2.0.0 [RVO-17] 검토 U11a-07: the buttons stand one under the
+        // other, as wide as the window, so neither is cut at 200% or on the folded screen.
         confirmButton = {
-            com.bamnat.app.ui.components.Button(onClick = { onExport(first.toCharArray()) }, enabled = ok) { Text("암호 걸고 저장") }
-        },
-        dismissButton = {
-            Row {
-                TextButton(onClick = onDismiss) { Text("취소") }
-                TextButton(onClick = { onExport(null) }) { Text("암호 없이") }
-            }
+            StackedButtons(
+                main = { com.bamnat.app.ui.components.Button(onClick = { onExport(first.toCharArray()) }, enabled = ok, modifier = Modifier.fillMaxWidth()) { Text("암호 걸고 저장") } },
+                other = { TextButton(onClick = onDismiss, modifier = Modifier.fillMaxWidth()) { Text("취소") } },
+            )
         },
     )
+}
+
+/** 2.0.0 [RVO-17] 검토 U11a-07: a window's buttons one under the other, the main one first. */
+@Composable
+private fun StackedButtons(main: @Composable () -> Unit, other: @Composable () -> Unit) {
+    Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        main()
+        other()
+    }
 }
 
 /**
@@ -119,12 +143,16 @@ fun AutoBackupPasswordDialog(onDismiss: () -> Unit, onSet: (CharArray) -> Unit) 
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
-                PasswordField(first, { first = it }, "암호 (${MIN_BACKUP_PASSWORD}자 이상)")
+                PasswordField(first, { first = it }, "암호", hint = passwordWords(first))
                 PasswordField(second, { second = it }, "암호 한 번 더", error = if (mismatch) "두 암호가 달라요" else null)
             }
         },
-        confirmButton = { TextButton(onClick = { onSet(first.toCharArray()) }, enabled = ok) { Text("저장할 곳 고르기") } },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("취소") } },
+        confirmButton = {
+            StackedButtons(
+                main = { com.bamnat.app.ui.components.Button(onClick = { onSet(first.toCharArray()) }, enabled = ok, modifier = Modifier.fillMaxWidth()) { Text("저장할 곳 고르기") } },
+                other = { TextButton(onClick = onDismiss, modifier = Modifier.fillMaxWidth()) { Text("취소") } },
+            )
+        },
     )
 }
 
@@ -155,8 +183,13 @@ fun UnlockBackupDialog(locked: LockedBackup, onUnlock: (CharArray) -> Unit, onDi
  * the eye shows what was typed (a 생년월일 is easy to mistype with no one to see), and [onDone] is the keyboard's 완료.
  */
 @Composable
-internal fun PasswordField(value: String, onChange: (String) -> Unit, label: String, error: String? = null, onDone: (() -> Unit)? = null, modifier: Modifier = Modifier) {
-    var shown by remember { mutableStateOf(false) }
+internal fun PasswordField(value: String, onChange: (String) -> Unit, label: String, error: String? = null, onDone: (() -> Unit)? = null,
+    modifier: Modifier = Modifier,
+    /** 2.0.0 [RVO-17] A word under the field that is not an error (짧아요·좋아요). */
+    hint: String? = null) {
+    // 2.0.0 [RVO-17] 검토 SET-11·U11a-07·I11aa-05 '보기 단추': what was typed can be seen, in every window that asks for a password,
+    // and stays as it was when the screen is made again.
+    var shown by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf(false) }
     // 총괄 검토 #458 (rvl13 200%: 칸이 글 폭보다 좁았어요): as wide as the window's words, in every window that asks for a password.
     OutlinedTextField(
         modifier = modifier.fillMaxWidth(),
@@ -165,7 +198,7 @@ internal fun PasswordField(value: String, onChange: (String) -> Unit, label: Str
         label = { Text(label) },
         singleLine = true,
         isError = error != null,
-        supportingText = error?.let { { Text(it) } },
+        supportingText = (error ?: hint)?.let { { Text(it) } },
         visualTransformation = if (shown) androidx.compose.ui.text.input.VisualTransformation.None else PasswordVisualTransformation(),
         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password, imeAction = if (onDone != null) androidx.compose.ui.text.input.ImeAction.Done else androidx.compose.ui.text.input.ImeAction.Default),
         keyboardActions = androidx.compose.foundation.text.KeyboardActions(onDone = onDone?.let { { it() } }),
