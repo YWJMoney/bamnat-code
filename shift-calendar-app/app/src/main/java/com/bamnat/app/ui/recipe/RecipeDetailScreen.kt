@@ -26,6 +26,7 @@ import androidx.compose.foundation.relocation.bringIntoViewRequester
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
+import com.bamnat.app.ui.components.scrollEdges
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.MoreVert
@@ -549,7 +550,9 @@ private fun PutDialog(
         onDismissRequest = onClose,
         title = { Text("이렇게 바뀌어요") },
         text = {
-            Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            // 2.0.0 [RVS-15] 총괄 #520 사진(200% 편 폭, 내 설정을 펼치면 마지막 스위치가 창 아래에서 반쯤 잘림): the shared 'more below' line.
+            val putScroll = rememberScrollState()
+            Column(Modifier.scrollEdges(putScroll).verticalScroll(putScroll), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 // [RVM-13] PC-59·60·34: four short lines first (모양·단추·알람·그 밖에), the 알람 line's switch '알람도 넣기', and the full list folded.
                 val fxOn = com.bamnat.app.logic.FxAccess.on(LocalContext.current.appContainer)
                 // [RVM-42] HQ-100: said first in the 넣기 창 too.

@@ -113,6 +113,8 @@ abstract class ScreenshotBase {
         com.bamnat.app.ui.calendar.SetupFill.close()
         // 2.0.0 [RVP-43] The bell beside 공유 (its place in 나 is a comparison shot's own) and a look's line closed in an earlier shot.
         com.bamnat.app.ui.calendar.ShiftLookShut.mode = null
+        // 2.0.0 [RVS-15] Nor a studio example an earlier shot took for 올리기's 표지.
+        com.bamnat.app.ui.studio.StudioShot.last = null
         // [RVL-18] Nor a month put in by an earlier shot (an urgent band now).
         com.bamnat.app.ui.RecentFill.reset()
         // 2.0.0 [RVP-22][RVP-23][RVP-24] The app's one line, the opening windows' turns and what is open start empty in each shot.

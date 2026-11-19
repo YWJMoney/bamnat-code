@@ -853,7 +853,7 @@ private fun CalendarPage(vm: SettingsViewModel, settings: AppSettings, onOpenCal
                         style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             },
-            confirmButton = { androidx.compose.material3.Button(onClick = { askingBack = false; vm.putFeelBack() }, modifier = Modifier.heightIn(min = 48.dp)) { Text("되돌리기") } },
+            confirmButton = { com.bamnat.app.ui.components.Button(onClick = { askingBack = false; vm.putFeelBack() }, modifier = Modifier.heightIn(min = 48.dp)) { Text("되돌리기") } },
             dismissButton = { TextButton(onClick = { askingBack = false }, modifier = Modifier.heightIn(min = 48.dp)) { Text("닫기") } },
         )
         TextSizeRow(settings.textStep) { step -> vm.update { it.copy(textStep = step) } }

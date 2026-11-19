@@ -1,6 +1,7 @@
 package com.bamnat.app.ui.studio
 
 import com.bamnat.core.recipe.widgetDraws
+import com.bamnat.app.ui.components.scrollEdges
 import androidx.compose.foundation.shape.ZeroCornerSize
 
 import com.bamnat.app.ui.decor.nextPinned
@@ -1028,7 +1029,9 @@ fun StudioScreen(vm: StudioViewModel, onBack: () -> Unit, onOpen: (String) -> Un
                             TextButton(onClick = { panel = false }, modifier = Modifier.heightIn(min = 48.dp)) { Text("닫기") }
                         }
                         HorizontalDivider()
-                        Column(Modifier.fillMaxWidth().weight(1f).verticalScroll(rememberScrollState()).padding(horizontal = 16.dp, vertical = 10.dp),
+                        // 2.0.0 [RVS-17] 총괄 #520 사진(200% 접은 폭, 맨 아래 줄이 판 끝에서 반쯤 잘림): the shared 'more below' line while it scrolls on.
+                        val panelScroll = rememberScrollState()
+                        Column(Modifier.fillMaxWidth().weight(1f).scrollEdges(panelScroll).verticalScroll(panelScroll).padding(horizontal = 16.dp, vertical = 10.dp),
                             verticalArrangement = Arrangement.spacedBy(10.dp)) {
                             when (panelMode) {
                                 PanelMode.CARDS -> {
@@ -1937,9 +1940,18 @@ internal fun ago(millis: Long, now: Long = com.bamnat.core.time.Today.millis()):
     return when { m < 1 -> "방금"; m < 60 -> "${m}분 전"; m < 60 * 24 -> "${m / 60}시간 전"; else -> "${m / (60 * 24)}일 전" }
 }
 
-/** [STU-41] 1.36 장터 표지 자동: the studio's example as a picture when 올리기 opened, offered as the 표지 there. */
+/**
+ * [STU-41] 1.36 장터 표지 자동: the studio's example as a picture when 올리기 opened, offered as the 표지 there.
+ * 2.0.0 [RVS-15] (총괄 11-19, M RVM-57 같은 꼴): a picture 올리기 never used stayed in memory, so a later 만들기 of another work offered
+ * an old studio's example as its 표지. It is good for [FRESH_MS] after it was taken, and gone once it is made the 표지.
+ */
 object StudioShot {
-    @Volatile var last: android.graphics.Bitmap? = null
+    const val FRESH_MS = 10 * 60_000L
+    @Volatile private var shot: android.graphics.Bitmap? = null
+    @Volatile private var at = 0L
+    var last: android.graphics.Bitmap?
+        get() = shot?.takeIf { com.bamnat.core.time.Today.millis() - at in 0..FRESH_MS }
+        set(v) { shot = v; at = com.bamnat.core.time.Today.millis() }
 }
 
 /**
