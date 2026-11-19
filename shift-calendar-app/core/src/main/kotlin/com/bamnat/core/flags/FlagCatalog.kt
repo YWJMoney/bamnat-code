@@ -44,11 +44,9 @@ object FlagCatalog {
     const val MARKET_WEAR = "market.wear"
     /** 2.0.0 [RVQ-56] 위 둘을 처음 적는 처리방침 판(30일 줄이라 관리자 앱 일정의 3.14 시행일에 12-21을 넣어요, O 11-19). */
     const val STATS_314_POLICY = "3.14"
-    /** 2.0.0 [RVQ-57] 검토 I22c-02: 앱 없는 팀원이 신청·바꾸기 페이지에서 켜는 웹 알림(브라우저의 알림 주소를 그 라운드 방에 둠), 처리방침 3.15부터. */
-    const val TEAM_PUSH = "team.push"
     /** 2.0.0 [RVQ-59] 검토 I22c-03: 장터 '쓰는 분·7일 유지'를 누구인지 모르는 하루 표로 한 사람 한 번만 세기(표 지문 30일), 처리방침 3.15부터. */
     const val MARKET_FAIR_COUNT = "market.fair_count"
-    /** 위 둘을 처음 적는 처리방침 판(사용자 11-19 카드 '둘 다 2.0.0에', 문장은 3.15 카드 답 뒤). 관리자 앱 일정에 3.15 날짜를 넣는 날부터예요. */
+    /** 위를 처음 적는 처리방침 판(사용자 11-19 카드, 2.0 범위 변경 뒤 2.1에서 마무리, 문장은 3.15 카드 답 뒤). 관리자 앱 일정에 3.15 날짜를 넣는 날부터예요. */
     const val TEAM_315_POLICY = "3.15"
     /** 1.32.1 [STAB-10]: 멈춤 관찰 기록 in the 점검 기록 of an inquiry, once 처리방침 3.6 names it. */
     const val DIAG_OBSERVE = "diag.observe"
@@ -575,16 +573,6 @@ object FlagCatalog {
         default = false, risk = Risk.LEGAL, since = "2.0.0", group = FlagGroup.STATS,
     )
 
-    /** 2.0.0 [RVQ-57] 공유 서버가 받는 웹 알림 주소: 회사 서버가 이 깃발을 공유 서버에 매시간 맞춰 보내요(syncShareSwitch). */
-    val TEAM_PUSH_FLAG = Flag(
-        TEAM_PUSH, "팀 페이지 웹 알림",
-        what = "앱 없이 신청·바꾸기 링크를 쓰는 팀원이 '알림 받기'를 누르면, 그 브라우저의 알림 주소를 그 라운드에만 두고 요청·답·리더 결정·마감 소식을 보내요. 라운드가 끝나면 주소도 지워져요.",
-        whyOff = "브라우저 알림 주소를 새로 받아 처리방침 3.15가 적은 뒤에 켜져요. 관리자 앱 › 기능 관리 › 일정에 3.15 날짜를 넣으면 그날부터예요. 그 전에는 '알림 받기' 단추가 없어요(실시간으로 바뀌어 보이는 것은 그대로).",
-        basis = Basis(policy = "3.15 1항", requirement = "I22c-02", note = "사용자 11-19 카드 '둘 다 2.0.0에'"),
-        conditions = listOf(Condition.Date(policy = TEAM_315_POLICY), Condition.Policy(TEAM_315_POLICY)),
-        default = false, risk = Risk.LEGAL, since = "2.0.0", group = FlagGroup.LAW,
-    )
-
     /** 2.0.0 [RVQ-59] 회사 서버가 하루 표를 서명해 주고, 앱이 그 표로 '쓰는 분'을 보내요. 켜지기 전에는 앱이 표를 받지도 보내지도 않아요. */
     val MARKET_FAIR_COUNT_FLAG = Flag(
         MARKET_FAIR_COUNT, "쓰는 분 한 사람 한 번만 세기",
@@ -651,7 +639,7 @@ object FlagCatalog {
         DIAG_OBSERVE_FLAG, SHARE_SETUP_FLAG, SHARE_LOOK_FLAG, SHARE_WORD_FLAG, RECIPE_BROWSE_FLAG, RECIPE_PUBLISH_FLAG, RECIPE_VOTE_FLAG, RECIPE_TALK_FLAG, TEAM_LEADER_FLAG, BOSS_PAYROLL_FLAG, HEALTH_COMPARE_FLAG,
         SLEEP_AUTO_FLAG, SLEEP_SOUND_FLAG, SLEEP_SHARE_FLAG, PLAZA_FIX_REQUEST_FLAG, COMMUNITY_CARE_FLAG, COMMUNITY_CONFIRMED_FLAG, PLAZA_PEOPLE_FLAG, SLEEP_PLAN_SHARE_FLAG, STATS_SETUP_FLAG,
         STATS_LIFE_FLAG, STATS_KIND_FLAG, STATS_KEEP_FLAG, STATS_DISC_FLAG, STATS_KIND_USE_FLAG, MARKET_WEAR_FLAG, CARD_FONTS_FLAG,
-        TEAM_PUSH_FLAG, MARKET_FAIR_COUNT_FLAG) +
+        MARKET_FAIR_COUNT_FLAG) +
         SWITCHES
 
     private val byKey = ALL.associateBy { it.key }

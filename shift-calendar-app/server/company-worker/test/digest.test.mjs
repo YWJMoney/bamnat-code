@@ -86,5 +86,5 @@ test("[SRV-10] the share server's KV writes over 90% rest 근무표 링크 새�
   await call("GET", "/api/config");
   assert.deepEqual((await autoRest(env, NOW)).rested, ["SHARE_CREATE"]);
   assert.equal(await syncShareSwitch(env), true);
-  assert.deepEqual(sent.at(-1), ["PUT", "https://share.example/api/admin/flags", JSON.stringify({ createOff: true, teamPush: false })]);
+  assert.deepEqual(sent.at(-1), ["PUT", "https://share.example/api/admin/flags", JSON.stringify({ createOff: true })]);
 });

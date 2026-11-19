@@ -16,9 +16,9 @@ binding = "SHARES"
 # Filled in after `npx wrangler kv namespace create SHARES`.
 id = "REPLACE_WITH_KV_NAMESPACE_ID"
 
-# 2.0.0 [RVD-33][RVQ-57] 앱 없는 팀원 방(Q1 4h)의 Durable Object. 이름·태그는 갈래 D의 바닥 판(RVD-33)과 글자 그대로 같아요.
-# 클래스를 새로 만드는 migration은 versions upload가 못 올려 바닥 판을 배포 도구 mode migrate(wrangler deploy)로 먼저 올리고,
-# 그 뒤 2.0.0 묶음은 평소처럼 check → deploy예요(이미 적용된 migration이라 그대로 올라가요). 토큰은 지금 'Workers Scripts 편집'이면 돼요.
+# 2.0.0 [RVD-33] 앱 없는 팀원 방(Q1 4h)의 Durable Object 바닥. 이 판은 실서버 공유 코드에 클래스·바인딩·migration만 더해요.
+# 클래스를 새로 만드는 migration은 versions upload가 못 올려 배포 도구 mode migrate(wrangler deploy)로 따로 올리고,
+# 그 판이 되돌리기 바닥이에요(그 앞 판으로는 Cloudflare가 되돌리기를 막아요). 이름·태그는 Q1 4h와 같아야 해요.
 # 바인딩을 지우는 migration(deleted_classes)은 방 데이터를 지워요: 하지 않아요.
 [[durable_objects.bindings]]
 name = "TEAM_ROUND"

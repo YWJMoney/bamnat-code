@@ -81,7 +81,6 @@
 // when it expires.
 
 import { SERVER_VERSION } from "./version.js";
-import { pushReady, sendPush } from "./push.js";
 // 2.0.0 [RVD-28] SD-08: 근무 종류 한 규칙표, written by core ShiftRulesExportTest (the company server reads the same file).
 import { SHIFT_RULES } from "./shift-rules.js";
 
@@ -383,7 +382,7 @@ async function route(request, env) {
   if (teamPage) {
     if (teamPage[3] === "/report" && request.method === "POST") return teamReport(request, env, teamPage[1], teamPage[2]);
     // 1.39 [IOS-06] Who opens the team pages, by kind of phone: a number per day only, never kept with the link.
-    if (request.method === "GET" && !teamPage[3] && !previewBot(request) && !request.headers.get("x-live")) count(env, `team_${platformOf(request.headers.get("user-agent") || "")}`);
+    if (request.method === "GET" && !teamPage[3] && !previewBot(request)) count(env, `team_${platformOf(request.headers.get("user-agent") || "")}`);
     const down = await teamDown(env, teamPage[1], teamPage[2]);
     // (route's own `page` below is a match, so the page is made outside it.)
     if (down) return teamDownPage(down);
@@ -400,12 +399,6 @@ async function route(request, env) {
   if (askApi && request.method === "GET") return askRead(request, env, askApi[1]);
   if (askApi && request.method === "PUT") return askChange(request, env, askApi[1]);
   if (askApi && request.method === "DELETE") return askDelete(request, env, askApi[1]);
-  // 2.0.0 [RVQ-57] 검토 I22c-02: 방 라운드 페이지의 실시간(WebSocket)과 웹 알림 켜기·끄기, 그 두 파일.
-  const live = path.match(/^\/([aw])\/([A-Za-z0-9]{22})\/(live|push)$/);
-  if (live && live[3] === "live" && request.method === "GET") return teamLive(request, env, live[1] === "a" ? "ask" : "swap", live[2]);
-  if (live && live[3] === "push" && request.method === "POST") return teamPushSet(request, env, live[1] === "a" ? "ask" : "swap", live[2]);
-  if (path === "/team-live.js" && request.method === "GET") return staticFile(TEAM_LIVE_JS, "text/javascript");
-  if (path === "/team-sw.js" && request.method === "GET") return staticFile(TEAM_SW_JS, "text/javascript", { "service-worker-allowed": "/" });
   const askPage = path.match(/^\/a\/([A-Za-z0-9]{22})(\/pick|\/note)?$/);
   if (askPage && !askPage[2] && (request.method === "GET" || request.method === "HEAD")) return askView(env, askPage[1], url.searchParams.get("d"), null, 200, null, null, opened(request));
   if (askPage && askPage[2] && request.method === "POST") return askPost(request, env, askPage[1], askPage[2].slice(1));
@@ -597,11 +590,6 @@ export function platformOf(ua) {
 
 /** [SRV-08] The key the company server's switch writes while new links rest. */
 const CREATE_OFF = "flag:create_off";
-/**
- * 2.0.0 [RVQ-57] 검토 I22c-02: 앱 없는 팀원의 웹 알림(브라우저가 주는 알림 주소를 그 라운드 방에 둠)은 처리방침 3.15가 적은 뒤에만.
- * 회사 서버의 깃발 team.push(3.15 시행일에 저절로 켜짐)가 이 키로 와요. 없으면 '알림 받기' 단추도, 받는 길도, 보내기도 없어요.
- */
-const TEAM_PUSH = "flag:team_push";
 
 const REMOVED_TEXT = "이 근무표 링크는 신고를 받아 운영 규칙에 따라 내려졌어요. 공유한 분이 앱에서 새 링크를 만들 수 있어요.";
 
@@ -740,16 +728,9 @@ async function admin(request, env, url) {
   if (path === "/flags" && request.method === "PUT") {
     let body = {};
     try { body = JSON.parse((await request.text()).slice(0, 256)); } catch { /* nothing */ }
-    // 2.0.0 [RVQ-57]: each switch only when it is in the body (the company server sends createOff every time, teamPush from 2.0.0).
-    if ("createOff" in body) {
-      if (body.createOff === true) await kvPut(env, CREATE_OFF, "1");
-      else await kvDel(env, CREATE_OFF);
-    }
-    if ("teamPush" in body) {
-      if (body.teamPush === true) await kvPut(env, TEAM_PUSH, "1");
-      else await kvDel(env, TEAM_PUSH);
-    }
-    return json({ createOff: Boolean(await env.SHARES.get(CREATE_OFF)), teamPush: Boolean(await env.SHARES.get(TEAM_PUSH)) });
+    if (body.createOff === true) await kvPut(env, CREATE_OFF, "1");
+    else await kvDel(env, CREATE_OFF);
+    return json({ createOff: body.createOff === true });
   }
   return json({ error: "not_found" }, 404);
 }
@@ -875,9 +856,6 @@ async function teamTakeDown(request, env, kind, id) {
   if (record) await kvDel(env, k.main(id));
   // 2.0.0 [RVQ-25] The round's summary (everyone's requests or swaps) goes with it.
   if (kind === "a" || kind === "w") await kvDel(env, roundKey(kind === "a" ? "ask" : "swap", id));
-  // 2.0.0 [RVQ-57] A room round's room is emptied too.
-  const room = (kind === "a" || kind === "w") && record ? roomOf(env, kind === "a" ? "ask" : "swap", id, record) : null;
-  if (room) await roomCall(room, { op: "drop" });
   await kvDel(env, `report:${kind}:${id}`);
   return new Response(null, { status: 204 });
 }
@@ -1150,356 +1128,6 @@ async function roundNote(env, kind, id, record, changed, base = null) {
   return parts;
 }
 
-// ---- 2.0.0 [RVQ-57] 검토 I22c-02: 팀 방(Durable Object) ----
-// A round made while the share server has the TeamRound Durable Object (binding TEAM_ROUND) keeps its members' own parts in that one
-// room instead of a KV key each. A press runs there one at a time: two members taking a day's last seat at once cannot both get it
-// (on KV the last seat could go twice and the leader's app ordered by time), and a reply cannot write over a cancel of the same ask.
-// Every page reads the room once (no summary key, no settling). Rounds made before, or while there is no binding, stay on KV as they
-// were. The room keeps the same things the member keys kept (days and kinds asked, a line, when, read or not) and forgets them at the
-// round's end (an alarm), when the leader deletes it, or when the operator takes it down. Nothing new is kept.
-const roomOf = (env, kind, id, record) => (record?.room && env.TEAM_ROUND ? env.TEAM_ROUND.get(env.TEAM_ROUND.idFromName(`${kind}:${id}`)) : null);
-
-async function roomCall(room, body) {
-  const res = await room.fetch("https://team-round/", { method: "POST", body: JSON.stringify(body), headers: { "content-type": "application/json" } });
-  if (!res.ok) throw new Error(`team round ${res.status}`);
-  return res.json();
-}
-
-/** The room's members' parts as the pages need them ({i: part}), from each member's own value. */
-const partsOf = (values, partOf) => {
-  const parts = {};
-  for (const [i, v] of Object.entries(values ?? {})) {
-    const part = partOf(v);
-    if (part) parts[i] = part;
-  }
-  return parts;
-};
-
-/** 2.0.0 [RVQ-57] What a round's room needs to speak for itself (알림의 제목, 마감 하루 전, 비울 때). Nothing about a member. */
-function roundMeta(kind, record) {
-  const mo = Number(String(record.month ?? "").slice(5, 7));
-  return {
-    kind, expiresAt: record.expiresAt,
-    title: kind === "ask" ? `${record.team} ${mo ? `${mo}월 ` : ""}근무 신청` : `${record.team} 근무 바꾸기`,
-    closesAt: kind === "ask" ? record.rules?.closesAt ?? null : null,
-  };
-}
-
-/** Open pages in one room at once (each a browser tab); more wait for the next open. */
-const LIVE_MAX = 200;
-/** A member's 알림 주소 as the browser gives it: an https address of a push service and its two keys. */
-const PUSH_SUB = { endpoint: 1024, key: 128 };
-const DAY_MS = 24 * 3600 * 1000;
-
-/**
- * One round's room: {m:<i>: the member's own value}. Each request runs alone against what the room holds.
- * 2.0.0 [RVQ-57] 검토 I22c-02 실시간: an open page keeps a WebSocket here (hibernating, so a quiet room costs nothing) and hears
- * "changed" when anyone's press, the leader's change or the end changes what it shows. 웹 알림 (깃발 team.push, 처리방침 3.15): a member
- * who turned it on is kept as `p:<i>` (the browser's push address, its keys and their own page) and hears three things only: someone
- * asked them to swap or answered their ask, the leader decided their ask, and the round closed, opened again or closes tomorrow.
- */
-export class TeamRound {
-  constructor(state, env = {}) {
-    this.state = state;
-    this.storage = state.storage;
-    this.env = env;
-  }
-
-  async values() {
-    const out = {};
-    for (const [k, v] of await this.storage.list({ prefix: "m:" })) out[k.slice(2)] = v;
-    return out;
-  }
-
-  async keep(values, changed, expiresAt) {
-    if (!changed) return;
-    const entries = {};
-    for (const [i, v] of Object.entries(changed)) {
-      values[i] = v;
-      entries[`m:${i}`] = v;
-    }
-    await this.storage.put(entries);
-    if (expiresAt && (await this.storage.getAlarm()) == null) await this.storage.setAlarm(Date.parse(expiresAt) + 60 * 1000);
-    this.tell();
-  }
-
-  /** Every open page hears that what it shows changed; each then reads its own page again. */
-  tell(what = "changed") {
-    for (const ws of this.state.getWebSockets?.() ?? []) {
-      try { ws.send(what); } catch { /* a page that went away */ }
-    }
-  }
-
-  /** The round's words, kept so the alarm can speak (the reminder a day before 마감) and moved to the next thing it waits for. */
-  async meta(meta) {
-    if (!meta) return (await this.storage.get?.("meta")) ?? null;
-    const was = (await this.storage.get?.("meta")) ?? {};
-    const next = { ...meta, dueSent: was.dueSent === meta.closesAt ? was.dueSent : null };
-    await this.storage.put({ meta: next });
-    await this.plan(next);
-    return next;
-  }
-
-  /** The next alarm: the reminder a day before 마감 while it is to come and someone may hear it, else the round's end. */
-  async plan(meta) {
-    const end = meta?.expiresAt ? Date.parse(meta.expiresAt) + 60 * 1000 : null;
-    const due = meta?.closesAt != null && meta.dueSent !== meta.closesAt ? meta.closesAt - DAY_MS : null;
-    const at = due != null && due > Date.now() && (end == null || due < end) ? due : end;
-    if (at != null) await this.storage.setAlarm(at);
-  }
-
-  async pushOn() {
-    return Boolean(this.env?.SHARES && (await this.env.SHARES.get(TEAM_PUSH)) && pushReady(this.env));
-  }
-
-  /** Sends [message] to these members' browsers (those who turned 알림 on); one the push service no longer knows is let go. */
-  async notify(list, message) {
-    if (!list.length || !(await this.pushOn())) return;
-    const keys = pushReady(this.env);
-    const subs = await this.storage.list({ prefix: "p:" });
-    const sends = [];
-    for (const i of new Set(list.map(String))) {
-      const sub = subs.get(`p:${i}`);
-      if (!sub) continue;
-      sends.push(sendPush(keys, sub, { title: message.title, body: message.body, url: sub.url, tag: `team-${message.tag ?? "round"}` }, Date.now())
-        .then((status) => (status === 404 || status === 410 ? this.storage.delete(`p:${i}`) : null)));
-    }
-    const all = Promise.all(sends);
-    if (this.state.waitUntil) this.state.waitUntil(all); else await all;
-  }
-
-  async fetch(request) {
-    // The page's WebSocket: accepted here so the room can be put to sleep between presses.
-    if (request.headers.get("upgrade")?.toLowerCase() === "websocket") {
-      if ((this.state.getWebSockets?.() ?? []).length >= LIVE_MAX) return new Response("busy", { status: 503 });
-      const pair = new WebSocketPair();
-      this.state.acceptWebSocket(pair[1]);
-      return new Response(null, { status: 101, webSocket: pair[0] });
-    }
-    let b;
-    try { b = await request.json(); } catch { return json({ error: "bad_json" }, 400); }
-    if (b?.op === "drop") {
-      this.tell("gone");
-      await this.storage.deleteAll();
-      await this.storage.deleteAlarm();
-      return json({ ok: true });
-    }
-    if (b?.op === "pushing") return json({ on: Boolean(await this.storage.get?.(`p:${b.i}`)) });
-    if (b?.op === "push") {
-      if (!b.sub) await this.storage.delete(`p:${b.i}`);
-      else if (await this.pushOn()) {
-        await this.storage.put({ [`p:${b.i}`]: b.sub });
-        if (!(await this.meta())) await this.meta(b.meta);
-      } else return json({ error: "off" }, 403);
-      return json({ on: Boolean(b.sub) });
-    }
-    if (b?.op === "round") {
-      const meta = await this.meta(b.meta);
-      this.tell();
-      if (b.was !== b.open) {
-        const who = [...(await this.storage.list({ prefix: "p:" })).keys()].map((k) => k.slice(2));
-        await this.notify(who, { title: meta.title, tag: "round", body: b.open ? (meta.kind === "ask" ? "신청이 다시 열렸어요. 눌러서 골라 주세요." : "바꾸기가 다시 열렸어요.") : (meta.kind === "ask" ? "신청이 마감됐어요. 리더가 근무표를 만들면 링크로 보내 줘요." : "리더가 바꾸기를 닫았어요.") });
-      }
-      return json({ ok: true });
-    }
-    const values = await this.values();
-    const expiresAt = b?.record?.expiresAt ?? b?.expiresAt ?? null;
-    if (b?.op === "all") return json({ values });
-    if (b?.op === "seen") {
-      if (!values[b.i]?.seenAt) {
-        values[b.i] = { ...(values[b.i] ?? {}), seenAt: b.at };
-        await this.storage.put({ [`m:${b.i}`]: values[b.i] });
-        if (expiresAt && (await this.storage.getAlarm()) == null) await this.storage.setAlarm(Date.parse(expiresAt) + 60 * 1000);
-      }
-      return json({ values });
-    }
-    if (b?.op === "ask") {
-      if (!(await this.meta())) await this.meta(roundMeta("ask", b.record));
-      const out = askApply(b.record, b.m, values, b.input);
-      await this.keep(values, out.changed, expiresAt);
-      return json({ said: out.said, values });
-    }
-    if (b?.op === "swap") {
-      if (!(await this.meta())) await this.meta(roundMeta("swap", b.record));
-      const out = swapApply(b.record, b.p, values, b.input, b.now);
-      await this.keep(values, out.changed, expiresAt);
-      if (out.said?.ok && b.input?.what === "ask") await this.notify([b.input.q], { title: roundMeta("swap", b.record).title, tag: "ask", body: "바꾸기 요청이 하나 왔어요. 눌러서 답해 주세요." });
-      if (out.said?.ok && b.input?.what === "reply") await this.notify([b.input.from], { title: roundMeta("swap", b.record).title, tag: "reply", body: "요청한 바꾸기에 답이 왔어요." });
-      return json({ said: out.said, status: out.status, values });
-    }
-    if (b?.op === "decide") {
-      const changed = swapDecide(values, b.decide, b.now);
-      await this.keep(values, changed, expiresAt);
-      if (changed) await this.notify(Object.keys(changed), { title: b.meta?.title ?? "근무 바꾸기", tag: "decide", body: "리더가 바꾸기 요청을 확인했어요. 눌러서 결과를 봐 주세요." });
-      return json({ values });
-    }
-    return json({ error: "op" }, 400);
-  }
-
-  async webSocketMessage(ws, message) {
-    if (message === "ping") ws.send("pong");
-  }
-
-  async webSocketClose(ws, code) {
-    try { ws.close(code === 1005 || code === 1006 ? 1000 : code); } catch { /* already closed */ }
-  }
-
-  async alarm() {
-    const meta = await this.meta();
-    // The reminder a day before 마감, once for that 마감, to those who turned 알림 on and have not asked yet.
-    if (meta?.closesAt != null && meta.dueSent !== meta.closesAt && Date.now() >= meta.closesAt - DAY_MS && Date.now() < meta.closesAt) {
-      const values = await this.values();
-      const who = [...(await this.storage.list({ prefix: "p:" })).keys()].map((k) => k.slice(2)).filter((i) => !values[i]?.wishes?.length);
-      await this.notify(who, { title: meta.title, tag: "due", body: "신청 마감이 내일이에요. 아직 고르지 않았다면 지금 골라 주세요." });
-      const next = { ...meta, dueSent: meta.closesAt };
-      await this.storage.put({ meta: next });
-      await this.plan(next);
-      return;
-    }
-    if (meta?.expiresAt && Date.now() < Date.parse(meta.expiresAt)) return this.plan(meta);
-    this.tell("gone");
-    await this.storage.deleteAll();
-  }
-}
-
-/** 2.0.0 [RVQ-57] The live part of a room round's page: the one script, the line it shows when a change waits, and 알림 when it may. */
-async function liveSlot(env, room, kind, key, i) {
-  const pushKey = (await env.SHARES.get(TEAM_PUSH)) ? pushReady(env)?.publicKey : null;
-  const on = pushKey ? (await roomCall(room, { op: "pushing", i })).on : false;
-  const push = pushKey ? `<p class="live-push" hidden><button type="button" class="get line" data-on="${on ? "1" : ""}">${on ? "알림 끄기" : "알림 받기"}</button> <span class="small muted">${on ? "요청·답·마감 소식이 이 브라우저로 와요" : "요청·답·마감 소식만 이 브라우저로 받아요"}</span></p>` : "";
-  return `<div id="live" data-live="/${kind}/${key}/live" data-push="${esc(pushKey ?? "")}" data-base="/${kind}/${key}" hidden></div>
-<p class="live-bar panel" hidden role="status">다른 분이 고른 것이 있어요. <button type="button" class="get line">새로 보기</button></p>${push}
-<script src="/team-live.js" defer></script>`;
-}
-
-async function teamFound(env, kind, key) {
-  const found = kind === "ask" ? await askFind(env, key) : await swapFind(env, key);
-  if (!found) return null;
-  const room = roomOf(env, kind, found.id, found.record);
-  return room ? { ...found, room, i: kind === "ask" ? found.m : found.p } : null;
-}
-
-/** GET /a|w/<key>/live: the page's WebSocket into its round's room (a room round only). */
-async function teamLive(request, env, kind, key) {
-  if (request.headers.get("upgrade")?.toLowerCase() !== "websocket") return json({ error: "upgrade" }, 426);
-  const found = await teamFound(env, kind, key);
-  if (!found) return json({ error: "not_found" }, 404);
-  return found.room.fetch(new Request("https://team-round/live", { headers: { upgrade: "websocket" } }));
-}
-
-/** POST /a|w/<key>/push {sub: PushSubscription JSON} or {off: true}: this member's 알림 (깃발 team.push, 처리방침 3.15). */
-async function teamPushSet(request, env, kind, key) {
-  if (!(await allow(env, request, "ap", LIMITS.askPerHour))) return json({ error: "rate_limited" }, 429);
-  const found = await teamFound(env, kind, key);
-  if (!found) return json({ error: "not_found" }, 404);
-  let body;
-  try { body = JSON.parse((await request.text()).slice(0, 4096)); } catch { return json({ error: "bad_json" }, 400); }
-  if (body?.off === true) return json(await roomCall(found.room, { op: "push", i: found.i, sub: null }));
-  if (!(await env.SHARES.get(TEAM_PUSH)) || !pushReady(env)) return json({ error: "off" }, 403);
-  const s = body?.sub;
-  const b64 = (v) => typeof v === "string" && v.length <= PUSH_SUB.key && /^[A-Za-z0-9_-]+=*$/.test(v);
-  let endpoint = null;
-  try { endpoint = new URL(s?.endpoint); } catch { /* not an address */ }
-  if (!endpoint || endpoint.protocol !== "https:" || s.endpoint.length > PUSH_SUB.endpoint || !b64(s?.keys?.p256dh) || !b64(s?.keys?.auth)) return json({ error: "bad_sub" }, 400);
-  const sub = { endpoint: s.endpoint, p256dh: s.keys.p256dh, auth: s.keys.auth, url: `/${kind === "ask" ? "a" : "w"}/${key}` };
-  return json(await roomCall(found.room, { op: "push", i: found.i, sub, meta: roundMeta(kind, found.record) }));
-}
-
-function staticFile(body, type, extra = {}) {
-  return new Response(body, { headers: { "content-type": `${type}; charset=utf-8`, "cache-control": "public, max-age=3600", "x-content-type-options": "nosniff", ...extra } });
-}
-
-/**
- * 2.0.0 [RVQ-57] The one script of a room round's page. Without it (or without WebSocket) the page is as before: it reads the room
- * when opened. With it: a change by anyone reads the page again in place (where it was scrolled), unless a line is being written,
- * then a quiet line offers it. 알림 받기 appears only when the server offers it and this browser can.
- */
-export const TEAM_LIVE_JS = `(() => {
-  const box = document.getElementById("live");
-  if (!box || !("WebSocket" in window)) return;
-  const path = box.dataset.live, base = box.dataset.base, pushKey = box.dataset.push;
-  let ws, tries = 0, wait = null, last = 0;
-  const writing = () => {
-    const a = document.activeElement;
-    if (a && (a.tagName === "INPUT" || a.tagName === "TEXTAREA") && a.type !== "hidden") return true;
-    return [...document.querySelectorAll("main input:not([type=hidden]), main textarea")].some((i) => i.value !== i.defaultValue);
-  };
-  const bar = () => document.querySelector(".live-bar");
-  async function refresh(force) {
-    if (!force && writing()) { const b = bar(); if (b) b.hidden = false; return; }
-    const res = await fetch(location.pathname + location.search, { headers: { "x-live": "1" }, cache: "no-store" }).catch(() => null);
-    if (!res || !res.ok) { if (res && res.status === 404) location.reload(); return; }
-    const next = new DOMParser().parseFromString(await res.text(), "text/html").querySelector("main");
-    const now = document.querySelector("main");
-    if (!next || !now) return;
-    const y = window.scrollY;
-    now.replaceWith(next);
-    window.scrollTo(0, y);
-    wire();
-  }
-  function later() {
-    clearTimeout(wait);
-    const gap = Math.max(800, 3000 - (Date.now() - last));
-    wait = setTimeout(() => { last = Date.now(); refresh(false); }, gap);
-  }
-  function open() {
-    ws = new WebSocket((location.protocol === "https:" ? "wss://" : "ws://") + location.host + path);
-    ws.onopen = () => { tries = 0; };
-    ws.onmessage = (e) => { if (e.data === "gone") location.reload(); else if (e.data === "changed") later(); };
-    ws.onclose = () => { if (++tries <= 6 && !document.hidden) setTimeout(open, Math.min(30000, 1000 * 2 ** tries)); };
-  }
-  function wire() {
-    const b = bar();
-    if (b) b.querySelector("button").onclick = () => { b.hidden = true; refresh(true); };
-    const p = document.querySelector(".live-push");
-    if (!p || !pushKey || !("serviceWorker" in navigator) || !("PushManager" in window) || !("Notification" in window)) return;
-    p.hidden = false;
-    const btn = p.querySelector("button"), note = p.querySelector("span");
-    btn.onclick = async () => {
-      btn.disabled = true;
-      try {
-        if (btn.dataset.on) {
-          await fetch(base + "/push", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ off: true }) });
-          btn.dataset.on = ""; btn.textContent = "알림 받기"; note.textContent = "알림을 껐어요";
-        } else {
-          if ((await Notification.requestPermission()) !== "granted") { note.textContent = "브라우저에서 알림을 허용해야 받을 수 있어요"; return; }
-          const reg = await navigator.serviceWorker.register("/team-sw.js", { scope: "/" });
-          await navigator.serviceWorker.ready;
-          const raw = atob(pushKey.replace(/-/g, "+").replace(/_/g, "/") + "=".repeat((4 - pushKey.length % 4) % 4));
-          const sub = (await reg.pushManager.getSubscription()) || await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: Uint8Array.from(raw, (c) => c.charCodeAt(0)) });
-          const res = await fetch(base + "/push", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ sub: sub.toJSON() }) });
-          if (!res.ok) { note.textContent = "지금은 알림을 켤 수 없어요. 잠시 뒤에 다시 해 주세요"; return; }
-          btn.dataset.on = "1"; btn.textContent = "알림 끄기"; note.textContent = "알림을 켰어요. 요청·답·마감 소식이 와요";
-        }
-      } catch { note.textContent = "이 브라우저에서는 알림을 켤 수 없어요"; } finally { btn.disabled = false; }
-    };
-  }
-  wire();
-  open();
-  document.addEventListener("visibilitychange", () => {
-    if (document.hidden || (ws && ws.readyState <= 1)) return;
-    tries = 0; open(); refresh(false);
-  });
-})();
-`;
-
-/** 2.0.0 [RVQ-57] The team pages' service worker: shows a round's 알림 and opens the member's own page when it is pressed. */
-export const TEAM_SW_JS = `self.addEventListener("push", (e) => {
-  let d = {};
-  try { d = e.data ? e.data.json() : {}; } catch { d = {}; }
-  e.waitUntil(self.registration.showNotification(d.title || "밤낮 팀", { body: d.body || "", tag: d.tag, data: { url: d.url || "/" }, icon: "/apple-touch-icon.png" }));
-});
-self.addEventListener("notificationclick", (e) => {
-  e.notification.close();
-  const url = new URL((e.notification.data && e.notification.data.url) || "/", self.location.origin);
-  if (url.origin !== self.location.origin) return;
-  e.waitUntil(self.clients.matchAll({ type: "window" }).then((list) => {
-    const same = list.find((c) => new URL(c.url).pathname === url.pathname);
-    return same ? same.focus() : self.clients.openWindow(url.href);
-  }));
-});
-`;
-
 const askPart = (v) => (v.wishes?.length ? v.wishes.map(({ d, k, s, at }) => ({ d, k, ...(s != null ? { s } : {}), at })) : null);
 const askWishesOf = (parts) => Object.entries(parts).flatMap(([m, list]) => list.map((w) => ({ m: Number(m), ...w })));
 const swapPart = (v) => (v.asks?.length ? v.asks.map(({ d, q, state }) => ({ d, q, state })) : null);
@@ -1570,8 +1198,7 @@ async function askCreate(request, env, url) {
     const l = leave[i];
     return { name, key: randomId(22), ...(typeof l === "number" && Number.isFinite(l) && l >= 0 && l <= 60 ? { leave: Math.round(l * 100) / 100 } : {}) };
   });
-  // 2.0.0 [RVQ-57]: with the TeamRound binding, a new round's requests live in its room.
-  const record = { team, month, rules, shifts, members, tokenHash: await sha256(token), expiresAt: expiry(days), closed: false, ...(env.TEAM_ROUND ? { room: true } : {}) };
+  const record = { team, month, rules, shifts, members, tokenHash: await sha256(token), expiresAt: expiry(days), closed: false };
   await put(env, askKey(id), record);
   for (let i = 0; i < members.length; i++) await put(env, askMemberKey(members[i].key), { id, m: i, expiresAt: record.expiresAt });
   count(env, "asks");
@@ -1591,10 +1218,8 @@ async function askAll(env, id, record) {
   const wishes = [];
   const notes = [];
   const seen = [];
-  const room = roomOf(env, "ask", id, record);
-  const values = room ? (await roomCall(room, { op: "all" })).values : null;
   for (let m = 0; m < record.members.length; m++) {
-    const mine = values ? values[m] ?? null : await env.SHARES.get(askWishKey(id, m), "json");
+    const mine = await env.SHARES.get(askWishKey(id, m), "json");
     if (!mine) continue;
     for (const w of mine.wishes ?? []) wishes.push({ m, ...w });
     if (mine.note) notes.push({ m, note: mine.note });
@@ -1619,22 +1244,16 @@ async function askChange(request, env, id) {
     if (body.closesAt !== null && !Number.isFinite(body.closesAt)) return json({ error: "bad_round" }, 400);
     record.rules.closesAt = body.closesAt;
   }
-  const was = askOpen(record);
   if (typeof body?.closed === "boolean") record.closed = body.closed;
   await put(env, askKey(id), record);
-  // 2.0.0 [RVQ-57]: open pages see it at once; members who turned on 알림 hear that it closed or opened again; the reminder follows the new 마감.
-  const room = roomOf(env, "ask", id, record);
-  if (room) await roomCall(room, { op: "round", meta: roundMeta("ask", record), was, open: askOpen(record) });
   return new Response(null, { status: 204 });
 }
 
 async function askDelete(request, env, id) {
   const record = await askOwned(request, env, id);
   if (record instanceof Response) return record;
-  const room = roomOf(env, "ask", id, record);
-  if (room) await roomCall(room, { op: "drop" });
   for (let m = 0; m < record.members.length; m++) {
-    if (!room) await kvDel(env, askWishKey(id, m));
+    await kvDel(env, askWishKey(id, m));
     await kvDel(env, askMemberKey(record.members[m].key));
   }
   await kvDel(env, roundKey("ask", id));
@@ -1653,85 +1272,55 @@ async function askFind(env, key) {
 const askGone = () => html(page("링크가 없어요", `<p class="empty">이 신청 링크는 끝났거나 리더가 지웠어요. 새 링크는 리더에게 받아 주세요.</p>${goneNext("", "request")}`), 404);
 const askOpen = (record) => !record.closed && !(record.rules.closesAt != null && Date.now() >= record.rules.closesAt);
 
-/**
- * A member's press on a 신청 round, as one step on what is known: [values] {i: member's own value} (everyone's when it is a pick,
- * else at least mine). Returns what to say and the member's new value ({[m]: value}) when it changed. The room runs it alone; on KV
- * the members' keys are read just before.
- */
-function askApply(record, m, values, input) {
-  const mine = { wishes: [], note: "", ...(values[m] ?? {}) };
-  mine.wishes = [...(mine.wishes ?? [])];
-  let said;
-  if (!askOpen(record)) said = { bad: "신청이 마감됐어요" };
-  else if (input.what === "note") {
-    const note = cleanText(input.note ?? "", LIMITS.askNote);
-    if (note == null) said = { bad: `한 줄은 ${LIMITS.askNote}자까지예요` };
-    else { mine.note = note; said = { ok: note ? "한 줄을 남겼어요" : "한 줄을 지웠어요" }; }
-  } else {
-    const d = String(input.d ?? "");
-    const k = String(input.k ?? "");
-    if (k === "none") {
-      mine.wishes = mine.wishes.filter((w) => w.d !== d);
-      said = { ok: `${d.slice(5).replace("-", "/")} 신청을 지웠어요` };
-    } else if (!(k in ASK_KINDS)) said = { bad: "고를 수 없는 신청이에요" };
-    else {
-      const s = k === "SHIFT" ? Number.parseInt(input.s ?? "", 10) : null;
-      if (k === "SHIFT" && !record.shifts.some((x) => x.id === s)) said = { bad: "고를 수 없는 근무예요" };
-      else {
-        // The 선착순 check reads every member's own value (the truth), not the summary.
-        const all = Object.entries(values).flatMap(([i, v]) => (v?.wishes ?? []).map((w) => ({ m: Number(i), ...w })));
-        const no = askCheck(record.rules, record.month, all, { m, d, k }, Date.now(), record.members[m].leave ?? null);
-        if (no) said = { bad: no };
-        else {
-          const at = mine.wishes.find((w) => w.d === d && ASK_KINDS[w.k]?.[1] && ASK_KINDS[k][1])?.at ?? new Date().toISOString();
-          mine.wishes = [...mine.wishes.filter((w) => w.d !== d), { d, k, ...(s != null ? { s } : {}), at }].sort((x, y) => x.d.localeCompare(y.d)).slice(0, 31);
-          said = { ok: `${d.slice(5).replace("-", "/")} ${k === "SHIFT" ? record.shifts.find((x) => x.id === s).label : ASK_KINDS[k][0]} 신청했어요` };
-        }
-      }
-    }
-  }
-  return { said, changed: said.ok ? { [m]: mine } : null };
-}
-
 async function askPost(request, env, key, what) {
   const found = await askFind(env, key);
   if (!found) return askGone();
   if (!(await allow(env, request, "ap", LIMITS.askPerHour))) return html(page("잠시 뒤에 다시 눌러 주세요", `<p class="empty">이 네트워크에서 너무 많이 눌렀어요. 잠시 뒤에 다시 눌러 주세요.</p>`), 429);
   const { id, m, record } = found;
   const form = new URLSearchParams((await request.text()).slice(0, 512));
-  const input = what === "note" ? { what, note: form.get("note") ?? "" } : { what, d: form.get("d") ?? "", k: form.get("k") ?? "", s: form.get("s") ?? "" };
-  const room = roomOf(env, "ask", id, record);
-  let said;
-  let mine;
-  let parts = null;
-  if (room) {
-    // 2.0.0 [RVQ-57]: the room checks and keeps it in one step; its answer has everyone's parts for the page.
-    const out = await roomCall(room, { op: "ask", record, m, input });
-    said = out.said;
-    mine = { wishes: [], note: "", ...(out.values[m] ?? {}) };
-    parts = partsOf(out.values, askPart);
+  const mine = (await env.SHARES.get(askWishKey(id, m), "json")) ?? { wishes: [], note: "" };
+  let said = null;
+  let truth = null;
+  if (!askOpen(record)) said = { bad: "신청이 마감됐어요" };
+  else if (what === "note") {
+    const note = cleanText(form.get("note") ?? "", LIMITS.askNote);
+    if (note == null) said = { bad: `한 줄은 ${LIMITS.askNote}자까지예요` };
+    else { mine.note = note; said = { ok: note ? "한 줄을 남겼어요" : "한 줄을 지웠어요" }; }
   } else {
-    const own = (await env.SHARES.get(askWishKey(id, m), "json")) ?? { wishes: [], note: "" };
-    // A pick reads every member's own key (the truth) for the 선착순 check.
-    const truth = what === "pick" && input.k !== "none" && input.k in ASK_KINDS && askOpen(record) ? (await askAll(env, id, record)).wishes : null;
-    const values = {};
-    for (const w of truth ?? []) (values[w.m] ??= { wishes: [] }).wishes.push({ d: w.d, k: w.k, ...(w.s != null ? { s: w.s } : {}), at: w.at });
-    values[m] = own;
-    const out = askApply(record, m, values, input);
-    said = out.said;
-    mine = out.changed?.[m] ?? own;
-    if (said.ok) {
-      await put(env, askWishKey(id, m), { ...mine, expiresAt: record.expiresAt });
-      // 2.0.0 [RVQ-25]: the summary from the truth just read (a note or a removal has none, so the summary's own parts).
-      let base = null;
-      if (truth) {
-        base = {};
-        for (const w of truth) (base[w.m] ??= []).push({ d: w.d, k: w.k, ...(w.s != null ? { s: w.s } : {}), at: w.at });
+    const d = form.get("d") ?? "";
+    const k = form.get("k") ?? "";
+    if (k === "none") {
+      mine.wishes = mine.wishes.filter((w) => w.d !== d);
+      said = { ok: `${d.slice(5).replace("-", "/")} 신청을 지웠어요` };
+    } else if (!(k in ASK_KINDS)) said = { bad: "고를 수 없는 신청이에요" };
+    else {
+      const s = k === "SHIFT" ? Number.parseInt(form.get("s") ?? "", 10) : null;
+      if (k === "SHIFT" && !record.shifts.some((x) => x.id === s)) said = { bad: "고를 수 없는 근무예요" };
+      else {
+        // The 선착순 check reads every member's own key (the truth), not the summary.
+        const all = (truth = (await askAll(env, id, record)).wishes);
+        const no = askCheck(record.rules, record.month, all, { m, d, k }, Date.now(), record.members[m].leave ?? null);
+        if (no) said = { bad: no };
+        else {
+          const at = mine.wishes.find((w) => w.d === d && ASK_KINDS[w.k]?.[1] && ASK_KINDS[k][1])?.at ?? new Date().toISOString();
+          mine.wishes = [...mine.wishes.filter((w) => w.d !== d), { d, k, ...(s != null ? { s } : {}), at }].sort((a, b) => a.d.localeCompare(b.d)).slice(0, 31);
+          said = { ok: `${d.slice(5).replace("-", "/")} ${k === "SHIFT" ? record.shifts.find((x) => x.id === s).label : ASK_KINDS[k][0]} 신청했어요` };
+        }
       }
-      parts = await roundNote(env, "ask", id, record, { [m]: askPart(mine) }, base);
     }
   }
-  if (said.ok) count(env, "askPicks");
+  let parts = null;
+  if (said.ok) {
+    await put(env, askWishKey(id, m), { ...mine, expiresAt: record.expiresAt });
+    count(env, "askPicks");
+    // 2.0.0 [RVQ-25]: the summary from the truth just read (a note or a removal has none, so the summary's own parts).
+    let base = null;
+    if (truth) {
+      base = {};
+      for (const w of truth) (base[w.m] ??= []).push({ d: w.d, k: w.k, ...(w.s != null ? { s: w.s } : {}), at: w.at });
+    }
+    parts = await roundNote(env, "ask", id, record, { [m]: askPart(mine) }, base);
+  }
   return askView(env, key, what === "pick" ? form.get("d") : null, said, said.bad ? 409 : 200, found, mine, true, parts);
 }
 
@@ -1740,22 +1329,14 @@ async function askView(env, key, day, said, status = 200, known = null, mineKnow
   if (!found) return askGone();
   const { id, m, record } = found;
   const { rules, month } = record;
-  // 2.0.0 [RVQ-57]: a room round reads its room once (mine and everyone's parts).
-  const room = roomOf(env, "ask", id, record);
-  const roomValues = room && !(mineKnown && partsKnown) ? (await roomCall(room, { op: "all" })).values : null;
-  // A room value may hold only when it was read (seenAt): it starts from no wishes and no line, like a KV key that was never written.
-  const mine = mineKnown ?? (roomValues ? { wishes: [], note: "", ...(roomValues[m] ?? {}) } : await env.SHARES.get(askWishKey(id, m), "json")) ?? { wishes: [], note: "" };
+  const mine = mineKnown ?? (await env.SHARES.get(askWishKey(id, m), "json")) ?? { wishes: [], note: "" };
   // 2.0.0 [RVQ-25] 검토 I22a-04: everyone's requests from the round's summary (one read), mine from my own key.
-  const parts = { ...(partsKnown ?? (roomValues ? partsOf(roomValues, askPart) : await roundParts(env, "ask", id, record, record.members.length, askWishKey, askPart))) };
+  const parts = { ...(partsKnown ?? (await roundParts(env, "ask", id, record, record.members.length, askWishKey, askPart))) };
   const minePart = askPart(mine);
   if (minePart) parts[m] = minePart;
   else delete parts[m];
   const all = { wishes: askWishesOf(parts) };
-  if (human && !mine.seenAt) {
-    mine.seenAt = new Date().toISOString();
-    if (room) await roomCall(room, { op: "seen", i: m, at: mine.seenAt, expiresAt: record.expiresAt });
-    else await put(env, askWishKey(id, m), { ...mine, expiresAt: record.expiresAt });
-  }
+  if (human && !mine.seenAt) { mine.seenAt = new Date().toISOString(); await put(env, askWishKey(id, m), { ...mine, expiresAt: record.expiresAt }); }
   const me = record.members[m].name;
   const open = askOpen(record);
   const [y, mo] = month.split("-").map(Number);
@@ -1811,8 +1392,7 @@ async function askView(env, key, day, said, status = 200, known = null, mineKnow
 <p class="rule">${esc(rule)}</p>${saidHtml}${monthList(widestWord(mine.wishes.map(label)))}<div class="cal"><div class="grid">${heads}${cells.join("")}</div></div>${panel}
 <h2>내 신청 ${mine.wishes.length}일</h2>${list}<h2>리더에게 한 줄</h2>${note}
 <p class="foot muted">신청한 날·종류·한 줄·신청한 시각만 리더에게 가요. 다른 사람에게는 날마다 몇 명이 신청했는지만 보여요${rules.showNames ? "(리더가 이름도 보이게 했어요)" : ""}. 위치·전화번호·기기 정보는 보내지 않아요. 근무표가 확정되면 리더가 근무표 링크를 보내 줘요.</p>${spreadSlot("request")}`;
-  const liveHtml = room ? await liveSlot(env, room, "a", key, m) : "";
-  return html(page(`${record.team} ${mo}월 근무 신청`, liveHtml + body + teamFoot("a", key), "밤낮", "request"), status, Boolean(room));
+  return html(page(`${record.team} ${mo}월 근무 신청`, body + teamFoot("a", key), "밤낮", "request"), status);
 }
 
 // ---- 1.38 [P3-X-01] 결원 메우기 (and the other yes/no asks of a team) ----
@@ -2433,7 +2013,7 @@ async function swapCreate(request, env, url) {
   const end = Date.UTC(Number(month.slice(0, 4)), Number(month.slice(5, 7)), 1) + 7 * 86400 * 1000;
   const expiresAt = new Date(Math.min(end, Date.now() + LIMITS.askTtlDays * 86400 * 1000)).toISOString();
   if (Date.parse(expiresAt) <= Date.now()) return json({ error: "bad_swap" }, 400);
-  const record = { team, month, people, rows: board.rows, ok: board.ok, tokenHash: await sha256(token), expiresAt, closed: false, ...(env.TEAM_ROUND ? { room: true } : {}) };
+  const record = { team, month, people, rows: board.rows, ok: board.ok, tokenHash: await sha256(token), expiresAt, closed: false };
   await put(env, swapKey(id), record);
   for (let i = 0; i < people.length; i++) await put(env, swapPersonKey(people[i].key), { id, p: i, expiresAt });
   count(env, "swaps");
@@ -2453,10 +2033,8 @@ async function swapRead(request, env, id) {
   if (record instanceof Response) return record;
   const asks = [];
   const seen = [];
-  const room = roomOf(env, "swap", id, record);
-  const values = room ? (await roomCall(room, { op: "all" })).values : null;
   for (let p = 0; p < record.people.length; p++) {
-    const mine = values ? values[p] ?? null : await env.SHARES.get(swapAskKey(id, p), "json");
+    const mine = await env.SHARES.get(swapAskKey(id, p), "json");
     if (!mine) continue;
     if (mine.seenAt) seen.push(p);
     for (const a of mine.asks ?? []) asks.push({ p, q: a.q, d: a.d, state: a.state, at: a.at });
@@ -2486,30 +2064,26 @@ async function swapChange(request, env, id, url) {
   if (decide.some((x) => !Number.isInteger(x?.p) || x.p < 0 || x.p >= record.people.length || !Number.isInteger(x?.d) || (x.state !== "done" && x.state !== "denied"))) {
     return json({ error: "bad_swap" }, 400);
   }
-  const wasClosed = (await env.SHARES.get(swapKey(id), "json"))?.closed === true;
   await put(env, swapKey(id), record);
-  const room = roomOf(env, "swap", id, record);
-  if (room) {
-    if (decide.length) await roomCall(room, { op: "decide", decide, now: new Date().toISOString(), expiresAt: record.expiresAt, meta: roundMeta("swap", record) });
-    // 2.0.0 [RVQ-57]: a new board or a close shows on open pages at once (a decide tells them itself).
-    else await roomCall(room, { op: "round", meta: roundMeta("swap", record), was: !wasClosed, open: !record.closed });
-    return new Response(null, { status: 204 });
+  const changed = {};
+  for (const x of decide) {
+    const mine = await env.SHARES.get(swapAskKey(id, x.p), "json");
+    const ask = mine?.asks?.find((a) => a.d === x.d && swapOpen(a.state));
+    if (!ask) continue;
+    ask.state = x.state;
+    ask.decidedAt = new Date().toISOString();
+    await put(env, swapAskKey(id, x.p), { ...mine, expiresAt: record.expiresAt });
+    changed[x.p] = swapPart(mine);
   }
-  const values = {};
-  for (const x of decide) if (!(x.p in values)) values[x.p] = await env.SHARES.get(swapAskKey(id, x.p), "json");
-  const changed = swapDecide(values, decide, new Date().toISOString()) ?? {};
-  for (const [i, mine] of Object.entries(changed)) await put(env, swapAskKey(id, Number(i)), { ...mine, expiresAt: record.expiresAt });
-  if (Object.keys(changed).length) await roundNote(env, "swap", id, record, Object.fromEntries(Object.entries(changed).map(([i, v]) => [i, swapPart(v)])));
+  if (Object.keys(changed).length) await roundNote(env, "swap", id, record, changed);
   return new Response(null, { status: 204 });
 }
 
 async function swapDelete(request, env, id) {
   const record = await swapOwned(request, env, id);
   if (record instanceof Response) return record;
-  const room = roomOf(env, "swap", id, record);
-  if (room) await roomCall(room, { op: "drop" });
   for (let p = 0; p < record.people.length; p++) {
-    if (!room) await kvDel(env, swapAskKey(id, p));
+    await kvDel(env, swapAskKey(id, p));
     await kvDel(env, swapPersonKey(record.people[p].key));
   }
   await kvDel(env, roundKey("swap", id));
@@ -2527,56 +2101,7 @@ async function swapFind(env, key) {
 
 const swapGone = () => html(page("바꾸기가 끝났어요", `<p class="empty">이 바꾸기 링크는 끝났거나 리더가 지웠어요.</p>${goneNext("바뀐 근무는 리더가 새 근무표 링크로 보내 줘요.", "swap")}`), 404);
 
-/**
- * [P3-X-02] A member's press as one step on what is known ([values] {i: person's own value}): ask (d, q), cancel (d), or reply to
- * someone else's ask (from, d, a=yes|no). Returns what to say, the page's status and the values that changed. 2.0.0 [RVQ-57]: the room
- * runs it alone, so a reply and a cancel of the same ask cannot both land.
- */
-function swapApply(record, p, values, input, now) {
-  const d = input.d;
-  if (input.what === "reply") {
-    const from = input.from;
-    const a = input.a;
-    if (!Number.isInteger(from) || from < 0 || from >= record.people.length || (a !== "yes" && a !== "no")) return { said: { bad: "고를 수 없는 답이에요" }, status: 400 };
-    const theirs = values[from] ? structuredClone(values[from]) : null;
-    const ask = theirs?.asks?.find((x) => x.d === d && x.q === p && swapOpen(x.state));
-    if (!ask) return { said: { bad: "이미 끝난 요청이에요" }, status: 409 };
-    ask.state = a;
-    ask.answeredAt = now;
-    return { said: { ok: a === "yes" ? "좋다고 전했어요. 리더가 승인하면 근무표에 바로 반영돼요." : "어렵다고 전했어요." }, status: 200, changed: { [from]: theirs }, counted: "swapAnswers" };
-  }
-  const mine = structuredClone(values[p] ?? {});
-  const asks = mine.asks ?? [];
-  if (input.what === "cancel") {
-    const ask = asks.find((x) => x.d === d && swapOpen(x.state));
-    if (!ask) return { said: { bad: "거둘 요청이 없어요" }, status: 409 };
-    ask.state = "cancel";
-    return { said: { ok: "요청을 거뒀어요." }, status: 200, changed: { [p]: { ...mine, asks } } };
-  }
-  const q = input.q;
-  if (!Number.isInteger(q) || !(record.ok?.[p]?.[d] ?? []).includes(q)) return { said: { bad: "이 날은 그분과 바꿀 수 없어요" }, status: 400 };
-  if (asks.some((x) => x.d === d && swapOpen(x.state))) return { said: { bad: "이 날은 이미 요청했어요. 거두고 다시 해 주세요" }, status: 409 };
-  if (asks.filter((x) => swapOpen(x.state)).length >= 5) return { said: { bad: "한 번에 다섯 개까지 요청할 수 있어요" }, status: 409 };
-  // Old answered asks drop off first so the list stays small.
-  const kept = asks.filter((x) => swapOpen(x.state) || x.state === "done").slice(-20);
-  kept.push({ d, q, state: "asked", at: now });
-  return { said: { ok: `${record.people[q].name}님께 요청했어요. 그분 링크에 바로 보여요.` }, status: 200, changed: { [p]: { ...mine, asks: kept } }, counted: "swapAsks" };
-}
-
-/** The leader's word on open asks ([{p, d, state}], checked before): the people's values that changed, or null. */
-function swapDecide(values, decide, now) {
-  const changed = {};
-  for (const x of decide) {
-    const mine = changed[x.p] ?? (values[x.p] ? structuredClone(values[x.p]) : null);
-    const ask = mine?.asks?.find((a) => a.d === x.d && swapOpen(a.state));
-    if (!ask) continue;
-    ask.state = x.state;
-    ask.decidedAt = now;
-    changed[x.p] = mine;
-  }
-  return Object.keys(changed).length ? changed : null;
-}
-
+/** [P3-X-02] A member's press: ask (d, q), cancel (d), or reply to someone else's ask (from, d, a=yes|no). */
 async function swapPress(request, env, key, what) {
   const found = await swapFind(env, key);
   if (!found) return swapGone();
@@ -2588,38 +2113,49 @@ async function swapPress(request, env, key, what) {
   if (!Number.isInteger(d) || d < 1 || d > days) return swapView(env, key, { bad: "고를 수 없는 날이에요" }, 400, found);
   if (record.closed) return swapView(env, key, { bad: "리더가 바꾸기를 닫았어요" }, 409, found);
   const now = new Date().toISOString();
-  const input = { what, d, ...(what === "reply" ? { from: Number(form.get("from")), a: form.get("a") } : {}), ...(what === "ask" ? { q: Number(form.get("q")) } : {}) };
-  const room = roomOf(env, "swap", id, record);
-  if (room) {
-    const out = await roomCall(room, { op: "swap", record, p, input, now });
-    if (out.said.ok && (what === "reply" || what === "ask")) count(env, what === "reply" ? "swapAnswers" : "swapAsks");
-    return swapView(env, key, out.said, out.status, found, true, partsOf(out.values, swapPart), out.values[p] ?? {});
+  if (what === "reply") {
+    const from = Number(form.get("from"));
+    const a = form.get("a");
+    if (!Number.isInteger(from) || from < 0 || from >= record.people.length || (a !== "yes" && a !== "no")) return swapView(env, key, { bad: "고를 수 없는 답이에요" }, 400, found);
+    const theirs = await env.SHARES.get(swapAskKey(id, from), "json");
+    const ask = theirs?.asks?.find((x) => x.d === d && x.q === p && swapOpen(x.state));
+    if (!ask) return swapView(env, key, { bad: "이미 끝난 요청이에요" }, 409, found);
+    ask.state = a;
+    ask.answeredAt = now;
+    await put(env, swapAskKey(id, from), { ...theirs, expiresAt: record.expiresAt });
+    count(env, "swapAnswers");
+    const parts = await roundNote(env, "swap", id, record, { [from]: swapPart(theirs) });
+    return swapView(env, key, { ok: a === "yes" ? "좋다고 전했어요. 리더가 승인하면 근무표에 바로 반영돼요." : "어렵다고 전했어요." }, 200, found, true, parts);
   }
-  // On KV: the one or two people's own keys this press reads.
-  const values = {};
-  if (what === "reply" && Number.isInteger(input.from) && input.from >= 0 && input.from < record.people.length) values[input.from] = await env.SHARES.get(swapAskKey(id, input.from), "json");
-  else values[p] = await env.SHARES.get(swapAskKey(id, p), "json");
-  const out = swapApply(record, p, values, input, now);
-  if (!out.changed) return swapView(env, key, out.said, out.status, found);
-  const [[who, value]] = Object.entries(out.changed);
-  await put(env, swapAskKey(id, Number(who)), { ...value, expiresAt: record.expiresAt });
-  if (out.counted) count(env, out.counted);
-  const parts = await roundNote(env, "swap", id, record, { [who]: swapPart(value) });
-  return swapView(env, key, out.said, out.status, found, true, parts);
+  const mine = (await env.SHARES.get(swapAskKey(id, p), "json")) ?? {};
+  const asks = mine.asks ?? [];
+  if (what === "cancel") {
+    const ask = asks.find((x) => x.d === d && swapOpen(x.state));
+    if (!ask) return swapView(env, key, { bad: "거둘 요청이 없어요" }, 409, found);
+    ask.state = "cancel";
+    await put(env, swapAskKey(id, p), { ...mine, asks, expiresAt: record.expiresAt });
+    const parts = await roundNote(env, "swap", id, record, { [p]: swapPart({ asks }) });
+    return swapView(env, key, { ok: "요청을 거뒀어요." }, 200, found, true, parts);
+  }
+  const q = Number(form.get("q"));
+  if (!Number.isInteger(q) || !(record.ok?.[p]?.[d] ?? []).includes(q)) return swapView(env, key, { bad: "이 날은 그분과 바꿀 수 없어요" }, 400, found);
+  if (asks.some((x) => x.d === d && swapOpen(x.state))) return swapView(env, key, { bad: "이 날은 이미 요청했어요. 거두고 다시 해 주세요" }, 409, found);
+  if (asks.filter((x) => swapOpen(x.state)).length >= 5) return swapView(env, key, { bad: "한 번에 다섯 개까지 요청할 수 있어요" }, 409, found);
+  // Old answered asks drop off first so the list stays small.
+  const kept = asks.filter((x) => swapOpen(x.state) || x.state === "done").slice(-20);
+  kept.push({ d, q, state: "asked", at: now });
+  await put(env, swapAskKey(id, p), { ...mine, asks: kept, expiresAt: record.expiresAt });
+  count(env, "swapAsks");
+  const parts = await roundNote(env, "swap", id, record, { [p]: swapPart({ asks: kept }) });
+  return swapView(env, key, { ok: `${record.people[q].name}님께 요청했어요. 그분 링크에 바로 보여요.` }, 200, found, true, parts);
 }
 
-async function swapView(env, key, said, status = 200, known = null, human = true, partsKnown = null, mineKnown = null) {
+async function swapView(env, key, said, status = 200, known = null, human = true, partsKnown = null) {
   const found = known ?? await swapFind(env, key);
   if (!found) return swapGone();
   const { id, p, record } = found;
-  // 2.0.0 [RVQ-57]: a room round reads its room once (mine and everyone's parts).
-  const room = roomOf(env, "swap", id, record);
-  const roomValues = room && !(partsKnown && mineKnown) ? (await roomCall(room, { op: "all" })).values : null;
-  const mine = mineKnown ?? (roomValues ? roomValues[p] : await env.SHARES.get(swapAskKey(id, p), "json")) ?? {};
-  if (human && !mine.seenAt) {
-    if (room) await roomCall(room, { op: "seen", i: p, at: new Date().toISOString(), expiresAt: record.expiresAt });
-    else await put(env, swapAskKey(id, p), { ...mine, seenAt: new Date().toISOString(), expiresAt: record.expiresAt });
-  }
+  const mine = (await env.SHARES.get(swapAskKey(id, p), "json")) ?? {};
+  if (human && !mine.seenAt) await put(env, swapAskKey(id, p), { ...mine, seenAt: new Date().toISOString(), expiresAt: record.expiresAt });
   const me = record.people[p].name;
   const name = (q) => esc(record.people[q]?.name ?? "?");
   const y = Number(record.month.slice(0, 4));
@@ -2628,7 +2164,7 @@ async function swapView(env, key, said, status = 200, known = null, human = true
   const label = (q, d) => esc(record.rows[q]?.[d - 1] || "·");
   const word = { asked: "답 기다림", yes: "상대가 좋대요 · 리더 승인 기다림", no: "상대가 어렵대요", cancel: "거둠", done: "리더가 승인했어요", denied: "리더가 거절했어요" };
   // Asks to me: everyone else's lists. 2.0.0 [RVQ-25] 검토 I22a-04: from the round's summary (one read, not one per person).
-  const parts = partsKnown ?? (roomValues ? partsOf(roomValues, swapPart) : await roundParts(env, "swap", id, record, record.people.length, swapAskKey, swapPart));
+  const parts = partsKnown ?? (await roundParts(env, "swap", id, record, record.people.length, swapAskKey, swapPart));
   const incoming = [];
   for (let o = 0; o < record.people.length; o++) {
     if (o === p) continue;
@@ -2651,8 +2187,7 @@ async function swapView(env, key, said, status = 200, known = null, human = true
   const body = `<h1>${esc(record.team)} ${m}월 근무 바꾸기</h1><p class="muted">${esc(me)}님 · 근무 규칙(쉬는 시간·주 52시간)에 맞는 사람만 보여요</p>${saidHtml}${inHtml}${sentHtml}
 <h2>바꿀 수 있는 날</h2>${pickHtml}
 <p class="foot muted">고른 날·상대·답과 누른 시각만 리더에게 가요. 위치·전화번호·기기 정보는 보내지 않아요.</p>${spreadSlot("swap")}`;
-  const liveHtml = room ? await liveSlot(env, room, "w", key, p) : "";
-  return html(page(`${record.team} 근무 바꾸기`, liveHtml + body + teamFoot("w", key), "밤낮", "swap"), status, Boolean(room));
+  return html(page(`${record.team} 근무 바꾸기`, body + teamFoot("w", key), "밤낮", "swap"), status);
 }
 
 function groupCode() {
@@ -3424,7 +2959,7 @@ function json(data, status = 200) {
   });
 }
 
-function html(body, status = 200, live = false) {
+function html(body, status = 200) {
   return new Response(body, {
     status,
     headers: {
@@ -3434,7 +2969,7 @@ function html(body, status = 200, live = false) {
       "referrer-policy": "no-referrer",
       "x-content-type-options": "nosniff",
       // [SRV-05] The only form is the page's own 신고, sent back to this address.
-      "content-security-policy": `default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'${live ? "; script-src 'self'; connect-src 'self'; worker-src 'self'; img-src 'self'" : ""}`,
+      "content-security-policy": "default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'",
     },
   });
 }
@@ -3856,10 +3391,25 @@ main{max-width:720px;margin:0 auto;padding:24px 16px 48px}h1{font-size:22px;marg
 .spread{position:relative;margin-top:28px;background:var(--card);border:1px solid var(--line);border-radius:14px;padding:14px}.spread p{margin:0 0 4px}.spread .t{font-weight:700;padding-right:34px}
 .spread .x{position:absolute;top:4px;right:4px;margin:0}.spread .x button{width:44px;height:44px;border:none;background:none;color:var(--muted);font-size:22px;cursor:pointer}
 .spread .get{display:inline-block;margin:8px 0 4px;padding:10px 16px;border-radius:999px;background:var(--today);color:#15192B;font-weight:700;text-decoration:none;min-height:44px;box-sizing:border-box}.spread a{color:var(--fg)}
-.live-bar{position:sticky;top:8px;z-index:5;margin:0 0 12px;box-shadow:0 2px 10px rgba(0,0,0,.14)}.live-push{margin:0 0 12px}.live-bar button,.live-push button{min-height:44px;padding:9px 15px;border-radius:999px;border:1px solid var(--muted);background:none;color:var(--fg);font-size:15px;cursor:pointer}
 .feed p{margin:4px 0}.feed .get{display:inline-block;padding:10px 16px;border-radius:999px;background:var(--today);color:#15192B;font-weight:700;text-decoration:none;min-height:44px;box-sizing:border-box}.get.line{background:none;color:var(--fg);border:1px solid var(--muted);padding:9px 15px}.addr{user-select:all;word-break:break-all}
 </style></head><body><main>${body}</main></body></html>`;
 }
 
 /** 1.39 [IOS-05] apple-touch-icon.png (180×180), drawn from app/src/main/res/drawable/ic_launcher_foreground.xml on its ink background. */
 const TOUCH_ICON = "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";
+
+/**
+ * 2.0.0 [RVD-33] 앱 없는 팀원 방(Q1 4h)의 Durable Object 바닥 판용 빈 클래스. wrangler.toml의 TEAM_ROUND 바인딩과
+ * migration v1-team-round(new_sqlite_classes)를 먼저 실서버에 적용하려고 둬요. 이 판의 코드는 TEAM_ROUND를 부르지 않아서
+ * 방은 하나도 생기지 않고, 손님이 보는 동작은 앞 판과 같아요. 방을 쓰는 진짜 클래스는 2.0.0 묶음(Q1 4h)이 같은 이름으로 대신해요.
+ */
+export class TeamRound {
+  constructor(ctx, env) {
+    this.ctx = ctx;
+    this.env = env;
+  }
+
+  async fetch() {
+    return new Response("not found", { status: 404 });
+  }
+}

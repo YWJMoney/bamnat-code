@@ -1,12 +1,11 @@
 // [SRV-31] 1.36: the share Worker on a plain Node server with an in-memory KV, so a debug build tested against the PC never puts a
 // link on the real s.bamnat.app:
-//   npm run local -- 8790 [--test-clock] [--policy314] [--no-rooms] [--push]
+//   npm run local -- 8790 [--test-clock] [--policy314]
 // --test-clock: POST /__test/clock?days=N moves this server's clock on N days (negative goes back), like the company local server,
 // so a phone whose clock was moved for a test gets links that end when it expects. Only this local server has it.
 // A debug build whose company server is the PC (-Pbamnat.companyBaseUrl=http://10.0.2.2:…) sends links to http://10.0.2.2:8790.
 import http from "node:http";
-import { createHash } from "node:crypto";
-import worker, { TeamRound } from "../src/index.js";
+import worker from "../src/index.js";
 
 const args = process.argv.slice(2);
 const port = Number(args.find((a) => /^\d+$/.test(a)) || 8790);
@@ -49,53 +48,7 @@ const env = { SHARES: memoryKv(), RATE_SALT: "local", SHARE_ADMIN_TOKEN: process
   ...(args.includes("--policy314") ? { POLICY_314_FROM: "2026-01-01" } : {}) };
 const ctx = { waitUntil: (p) => Promise.resolve(p).catch(() => {}) };
 
-// 2.0.0 [RVQ-57] 검토 I22c-02 팀 방: 실서버처럼 새 신청·바꾸기 라운드는 방(Durable Object)에서 돌아요(`--no-rooms`면 옛 KV 길).
-// 방마다 한 번에 하나씩, 알람은 이 서버의 시계로, 페이지의 WebSocket은 아래 'upgrade'가 받아요.
-// `--push`: 웹 알림(처리방침 3.15 깃발 team.push)을 켠 것처럼, 이 서버만의 VAPID 열쇠를 새로 만들어요.
-const sockets = new Map();
-if (!args.includes("--no-rooms")) {
-  const objects = new Map();
-  env.TEAM_ROUND = {
-    idFromName: (name) => name,
-    get(name) {
-      if (!objects.has(name)) {
-        const data = new Map();
-        let alarm = null;
-        let timer = null;
-        const list = [];
-        sockets.set(name, list);
-        const o = { line: Promise.resolve() };
-        const storage = {
-          async get(k) { return data.has(k) ? structuredClone(data.get(k)) : undefined; },
-          async delete(k) { data.delete(k); },
-          async list({ prefix }) { return new Map([...data].filter(([k]) => k.startsWith(prefix)).sort(([a], [b]) => a.localeCompare(b)).map(([k, v]) => [k, structuredClone(v)])); },
-          async put(entries) { for (const [k, v] of Object.entries(entries)) data.set(k, structuredClone(v)); },
-          async deleteAll() { data.clear(); },
-          async getAlarm() { return alarm; },
-          async setAlarm(t) {
-            alarm = t;
-            clearTimeout(timer);
-            timer = setTimeout(() => { alarm = null; o.line = o.line.then(() => o.room.alarm()).catch(() => {}); }, Math.max(0, Math.min(t - Date.now(), 2 ** 31 - 1)));
-          },
-          async deleteAlarm() { alarm = null; clearTimeout(timer); },
-        };
-        o.room = new TeamRound({ storage, getWebSockets: () => list, acceptWebSocket: (ws) => list.push(ws), waitUntil: ctx.waitUntil }, env);
-        objects.set(name, o);
-      }
-      const o = objects.get(name);
-      return { fetch(url, init) { const run = o.line.then(() => o.room.fetch(url instanceof Request ? url : new Request(url, init))); o.line = run.catch(() => {}); return run; } };
-    },
-  };
-}
-if (args.includes("--push")) {
-  const k = await crypto.subtle.generateKey({ name: "ECDSA", namedCurve: "P-256" }, true, ["sign"]);
-  env.VAPID_PUBLIC_KEY = Buffer.from(await crypto.subtle.exportKey("raw", k.publicKey)).toString("base64url");
-  env.VAPID_PRIVATE_KEY = (await crypto.subtle.exportKey("jwk", k.privateKey)).d;
-  env.VAPID_SUBJECT = "mailto:local@bamnat.invalid";
-  await env.SHARES.put("flag:team_push", "1");
-}
-
-const server = http.createServer(async (req, res) => {
+http.createServer(async (req, res) => {
   if (testClock && req.method === "POST" && req.url.startsWith("/__test/clock")) {
     offset += Number(new URL(req.url, "http://x").searchParams.get("days") || 1) * 864e5;
     res.writeHead(200, { "content-type": "application/json" });
@@ -116,24 +69,5 @@ const server = http.createServer(async (req, res) => {
     res.writeHead(500, { "content-type": "text/plain" });
     res.end(String(e));
   }
-});
-server.on("upgrade", async (req, socket) => {
-  // The page's WebSocket (GET /a|w/<key>/live) joins its round's room: only text frames out, a close in.
-  const m = (req.url || "").match(/^\/([aw])\/([A-Za-z0-9]{22})\/live$/);
-  const link = m && env.TEAM_ROUND ? await env.SHARES.get(`${m[1] === "a" ? "askm" : "swapm"}:${m[2]}`, "json") : null;
-  const record = link ? await env.SHARES.get(`${m[1] === "a" ? "ask" : "swap"}:${link.id}`, "json") : null;
-  const name = record?.room ? `${m[1] === "a" ? "ask" : "swap"}:${link.id}` : null;
-  if (!name || !req.headers["sec-websocket-key"]) { socket.end("HTTP/1.1 404 Not Found\r\n\r\n"); return; }
-  env.TEAM_ROUND.get(name);
-  const accept = createHash("sha1").update(req.headers["sec-websocket-key"] + "258EAFA5-E914-47DA-95CA-C5AB0DC85B11").digest("base64");
-  socket.write(`HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: ${accept}\r\n\r\n`);
-  const list = sockets.get(name);
-  const ws = { send(text) { const b = Buffer.from(String(text)); socket.write(Buffer.concat([Buffer.from([0x81, b.length]), b])); }, close() { socket.end(); } };
-  list.push(ws);
-  const drop = () => { const i = list.indexOf(ws); if (i >= 0) list.splice(i, 1); };
-  socket.on("data", (d) => { if ((d[0] & 0x0f) === 8) { drop(); socket.end(); } });
-  socket.on("close", drop);
-  socket.on("error", drop);
-});
-server.listen(port, () => console.log(`share worker on http://localhost:${port} (in memory; the emulator reaches it at http://10.0.2.2:${port})` +
-  (testClock ? " · test clock: POST /__test/clock?days=N" : "") + (env.TEAM_ROUND ? " · 팀 방 켜짐" : "") + (env.VAPID_PUBLIC_KEY ? " · 웹 알림 켜짐" : "")));
+}).listen(port, () => console.log(`share worker on http://localhost:${port} (in memory; the emulator reaches it at http://10.0.2.2:${port})` +
+  (testClock ? " · test clock: POST /__test/clock?days=N" : "")));

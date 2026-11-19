@@ -48,7 +48,6 @@ test("[RVQ-59] 깃발은 처리방침 3.15 줄이고, 장부에 지문 30일이 
   assert.equal(f.risk, "LEGAL");
   assert.equal(f.default, false);
   assert.deepEqual(f.conditions.map((c) => c.policy ?? c.version), ["3.15", "3.15"]);
-  assert.deepEqual(flagDef("team.push").conditions.map((c) => c.policy ?? c.version), ["3.15", "3.15"]);
   const row = RETENTION.find((r) => r.table === "recipe_fair");
   assert.equal(row.prune.days, 30);
   assert.equal(row.backup, false);
