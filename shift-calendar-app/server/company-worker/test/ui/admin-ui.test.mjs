@@ -1433,7 +1433,7 @@ test("[ADMCP-06] a question shows the other questions from its phone, one tap to
   const got = clipboard(u);
   const bug = (await u.api("GET", "/api/admin/inquiries?status=open&kind=bug")).inquiries[0];
   await u.go(`#/inquiries/${bug.id}`);
-  assert.match(u.text("#main"), /이 기기\(#[0-9a-f]{6}\)에서 온 다른 문의 1건/);
+  assert.match(u.text("#main"), /이 기기\(#[0-9a-f]{8}\)에서 온 다른 문의 1건/);
   await u.click('#main [data-act="inquiry-sender"]');
   await u.idle();
   assert.match(u.window.location.hash, new RegExp(`sender=${bug.sender}`));
