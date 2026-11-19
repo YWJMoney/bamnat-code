@@ -39,6 +39,8 @@ export function ledgerViews(A) {
     if (!a) return '<span class="meta">—</span>';
     if (a.key === "sent") return `<span class="pill ok" title="${esc(a.text)}">보냄${a.byKind === "claude" ? " · Claude" : a.byKind === "auto" ? " · 자동" : ""}</span>`;
     if (a.key === "owner") return `<span class="pill warn" title="${esc(a.why)}">확인 필요</span>`;
+    // 2.0.0 [RVQ-34] 검토 U22-03: 적어 둔 답이 사람 확인을 기다려요.
+    if (a.key === "person") return `<span class="pill warn" title="${esc(a.why)}">사람 확인 대기</span>`;
     return `<span class="pill">${esc(a.name)}</span>`;
   }
 
@@ -144,16 +146,23 @@ export function ledgerViews(A) {
     if (r.bundle && r.type === "inquiry") {
       parts.push(`<p class="lg-block"><b>묶음</b> <a href="${href("dev", r.bundle.id)}">${esc(r.bundle.title)}</a> · ${esc(r.bundle.statusName)}${r.bundle.releasedIn ? ` ${esc(r.bundle.releasedIn)}${r.bundle.out ? " (나감)" : " (출시 전)"}` : ""} · 묶인 문의 ${r.bundle.asks}건${r.bundle.told ? " · 나왔다고 알림" : ""}</p>`);
     }
-    // [RVA-63] HQ-124: 멈춤 기록이 없으면 '알람 점검 › 보고서 복사'를 부탁하는 답(정리함 답 칸이 있으면 거기, 없으면 문의 화면에서).
+    // [RVA-63] HQ-124, [RVA-67] PC-201: 멈춤 기록이 없으면 점검 기록을 켠 새 문의를 부탁하는 답(정리함 답 칸이 있으면 거기, 없으면 문의 화면에서).
     if (r.crash && r.crash.record !== "has" && !r.closed) {
       const box = r.sort && editAsk ? `lg-reply-${r.id}` : null;
-      parts.push(`<p class="note crash-note"><span>${esc(r.crash.recordName)}${r.repeat ? ` · 7일 안 같은 묶음 ${r.repeat.n}건 중 ${r.repeat.nth}번째` : ""}. 앱의 알람 점검 › 보고서 복사로 받아 봐요.</span>
+      parts.push(`<p class="note crash-note"><span>${esc(r.crash.recordName)}${r.repeat ? ` · 7일 안 같은 묶음 ${r.repeat.n}건 중 ${r.repeat.nth}번째` : ""}. 점검 기록을 켠 새 문의('앱이 이상해요')로 받아 봐요.</span>
         ${box ? `<button type="button" class="btn small" data-act="crash-draft" data-target="${esc(box)}">기록 부탁 답 넣기</button>`
           : `<a class="btn small" href="${href("inquiries", r.id)}">문의에서 답하기</a>`}</p>`);
     }
     if (r.answer?.key === "owner") parts.push(`<p class="note warn">${esc(r.answer.why)}: Claude가 혼자 답하지 않아요. 최고 관리자가 정해 주세요.</p>`);
+    // 2.0.0 [RVQ-34] 검토 U22-03: 서버가 멈춘 답은 무엇 때문인지와 그 답, '지금 보내기'·'고치기'·'보내지 않기'를 장부에서 바로.
+    if (r.answer?.key === "person") {
+      parts.push(`<div class="lg-block lg-held"><p class="note warn">사람 확인 대기 · ${esc(r.answer.why)}${r.answer.ship ? " · 출시 안내" : ""}: 저절로 가지 않아요. 읽어 보고 보내 주세요.</p>
+        <p><b>적어 둔 답</b>${r.answer.by ? ` <small>${esc(r.answer.by)}</small>` : ""}<br>${esc(r.answer.text)}</p>
+        ${editAsk ? `<div class="actions start"><button class="btn small primary" type="button" data-act="ledger-held-send" data-inquiry="${esc(r.id)}" data-id="${r.answer.held}">지금 보내기</button>
+          <a class="btn small" href="${href("inquiries", r.id)}">고치기</a>
+          <button class="btn small ghost" type="button" data-act="ledger-held-cancel" data-inquiry="${esc(r.id)}" data-id="${r.answer.held}">보내지 않기</button></div>` : ""}</div>`);
     // 2.0.0 [RVA-50] 스토어 리뷰: 초안은 여기서 보이고, Play로 보내기는 최고 관리자가 스토어 리뷰 화면에서 해요.
-    if (r.answer?.key === "draft") {
+    } else if (r.answer?.key === "draft") {
       parts.push(`<p class="lg-block"><b>답 초안</b>${r.answer.by ? ` <small>${esc(r.answer.by)}</small>` : ""}<br>${esc(r.answer.text)}</p>
         <p class="meta">${S.me?.owner ? "스토어 리뷰 화면에서 고쳐 Play로 보내요." : "Play로 보내기는 최고 관리자가 해요."}</p>`);
     } else if (r.answer?.text || r.answer?.before) parts.push(`<p class="lg-block"><b>보낸 답</b>${r.answer.by ? ` <small>${esc(r.answer.by)}</small>` : ""}<br>${esc(r.answer.text ?? r.answer.before)}</p>`);
@@ -400,6 +409,13 @@ export function ledgerViews(A) {
   }
 
   const actions = {
+    // 2.0.0 [RVQ-34] 검토 U22-03: 사람 확인을 기다리는 답을 장부에서 바로.
+    "ledger-held-send": ({ inquiry, id }) => A.confirmBox("이 답을 지금 보낼까요?", "보낸 분 앱에 바로 보이고 알림이 가요.", "지금 보내기", async () => {
+      if (await act(() => api(`/inquiries/${inquiry}/held/${id}`, "POST", { send: true }), "보냈어요")) load();
+    }, "primary"),
+    "ledger-held-cancel": ({ inquiry, id }) => A.confirmBox("이 답을 보내지 않을까요?", "적어 둔 답만 지워요. 문의는 그대로 남아 다시 답할 수 있어요.", "보내지 않기", async () => {
+      if (await act(() => api(`/inquiries/${inquiry}/held/${id}`, "POST", { cancel: true }), "보내지 않았어요")) load();
+    }),
     "ledger-view": ({ key }) => { S.deskView = key; refilter(); },
     "ledger-group": ({ key }) => { S.deskGroup = key; refilter(); },
     "ledger-pick-mode": () => { S.ledgerPick = S.ledgerPick ? null : new Set(); render({ keepScroll: true }); },

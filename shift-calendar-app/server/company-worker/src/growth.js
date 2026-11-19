@@ -1,7 +1,6 @@
 import { all, audit, batch, iso, json, one, overLimit, randomId, readJson, run, stmt } from "./index.js";
 import { DAY } from "./units.js";
-import { grams, likeness, titleFrom } from "./inbox.js";
-import { fcmTell } from "./fcm.js";
+import { autoAnswerOrHold, grams, likeness, titleFrom } from "./inbox.js";
 import { grantMakerReward } from "./maker-reward.js";
 import { textProblem } from "./recipes.js";
 
@@ -173,19 +172,18 @@ export function toldText(need, how) {
   return `부탁하신 꾸미기("${need.title}")가 ${need.version ? `${need.version} 판에서 ` : "다음 판에서 "}스튜디오의 기본 손잡이로 나와요. 여러분이 부탁해서 생긴 꾸미기로 출시 노트에도 적을게요.`;
 }
 
-/** Answers every asker of [need] not told yet; 문의는 '답함'이 되어 앱의 새 답 알림이 떠요. */
+/**
+ * Answers every asker of [need] not told yet; 문의는 '답함'이 되어 앱의 새 답 알림이 떠요.
+ * 2.0.0 [RVQ-34] 검토 SVC-31: 전에는 문의 대화에 바로 넣어, 사람이 보려던 문의(돈·개인정보…)도 '답함'이 되고 말투도 달랐어요. 이제 문의 답
+ * 규칙(inboxAnswer)을 거치고, 사람이 봐야 할 문의는 사람이 보낼 보류 답으로 올라가요. 앱 알림은 inboxAnswer가 보내요.
+ */
 async function tellAskers(env, need, how, now) {
   const links = await all(env, "SELECT src, ref FROM studio_need_links WHERE need_id = ? AND told = 0 AND src = 'inq'", need.id);
   const text = toldText(need, how);
-  const stmts = [];
-  for (const l of links) {
-    stmts.push(stmt(env, "INSERT INTO inquiry_messages (inquiry_id, sender, text, by, at) SELECT id, 'admin', ?, '밤낮', ? FROM inquiries WHERE id = ?", text, now, l.ref));
-    stmts.push(stmt(env, "UPDATE inquiries SET status = 'answered', updated_at = ? WHERE id = ?", now, l.ref));
-  }
-  stmts.push(stmt(env, "UPDATE studio_need_links SET told = 1 WHERE need_id = ? AND src = 'inq'", need.id));
-  if (stmts.length) await batch(env, stmts);
-  await fcmTell(env, links.map((l) => l.ref), now);
-  return links.length;
+  let n = 0;
+  for (const l of links) if (await autoAnswerOrHold(env, l.ref, text, now).catch(() => false)) n++;
+  await run(env, "UPDATE studio_need_links SET told = 1 WHERE need_id = ? AND src = 'inq'", need.id);
+  return n;
 }
 
 /** [GRW-03] A request on the 요청 판 got its 완성: the group it came from is 풀림, and its askers hear. */

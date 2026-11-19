@@ -114,6 +114,11 @@ data class Gate(
     val holds: Map<com.bamnat.core.tier.WorkPlanKind, com.bamnat.core.tier.WorkHold> = emptyMap(),
     /** 1.38 Phase 3 요금: the bands, prices and free taste the server set. */
     val plans: com.bamnat.core.tier.WorkPlanTable = com.bamnat.core.tier.WorkPlanTable.DEFAULT,
+    /**
+     * 2.0.0 [RVO-14] (검토 I11bb-02) When the 프로 this phone has ends by itself ([com.bamnat.core.tier.ProEnding.end]): null when there is
+     * none, or it renews, or it is not this phone's to know ([ProEndNotice] tells of it the evening before).
+     */
+    val ends: java.time.Instant? = null,
 ) {
     fun hold(kind: com.bamnat.core.tier.WorkPlanKind): com.bamnat.core.tier.WorkHold? = holds[kind]
 
@@ -280,10 +285,12 @@ class FeatureGate(
         val now = clock()
         // 2.0.0 [RVO-12] (HQ-46) Off only for 처리방침 3.1's hold: the screens say so, with its last day.
         val held = rows[com.bamnat.core.flags.FlagCatalog.BILLING]?.takeIf { !it.on }?.heldUntil?.atStartOfDay(com.bamnat.core.flags.KST)?.toInstant()
-        val access = ProAccess.resolve(s.sources(config, installedAt(), zone(), live, now, held), now, zone())
+        val sources = s.sources(config, installedAt(), zone(), live, now, held)
+        val access = ProAccess.resolve(sources, now, zone())
         val admin = s.passes?.admin?.takeIf { it.approved && java.time.Duration.between(s.passes.checkedAt, now) < ProAccess.ADMIN_CHECK } != null
         val holds = if (admin) everyBand() else com.bamnat.core.tier.WorkPlanKind.entries.mapNotNull { k -> s.hold(k, now, config.workPlans)?.let { k to it } }.toMap()
-        return Gate(live = live, tier = if (access.pro) Tier.PRO else Tier.FREE, access = access, free = free, holds = holds, plans = config.workPlans)
+        return Gate(live = live, tier = if (access.pro) Tier.PRO else Tier.FREE, access = access, free = free, holds = holds, plans = config.workPlans,
+            ends = com.bamnat.core.tier.ProEnding.end(sources, now, zone()))
     }
 }
 

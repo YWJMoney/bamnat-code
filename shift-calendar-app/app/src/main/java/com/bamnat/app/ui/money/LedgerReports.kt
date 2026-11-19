@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -43,6 +44,7 @@ import com.bamnat.app.tier.Tier
 import com.bamnat.app.ui.Fmt
 import com.bamnat.app.ui.components.SectionCard
 import com.bamnat.app.ui.components.StatTile
+import com.bamnat.app.ui.components.StatTiles
 import com.bamnat.app.ui.theme.LedgerColors
 import com.bamnat.app.ui.theme.LocalCalendarColors
 import com.bamnat.app.ui.theme.NumberStyle
@@ -162,7 +164,7 @@ fun LedgerReportsPane(
 @Composable
 private fun OverviewCard(m: MonthMoney, r: MonthReport, today: LocalDate) {
     SectionCard(title = "${m.label} 한눈에") {
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        StatTiles {
             // [J133-62] 1.33 (중간 빌드 확인): the pay still to come is not money that came in; it is said under the tile.
             StatTile("들어온 돈", Fmt.won(m.received), Modifier.weight(1f),
                 caption = m.payExpected?.let { "들어올 급여(예상) ${wonBrief(it)} 별도" }
@@ -270,7 +272,8 @@ private fun PaceCard(r: MonthReport, budget: Long?, today: LocalDate) {
         else -> "${r.earlier} 같은 날과 똑같이 썼어요"
     }
     SectionCard(title = "쓰는 속도", trailing = { ProPill() }) {
-        Text(Fmt.hide(line), style = MaterialTheme.typography.titleSmall, color = if (current && diff > 0) cal.expense else MaterialTheme.colorScheme.onSurface)
+        // 2.0.0 [RVK-47] (검토 HQ-101, 조건 6) Spending faster than last month is 주의, not the 나간 돈 bars' colour.
+        Text(Fmt.hide(line), style = MaterialTheme.typography.titleSmall, color = if (current && diff > 0) MaterialTheme.bamnat.caution else MaterialTheme.colorScheme.onSurface)
         Spacer(Modifier.height(8.dp))
         PaceChart(r.cumulative, r.previousCumulative, r.length, budget, "$line. ${r.thisOne} ${Fmt.won(r.spent)}, ${r.earlier} ${Fmt.won(r.previousSpent)}")
         FlowRow(horizontalArrangement = Arrangement.spacedBy(14.dp), modifier = Modifier.padding(top = 6.dp)) {
@@ -322,13 +325,14 @@ private fun InOutCard(m: MonthMoney, style: WorkStyle?) {
 }
 
 /** [LEDG-10] The year month by month; a tap on a month says its numbers. */
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun YearCard(y: YearReport, shown: YearMonth) {
     var picked by rememberSaveable(y.year) { mutableIntStateOf((shown.monthValue - 1).coerceIn(0, 11)) }
     val months = y.months
     if (y.activeMonths == 0) return
     SectionCard(title = "${y.year}년 흐름", trailing = { ProPill() }) {
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        StatTiles {
             StatTile("올해 들어온 돈", Fmt.won(y.income), Modifier.weight(1f), caption = "한 달 평균 ${wonBrief(y.averageIncome)}")
             StatTile("올해 나간 돈", Fmt.won(y.spent), Modifier.weight(1f), caption = "한 달 평균 ${wonBrief(y.averageSpent)}")
         }
@@ -341,13 +345,14 @@ private fun YearCard(y: YearReport, shown: YearMonth) {
         )
         months.getOrNull(picked)?.let { pm ->
             val cal = LocalCalendarColors.current
-            Row(Modifier.fillMaxWidth().padding(top = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-                Text("${pm.month.monthValue}월", style = MaterialTheme.typography.labelLarge, modifier = Modifier.weight(1f))
-                Text("+${wonBrief(pm.income)}", style = MaterialTheme.typography.labelLarge.merge(NumberStyle), color = cal.income)
-                Spacer(Modifier.width(10.dp))
-                Text("-${wonBrief(pm.spent)}", style = MaterialTheme.typography.labelLarge.merge(NumberStyle), color = cal.expense)
-                Spacer(Modifier.width(10.dp))
-                Text("= ${wonBrief(pm.balance)}", style = MaterialTheme.typography.labelLarge.merge(NumberStyle), fontWeight = FontWeight.Bold)
+            // 2.0.0 [RVK-55] (HQ-120, 조건 12) Each amount stays whole; where the line is too narrow (200% on half a wide screen)
+            // they go to the next line instead of '1/0/월' and '+518만' drawn over each other.
+            androidx.compose.foundation.layout.FlowRow(Modifier.fillMaxWidth().padding(top = 4.dp), horizontalArrangement = Arrangement.spacedBy(10.dp),
+                itemVerticalAlignment = Alignment.CenterVertically) {
+                Text("${pm.month.monthValue}월", style = MaterialTheme.typography.labelLarge, maxLines = 1, softWrap = false, modifier = Modifier.weight(1f))
+                Text("+${wonBrief(pm.income)}", style = MaterialTheme.typography.labelLarge.merge(NumberStyle), color = cal.income, softWrap = false)
+                Text("-${wonBrief(pm.spent)}", style = MaterialTheme.typography.labelLarge.merge(NumberStyle), color = cal.expense, softWrap = false)
+                Text("= ${wonBrief(pm.balance)}", style = MaterialTheme.typography.labelLarge.merge(NumberStyle), fontWeight = FontWeight.Bold, softWrap = false)
             }
         }
         y.savingRate?.let { rate ->
@@ -414,7 +419,8 @@ private fun BiggestCard(r: MonthReport, onOpen: (MoneyEntry) -> Unit) {
                     .semantics(mergeDescendants = true) { contentDescription = "${i + 1}위 ${e.title} ${Fmt.won(e.amount)}, ${Fmt.dayTitle(e.date)}" },
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Text("${i + 1}", style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.primary, modifier = Modifier.width(22.dp))
+                Text("${i + 1}", style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.primary, maxLines = 1, softWrap = false,
+                    modifier = Modifier.widthIn(min = 22.dp))
                 CategoryAvatar(e.category, size = 32.dp)
                 Spacer(Modifier.width(10.dp))
                 Column(Modifier.weight(1f)) {

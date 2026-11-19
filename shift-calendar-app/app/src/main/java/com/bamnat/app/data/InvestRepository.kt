@@ -176,14 +176,18 @@ class InvestRepository(private val db: AppDatabase, private val clock: () -> Lon
     suspend fun fillAutoToldNow(): Boolean = dao.allSettings().any { it.key == FILL_AUTO_TOLD_KEY && it.value == "true" }
     suspend fun setFillAutoTold() = dao.upsertSetting(InvestSettingEntity(FILL_AUTO_TOLD_KEY, "true"))
 
-    /** [INV-43] What a capture put in and changed, to take back with 되돌리기. */
-    data class CaptureApplied(val written: List<Trade>, val fixedBefore: List<Trade>, val alertsBefore: List<TradeAlerts.Pending>)
+    /**
+     * [INV-43] What a capture put in and changed, to take back with 되돌리기.
+     * 2.0.0 [RVK-51] (검토 MONEY-73): only the waiting alerts this capture took off, never the whole list as it was.
+     */
+    data class CaptureApplied(val written: List<Trade>, val fixedBefore: List<Trade>, val alertsTaken: List<TradeAlerts.Pending>)
 
     /**
      * [INV-43] 1.27 AK (결정 AK-D3): the rows checked on the capture sheet are written as trades at once (fees suggested as
      * for a found trade), their waiting alerts taken off the list; [fixes] replace written trades (quantity, price, minute).
      */
-    suspend fun applyCapture(lines: List<TradeAlerts.Pending>, fixes: List<Trade>): CaptureApplied {
+    // 2.0.0 [RVK-51] (검토 MONEY-73): one transaction, so a capture is all in or not at all.
+    suspend fun applyCapture(lines: List<TradeAlerts.Pending>, fixes: List<Trade>): CaptureApplied = db.withTransaction {
         val book = now()
         val alertsBefore = pendingNow()
         val last = book.settings.lastAccountId?.takeIf { book.account(it)?.hidden == false }
@@ -197,15 +201,21 @@ class InvestRepository(private val db: AppDatabase, private val clock: () -> Lon
         }
         val before = fixes.mapNotNull { f -> book.trades.firstOrNull { it.id == f.id }?.also { saveTrade(f) } }
         val taken = lines.map { it.at }.toSet()
-        if (alertsBefore.any { it.at in taken }) restoreAlerts(alertsBefore.filter { it.at !in taken })
-        return CaptureApplied(written, before, alertsBefore)
+        val alertsTaken = alertsBefore.filter { it.at in taken }
+        if (alertsTaken.isNotEmpty()) restoreAlerts(alertsBefore.filter { it.at !in taken })
+        CaptureApplied(written, before, alertsTaken)
     }
 
-    /** [INV-43] 되돌리기: the written trades go, the changed ones come back, the waiting list is as it was. */
-    suspend fun undoCapture(a: CaptureApplied) {
+    /**
+     * [INV-43] 되돌리기: the written trades go, the changed ones come back, and the alerts this capture took off wait again.
+     * 2.0.0 [RVK-51] (검토 MONEY-73): alerts that came or were written since stay as they are.
+     */
+    suspend fun undoCapture(a: CaptureApplied) = db.withTransaction {
         a.written.forEach { deleteTrade(it.id) }
         a.fixedBefore.forEach { saveTrade(it) }
-        restoreAlerts(a.alertsBefore)
+        val now = pendingNow()
+        val back = a.alertsTaken.filter { t -> now.none { it.at == t.at } }
+        if (back.isNotEmpty()) restoreAlerts((now + back).sortedBy { it.at }.takeLast(TradeAlerts.MAX))
     }
 
     private suspend fun pendingNow() = TradeAlerts.decode(dao.allSettings().firstOrNull { it.key == TradeAlerts.KEY }?.value)

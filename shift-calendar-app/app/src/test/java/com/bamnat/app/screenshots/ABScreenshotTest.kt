@@ -78,8 +78,9 @@ class ABScreenshotTest : ScreenshotBase() {
         // The calendar follows it as it changes.
         AlarmsOff.turnOff(app, null)
         settle()
-        assertTrue(appears("오늘 알람 끔 · 밤 12시까지"))
-        assertTrue(appears("다시 켜기", exact = true))
+        // 총괄 #512 사진: the dot is held to the first line, and the button says '켜기' like the other alarm lines.
+        assertTrue(appears("오늘 알람 끔\u00A0· 밤 12시까지"))
+        assertTrue(appears("켜기", exact = true))
         noCuts(name)
     }
 

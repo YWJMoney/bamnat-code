@@ -42,6 +42,12 @@ data class SubRecord(
 }
 
 /**
+ * 2.0.0 [RVO-15] 검토 PRO-04: the end (next 결제일, or the last day of one turned off) as Play has it, read by the server; null while
+ * only the phone's Play said so, whose [SubRecord.expiry] is the phone's own 3-day hold and never a date to show or tell of.
+ */
+fun SubRecord.knownEnd(): Instant? = expiry?.takeIf { verified }
+
+/**
  * [MON-06] When the trial ends: Play's end date when the server read it, otherwise a calendar month
  * after it began, as Play counts P1M.
  */

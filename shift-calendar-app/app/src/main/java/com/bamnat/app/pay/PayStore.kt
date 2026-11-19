@@ -721,6 +721,11 @@ object PayCodec {
         } ?: emptyMap(),
     )
 
+    /** 2.0.0 [RVO-20] 검토 SET-15: one kind's pay rule as the profile file writes it, for the editor's draft kept across a closed app. */
+    fun extraRuleJson(e: ExtraRule): JSONObject = extraRule(e)
+
+    fun extraRuleFrom(e: JSONObject): ExtraRule = extraRule(e)
+
     private fun extraRule(e: ExtraRule): JSONObject = JSONObject().put("basis", e.basis.name).put("multiplier", e.multiplier).put("amount", e.amount)
         .put("min", e.minMinutes).put("night", e.nightPremium)
         .put("percent", e.percentOfBase).put("cover", e.coverMinutes ?: -1).put("premiums", e.legalPremiums).put("bonus", e.bonus)

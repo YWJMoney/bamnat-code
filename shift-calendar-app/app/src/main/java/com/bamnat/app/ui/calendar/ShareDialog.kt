@@ -159,7 +159,10 @@ fun ShareDialog(
     val money by produceState<List<SharedPay>?>(null, kind, month, snapshot, profile) {
         value = orElse(emptyList()) { ShareContent.money(container, snapshot, month.atDay(1), kind, calendarId) }
     }
-    val hasPay = money?.isNotEmpty() == true
+    // 2.0.0 [RVG-40] 검토 PC-175 (조건 13): an investor's link carries no 급여 (its 자세히 정하기 offered '급여', which the app never
+    // works out for an investor), so the row is not there.
+    val moneyRow = style != com.bamnat.core.work.WorkStyle.INVEST
+    val hasPay = moneyRow && money?.isNotEmpty() == true
     // [SHR-20][J133-71] 1.33: the 동료 way's words and setup only for work with a company; the setup in the link from 3.7's date.
     val companyWork = remember(calendarId) { container.companyFits(calendarId, needsServer = false) }
     val setupOpen = remember(calendarId) { ShareContent.setupInLink(container, calendarId) }
@@ -393,12 +396,14 @@ fun ShareDialog(
                     }
                     if (employee) {
                         PartRow("휴가 종류", "끄면 연차·반차 말고는 '휴가'로만 보여요", options.leaveKinds) { options = options.copy(leaveKinds = it) }
-                        PartRow("연장·휴무일 근무", "이름과 시간, 날마다 ${ShareLinkPayload.EXTRAS_PER_DAY}개까지. 끄면 대근만 근무로 보여요", options.extras) { options = options.copy(extras = it) }
+                        // 2.0.0 [RVG-40] (조건 13) an 알바's 대근 is its 대타.
+                        PartRow("연장·휴무일 근무", com.bamnat.core.work.TypeWords.say(style, "이름과 시간, 날마다 ${ShareLinkPayload.EXTRAS_PER_DAY}개까지. 끄면 대근만 근무로 보여요"),
+                            options.extras) { options = options.copy(extras = it) }
                     }
                     PartRow("메모", "날짜마다 첫 줄, ${ShareLinkPayload.MEMO_CHARS}자까지", options.memos) { options = options.copy(memos = it) }
                     // 1.36 PC C20 (켜면 금액이 그대로 나감): turning the money on asks once, saying the receiver sees the amounts.
                     var askMoney by remember { mutableStateOf(false) }
-                    PartRow(kind.label, moneyHint(kind, money), options.pay && hasPay, enabled = hasPay) { on ->
+                    if (moneyRow) PartRow(kind.label, moneyHint(kind, money), options.pay && hasPay, enabled = hasPay) { on ->
                         if (on) askMoney = true else options = options.copy(pay = false)
                     }
                     if (askMoney) com.bamnat.app.ui.components.AlertDialog(
@@ -468,7 +473,7 @@ fun ShareDialog(
             }
             // [FEAT-15] The same days as a calendar feed, for Google, iPhone or Outlook calendars on a computer.
             FeedRow(
-                on = feed && feedOpen, open = feedOpen, busy = busy, url = link?.takeIf { feed && feedOpen }?.feedUrl(),
+                on = feed && feedOpen, open = feedOpen, busy = busy, url = link?.takeIf { feed && feedOpen }?.feedUrl(), days = daysPart,
                 onChange = { on ->
                     if (!feedOpen) { com.bamnat.app.ui.pro.openPro(com.bamnat.app.tier.Feature.ICS_FEED); return@FeedRow }
                     feed = on; store.feed = on
@@ -688,7 +693,12 @@ private fun LinkChips(links: List<ShareLinkState?>, slot: Int, open: Boolean, on
  * computer (URL로 추가) and reads it again every few hours to a day, so the row says both.
  */
 @Composable
-private fun FeedRow(on: Boolean, open: Boolean, busy: Boolean, url: String?, onChange: (Boolean) -> Unit, onCopy: (String) -> Unit) {
+private fun FeedRow(
+    on: Boolean, open: Boolean, busy: Boolean, url: String?,
+    /** 2.0.0 [RVG-40] 검토 PC-175 (조건 13): the link's days as '보여 줄 것' names them (근무, 일한 날, 영업일, 달력). */
+    days: String,
+    onChange: (Boolean) -> Unit, onCopy: (String) -> Unit,
+) {
     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
         Row(
             Modifier.fillMaxWidth().heightIn(min = 48.dp)
@@ -700,7 +710,7 @@ private fun FeedRow(on: Boolean, open: Boolean, busy: Boolean, url: String?, onC
                     Text("캘린더 구독 주소", style = MaterialTheme.typography.bodyLarge)
                     Spacer(Modifier.width(6.dp)); com.bamnat.app.ui.money.ProPill(locked = !open) // [TIER-06]
                 }
-                Text("구글·아이폰·아웃룩 캘린더에 구독으로 넣으면 이 링크의 근무가 따라 바뀌어요",
+                Text("구글·아이폰·아웃룩 캘린더에 구독으로 넣으면 이 링크의 $days${Fmt.iga(days)} 따라 바뀌어요",
                     style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
             androidx.compose.material3.Switch(checked = on, onCheckedChange = null, enabled = !busy)
@@ -722,7 +732,7 @@ private fun FeedRow(on: Boolean, open: Boolean, busy: Boolean, url: String?, onC
 /** [FEAT-15] Where the address goes, as Google's help says (2026-10-22), and how soon a change shows. */
 internal const val FEED_GUIDE =
     "구글 캘린더: 컴퓨터에서 calendar.google.com › 다른 캘린더 + › URL로 추가에 붙여 넣어요. 휴대폰 구글 캘린더 앱에서는 추가할 수 없어요. " +
-        "바뀐 근무는 구글이 다시 읽을 때(몇 시간~하루) 보여요.\n" +
+        "바뀐 것은 구글이 다시 읽을 때(몇 시간~하루) 보여요.\n" +
         "아이폰·맥: 설정 › 캘린더 › 계정 › 구독 캘린더 추가. 아웃룩: 캘린더 추가 › 웹에서 구독.\n" +
         "주소를 아는 사람은 누구나 볼 수 있어요. 링크를 끊으면 구독도 끊겨요."
 

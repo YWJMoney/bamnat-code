@@ -270,8 +270,9 @@ class InquiryViewModel(private val c: AppContainer) : ViewModel() {
         if (edit) c.inquiryStore.saveDraft(q.kind, q.text)
     }
 
-    fun more(id: String, text: String, done: (Inquiry?, String?) -> Unit) = act(done) {
-        c.inquiryApi.more(device, id, text).also { updated ->
+    /** [diag]: 2.0.0 [RVO-28] HQ-150 '점검 기록도 보내기'를 켠 답장의 기록, 끄면 null. */
+    fun more(id: String, text: String, diag: String? = null, done: (Inquiry?, String?) -> Unit) = act(done) {
+        (if (diag == null) c.inquiryApi.more(device, id, text) else c.inquiryApi.more(device, id, text, InquiryClient.newRequestId(), diag)).also { updated ->
             c.inquiryStore.saveReply(id, "")
             _list.value = _list.value.orEmpty().map { if (it.id == id) updated else it }
         }
