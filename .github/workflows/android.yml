@@ -103,14 +103,14 @@ jobs:
       - if: always()
         run: python3 tools/slow_tests.py core/build/test-results --json build/tests/tests-core.json --base build/base/tests-core.json >> "$GITHUB_STEP_SUMMARY"
       - if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: tests-core
           path: shift-calendar-app/build/tests/tests-core.json
           retention-days: 14
           if-no-files-found: ignore
       - if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: core-reports
           path: shift-calendar-app/core/build/reports
@@ -255,7 +255,7 @@ jobs:
             echo "### 어제와 다른 화면 사진: 견줄 지난 지문이 없어요(첫 실행이거나 지난 결과가 지워짐)" >> "$GITHUB_STEP_SUMMARY"
           fi
       - if: always() && startsWith(matrix.set, 'shots-')
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: shot-prints-${{ matrix.set }}
           path: |
@@ -280,14 +280,14 @@ jobs:
       - if: always()
         run: python3 tools/slow_tests.py app/build/test-results/testDebugUnitTest --json app/build/tests-${{ matrix.set }}.json --base build/base/tests-${{ matrix.set }}.json >> "$GITHUB_STEP_SUMMARY"
       - if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: tests-app-${{ matrix.set }}
           path: shift-calendar-app/app/build/tests-${{ matrix.set }}.json
           retention-days: 14
           if-no-files-found: ignore
       - if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: app-reports-${{ matrix.set }}
           path: |
@@ -322,7 +322,7 @@ jobs:
           python3 tools/bundle_check.py build/tests-all --needs build/needs.json --sha "$GITHUB_SHA" \
             --run "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" --out build/bundle-check >> "$GITHUB_STEP_SUMMARY" || true
           echo "묶음 확인 파일: 이 실행의 bundle-check 파일(묶음-확인.md)" >> "$GITHUB_STEP_SUMMARY"
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: bundle-check
           path: shift-calendar-app/build/bundle-check
@@ -398,7 +398,7 @@ jobs:
       - if: always() && steps.changed.outputs.server == '1'
         run: python3 tools/slow_tests.py app/build/test-results/testDebugUnitTest >> "$GITHUB_STEP_SUMMARY"
       - if: always() && steps.changed.outputs.server == '1'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: server-app-reports
           path: |
@@ -501,7 +501,7 @@ jobs:
         if: always() && steps.changed.outputs.run == '1'
         run: python3 tools/market_health.py --shots app/build/market-compare.json --old app/build/old-core-check.json --build "$GITHUB_SHA" --out app/build/market-shots/market-health.json >> "$GITHUB_STEP_SUMMARY"
       - if: always() && steps.changed.outputs.run == '1'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: market-shots
           path: |
@@ -563,7 +563,7 @@ jobs:
           prev=$(find ../../../prev-admin-shots -name shots.json | head -1)
           node tools/admin-shots.mjs --start --out build/admin-shots --prev "${prev:--}" >> "$GITHUB_STEP_SUMMARY"
       - if: always() && steps.changed.outputs.run == '1'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: admin-shots
           path: |
@@ -598,7 +598,7 @@ jobs:
       - if: always()
         run: python3 tools/slow_tests.py wear/build/test-results >> "$GITHUB_STEP_SUMMARY"
       - if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: lint-reports
           path: |

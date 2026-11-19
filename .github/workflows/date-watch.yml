@@ -103,7 +103,7 @@ jobs:
             fi
           done
       - if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: date-watch-servers-${{ matrix.days }}
           path: ${{ runner.temp }}/dw/json
@@ -136,7 +136,7 @@ jobs:
         if: always()
         run: python3 tools/date_watch.py report --label core --days ${{ matrix.days }} core/build/test-results --out build/date-watch/core+${{ matrix.days }}.json >> "$GITHUB_STEP_SUMMARY"
       - if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: date-watch-core-${{ matrix.days }}
           path: shift-calendar-app/build/date-watch
@@ -193,7 +193,7 @@ jobs:
           python3 tools/date_watch.py report --label core --head "${core_when:-?} 시작(자정 넘김)" core/build/test-results --out build/date-watch/core-${{ matrix.when }}.json >> "$GITHUB_STEP_SUMMARY"
           python3 tools/date_watch.py report --label "앱 (unit)" --head "${app_when:-?} 시작(자정 넘김)" app/build/test-results/testDebugUnitTest --out build/date-watch/app-${{ matrix.when }}.json >> "$GITHUB_STEP_SUMMARY"
       - if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: date-watch-hours-${{ matrix.when }}
           path: shift-calendar-app/build/date-watch
@@ -231,7 +231,7 @@ jobs:
         if: always()
         run: python3 tools/date_watch.py report --label "앱 (unit)" --days 30 app/build/test-results/testDebugUnitTest --out build/date-watch/app+30.json >> "$GITHUB_STEP_SUMMARY"
       - if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: date-watch-app-30
           path: shift-calendar-app/build/date-watch
