@@ -77,7 +77,7 @@ test('WEB-24 인쇄 달력: 종이에도 한 해 요약(공휴일·야간 횟수
 
 test('U50-14 알바 주간 양식: 휴게는 한 주 합계(분)라고 머리에 적혀 있어요', () => {
   const x = path.join(root, 'form/files/bamnat-alba-week.xlsx');
-  const py = spawnSync('python3', ['-I', '-c',
+  const py = spawnSync('python3', ['-c',
     'import sys,openpyxl\nws=openpyxl.load_workbook(sys.argv[1]).active\nprint(" | ".join(str(c.value) for r in ws.iter_rows(min_row=1,max_row=3) for c in r if c.value))', x], { encoding: 'utf8' });
   assert.equal(py.status, 0, py.stderr);
   assert.match(py.stdout, /한 주 휴게 합계\(분\)/);
