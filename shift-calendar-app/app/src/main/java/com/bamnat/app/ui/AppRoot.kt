@@ -675,6 +675,10 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
                 if (NoticeLinks.payload.value == com.bamnat.app.company.PlazaPush.WAITING) {
                     com.bamnat.app.ui.company.PlazaLensLink.next = com.bamnat.app.ui.company.Lens.WAITING
                 }
+                // 2.0.0 [RVN-24] I10ac-03: '오늘 야간 어땠어요?' opens on 나와 같은 근무 (only when my tag shows a 근무형태).
+                if (NoticeLinks.payload.value == com.bamnat.app.company.PlazaAfterShift.SAME) {
+                    com.bamnat.app.ui.company.PlazaLensLink.next = com.bamnat.app.ui.company.Lens.SAME
+                }
                 com.bamnat.app.ui.company.TalkSheets.closeAll()
                 com.bamnat.app.ui.hub.HubLinks.open(com.bamnat.app.ui.hub.HubSection.TALK)
                 nav.navigateTopLevel(TopLevel.PLAZA.route); NoticeLinks.consume(target)

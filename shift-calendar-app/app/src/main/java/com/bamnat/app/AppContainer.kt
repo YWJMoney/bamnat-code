@@ -1269,6 +1269,8 @@ class AppContainer(context: Context) {
                     .debounce(500).collect {
                         com.bamnat.app.alarm.LeaveTimeNotice.reschedule(appContext)
                         com.bamnat.app.money.DayCloseNotice.reschedule(appContext)
+                        // 2.0.0 [RVN-24] I10ac-03 근무가 끝나면 한 줄 묻기 follows the same roster (its switch: when it is saved).
+                        runCatching { com.bamnat.app.company.PlazaAfterShift.reschedule(appContext) }
                         // 1.38 [LEDH-24] 근무 전 한 줄 예고, in the same job (시작 예산).
                         com.bamnat.app.money.ShiftPreviewNotice.reschedule(appContext)
                     }

@@ -268,6 +268,11 @@
             android:name=".alarm.LeaveTimeReceiver"
             android:exported="false" />
 
+        <!-- 2.0.0 [RVN-24] I10ac-03: '오늘 야간 어땠어요?' after a shift, and the line written on it. -->
+        <receiver
+            android:name=".company.PlazaAfterShiftReceiver"
+            android:exported="false" />
+
         <!-- 2.0.0 [RVN-22] I10bb-04: '해결됐어요' on the notice of an answer. -->
         <receiver
             android:name=".company.InquiryFixedReceiver"

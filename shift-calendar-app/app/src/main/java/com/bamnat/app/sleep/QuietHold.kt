@@ -46,6 +46,16 @@ object QuietHold {
         true
     }
 
+    /**
+     * 2.0.0 [RVN-24] 검토 I10ac-03: whether a notice about now would be held for sleep at [now] (the 잠 시간 on, the calendar's planned
+     * sleep or a logged one); such a notice is better not sent at all. Work does not count here.
+     */
+    suspend fun asleepNow(context: Context, now: LocalDateTime): Boolean = lock.withLock {
+        val c = context.appContainer
+        val settings = c.settingsRepository.current
+        settings.quietWhileAsleep && runCatching { holdUntil(c, settings, now, now, Source.MONEY) != null }.getOrDefault(false)
+    }
+
     /** Sends what may come now and sets an alarm for the rest: when the hold alarm rings, and when the user wakes. */
     suspend fun release(context: Context) = lock.withLock {
         val c = context.appContainer

@@ -132,6 +132,9 @@ internal fun PlazaTagScopeDialog(c: AppContainer, room: String?, onDismiss: () -
     // 1.39 [PLZC-41] 광장 알림 두 가지, saved with the rest.
     var pushAnswers by remember { mutableStateOf(com.bamnat.app.company.PlazaPush.answers(c.appContext)) }
     var pushSame by remember { mutableStateOf(com.bamnat.app.company.PlazaPush.same(c.appContext)) }
+    // 2.0.0 [RVN-24] I10ac-03 근무가 끝나면 한 줄 묻기 (my own kind of work with a day that ends).
+    var afterShift by remember { mutableStateOf(com.bamnat.app.company.PlazaAfterShift.on(c.appContext)) }
+    val afterRoom = remember { com.bamnat.app.company.PlazaAfterShift.room(c) }
     val watchRoom = remember { com.bamnat.app.company.PlazaPush.watchRoom(c) }
     val watchForm by produceState<String?>(null, s.form) {
         value = if (!s.form) null else watchRoom?.let { runCatching { c.plazaTags.tagFor(it)?.form?.label }.getOrNull() }
@@ -185,6 +188,7 @@ internal fun PlazaTagScopeDialog(c: AppContainer, room: String?, onDismiss: () -
                     if (watchForm == null) Text("근무형태가 태그에 보일 때 쓸 수 있어요.", style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
+                if (afterRoom != null) ScopeRow("근무가 끝나면 ‘오늘 어땠어요?’ 한 줄 묻기", afterShift) { afterShift = it }
                 Text(if (c.settingsRepository.current.plazaNews) "밤낮 소식 알림 하나로 와요. 자는 시간·근무 중에는 모아 두었다 알려요."
                     // 2.0.0 [RVN-21] the page's own name (it said 알림, the page is 알림과 잠).
                     else "${settingsWay("plaza.news", c.settingsRepository.current.workStyle)}이 꺼져 있어 지금은 오지 않아요.",
@@ -195,9 +199,13 @@ internal fun PlazaTagScopeDialog(c: AppContainer, room: String?, onDismiss: () -
             c.plazaTags.setScope(s)
             com.bamnat.app.company.PlazaPush.setAnswers(c.appContext, pushAnswers)
             com.bamnat.app.company.PlazaPush.setSame(c.appContext, pushSame && watchForm != null)
+            if (afterRoom != null && afterShift != com.bamnat.app.company.PlazaAfterShift.on(c.appContext)) {
+                com.bamnat.app.company.PlazaAfterShift.setOn(c.appContext, afterShift)
+            }
             c.appScope.launch {
                 runCatching { com.bamnat.app.company.PushPhone.sync(c) }
                 com.bamnat.app.company.PlazaPush.syncWatch(c)
+                runCatching { com.bamnat.app.company.PlazaAfterShift.reschedule(c.appContext) }
             }
             onDismiss()
         }) { Text("저장") } },
