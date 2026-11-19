@@ -13,6 +13,7 @@ import com.bamnat.core.recipe.Recipe
 import com.bamnat.core.recipe.ScreenLook
 import com.bamnat.core.recipe.ScreenLooks
 import com.bamnat.core.work.WorkStyle
+import kotlinx.coroutines.async
 import kotlinx.coroutines.runBlocking
 import org.junit.After
 import org.junit.Before
@@ -32,15 +33,30 @@ import org.junit.runner.RunWith
 class LiveTryOnTest {
     private val c get() = ApplicationProvider.getApplicationContext<BamnatApp>().container
 
-    // 2.0.0 [RVM-58] (총괄 HQ: a full run across midnight stopped here twice for over 10 minutes, with no thread of the app running):
-    // what 입어 보기 keeps for the JVM is emptied before and after each test, and a test that does not end in a minute fails with
-    // where it waited (the coroutine's stack) instead of holding the whole run.
+    // 2.0.0 [RVM-58] (총괄 HQ: full runs stopped here for over 10 and 70 minutes, at midnight and not, with no thread of the app running —
+    // the shape of a runBlocking on Robolectric's main thread waiting for work the app sent to that same main thread): what 입어 보기
+    // keeps for the JVM is emptied before and after each test, and the test body runs off the main thread while this one keeps the main
+    // looper going, as a phone's does. A body that still does not end in a minute fails, naming the app's frames on every thread.
     @Before fun fresh() = LiveTryOn.resetForTest()
 
     @After fun letGo() { LiveTryOn.drop(c); LiveTryOn.resetForTest() }
 
-    private fun bounded(block: suspend kotlinx.coroutines.CoroutineScope.() -> Unit) =
-        runBlocking { kotlinx.coroutines.withTimeout(60_000, block) }
+    private fun bounded(block: suspend kotlinx.coroutines.CoroutineScope.() -> Unit) {
+        val run = kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.Default).async(block = block)
+        val until = System.nanoTime() + 60_000_000_000L
+        while (!run.isCompleted) {
+            org.robolectric.Shadows.shadowOf(android.os.Looper.getMainLooper()).idle()
+            if (System.nanoTime() - until > 0) {
+                run.cancel()
+                val app = Thread.getAllStackTraces().mapNotNull { (t, st) ->
+                    st.filter { it.className.startsWith("com.bamnat") }.takeIf { it.isNotEmpty() }?.let { "${t.name}: " + it.take(6).joinToString(" < ") }
+                }
+                throw AssertionError("1분 안에 끝나지 않았어요. 앱 코드가 있는 스레드: " + app.ifEmpty { listOf("없음(기다리는 코루틴)") }.joinToString(" | "))
+            }
+            Thread.sleep(2)
+        }
+        runBlocking { run.await() }
+    }
 
     /** What 입기 would leave, worked out without putting it on, against what it does leave. */
     private suspend fun sameAsWorn(r: Recipe, wear: suspend () -> Unit) {

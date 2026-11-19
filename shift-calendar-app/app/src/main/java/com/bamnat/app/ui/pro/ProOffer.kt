@@ -121,7 +121,8 @@ internal fun ProOfferContent(c: AppContainer, feature: Feature?, gate: Gate, onP
                 Text(it, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.primary)
             }
             said?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
-            InviteShareAction(c, onMessage = { said = it }, makeLabel = "친구 초대 링크 만들기", tonal = true)
+            // 2.0.0 [RVO-13] 총괄 사진 검토 HQ-70: in the dark the 옅은 채움 weighed as much as '처음 7일 무료로 열기' (조건 2); a line here.
+            InviteShareAction(c, onMessage = { said = it }, makeLabel = "친구 초대 링크 만들기", outlined = true)
         }
         Spacer(Modifier.width(1.dp).padding(bottom = 12.dp))
     }

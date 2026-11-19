@@ -122,7 +122,6 @@ import com.bamnat.app.ui.components.ConfirmDialog
 import kotlinx.coroutines.launch
 import java.time.Instant
 import java.time.ZoneId
-import java.time.format.DateTimeFormatter
 import com.bamnat.core.time.Today
 
 /**
@@ -473,10 +472,13 @@ private fun Inquiry.label(unread: Boolean): Pair<String, Tone> = when {
     else -> "답을 기다려요" to Tone.WAIT
 }
 
-private val stamp = DateTimeFormatter.ofPattern("M월 d일 HH:mm")
-
-/** "10월 18일 21:05" in this phone's time zone. */
-private fun stampOf(at: Instant): String = at.atZone(Today.zone()).format(stamp)
+/**
+ * "10월 18일 21:05" (or "10월 18일 오후 9:05") in this phone's time zone. 2.0.0 [RVO-17] 검토 SET-12: the time as 오전/오후로 보기 says,
+ * as every time in the app ([com.bamnat.app.ui.Fmt.time]).
+ */
+private fun stampOf(at: Instant): String = at.atZone(Today.zone()).let {
+    "${com.bamnat.app.ui.Fmt.monthDay(it.toLocalDate())} ${com.bamnat.app.ui.Fmt.time(it.toLocalTime())}"
+}
 
 /** "[달력] " and the like at the start of a question: the screen it was asked from. */
 private val TAG = Regex("^\\[[^\\]]{1,30}]\\s*")
@@ -528,7 +530,9 @@ private fun InquiryForm(
             if (made.size < uris.size) error = "열 수 없는 사진은 빼고 붙였어요"
         }
     }
-    val problem = if (mail) text.takeIf { it.length > InquiryClient.TEXT_MAX }?.let { "${InquiryClient.TEXT_MAX}자까지 쓸 수 있어요" } else vm.problem(text)
+    // 2.0.0 [RVO-28] HQ-150 ②: 알람 점검 보고서를 글에 붙여 넣었으면 2,000자 말 대신 '점검 기록도 보내기'로 가자고 말해요.
+    val pasted = com.bamnat.core.diag.PastedCheck.start(text) != null
+    val problem = replyProblem(if (mail) text.takeIf { it.length > InquiryClient.TEXT_MAX }?.let { "${InquiryClient.TEXT_MAX}자까지 쓸 수 있어요" } else vm.problem(text), pasted)
     // The alarm check helps most when the app misbehaves, so it is offered ticked there.
     LaunchedEffect(kind) { if (kind == InquiryKind.BUG && pay == null && check == null) withCheck = true }
     // 1.32.1 [STAB-14] About the app stopping (from its notice or card, or the words say so): the record starts with 앱 멈춤.
@@ -576,11 +580,11 @@ private fun InquiryForm(
         StepTitle("2. 무슨 일인지 적어 주세요")
         LongTextField(
             value = text,
-            onValueChange = { text = it.take(InquiryClient.TEXT_MAX + 50) },
+            onValueChange = { text = it.take(if (com.bamnat.core.diag.PastedCheck.start(it) != null) InquiryClient.DIAG_MAX + InquiryClient.TEXT_MAX else InquiryClient.TEXT_MAX + 50) },
             modifier = Modifier.fillMaxWidth().heightIn(min = 140.dp),
             minLines = 5,
             placeholder = { Text(if (pay != null) PAY_PLACEHOLDER else placeholder(kind)) },
-            isError = problem != null,
+            isError = problem != null && !pasted,
             supportingText = {
                 Row {
                     Text(problem ?: "언제, 어느 화면에서였는지 적으면 더 빨리 답할 수 있어요", modifier = Modifier.weight(1f))
@@ -589,6 +593,8 @@ private fun InquiryForm(
                 }
             },
         )
+        if (pasted) TextButton(onClick = { text = com.bamnat.core.diag.PastedCheck.without(text); withCheck = true },
+            modifier = Modifier.heightIn(min = 48.dp)) { Text(PASTED_TAKE) }
         // [UX-05] An answer that fits what is being written, before it is sent.
         val body = bodyOf(text)
         val hiddenKinds = com.bamnat.app.ui.flags.rememberHiddenKinds()
@@ -631,8 +637,7 @@ private fun InquiryForm(
                 }
                 Spacer(Modifier.height(4.dp))
                 // 1.32.1 [STAB-13] Named for what it holds: an app that stopped is not an alarm problem.
-                CheckRow("점검 기록도 보내기", if (stop) "앱이 멈춘 곳과 그때의 화면·메모리 상태, 권한 상태가 먼저 들어 있어요. 적은 글·금액은 없어요"
-                    else "다음 알람 시각과 근무 이름, 권한 상태, 최근 알람·앱 멈춤 기록이 들어 있어요",
+                CheckRow("점검 기록도 보내기", if (stop) STOP_RECORD_DETAIL else CHECK_RECORD_DETAIL,
                     checked = withCheck, onChange = { withCheck = it })
                 TextButton(onClick = { showCheck = !showCheck }) {
                     Text(if (showCheck) "기록 접기" else "보낼 기록 보기")
@@ -749,9 +754,11 @@ private fun DraftLine(text: String, action: String, secondary: Pair<String, () -
 private const val PAY_PLACEHOLDER = "예: 9월 야간수당이 명세서보다 3시간만큼 적게 나와요. 금액 대신 시간이나 비율로 적어 주세요"
 
 /** A ticked line of what goes with the question. */
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun CheckRow(title: String, detail: String, checked: Boolean, onChange: (Boolean) -> Unit) {
-    Row(
+private fun CheckRow(title: String, detail: String, checked: Boolean, onChange: (Boolean) -> Unit,
+    showing: Boolean? = null, onShow: () -> Unit = {}) {
+    if (showing == null) Row(
         Modifier.fillMaxWidth().toggleable(value = checked, role = Role.Checkbox, onValueChange = onChange),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -761,6 +768,41 @@ private fun CheckRow(title: String, detail: String, checked: Boolean, onChange: 
             Text(title, style = MaterialTheme.typography.bodyLarge)
             Text(detail, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
+    } else {
+        // 2.0.0 [RVO-28] 답장 칸 아래: 한 줄(48dp)에 켜기와 '보낼 기록 보기'. 무엇이 드는지는 ⓘ 대신 기록 보기로 그대로 보여요.
+        // 접은 폭·글자 200%에서 '보낼 기록 보기'는 다음 줄로 내려가고, 스위치 이름은 한 줄로 남아요(조건 12).
+        FlowRow(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween,
+            itemVerticalAlignment = Alignment.CenterVertically) {
+            Row(
+                Modifier.heightIn(min = 48.dp).toggleable(value = checked, role = Role.Checkbox, onValueChange = onChange)
+                    .semantics { stateDescription = if (checked) "켬. $detail" else "끔. $detail" },
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Checkbox(checked = checked, onCheckedChange = null)
+                Spacer(Modifier.width(4.dp))
+                Text(title, style = MaterialTheme.typography.bodyMedium)
+            }
+            TextButton(onClick = onShow) { Text(if (showing) "기록 접기" else "보낼 기록 보기") }
+        }
+    }
+}
+
+/** 2.0.0 [RVO-28] 점검 기록 줄의 설명: 새 문의와 답장이 같은 말을 써요. */
+internal const val CHECK_RECORD_DETAIL = "다음 알람 시각과 근무 이름, 권한 상태, 최근 알람·앱 멈춤 기록이 들어 있어요"
+internal const val STOP_RECORD_DETAIL = "앱이 멈춘 곳과 그때의 화면·메모리 상태, 권한 상태가 먼저 들어 있어요. 적은 글·금액은 없어요"
+
+/** 2.0.0 [RVO-28] HQ-150 ②: 붙여 넣은 점검 보고서에 다음 할 일. 2,000자를 넘었든 안 넘었든 같은 말이에요. */
+internal const val PASTED_LINE = "점검 기록은 붙여 넣지 않아도 돼요. 아래 '점검 기록도 보내기'를 켜면 함께 가요"
+internal const val PASTED_TAKE = "붙여 넣은 기록 빼고 켜기"
+
+/** 보고서를 붙여 넣은 글은 2,000자 말 대신 [PASTED_LINE]이 보내기를 막아요(빼고 켜면 바로 보낼 수 있어요). */
+internal fun replyProblem(problem: String?, pasted: Boolean): String? = if (pasted) PASTED_LINE else problem
+
+@Composable
+private fun PastedLine(onTake: () -> Unit) {
+    Column(Modifier.fillMaxWidth().semantics(mergeDescendants = false) { liveRegion = LiveRegionMode.Polite }) {
+        Text(PASTED_LINE, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        TextButton(onClick = onTake, modifier = Modifier.heightIn(min = 48.dp)) { Text(PASTED_TAKE) }
     }
 }
 
@@ -785,10 +827,10 @@ private fun ShareSwitch(title: String, detail: String, checked: Boolean, onChang
 
 /** Exactly what will be sent, before it is. */
 @Composable
-private fun Shown(text: String) {
+private fun Shown(text: String, maxHeight: androidx.compose.ui.unit.Dp = 280.dp) {
     Surface(shape = MaterialTheme.shapes.small, color = MaterialTheme.colorScheme.surfaceContainerHigh) {
         Text(text, style = MaterialTheme.typography.bodySmall, fontFamily = FontFamily.Monospace,
-            modifier = Modifier.fillMaxWidth().heightIn(max = 280.dp).verticalScroll(rememberScrollState())
+            modifier = Modifier.fillMaxWidth().heightIn(max = maxHeight).verticalScroll(rememberScrollState())
                 .horizontalScroll(rememberScrollState()).padding(10.dp))
     }
 }
@@ -854,8 +896,18 @@ private fun InquiryThread(vm: InquiryViewModel, i: Inquiry) {
     // [UX-05] More to say is kept until it is sent, like a new question.
     var text by rememberSaveable(i.id) { mutableStateOf(vm.reply(i.id)) }
     var error by remember { mutableStateOf<String?>(null) }
-    val problem = vm.problem(text)
+    // 2.0.0 [RVO-28] HQ-150 (PC-201): 새 문의와 같은 '점검 기록도 보내기'. 끔이 기본이고, 운영팀의 마지막 답이 기록을 부탁했으면 켠 채로.
+    val asked = i.messages.lastOrNull()?.let { it.fromDeveloper && com.bamnat.core.diag.PastedCheck.asked(it.text) } == true
+    var withCheck by rememberSaveable(i.id, asked) { mutableStateOf(asked) }
+    var showCheck by rememberSaveable(i.id) { mutableStateOf(false) }
+    var check by remember(i.id) { mutableStateOf<String?>(null) }
+    val context = LocalContext.current
+    val stop = com.bamnat.core.diag.StopTrail.aboutStop(null, i.messages.firstOrNull { !it.fromDeveloper }?.text.orEmpty())
+    LaunchedEffect(withCheck, showCheck, stop) { if (withCheck || showCheck) check = vm.alarmCheck(context, stop) }
+    val pasted = com.bamnat.core.diag.PastedCheck.start(text) != null
+    val problem = replyProblem(vm.problem(text), pasted)
     LaunchedEffect(i.id, text) { vm.saveReply(i.id, text) }
+    val scope = rememberCoroutineScope()
     Column(Modifier.fillMaxSize()) {
         Column(
             Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState()).padding(horizontal = 16.dp),
@@ -877,7 +929,7 @@ private fun InquiryThread(vm: InquiryViewModel, i: Inquiry) {
             if (i.stage == "released") TextButton(onClick = { com.bamnat.app.NoticeLinks.open(com.bamnat.app.NoticeLinks.Target.WHATS_NEW) }) {
                 Text("새 기능 안내 보기")
             }
-            i.messages.forEach { m -> Bubble(m.text, m.fromDeveloper, stampOf(m.at)) }
+            i.messages.forEach { m -> Bubble(m.text, m.fromDeveloper, stampOf(m.at), withCheck = m.withCheck) }
             if (i.waiting) {
                 Text("개발자가 읽고 답하면 여기에 보여요. 보통 하루 안에 답해요. 설정 탭과 설정 첫 화면에도 표시해 드려요.",
                     style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -903,23 +955,34 @@ private fun InquiryThread(vm: InquiryViewModel, i: Inquiry) {
                 }
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     OutlinedTextField(
+                        // 붙여 넣은 보고서는 6,000자까지 와요. 잘라 버리지 않아야 '붙여 넣은 기록 빼기'가 앞에 적은 말만 남겨요.
                         value = text,
-                        onValueChange = { text = it.take(InquiryClient.TEXT_MAX + 50) },
+                        onValueChange = { text = it.take(if (com.bamnat.core.diag.PastedCheck.start(it) != null) InquiryClient.DIAG_MAX + InquiryClient.TEXT_MAX else InquiryClient.TEXT_MAX + 50) },
                         modifier = Modifier.weight(1f),
-                        placeholder = { Text(if (i.answers > 0) "더 묻거나 답에 대해 적기" else "덧붙일 내용 적기") },
-                        isError = problem != null,
-                        supportingText = if (problem != null) { { Text(problem) } } else null,
-                        maxLines = 5,
+                        placeholder = { Text(if (withCheck) "점검 기록에 덧붙일 말(적지 않아도 돼요)" else if (i.answers > 0) "더 묻거나 답에 대해 적기" else "덧붙일 내용 적기") },
+                        isError = problem != null && !pasted,
+                        supportingText = if (problem != null && !pasted) { { Text(problem) } } else null,
+                        // 붙여 넣은 보고서는 빼고 보낼 것이라 칸을 줄여 답이 더 보이게(조건 1).
+                        maxLines = if (pasted) 3 else 5,
                     )
                     Spacer(Modifier.width(8.dp))
                     IconButton(
                         onClick = {
                             error = null
-                            vm.more(i.id, text) { sent, why -> if (sent != null) { text = "" } else { error = why } }
+                            scope.launch {
+                                val diag = if (withCheck) check ?: vm.alarmCheck(context, stop) else null
+                                val words = text.ifBlank { if (diag != null) com.bamnat.core.diag.PastedCheck.ONLY_RECORD else text }
+                                vm.more(i.id, words, diag) { sent, why -> if (sent != null) { text = ""; withCheck = false; showCheck = false } else { error = why } }
+                            }
                         },
-                        enabled = text.isNotBlank() && problem == null && !busy,
+                        enabled = (text.isNotBlank() || withCheck) && problem == null && !busy,
                     ) { Icon(Icons.AutoMirrored.Outlined.Send, "보내기") }
                 }
+                // [RVO-28] ② 보고서를 붙여 넣었으면: 붙여 넣지 않아도 된다는 말과, 한 번에 빼고 켜는 단추(조건 7·16).
+                if (pasted) PastedLine(onTake = { text = com.bamnat.core.diag.PastedCheck.without(text); withCheck = true })
+                CheckRow("점검 기록도 보내기", if (stop) STOP_RECORD_DETAIL else CHECK_RECORD_DETAIL, checked = withCheck, onChange = { withCheck = it },
+                    showing = showCheck, onShow = { showCheck = !showCheck })
+                if (showCheck) Shown(check ?: "불러오는 중…", maxHeight = 160.dp)
             }
         }
     }
@@ -1211,7 +1274,7 @@ private fun FlagDialog(onDismiss: () -> Unit, onFlag: (InquiryFlag) -> Unit) {
 }
 
 @Composable
-private fun Bubble(text: String, fromDeveloper: Boolean, at: String) {
+private fun Bubble(text: String, fromDeveloper: Boolean, at: String, withCheck: Boolean = false) {
     val scheme = MaterialTheme.colorScheme
     Column(Modifier.fillMaxWidth(), horizontalAlignment = if (fromDeveloper) Alignment.Start else Alignment.End) {
         Text(if (fromDeveloper) "개발자 · $at" else at, style = MaterialTheme.typography.labelSmall, color = scheme.onSurfaceVariant)
@@ -1226,6 +1289,9 @@ private fun Bubble(text: String, fromDeveloper: Boolean, at: String) {
                     color = if (fromDeveloper) scheme.onPrimaryContainer else scheme.onSurface, modifier = Modifier.padding(12.dp))
             }
         }
+        // 2.0.0 [RVO-28] 이 답장과 함께 점검 기록이 갔어요.
+        if (withCheck) Text("점검 기록 함께 보냄", style = MaterialTheme.typography.labelSmall, color = scheme.onSurfaceVariant,
+            modifier = Modifier.padding(top = 2.dp))
         val code = if (fromDeveloper) SOLVED_CODE.find(text)?.groupValues?.get(1) else null
         if (code != null) {
             val open = LocalOpenRecipe.current
@@ -1342,20 +1408,34 @@ private fun HelpHome(
                 SectionLabel("‘${about.orEmpty().substringAfterLast("> ").trim()}’ 도움말")
                 here.forEach { t -> FaqCard(t, expanded == t.id, { toggle(t) }, onAsk = { onAsk("", t) }) }
             }
+            // 2.0.0 [RVO-21] 검토 U11a-13 (답 109개가 한 번에 그려졌어요): the five this kind of work asks most ([forStyle] puts them
+            // first), then the rest only when asked for, twenty at a time.
+            val rest = remember(topics, here) { topics - here.toSet() }
             SectionLabel("자주 묻는 질문")
-            (topics - here.toSet()).forEach { t -> FaqCard(t, expanded == t.id, { toggle(t) }, onAsk = { onAsk("", t) }) }
+            rest.take(HELP_FIRST).forEach { t -> FaqCard(t, expanded == t.id, { toggle(t) }, onAsk = { onAsk("", t) }) }
+            var shown by rememberSaveable { mutableStateOf(0) }
+            // An answer opened from a link stays in view even when it is past the first five.
+            val open = rest.indexOfFirst { it.id == expanded }
+            val upTo = maxOf(shown, if (open >= HELP_FIRST) open + 1 else 0).coerceAtMost(rest.size - HELP_FIRST).coerceAtLeast(0)
+            rest.drop(HELP_FIRST).take(upTo).forEach { t -> FaqCard(t, expanded == t.id, { toggle(t) }, onAsk = { onAsk("", t) }) }
+            val left = rest.size - HELP_FIRST - upTo
+            if (left > 0) TextButton(onClick = { shown = upTo + HELP_PAGE }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
+                Text(if (upTo == 0) "질문 모두 보기 (${left}개 더)" else "더 보기 (${left}개 남음)")
+            }
         } else {
             val found = remember(query, topics) { HelpFaq.search(query, topics) }
-            val settings = remember(query) {
-                SettingsIndex.search(query, SettingsIndex.entries(board = false, share = vm.shareOn), limit = 3)
+            // [GUIDE-07] The features first: where each is, what it does, and whether it is off on this calendar.
+            val guideContainer = LocalContext.current.appContainer
+            // 2.0.0 [RVO-10] (검토 T11a-06): the settings of the calendar on screen's kind of work, as 설정 찾기 finds them.
+            val (helpCalendar, helpStyle) = remember(query) { guideContainer.guideCalendar() }
+            val index = rememberSettingsEntries(board = false, share = vm.shareOn, style = helpStyle, calendar = helpCalendar)
+            val settings = remember(query, index) {
+                SettingsIndex.search(query, index, limit = 3)
                     .filter { (it.place as? SettingPlace.Screen)?.go != SettingsGo.INQUIRY }
             }
             val posts = remember(query, board) { boardMatches(query, board?.items.orEmpty()) }
-            // [GUIDE-07] The features first: where each is, what it does, and whether it is off on this calendar.
-            val guideContainer = LocalContext.current.appContainer
-            val features = remember(query, hiddenKinds) {
-                val (_, style) = guideContainer.guideCalendar()
-                com.bamnat.app.ui.guide.FeatureSearch.search(query, style, hidden = hiddenKinds)
+            val features = remember(query, hiddenKinds, helpStyle) {
+                com.bamnat.app.ui.guide.FeatureSearch.search(query, helpStyle, hidden = hiddenKinds)
             }
             val total = found.size + settings.size + posts.size + features.size
             Text(if (total == 0) "‘$query’에 맞는 답을 찾지 못했어요" else "찾은 답 ${total}개",
@@ -1369,7 +1449,7 @@ private fun HelpHome(
             found.forEach { t -> FaqCard(t, expanded == t.id, { toggle(t) }, onAsk = { onAsk(query, t) }) }
             if (settings.isNotEmpty()) {
                 SectionLabel("설정에서 찾기")
-                settings.forEach { e -> HelpSettingRow(e) }
+                settings.forEach { e -> HelpSettingRow(e, helpStyle) }
             }
             if (posts.isNotEmpty()) {
                 SectionLabel("모두의 문의에서")
@@ -1435,7 +1515,7 @@ private fun FaqCard(topic: HelpTopic, expanded: Boolean, onToggle: () -> Unit, o
 
 /** [UX-05] A setting the help search found, with where it lives; it opens there. */
 @Composable
-private fun HelpSettingRow(e: SettingEntry) {
+private fun HelpSettingRow(e: SettingEntry, style: com.bamnat.core.work.WorkStyle?) {
     Row(
         Modifier.fillMaxWidth().heightIn(min = 56.dp).clip(MaterialTheme.shapes.medium)
             .clickable(role = Role.Button) {
@@ -1449,7 +1529,8 @@ private fun HelpSettingRow(e: SettingEntry) {
     ) {
         Column(Modifier.weight(1f)) {
             Text(e.title, style = MaterialTheme.typography.bodyLarge)
-            Text(settingsPath(e.where), style = MaterialTheme.typography.bodySmall,
+            // [RVO-10] The page in the kind of work's words, as 설정 찾기 says it (가게 '매출과 경비', not '급여와 연차').
+            Text(settingsPath(whereFor(e.where, style)), style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
         Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, null, tint = MaterialTheme.colorScheme.outline)
@@ -1512,3 +1593,7 @@ private fun AskCard(vm: InquiryViewModel, query: String, list: List<Inquiry>?, o
         }
     }
 }
+
+/** 2.0.0 [RVO-21] 검토 U11a-13: the answers shown before 질문 모두 보기, and how many each 더 보기 adds. */
+private const val HELP_FIRST = 5
+private const val HELP_PAGE = 20

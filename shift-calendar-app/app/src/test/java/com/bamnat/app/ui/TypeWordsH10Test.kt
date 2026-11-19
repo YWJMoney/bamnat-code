@@ -40,7 +40,7 @@ class TypeWordsH10Test {
         val shop = all.forStyle(WorkStyle.BUSINESS).associateBy { it.id }
         val del = shop.getValue("deleteShiftType")
         assertEquals("만든 영업 종류를 지우고 싶어요", del.question)
-        assertTrue(del.answer, del.answer.startsWith("설정 › 내 근무 › ‘영업시간’에서 영업 옆 휴지통을 눌러요. 그 영업이 달력·영업일·정기휴무에"))
+        assertTrue(del.answer, del.answer.startsWith("설정 › 내 가게 › ‘영업시간’에서 영업 옆 휴지통을 눌러요. 그 영업이 달력·영업일·정기휴무에"))
         assertTrue(del.answer, "다른 영업으로" in del.answer)
         assertEquals("영업시간 열기", del.action?.first)
         assertEquals("하루만 영업을 바꾸고 싶어요", shop.getValue("oneday").question)

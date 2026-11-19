@@ -1,5 +1,7 @@
 package com.bamnat.app.alarm
 
+import com.bamnat.app.TestClock
+import org.junit.Before
 import android.app.AlarmManager
 import android.app.Application
 import android.app.Notification
@@ -43,6 +45,11 @@ import java.time.ZoneId
 @RunWith(AndroidJUnit4::class)
 @Config(sdk = [35])
 class M10NoticeTest {
+    // 2.0.0 [RVR-44] (총괄 HQ-123): the hour is set (10:00 today, ticking) so the result does not hang on when the run starts.
+    @Before fun hourOfDay() = TestClock.at(10)
+
+    @After fun clockBack() = Today.reset()
+
     private val context: Application = ApplicationProvider.getApplicationContext()
     private val nm = context.getSystemService(NotificationManager::class.java)
     private fun posted(id: Int): Notification? = shadowOf(nm).getNotification(id)

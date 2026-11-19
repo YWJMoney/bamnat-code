@@ -1188,11 +1188,15 @@ class AppContainer(context: Context) {
         }
         // [MON-06] The trial's notice follows the subscription and the user's answer; 840·841: so does the 7-days-before notice of a
         // yearly renewal or a 1년 이용권's end (one job, inside the start's budget [PERF-10]).
+        // 2.0.0 [RVO-14] (I11bb-02·PRO-29) and the evening before 프로 or the 끄기 미션's 7 days end by themselves, from the gate alone.
         keep("trialnotice") {
-            proStore.state.map { listOf(it.sub, it.consentAt, it.trialNoticeFor, it.trialFinalFor, it.yearPassUntil, it.endNoticeFor) }.distinctUntilChanged()
+            combine(proStore.state.map { listOf(it.sub, it.consentAt, it.trialNoticeFor, it.trialFinalFor, it.yearPassUntil, it.endNoticeFor) },
+                featureGate.state.map { listOf(it.ends, it.access.pro, it.leases.until[com.bamnat.core.tier.FeatureLease.Bundle.ALARM], it.free) }) { p, g -> p to g }
+                .distinctUntilChanged()
                 .collect {
                     com.bamnat.app.tier.TrialNotice.reschedule(appContext, proStore.current)
                     com.bamnat.app.tier.EndNotice.reschedule(appContext, proStore.current)
+                    com.bamnat.app.tier.ProEndNotice.reschedule(appContext, featureGate.state.value)
                 }
         }
         appScope.launch {

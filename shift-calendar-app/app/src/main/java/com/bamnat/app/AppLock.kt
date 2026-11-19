@@ -151,4 +151,30 @@ object AppLock {
     fun onConfirmed(ok: Boolean) {
         if (ok) _locked.value = false
     }
+
+    /**
+     * 2.0.0 [RVO-16] 검토 SET-09 (앱 잠금을 인증 없이 켜고 끌 수 있어요): the phone's lock asked once before 앱 잠금 is turned on or off, so a
+     * phone left open for a moment cannot switch it off, and whoever turns it on can open it. [onOk] when it was passed; before Android 11
+     * the phone's own confirm screen goes through [confirm]. Without a lock on the phone there is nothing to ask.
+     */
+    fun check(activity: Activity, title: String, onOk: () -> Unit, confirm: (Intent) -> Unit) {
+        if (!available(activity)) { onOk(); return }
+        if (Build.VERSION.SDK_INT >= 30) {
+            val prompt = android.hardware.biometrics.BiometricPrompt.Builder(activity)
+                .setTitle(title)
+                .setSubtitle("휴대폰 잠금과 같은 방법으로 확인해요")
+                .setAllowedAuthenticators(
+                    android.hardware.biometrics.BiometricManager.Authenticators.BIOMETRIC_WEAK or
+                        android.hardware.biometrics.BiometricManager.Authenticators.DEVICE_CREDENTIAL,
+                )
+                .build()
+            prompt.authenticate(CancellationSignal(), activity.mainExecutor, object : android.hardware.biometrics.BiometricPrompt.AuthenticationCallback() {
+                override fun onAuthenticationSucceeded(result: android.hardware.biometrics.BiometricPrompt.AuthenticationResult?) = onOk()
+            })
+        } else {
+            @Suppress("DEPRECATION")
+            val intent = activity.getSystemService(KeyguardManager::class.java)?.createConfirmDeviceCredentialIntent(title, "휴대폰 잠금과 같은 방법으로 확인해요")
+            if (intent == null) onOk() else confirm(intent)
+        }
+    }
 }

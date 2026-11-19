@@ -170,7 +170,8 @@ class SettingsFilesBackup(
             Part("wish_off"),
             // 1.36 [VIL-13] 마을 › 간직한 글: posts kept to read again, only on the phone (the server keeps no list).
             Part("village_saved"),
-            // 1.39 [PLZC-10] 광장 근무 태그에 무엇을 보일지(근무형태·업종·개월·근무 중): 새 휴대폰에서도 같게.
+            // 1.39 [PLZC-10] 광장 근무 태그에 무엇을 보일지(근무형태·업종·개월·근무 중): 새 휴대폰에서도 같게. 2.0.0 [RVL-54] Only here, not
+            // also in DEVICE_ONLY (ZFullBackupTest.noFileIsBothMovedAndKeptOnThePhone).
             Part("plaza_tag"),
             // [FREE-10] 1.35 테마 옷장: 입었던 테마, 내 테마, the look kept aside while a theme is on. The 3일 전 notice said and
             // the 프로 mark are this phone's.
@@ -253,11 +254,13 @@ class SettingsFilesBackup(
             // 2.0.0 [RVP-43] 알림함의 줄(사람들 반응·안내·권유)과 오늘 X로 넣어 둔 달력 알림: 이 휴대폰에 온 것이라, 새 휴대폰은 빈 알림함에서 시작해요.
             "inbox" to "알림함의 줄(내 글·작품에 온 반응, 안내, 권유), 이 휴대폰에 온 것이고 30일 뒤 지워요",
             "notice_snooze" to "달력 알림을 X로 오늘 하루 알림함에 넣어 둔 것, 이 휴대폰의 오늘 하루 것",
+            // 2.0.0 갈래 P 5 검토 PC-180: ✕로 닫은 권유가 2주 쉬는 날짜. 잠깐 쉬는 것이라 새 휴대폰은 처음처럼 받아요(⋮ 다시 보지 않기는 inbox_muted로 옮겨요).
+            "inbox_rest" to "알림함 권유를 ✕로 닫은 날(2주 동안 다시 권하지 않으려고), 이 휴대폰의 것이고 2주 뒤 지워요",
             // 2.0.0 [RVS-03] 검토 SN-10: '칸 꾸밈은 월 판에서 보여요' 한 줄을 X로 닫은 것.
             "calendar_hints" to "달력의 한 번만 보이는 안내 줄을 닫은 것, 이 휴대폰의 것이고 새 휴대폰에선 한 번 다시 보여요",
             // 1.39 [LOOP-13] Play 인앱 업데이트를 물어본 판: 이 휴대폰에 깔린 판의 일이라 옮기지 않아요.
             "in_app_update" to "Play 인앱 업데이트를 이 판에서 이미 물어봤는지, 이 휴대폰에 깔린 판의 것",
-            "plaza_tag" to "광장 근무 태그 공개 범위(근무 형태·업종·밤낮 쓴 기간·지금 근무 중)는 이 휴대폰에만, 새 휴대폰에서 한 번 다시 골라요(PLZC-10)",
+            // 2.0.0 [RVL-54] (검토 DATA-28) "plaza_tag" was here too, while PARTS moves it ('새 휴대폰에서도 같게', PLZC-10): it moves.
             "share_forget" to "모두 지우기 때 아직 못 지운 공유 링크(종류:번호), 이 휴대폰이 인터넷이 되면 마저 지움. 지운 뒤 남은 일이라 되살린 폰에 옮기지 않아요",
             // 1.38 [P3-X-08] 신고·지급 '했어요' 표시: 알림 목록이라 복원 뒤엔 지난 일이 길어야 일주일 다시 보여요.
             "boss_filed" to "다가올 신고·지급에서 '했어요'를 누른 것, 이 휴대폰의 것",
@@ -273,6 +276,12 @@ class SettingsFilesBackup(
             "fold_rows" to "꾸미기 줄을 펼쳐 둘지 접어 둘지(줄마다), 이 휴대폰 화면에 맞춘 것",
             // [MAT-05] 1.36 글꼴 고르기의 최근 쓴 글꼴 다섯, 이 휴대폰의 것.
             "font_recent" to "글꼴 고르기에서 최근 고른 글꼴(다섯 개), 이 휴대폰의 것",
+            // 2.0.0 [RVO-20] 연장·휴일 근무를 쓰다 앱이 닫혀도 남는 쓰던 것: 이 휴대폰에서 쓰던 중인 것이라 옮기지 않아요.
+            "extra_kind_draft" to "연장·휴일 근무 종류를 쓰던 중인 것(앱이 닫혀도 이어 쓰게), 이 휴대폰의 것",
+            // 2.0.0 [RVO-16] 보낸 정보 지우기의 마지막 요청 시각과 결과: 이 휴대폰이 보낸 요청이라 옮기지 않아요.
+            "forget_all" to "'보낸 정보 모두 지우기'를 마지막으로 요청한 때와 결과, 이 휴대폰의 것",
+            // 2.0.0 [RVO-14] 프로가 끝나기 전날 알림을 그 끝에 한 번 말했는지: 이 휴대폰에 온 알림의 것.
+            "pro_end_notice" to "프로·끄기 미션이 끝나기 전날 알림을 이미 보냈는지(끝마다 한 번), 이 휴대폰의 것",
             "font_waiting" to "테마가 쓰는데 아직 못 받은 나눈 글꼴(운영자 확인 전 등), 앱을 열 때 다시 받아 보려고 2주 동안 적어 둠",
             "font_standin" to "아직 못 받은 나눈 글꼴 대신 보일 비슷한 앱 글꼴(보낸 분 휴대폰이 고른 것), 이 휴대폰의 것",
             // PC 재검토 N3 1.36: the look from before a studio wear, for a day's '입히기 전 모양으로'; a restored phone has no such moment.

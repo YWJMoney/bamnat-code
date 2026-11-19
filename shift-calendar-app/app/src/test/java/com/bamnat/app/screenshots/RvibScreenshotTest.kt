@@ -178,10 +178,11 @@ class RvibScreenshotTest : ScreenshotBase() {
         tapText("알람 점검 · ", prefix = true, across = if (wide) 0.75f else 0.5f)
     }
 
-    // [RVIB-05] 설정 › 알림과 잠 › 메모·할 일: 근무 중 메모 알림 모으기·쉬는 날 아침 지난 할 일, [RVI-96] 충전하면 잠 잡기.
+    // [RVIB-05] 설정 › 알림과 잠 › 알림 한눈에(2.0.0 RVO-22, 모든 알림이 한 판): 근무 중 메모 알림 모으기·쉬는 날 아침 지난 할 일.
     @Test fun noticeRows() = eight("notice_rows") { wide ->
         settingsPage("알림과 잠", wide)
-        reveal("메모·할 일", exact = true, across = if (wide) 0.75f else 0.5f)
+        reveal(com.bamnat.app.ui.settings.MEMO_REST_ROW, across = if (wide) 0.75f else 0.5f)
+        org.junit.Assert.assertTrue(appears(com.bamnat.app.ui.settings.MEMO_HOLD_ROW))
     }
 
     // [RVIB-13] (PC-122) 기록이 없을 때 수면 기록: '지금 자려고요?'와 빈 안내 먼저, 소리 카드는 접혀 아래에, 채운 단추는 하나.

@@ -190,6 +190,8 @@ class ReviewP3ShotsTest : ScreenshotBase() {
         assertTrue("되돌리기는 알림함 안", appears("되돌리기", exact = true))
         assertTrue("남긴 까닭", appears("알람에 꼭 필요한 것은 고칠 때까지 남겨 둬요", exact = false))
         assertTrue("알람 경고는 남아요", appears("오늘 알람 끔", exact = false))
+        // 총괄 #512 사진: under its title the row says only what the title does not.
+        assertTrue("알림함 줄 아래 글은 시각만", appears("밤 12시까지", exact = true))
         assertTrue("반응은 지워져요", gone("내 작품 ‘밤바다’", exact = false))
     }
 
@@ -219,6 +221,28 @@ class ReviewP3ShotsTest : ScreenshotBase() {
         waitFor(2_000)
         assertEquals("1일 칸이 그 자리에 있어요(PC-81)", top, firstDayTop(), 0.5f)
         assertEquals("늦게 온 '입힌 모양'은 종으로 가요", bell + 1, bellCount())
+    })
+
+    /** Where the first node whose words start with [prefix] starts, or null when none is on screen. */
+    private fun Screen.topOf(prefix: String): Float? = nodes().firstOrNull { n ->
+        n.boundsInWindow.height > 1f && n.config.getOrNull(SemanticsProperties.Text).orEmpty().any { it.text.startsWith(prefix) }
+    }?.boundsInWindow?.top
+
+    /**
+     * 검토 PC-153 (조건 11, '카드도 함께 보기'에서 띠가 사라지면 오늘의 흐름이 달력 위로 올라가 1일 칸이 480px 내려감): with a band up as the
+     * calendar settles, 오늘의 흐름 stands under the month; the band put away, it stays there, so the month only closes the band's own
+     * line (moves up, never down).
+     */
+    @Test fun aBandGoingDoesNotSwapTheFlowOverTheMonth() = shoot("rvp3_11_band_goes_flow_stays", PHONE, style(WorkStyle.SHIFT) {
+        val top = firstDayTop()
+        val flow = topOf("근무 중") ?: topOf("오늘의 흐름")
+        assertTrue("오늘의 흐름이 달 아래에 있어요", flow != null && flow > top)
+        tapText("알림함에 넣기", exact = true, scrolls = 0)
+        waitFor(1_000)
+        val after = firstDayTop()
+        assertTrue("달은 띠 자리만큼 올라가고 내려가지 않아요: $top → $after", after <= top + 0.5f)
+        val flowAfter = topOf("근무 중") ?: topOf("오늘의 흐름")
+        assertTrue("오늘의 흐름은 달 아래 그대로", flowAfter == null || flowAfter > after)
     })
 
     /** HQ-50: 설정 › 기능 켜고 끄기 › 안내, beside 안 써 본 기능: 권유 끄기, and a kind turned off with its way back. Light and dark 200%. */

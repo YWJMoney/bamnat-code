@@ -4,7 +4,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { deviceHash } from "../src/index.js";
 import { makerId } from "../src/recipes.js";
-import { server, device, from, report, signIn } from "./helpers.mjs";
+import { server, device, from, report, signIn, neighbour } from "./helpers.mjs";
 
 const NOW = Date.parse("2026-11-20T03:00:00Z");
 const mine = (n) => ({ "x-device": device(n) });
@@ -79,6 +79,7 @@ test("HQ-51: a 부탁's likes and someone taking it on, and my entry picked in �
   const act = (n, what) => call("POST", `/api/recipes/requests/${q}/${what}`, { device: device(n) }, from(n));
   await act(2, "like");
   await act(3, "like");
+  await neighbour(DB, 4);
   await act(4, "take");
   // My entry in this month's contest, picked by the operator.
   await DB.prepare("INSERT INTO village_contests (month, style, theme, picks, at) VALUES (?, ?, ?, '[]', ?)").bind("2026-11", "SHIFT", "야간 달력", Date.now()).run();

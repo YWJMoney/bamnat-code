@@ -46,6 +46,7 @@ import com.bamnat.app.data.WorkToolsStore
 import com.bamnat.app.ui.Fmt
 import com.bamnat.app.ui.components.SectionCard
 import com.bamnat.app.ui.components.StatTile
+import com.bamnat.app.ui.components.StatTiles
 import com.bamnat.app.ui.components.TimePickerDialog
 import com.bamnat.app.ui.money.AmountField
 import com.bamnat.app.ui.money.amountDigits
@@ -258,7 +259,7 @@ private fun StaffCostCard(calendarId: String, book: MoneyBook, month: YearMonth)
             Hint("알바생 이름·시급·요일별 시간을 적으면 주휴수당과 4대보험까지 한 달 인건비를 계산하고, 매출 대비 인건비율을 보여 드려요.")
             return@SectionCard
         }
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        StatTiles {
             StatTile("인건비", Fmt.won(cost.total), Modifier.weight(1f), caption = "${roster.staff.size}명 · ${cost.minutes / 60}시간")
             val ratio = cost.ratio(sales)
             // 2.0.0 [RVJ-66] (HQ-103, 조건 6) 인건비율이 높은 것은 주의예요(빨간 칸이었어요): 말과 주의 색.
@@ -293,7 +294,7 @@ private fun LedgerCostCard(place: com.bamnat.core.boss.Workplace, sales: Long, m
         if (ledger.lines.isEmpty()) {
             Hint("급여 대장에 직원을 더하면 한 달 인건비와 매출 대비 인건비율이 여기에 보여요.")
         } else {
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            StatTiles {
                 StatTile("인건비", Fmt.won(ledger.total), Modifier.weight(1f), caption = "${ledger.lines.size}명 · ${ledger.lines.sumOf { it.workMinutes } / 60}시간")
                 val ratio = if (sales > 0) (ledger.total * 100 / sales).toInt() else null
                 StatTile("인건비율", ratio?.let { "$it%" } ?: "-", Modifier.weight(1f),

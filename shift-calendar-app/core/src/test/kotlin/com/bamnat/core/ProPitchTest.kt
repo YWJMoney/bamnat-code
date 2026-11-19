@@ -17,8 +17,16 @@ class ProPitchTest {
         WorkStyle.INVEST to listOf("월급", "연차", "대근", "명세서", "급여", "52시간", "모든 조", "근무표"),
         // 알바·현장에게 '모든 조 보기'와 '미사용 연차수당'은 남의 일이에요(T11b-03).
         WorkStyle.HOURLY to listOf("모든 조", "연차수당"),
-        WorkStyle.FIELD to listOf("모든 조", "연차수당", "월급"),
+        WorkStyle.FIELD to listOf("모든 조", "연차수당", "월급", "급여 리포트", "급여(공수)", "근무표"),
     )
+
+    /** 2.0.0 [RVO-27] PC-166 (조건 13): every line the 프로 화면 shows a kind holds none of another kind's words ([TypeWords]). */
+    @Test fun noLineLeaksAnotherKindsWord() {
+        for (style in WorkStyle.entries) {
+            val lines = listOf(ProPitch.headline(style)) + ProPitch.five(style) + ProPitch.freeAlways(style)
+            for (line in lines) assertEquals("$style: $line", emptyList<String>(), com.bamnat.core.work.TypeWords.leaks(style, line))
+        }
+    }
 
     @Test fun everyKindSaysItsOwnWords() {
         for (style in WorkStyle.entries) {

@@ -47,7 +47,7 @@ internal fun InboxSwitches() {
     muted.sorted().forEach { kind ->
         Row(Modifier.fillMaxWidth().heightIn(min = 48.dp), verticalAlignment = Alignment.CenterVertically) {
             Text(inbox.label(kind), style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
-            TextButton(onClick = { inbox.unmute(kind) }) { Text("다시 보기") }
+            TextButton(onClick = { inbox.turnBackOn(kind) }) { Text("다시 보기") }
         }
     }
 }

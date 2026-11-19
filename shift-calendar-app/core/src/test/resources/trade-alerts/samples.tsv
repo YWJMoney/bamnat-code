@@ -5,3 +5,10 @@
 # 아래 첫 줄은 틀이 도는지 보는 지어낸 예시예요(실제 알림 아님). 실제 표본이 오면 그 아래에 더해요.
 example.broker	[예시] 매수 체결\n종목: 삼성전자(005930)\n수량: 5주\n단가: 70,000원	BUY	삼성전자	005930	5	70000	KR_STOCK
 example.broker	[예시] 매수 주문 접수 삼성전자 5주	NONE	-	-	-	-	-
+# 2.0.0 [RVK-50] (검토 MONEY-74): 토스·은행 앱의 결제·쇼핑 글과 코인 아닌 'N개'는 체결이 아니에요(가계부로 가요).
+viva.republica.toss	무선 이어폰 2개 구매 완료\n결제 금액 59,800원	NONE	-	-	-	-	-
+viva.republica.toss	토스페이 결제 완료 · 생수 6개를 샀어요 12,900원	NONE	-	-	-	-	-
+com.hanabank.ebk.channel.android.hananbank	하나머니 상품권 3개 구매 완료 30,000원	NONE	-	-	-	-	-
+com.kakao.talk	[쿠팡] 주문하신 휴지 2개 구매 완료 · 결제 18,900원	NONE	-	-	-	-	-
+viva.republica.toss	삼성전자 3주 구매 완료\n1주당 71,500원	BUY	삼성전자	-	3	71500	KR_STOCK
+com.dunamu.exchange.upbit	리플 120개 매수 체결 · 단가 812원	BUY	-	-	120	812	CRYPTO
