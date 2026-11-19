@@ -920,7 +920,7 @@ internal object HelpFaq {
         ),
         HelpTopic(
             "watchNext", "워치", "워치 화면에 다음 근무까지 남은 시간을 띄우고 싶어요",
-            "워치 시계 화면을 길게 누르고 꾸미기에서 ‘밤낮 다음 근무까지’를 놓으면 다음 근무 시작까지, 근무 중이면 끝까지 남은 시간이 보여요. 타일 아래에는 휴대폰에서 마지막으로 받은 시각이 나와요.",
+            "워치 시계 화면을 길게 누르고 꾸미기에서 ‘밤낮 다음 일정까지’를 놓으면 다음 근무 시작까지, 근무 중이면 끝까지 남은 시간이 보여요. 타일 아래에는 휴대폰에서 마지막으로 받은 시각이 나와요.",
             listOf("컴플리케이션", "다음 근무까지", "남은 시간", "카운트다운", "시계 화면", "꾸미기", "동기화"),
             listOf("워치"),
         ),
@@ -1038,6 +1038,10 @@ internal object HelpFaq {
                 "급여 대장의 직원 줄에서 그날을 결근으로 바꾸고 ‘저장하고 대신 일할 사람 찾기’를 눌러요. 그날 일이 없는 직원을 더 드는 인건비가 적은 순으로 보여 주고, " +
                     "고른 사람에게 요청 링크를 보내요. 답이 오면 ‘답 가져오기’로 받아요.",
                 listOf("대타", "대타 찾기", "대신 일할 사람", "결근", "결원", "대근", "못 온대요")),
+            t("bossInsurance", "직원이 4대보험 가입 대상인지 알고 싶어요",
+                "급여 대장 직원 줄의 ‘직원 정보’에서 ‘4대보험 (사장님 몫 계산)’을 고르면, 주 15시간 미만이나 나이처럼 법으로 빠지는 보험은 저절로 빼고 " +
+                    "직원 옆에 까닭을 한 줄로 알려요. 생년월일을 넣어야 나이 기준도 봐요.",
+                listOf("4대보험", "4대보험 가입", "가입 대상", "국민연금", "건강보험", "고용보험", "산재보험", "사장님 몫")),
             t("bossFilings", "원천세·4대보험 신고는 언제 해요?",
                 "급여 대장의 ‘다가올 신고·지급’에 급여 지급일, 원천세 신고, 간이지급명세서, 4대보험 취득·상실 신고가 날짜순으로 나와요. 기한이 주말·공휴일이면 " +
                     "다음 일하는 날로 알려요. ‘원천세 표(CSV)’·‘4대보험 신고 표(CSV)’로 신고에 쓸 표를 만들어요.",
@@ -1046,10 +1050,6 @@ internal object HelpFaq {
                 "급여 대장의 ‘출퇴근 링크 만들어 보내기’로 직원에게 링크를 보내면, 직원이 오고 갈 때 링크에서 눌러요. 위치는 받지 않아요. " +
                     "누른 시각이 평소와 다른 날만 ‘출퇴근 기록’에 모여 골라서 대장에 넣어요.",
                 listOf("출퇴근 기록", "출퇴근 링크", "출근 체크", "근태", "지각 기록", "출근 기록")),
-            t("bossInsurance", "직원이 4대보험 가입 대상인지 알고 싶어요",
-                "급여 대장 직원 줄의 ‘직원 정보’에서 ‘4대보험 (사장님 몫 계산)’을 고르면, 주 15시간 미만이나 나이처럼 법으로 빠지는 보험은 저절로 빼고 " +
-                    "직원 옆에 까닭을 한 줄로 알려요. 생년월일을 넣어야 나이 기준도 봐요.",
-                listOf("4대보험", "4대보험 가입", "가입 대상", "국민연금", "건강보험", "고용보험", "산재보험", "사장님 몫")),
             t("bossLeft", "직원이 그만뒀어요. 지워도 되나요?",
                 "‘직원 정보’의 ‘직원 빼기’에서 ‘퇴사 처리’를 누르면 그만둔 날부터 대장에서 빠지고 기록은 남아요. 임금대장은 3년 보관해야 해서(근로기준법 제42조) " +
                     "지우기보다 퇴사 처리가 좋아요. 다시 오면 ‘다시 입사하기’를 눌러요.",
@@ -1188,6 +1188,7 @@ internal object HelpFaq {
             }
             "privacy" -> if (style == com.bamnat.core.work.WorkStyle.INVEST) t.drop("돈 기록, 급여는" to "돈 기록, 투자 기록은") else t
             "proSheet" -> if (wages) t else t.drop("급여·돈 통계·인쇄·알람 미션은" to "돈 통계·인쇄·알람 미션은")
+                .drop("‘광고 보고 급여 7일 열기’" to "‘광고 보고 돈 통계 7일 열기’")
             "publicPay" -> t.drop("교대·현업이 아니면" to "현업이 아니면")
             "quicktext" -> if (!noLeave) t else t.say("메모처럼 적어서 달력에 넣을 수 있나요",
                 "날짜를 누르고 빠른 메모에 ‘11/3 ${w.offDay}’, ‘다음주 월화 ${w.offDay}’처럼 날짜와 달력의 일정 이름을 적어요. 넣을 수 있는 말이면 " +
@@ -1367,8 +1368,20 @@ internal fun dayQuestionWords(t: HelpTopic, style: com.bamnat.core.work.WorkStyl
     if (t.id !in DAY_QUESTIONS || style.usesPayEngine) return t
     val noun = com.bamnat.app.ui.shifts.lockNoun(style)
     val board = if (style == com.bamnat.core.work.WorkStyle.BUSINESS) "영업일" else "일정"
-    val q = t.question.replace("근무표", board).replace("근무", noun)
-    return t.copy(question = particlesAfter(particlesAfter(q, board), noun))
+    // 2.0.0 [RVJ-93] 검토 BOSS-72: a name in ‘ ’ is what the screen says ('휴대폰 캘린더에 근무 쓰기'), kept.
+    val q = outsideQuotes(t.question) { it.replace("근무표", board).replace("근무", noun) }
+    return t.copy(question = outsideQuotes(q) { particlesAfter(particlesAfter(it, board), noun) })
+}
+
+/** [RVJ-93] [f] on the text outside ‘ ’ only: a quoted name is the screen's own and stays as it is. */
+internal fun outsideQuotes(text: String, f: (String) -> String): String {
+    val out = StringBuilder()
+    var at = 0
+    for (m in Regex("‘[^’]*’").findAll(text)) {
+        out.append(f(text.substring(at, m.range.first))).append(m.value)
+        at = m.range.last + 1
+    }
+    return out.append(f(text.substring(at))).toString()
 }
 
 /** Puts 을/를, 이/가, 은/는, 과/와 and (으)로 right after [word] once it took the place of 근무 or 근무표 (영업을, 일정이). */
