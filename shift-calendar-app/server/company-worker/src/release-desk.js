@@ -14,6 +14,13 @@ export const RELEASE_SCHEMA = [
     done_at INTEGER, by TEXT NOT NULL DEFAULT '')`,
 ];
 
+/** 2.0.0 [RVN-24] 검토 SVC-105: '바꾼 것'·사고 타임라인이 읽는 활동 기록 이름. */
+export const CHANGE_ACTIONS = ["shipped_version", "price_table", "launch_recorded", "auto_rest", "auto_resume", "release_start", "notice_remove", "rule_promote",
+  "incident_open", "incident_close", "server_deployed", "share_deployed", "switch_on", "switch_off", "admin_update", "admin_remove", "change_note"];
+
+/** 2.0.0 [RVN-24] 검토 SVC-105: 서버가 스스로 알 수 없는 바뀜을 관리자가 한 줄로 적어 둬요(판 건강 › 바꾼 것 › 적어 두기). */
+export const CHANGE_KINDS = { site: "사이트 서버 배포", remote: "remote/ 파일 바꿈", pages: "공개 페이지 바꿈", company: "회사 서버 배포", share: "공유 서버 배포", other: "그 밖의 바뀜" };
+
 /** 점검표 단계: key, 이름, 할 일, 저절로 알 수 있으면 auto, 열 곳. 순서가 곧 할 순서예요. */
 export const RELEASE_STEPS = [
   { key: "play", name: "Play 올림", what: "Play Console › 프로덕션에 새 판을 올리고 출시를 시작해요(단계적 출시면 비율도 적어 두기).", to: null },
@@ -31,7 +38,10 @@ const VER = /^[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}$/;
 
 async function readRun(env, v) {
   const r = await one(env, "SELECT * FROM release_runs WHERE version = ?", v);
-  if (!r) return null;
+  return r ? runOf(r) : null;
+}
+
+function runOf(r) {
   let steps = {};
   try {
     steps = JSON.parse(r.steps ?? "{}") ?? {};
@@ -41,57 +51,98 @@ async function readRun(env, v) {
   return { version: r.version, startedAt: r.started_at, doneAt: r.done_at, by: r.by, steps };
 }
 
-/** 저절로 알 수 있는 단계의 지금 모습: done(끝), hint(보여 줄 숫자·말). */
-async function autoState(env, v, run_, now) {
+/**
+ * 저절로 알 수 있는 단계가 읽는 것: 저장된 판, 그 판에 묶인 문의, 재료·장터 대기, 공지. 2.0.0 [RVN-24] 검토 SVC-102·SVC-106: 점검표마다
+ * 다시 읽지 않고(목록 12판 × 5~6번 → 한 번) 한 번 읽어 모든 열린 점검표가 같이 써요.
+ */
+async function autoShared(env) {
   const shipped = await shippedVersion(env);
-  const out = {};
-  const shippedHere = Boolean(shipped && version(shipped.v) && compareVersions(version(shipped.v), version(v)) >= 0);
-  out.ship = { done: shippedHere, hint: shipped ? `지금 저장된 판 ${shipped.v}` : "아직 저장한 판이 없어요" };
+  let waiting = null;
   try {
-    const waiting = shippedHere ? await shipWaiting(env, shipped.v) : [];
-    out.answers = { done: shippedHere && waiting.length === 0, hint: shippedHere ? (waiting.length ? `답을 기다리는 문의 ${waiting.length}건` : "기다리는 문의 없음") : "나간 판을 저장하면 셀 수 있어요" };
+    waiting = shipped ? await shipWaiting(env, shipped.v) : [];
   } catch {
-    out.answers = { done: false, hint: "셀 수 없어요" };
+    waiting = null;
   }
   const [mats, market] = (await batch(env, [
     stmt(env, "SELECT state, COUNT(*) AS n FROM studio_materials GROUP BY state"),
     stmt(env, "SELECT COUNT(*) AS n, MIN(release_at) AS at FROM recipes WHERE state = 'waiting'"),
   ]).catch(() => [{ results: [] }, { results: [] }])).map((r) => r.results ?? []);
-  const m = Object.fromEntries(mats.map((x) => [x.state, x.n]));
-  out.materials = { done: (m.waiting ?? 0) === 0 && ((m.ok ?? 0) + (m.hidden ?? 0)) > 0, hint: `공개 ${m.ok ?? 0} · 대기 ${m.waiting ?? 0} · 숨김 ${m.hidden ?? 0}` };
-  const w = market[0]?.n ?? 0;
-  out.market = { done: w === 0 || Boolean(market[0]?.at), hint: w ? `공개 대기 ${w}개${market[0]?.at ? " · 예약됨" : ""}` : "공개 대기 없음" };
   const notices = await noticeRows(env).catch(() => []);
+  return { shipped, waiting, mats, market, notices };
+}
+
+/** 2.0.0 [RVN-24] 검토 SVC-102: '공지' 단계는 업데이트 소식(바뀐 것 보기 단추)만 세요. 점검 안내·사고 공지로는 끝나지 않아요. */
+export function isUpdateNotice(n) {
+  return n?.action?.kind === "WHATS_NEW";
+}
+
+/** 저절로 알 수 있는 단계의 지금 모습: done(끝), hint(보여 줄 숫자·말), ready(판 건강: 하루가 지나 볼 수 있음). */
+function autoState(v, run_, now, sh) {
+  const { shipped } = sh;
+  const out = {};
+  const shippedHere = Boolean(shipped && version(shipped.v) && compareVersions(version(shipped.v), version(v)) >= 0);
+  out.ship = { done: shippedHere, hint: shipped ? `지금 저장된 판 ${shipped.v}` : "아직 저장한 판이 없어요" };
+  if (sh.waiting === null) out.answers = { done: false, hint: "셀 수 없어요" };
+  else {
+    const waiting = shippedHere ? sh.waiting : [];
+    out.answers = { done: shippedHere && waiting.length === 0, hint: shippedHere ? (waiting.length ? `답을 기다리는 문의 ${waiting.length}건` : "기다리는 문의 없음") : "나간 판을 저장하면 셀 수 있어요" };
+  }
+  const m = Object.fromEntries(sh.mats.map((x) => [x.state, x.n]));
+  out.materials = { done: (m.waiting ?? 0) === 0 && ((m.ok ?? 0) + (m.hidden ?? 0)) > 0, hint: `공개 ${m.ok ?? 0} · 대기 ${m.waiting ?? 0} · 숨김 ${m.hidden ?? 0}` };
+  const w = sh.market[0]?.n ?? 0;
+  out.market = { done: w === 0 || Boolean(sh.market[0]?.at), hint: w ? `공개 대기 ${w}개${sh.market[0]?.at ? " · 예약됨" : ""}` : "공개 대기 없음" };
   const since = run_?.startedAt ?? now - 7 * DAY;
-  const fresh = notices.filter((x) => x.from >= since - DAY && x.until > now);
-  out.notice = { done: fresh.length > 0, hint: fresh.length ? `점검표를 연 뒤 올린 공지 ${fresh.length}개` : "아직 새 공지가 없어요" };
+  const fresh = sh.notices.filter((x) => isUpdateNotice(x) && x.from >= since - DAY && x.until > now);
+  out.notice = { done: fresh.length > 0, hint: fresh.length ? `업데이트 소식 ‘${String(fresh[0].title ?? "").slice(0, 40)}’${fresh.length > 1 ? ` 외 ${fresh.length - 1}개` : ""}` : "아직 업데이트 소식이 없어요(점검·사고 공지는 세지 않아요)" };
   const shipAt = shipped && shippedHere ? shipped.at : null;
-  out.health = { done: Boolean(shipAt && now - shipAt >= DAY && run_?.steps?.health?.doneAt), hint: shipAt ? (now - shipAt >= DAY ? "하루가 지났어요. 판 건강을 봐 주세요" : `나간 지 ${Math.floor((now - shipAt) / HOUR)}시간`) : "나간 판 저장 뒤 하루" };
+  // SVC-102: 손으로 '했어요'를 눌러도 나간 지 하루가 지나기 전에 누른 것은 끝이 아니에요(그때는 단추도 서버도 받지 않아요).
+  const ready = Boolean(shipAt && now - shipAt >= DAY);
+  const mine = run_?.steps?.health?.doneAt;
+  out.health = { ready, done: Boolean(ready && mine && mine >= shipAt + DAY), hint: shipAt ? (ready ? "하루가 지났어요. 판 건강을 봐 주세요" : `나간 지 ${Math.floor((now - shipAt) / HOUR)}시간 · 24시간 뒤에 볼 수 있어요`) : "나간 판 저장 뒤 하루" };
   return out;
 }
 
-/** 한 판의 점검표(없으면 null). */
-export async function releaseView(env, v, now = Date.now()) {
-  const r = await readRun(env, v);
-  if (!r) return null;
-  const auto = await autoState(env, v, r, now);
+/** 2.0.0 [RVN-24] 검토 SVC-102: 끝난 점검표는 끝낸 순간의 자동 단계를 굳혀 둔 것(snap)을 보여 주고 다시 계산하지 않아요. */
+function frozen(r) {
+  return Object.fromEntries(RELEASE_STEPS.filter((s) => s.auto).map((s) => {
+    const snap = r.steps[s.key]?.snap;
+    // 굳혀 두기 전에 끝난 점검표(2.0.0 앞): 끝날 때 모두 끝이었으니 끝으로.
+    return [s.key, snap ? { done: Boolean(snap.done), hint: snap.hint ?? "", ready: true } : { done: true, hint: "끝낸 뒤라 다시 세지 않아요", ready: true }];
+  }));
+}
+
+function viewOf(r, auto) {
   const steps = RELEASE_STEPS.map((s) => {
     const mine = r.steps[s.key] ?? {};
     const a = auto[s.key];
-    const done = Boolean(mine.doneAt) || (s.key !== "health" && Boolean(a?.done));
+    const done = s.key === "health" ? Boolean(a?.done) : Boolean(mine.doneAt) || Boolean(a?.done);
     return { key: s.key, name: s.name, what: s.what, to: s.to, auto: Boolean(s.auto), hint: a?.hint ?? "", done, skipped: Boolean(mine.skipped),
-      doneAt: mine.doneAt ?? null, by: mine.by ?? "", note: mine.note ?? "", autoDone: Boolean(a?.done) && !mine.doneAt };
+      doneAt: mine.doneAt ?? null, by: mine.by ?? "", note: mine.note ?? "", autoDone: Boolean(a?.done) && !mine.doneAt,
+      ...(s.key === "health" ? { ready: Boolean(a?.ready) } : {}) };
   });
   const left = steps.filter((s) => !s.done && !s.skipped).length;
   return { ...r, steps, left, next: steps.find((s) => !s.done && !s.skipped)?.key ?? null };
 }
 
-/** 점검표 목록: 판이 높은 것 먼저. */
+/** 한 판의 점검표(없으면 null). [sh]는 목록이 한 번 읽어 넘겨요. */
+export async function releaseView(env, v, now = Date.now(), sh = null) {
+  const r = await readRun(env, v);
+  return r ? viewFor(env, r, now, sh) : null;
+}
+
+async function viewFor(env, r, now, sh) {
+  if (r.doneAt) return viewOf(r, frozen(r));
+  return viewOf(r, autoState(r.version, r, now, sh ?? (await autoShared(env))));
+}
+
+/** 점검표 목록: 판이 높은 것 먼저. 2.0.0 [RVN-24] SVC-102·106: 점검표 줄은 한 번에, 자동 단계는 열린 점검표가 있을 때 한 번만 읽어요. */
 export async function releaseList(env, now = Date.now()) {
-  const rows = await all(env, "SELECT version FROM release_runs ORDER BY started_at DESC LIMIT 12");
+  const rows = await all(env, "SELECT * FROM release_runs ORDER BY started_at DESC LIMIT 12");
+  const runs = rows.map(runOf);
+  const sh = runs.some((r) => !r.doneAt) ? await autoShared(env) : null;
   const list = [];
-  for (const r of rows) list.push(await releaseView(env, r.version, now));
-  return { items: list.filter(Boolean), steps: RELEASE_STEPS.map((s) => ({ key: s.key, name: s.name })) };
+  for (const r of runs) list.push(await viewFor(env, r, now, sh));
+  return { items: list, steps: RELEASE_STEPS.map((s) => ({ key: s.key, name: s.name })) };
 }
 
 /** POST /release {version}: 새 점검표. POST /release/<v> {step, done|skip|note}: 단계 하나. */
@@ -118,6 +169,9 @@ export async function releaseRoute(request, env, path, method, now) {
     const step = RELEASE_STEPS.find((s) => s.key === body?.step);
     if (!step) refuse("step", "step");
     const actor = env.actor?.name ?? "관리자";
+    const sh = await autoShared(env);
+    // 2.0.0 [RVN-24] 검토 SVC-102: 판 건강은 나간 판을 저장하고 하루가 지나야 '했어요'를 받아요.
+    if (step.key === "health" && body.done === true && !autoState(r.version, r, now, sh).health.ready) return json({ error: "health_early", field: "step" }, 409);
     const cur = r.steps[step.key] ?? {};
     const next = { ...cur };
     if (body.done === true) Object.assign(next, { doneAt: now, by: actor, skipped: false });
@@ -125,12 +179,20 @@ export async function releaseRoute(request, env, path, method, now) {
     if (body.skip === true) Object.assign(next, { skipped: true, doneAt: null, by: actor });
     if (typeof body.note === "string") next.note = body.note.replace(/[\u0000-\u001f]/g, " ").slice(0, 300);
     r.steps[step.key] = next;
-    const view = { ...r };
-    await run(env, "UPDATE release_runs SET steps = ? WHERE version = ?", JSON.stringify(r.steps), m[1]);
-    const after = await releaseView(env, m[1], now);
-    if (after.left === 0 && !view.doneAt) await run(env, "UPDATE release_runs SET done_at = ? WHERE version = ?", now, m[1]);
+    // SVC-102: 끝났는지는 굳혀 둔 것이 아니라 지금 모습으로 다시 봐요. 끝나면 그 순간의 자동 단계를 굳혀 적고(snap), 되돌려 다시 남은 일이
+    // 생기면 끝난 때(done_at)와 굳힌 것을 지워 '열린 점검표' 수에 다시 들어가요.
+    const live = viewOf({ ...r, doneAt: null }, autoState(r.version, r, now, sh));
+    let doneAt = r.doneAt ?? null;
+    if (live.left === 0 && !doneAt) {
+      doneAt = now;
+      for (const st of live.steps.filter((x) => x.auto)) r.steps[st.key] = { ...(r.steps[st.key] ?? {}), snap: { done: st.done, hint: st.hint } };
+    } else if (live.left > 0 && doneAt) {
+      doneAt = null;
+      for (const k of Object.keys(r.steps)) if (r.steps[k]?.snap) { const { snap, ...rest } = r.steps[k]; r.steps[k] = rest; }
+    }
+    await run(env, "UPDATE release_runs SET steps = ?, done_at = ? WHERE version = ?", JSON.stringify(r.steps), doneAt, m[1]);
     await audit(env, now, "release_step", m[1], `${step.name} ${body.done === true ? "끝" : body.skip === true ? "건너뜀" : body.done === false ? "되돌림" : "메모"}`);
-    return json(after.left === 0 ? await releaseView(env, m[1], now) : after);
+    return json(doneAt ? viewOf({ ...r, doneAt }, frozen(r)) : live);
   }
   return null;
 }
@@ -216,19 +278,29 @@ export async function versionHealth(env, now = Date.now(), days = 14, vitals = n
 
 /** 그래프에 찍을 '이날 바꾼 것': 나간 판, 기능 켬·끔, 공지, 가격표, 처리방침, 쉬기. [from]~[to] ms. */
 export async function changeMarks(env, from, to) {
+  // 2.0.0 [RVN-24] 검토 SVC-105: 이름이 실제로 적히는 것과 같아야 해요. flag_force·flag_policy는 아무도 적지 않는 이름이라 지웠어요(기능 강제·처리방침
+  // 날짜는 flag_history로 와요). 스위치 끄고 켜기, 관리자 권한, 공유 서버 배포(매시 판을 보고 적음), 손으로 적어 둔 바뀜(사이트 서버·remote/ 파일)을 더해요.
   const [auditRows, flagRows] = (await batch(env, [
-    stmt(env, `SELECT at, action, target, detail FROM audit WHERE at >= ? AND at < ? AND action IN ('shipped_version', 'price_table', 'launch_recorded', 'auto_rest',
-      'auto_resume', 'release_start', 'notice_remove', 'flag_force', 'flag_policy', 'rule_promote', 'incident_open', 'incident_close', 'server_deployed') ORDER BY at`, from, to),
-    stmt(env, "SELECT at, key, action FROM flag_history WHERE at >= ? AND at < ? ORDER BY at LIMIT 200", from, to),
+    stmt(env, `SELECT at, action, target, detail FROM audit WHERE at >= ? AND at < ? AND action IN (${CHANGE_ACTIONS.map(() => "?").join(", ")}) ORDER BY at DESC LIMIT 400`,
+      from, to, ...CHANGE_ACTIONS),
+    // SVC-105: 긴 기간이면 최근 것부터 200(전에는 앞에서 200이라 최근 바뀜이 잘렸어요).
+    stmt(env, "SELECT at, key, action FROM flag_history WHERE at >= ? AND at < ? ORDER BY at DESC LIMIT 200", from, to),
   ]).catch(() => [{ results: [] }, { results: [] }])).map((r) => r.results ?? []);
   const words = { shipped_version: "판 나감", price_table: "가격표", launch_recorded: "정식 출시", auto_rest: "D1 쉬기", auto_resume: "쉬기 끝", release_start: "출시 점검표",
-    notice_remove: "공지 내림", flag_force: "기능 강제", flag_policy: "처리방침 날짜", rule_promote: "규칙 올림", incident_open: "사고 시작", incident_close: "사고 끝",
+    notice_remove: "공지 내림", rule_promote: "규칙 올림", incident_open: "사고 시작", incident_close: "사고 끝",
     // 1.39 [STAT2-05] 서버가 새 판으로 처음 뜬 때(사고 때 가장 먼저 의심할 일).
-    server_deployed: "서버 배포" };
+    server_deployed: "서버 배포", share_deployed: "공유 서버 배포", switch_off: "기능 끔", switch_on: "기능 켬", admin_update: "관리자 권한 바꿈",
+    admin_remove: "관리자 지움", change_note: "" };
   // 2.0.0 [RVN-02] 사고의 목표는 안쪽 번호라, 사고 줄은 번호 대신 무엇이 보였는지(신호·한 일) 앞 40자를 붙여요.
-  const what = (r) => (r.action.startsWith("incident_") ? `· ${[...String(r.detail ?? "")].slice(0, 40).join("")}` : r.target ?? "");
+  // SVC-105: 관리자 줄은 메일 주소(target) 대신 무엇을 바꿨는지만, 스위치는 이름(detail), 적어 둔 바뀜은 종류와 한 줄.
+  const what = (r) => r.action.startsWith("incident_") ? `· ${[...String(r.detail ?? "")].slice(0, 40).join("")}`
+    : r.action === "admin_update" ? `· ${String(r.detail ?? "").slice(0, 40)}` : r.action === "admin_remove" ? ""
+    : r.action.startsWith("switch_") ? String(r.detail ?? r.target ?? "").split(" · ")[0]
+    : r.action === "change_note" ? `${CHANGE_KINDS[r.target] ?? "바뀜"} · ${String(r.detail ?? "").slice(0, 60)}` : r.target ?? "";
   const marks = auditRows.map((r) => ({ at: r.at, day: kstDay(r.at), kind: r.action, text: `${words[r.action] ?? r.action} ${what(r)}`.trim() }));
-  for (const f of flagRows) marks.push({ at: f.at, day: kstDay(f.at), kind: "flag", text: `기능 ${f.key} ${f.action}` });
+  // SVC-105: 스위치 끄고 켜기는 기능 강제(flag_history)도 같은 때 적으니, 그 줄은 사람이 읽는 스위치 줄 하나만 남겨요.
+  const switched = new Set(auditRows.filter((r) => r.action.startsWith("switch_")).map((r) => r.at));
+  for (const f of flagRows) if (!switched.has(f.at)) marks.push({ at: f.at, day: kstDay(f.at), kind: "flag", text: `기능 ${f.key} ${f.action}` });
   const notices = await noticeRows(env).catch(() => []);
   for (const n of notices) if (n.from >= from && n.from < to) marks.push({ at: n.from, day: kstDay(n.from), kind: "notice", text: `공지 ${String(n.title ?? "").slice(0, 20)}` });
   return marks.sort((a, b) => a.at - b.at).slice(-200);

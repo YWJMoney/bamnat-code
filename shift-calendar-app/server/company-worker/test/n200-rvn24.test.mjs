@@ -168,3 +168,96 @@ test("[RVN-24] SVC-96 답 모음: a full room still takes a new title, 활동 �
   const removed = (await DB.prepare("SELECT detail FROM audit WHERE action = 'plaza_pick_remove'").all()).results;
   assert.match(removed[0].detail, /‘선배 답 3’/);
 });
+
+test("[RVN-24] SVC-102 출시 점검표: undoing a step reopens it, 판 건강 waits a day, only 업데이트 소식 counts, a finished list stays as it was", async (t) => {
+  t.mock.timers.enable({ apis: ["Date"], now: NOW });
+  const { call, DB } = server();
+  const h = await signIn(call);
+  assert.equal((await call("POST", "/api/admin/release", { version: "2.0.0" }, h)).status, 200);
+  const step = (body) => call("POST", "/api/admin/release/2.0.0", body, h);
+  const one = async () => (await call("GET", "/api/admin/release/2.0.0", undefined, h)).data;
+  // An 점검 안내 is not the 업데이트 소식.
+  const day = (ms) => new Date(ms).toISOString();
+  await call("POST", "/api/admin/notices", { title: "서버 점검 안내", body: "새벽 2시에 잠깐 멈춰요.", level: "info", from: day(Date.now()), until: day(Date.now() + 3 * DAY) }, h);
+  let v = await one();
+  assert.equal(v.steps.find((s) => s.key === "notice").done, false);
+  await call("POST", "/api/admin/notices", { title: "2.0.0 업데이트 소식", body: "바뀐 것을 모았어요.", level: "info", from: day(Date.now()), until: day(Date.now() + 3 * DAY), action: { kind: "WHATS_NEW" } }, h);
+  v = await one();
+  const notice = v.steps.find((s) => s.key === "notice");
+  assert.equal(notice.done, true);
+  assert.match(notice.hint, /2\.0\.0 업데이트 소식/);
+  // 판 건강: no '했어요' before the shipped version is a day old.
+  await DB.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES ('shipped_version', ?)").bind(JSON.stringify({ v: "2.0.0", at: Date.now(), by: "t" })).run();
+  const early = await step({ step: "health", done: true });
+  assert.equal(early.status, 409);
+  assert.equal(early.data.error, "health_early");
+  v = await one();
+  assert.equal(v.steps.find((s) => s.key === "health").ready, false);
+  // Finish the rest by hand, then 판 건강 a day later: the list is done, and the 열린 점검표 count drops.
+  for (const key of ["play", "flags", "materials", "market", "answers"]) assert.equal((await step({ step: key, skip: true })).status, 200);
+  t.mock.timers.tick(DAY + 1000);
+  const done = await step({ step: "health", done: true });
+  assert.equal(done.status, 200, JSON.stringify(done.data));
+  assert.equal(done.data.left, 0);
+  assert.ok(done.data.doneAt);
+  assert.equal((await DB.prepare("SELECT COUNT(*) AS n FROM release_runs WHERE done_at IS NULL").first()).n, 0);
+  // A finished list keeps what it saw: a notice taken down later does not reopen it.
+  await DB.prepare("UPDATE settings SET value = '[]' WHERE key = 'notices'").run();
+  v = await one();
+  assert.equal(v.left, 0);
+  assert.equal(v.steps.find((s) => s.key === "notice").done, true);
+  assert.match(v.steps.find((s) => s.key === "notice").hint, /2\.0\.0 업데이트 소식/);
+  // Undoing a step clears 끝: it counts as open again, and the auto steps are read as they are now.
+  const undo = await step({ step: "play", done: false });
+  assert.equal(undo.data.doneAt, null);
+  assert.equal(undo.data.left, 2);
+  assert.deepEqual(undo.data.steps.filter((s) => !s.done && !s.skipped).map((s) => s.key), ["play", "notice"]);
+  assert.equal((await DB.prepare("SELECT COUNT(*) AS n FROM release_runs WHERE done_at IS NULL").first()).n, 1);
+  const list = (await call("GET", "/api/admin/release", undefined, h)).data;
+  assert.equal(list.items[0].doneAt, null);
+});
+
+test("[RVN-24] SVC-105 바꾼 것: switches, admin changes without the mail, the newest 기능 강제, a written note, and a new 공유 서버 판", async (t) => {
+  t.mock.timers.enable({ apis: ["Date"], now: NOW });
+  const { call, DB } = server();
+  const h = await signIn(call);
+  const marks = async () => (await call("GET", `/api/admin/changes?from=${NOW - 400 * DAY}&to=${Date.now() + 1}`, undefined, h)).data.marks;
+  assert.equal((await call("POST", "/api/admin/switches", { key: "PLAZA_WRITE", off: true, why: "시험" }, h)).status, 200);
+  t.mock.timers.tick(1000);
+  let m = await marks();
+  assert.ok(m.some((x) => x.kind === "switch_off" && /^기능 끔 /.test(x.text)), JSON.stringify(m));
+  assert.equal(m.filter((x) => x.kind === "flag").length, 0, "one line for one switch");
+  // An admin's change says what changed, never the mail.
+  await DB.prepare("INSERT INTO audit (at, action, target, detail) VALUES (?, 'admin_update', 'someone@example.com', 'suspend')").bind(Date.now()).run();
+  m = await marks();
+  const admin = m.find((x) => x.kind === "admin_update");
+  assert.equal(admin.text, "관리자 권한 바꿈 · suspend");
+  assert.ok(!m.some((x) => x.text.includes("@")));
+  // 기능 강제 over a long stretch: the newest 200, not the oldest.
+  const ins = DB.prepare("INSERT INTO flag_history (at, key, action) VALUES (?, ?, 'force_on')");
+  for (let i = 0; i < 230; i++) await ins.bind(NOW - 300 * DAY + i * DAY, `old.${i}`).run();
+  m = await marks();
+  assert.ok(m.some((x) => x.text === "기능 old.229 force_on"));
+  // A change the server cannot see, written by hand.
+  assert.equal((await call("POST", "/api/admin/changes", { kind: "lotto", text: "x" }, h)).status, 400);
+  const noted = await call("POST", "/api/admin/changes", { kind: "site", text: "사이트 2판 올림" }, h);
+  assert.equal(noted.status, 200, JSON.stringify(noted.data));
+  assert.ok(noted.data.marks.some((x) => x.text === "사이트 서버 배포 · 사이트 2판 올림"));
+});
+
+test("[RVN-24] SVC-105 the hourly job writes 공유 서버 배포 when the share server's 판 changes, and nothing the first time", async (t) => {
+  t.mock.timers.enable({ apis: ["Date"], now: NOW });
+  const { DB } = server();
+  const { noteShareDeploy } = await import("../src/ops-watch.js");
+  const env = { DB, SHARE_BASE_URL: "https://share.example" };
+  await DB.prepare("CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT)").run();
+  await DB.prepare("CREATE TABLE IF NOT EXISTS audit (at INTEGER, action TEXT, target TEXT, detail TEXT, actor TEXT DEFAULT '', actor_id TEXT DEFAULT '')").run();
+  let version = "2.0.0";
+  t.mock.method(globalThis, "fetch", async () => new Response(JSON.stringify({ ok: true, version }), { status: 200, headers: { "content-type": "application/json" } }));
+  assert.equal(await noteShareDeploy(env), false);
+  assert.equal(await noteShareDeploy(env), false);
+  version = "2.0.1";
+  assert.equal(await noteShareDeploy(env), true);
+  const rows = (await DB.prepare("SELECT action, target, detail FROM audit WHERE action = 'share_deployed'").all()).results;
+  assert.deepEqual(rows.map((r) => [r.target, r.detail]), [["2.0.1", "2.0.0 → 2.0.1"]]);
+});

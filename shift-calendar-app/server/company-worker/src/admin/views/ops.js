@@ -251,7 +251,8 @@ export function opsViews(A) {
         <span class="step-no">${s.done ? "✓" : i + 1}</span><div class="step-main"><b>${esc(s.name)}</b>${s.autoDone ? ' <span class="pill ok">저절로 확인</span>' : ""}${s.skipped ? ' <span class="pill">건너뜀</span>' : ""}
         <p>${esc(s.what)}</p>${s.hint ? `<p class="meta">${esc(s.hint)}</p>` : ""}${s.doneAt ? `<p class="meta">${esc(s.by)} · ${esc(when(s.doneAt))}</p>` : ""}${s.note ? `<p class="meta">메모: ${esc(s.note)}</p>` : ""}
         <div class="actions start">${s.to ? `<a class="btn small" href="${esc(s.to)}">열기</a>` : ""}${edit ? (s.done && !s.autoDone ? `<button class="btn small ghost" type="button" data-act="launch-step" data-key="${s.key}" data-do="undo">되돌리기</button>`
-          : s.done ? "" : `<button class="btn small" type="button" data-act="launch-step" data-key="${s.key}" data-do="done">했어요</button><button class="btn small ghost" type="button" data-act="launch-step" data-key="${s.key}" data-do="skip">건너뛰기</button>`)
+          // 2.0.0 [RVN-24] 검토 SVC-102: 판 건강은 나간 지 하루가 지나기 전에는 '했어요'가 없어요(남은 시간은 바로 위 한 줄에).
+          : s.done ? "" : `${s.ready === false ? "" : `<button class="btn small" type="button" data-act="launch-step" data-key="${s.key}" data-do="done">했어요</button>`}<button class="btn small ghost" type="button" data-act="launch-step" data-key="${s.key}" data-do="skip">건너뛰기</button>`)
           + `<button class="btn small ghost" type="button" data-act="launch-step" data-key="${s.key}" data-do="note">메모</button>` : ""}</div></div></li>`).join("")}</ol>`;
     return `${start}${others}<section class="card">${head(`${run.version} 출시 날`, run.doneAt ? `끝남 ${when(run.doneAt)}` : `남은 일 ${run.left}`, run.doneAt ? '<span class="pill ok">끝</span>' : "")}${steps}</section>`;
   }
@@ -270,7 +271,9 @@ export function opsViews(A) {
     const table = `<section class="card">${head("판마다", `지난 ${d.days}일 · 휴대폰-날 1000당`)}${segs("health-days", [["7", "7일"], ["14", "14일"], ["28", "28일"]], String(S.healthDays ?? 14))}
       <div class="table-wrap"><table class="grid-table"><thead><tr><th scope="col">판</th><th scope="col">휴대폰-날</th><th scope="col">문의</th><th scope="col">문제 신고</th><th scope="col">신고 비율</th><th scope="col">문의 비율</th></tr></thead>
       <tbody>${d.versions.map((r) => `<tr class="${r.app === d.latest && d.worse.length ? "bad" : ""}"><th scope="row">${esc(r.app)}</th><td>${r.phoneDays}</td><td>${r.inquiries}</td><td>${r.bugs}</td><td>${r.bugRate ?? "—"}</td><td>${r.inquiryRate ?? "—"}</td></tr>`).join("")}</tbody></table></div></section>`;
-    const chg = `<section class="card">${head("바꾼 것", "판·기능·공지·가격·사고")}${marks.length ? `<ul class="rows">${marks.slice(-30).reverse().map((m) => `<li><div class="row"><span class="row-main"><b>${esc(m.text)}</b><small>${esc(when(m.at))}</small></span></div></li>`).join("")}</ul>` : '<p class="hint">이 기간에 바꾼 것이 없어요.</p>'}</section>`;
+    // 2.0.0 [RVN-24] 검토 SVC-105: 서버가 스스로 모르는 바뀜(사이트 서버·remote/ 파일·공개 페이지)은 한 줄 적어 두면 여기와 사고 타임라인에 나와요.
+    const note = can("ops", "edit") ? '<button class="btn small" type="button" data-act="change-note">적어 두기</button>' : "";
+    const chg = `<section class="card">${head("바꾼 것", "판·기능·공지·가격·사고", note)}${marks.length ? `<ul class="rows">${marks.slice(-30).reverse().map((m) => `<li><div class="row"><span class="row-main"><b>${esc(m.text)}</b><small>${esc(when(m.at))}</small></span></div></li>`).join("")}</ul>` : '<p class="hint">이 기간에 바꾼 것이 없어요.</p>'}</section>`;
     return `${tiles}${worse}${table}${chg}`;
   }
 
@@ -648,6 +651,11 @@ export function opsViews(A) {
       }
       if (await act(() => api(`/release/${run.version}`, "POST", body), what === "done" ? "했어요" : what === "skip" ? "건너뛰었어요" : what === "undo" ? "되돌렸어요" : "적었어요")) reload("launch", "launchOne");
     },
+    "change-note": () => openDialog(`<form data-form="change-note"><h2>바뀐 것 적어 두기</h2><p class="hint">서버가 스스로 모르는 바뀜을 적어 두면 바꾼 것과 사고 타임라인에 나와요.</p>
+      <div class="fieldset"><label for="cn-kind">무엇이</label><select id="cn-kind" name="kind"><option value="site">사이트 서버 배포</option><option value="remote">remote/ 파일 바꿈</option>
+        <option value="pages">공개 페이지 바꿈</option><option value="company">회사 서버 배포</option><option value="share">공유 서버 배포</option><option value="other" selected>그 밖의 바뀜</option></select></div>
+      <div class="fieldset"><label for="cn-text">한 줄</label><input id="cn-text" name="text" maxlength="120" required data-keep="change-note" placeholder="예: 사이트 2판 올림, remote/v1/cycles.json 새로"></div>
+      <div class="actions"><button class="btn" type="button" data-act="close">취소</button><button class="btn primary" type="submit">적어 두기</button></div></form>`),
     "health-days": ({ key }) => { S.healthDays = Number(key); reload("health", "changes"); },
     "money-days": ({ key }) => { S.moneyDays = Number(key); reload("money", "changes"); },
     "errors-show": ({ key }) => { S.errorsShow = key; reload("errors"); },
@@ -748,6 +756,11 @@ export function opsViews(A) {
       const f = new FormData(form);
       dialog.close();
       if (await act(() => api(`/data-requests/${form.dataset.id}`, "POST", { status: f.get("status"), note: f.get("note") }), "끝냈어요")) reload("requests");
+    },
+    "change-note": async (form) => {
+      const f = new FormData(form);
+      dialog.close();
+      if (await act(() => api("/changes", "POST", { kind: f.get("kind"), text: f.get("text") }), "적어 뒀어요")) reload("changes");
     },
     "launch-start": async (form) => {
       const v = String(new FormData(form).get("version") ?? "").trim();

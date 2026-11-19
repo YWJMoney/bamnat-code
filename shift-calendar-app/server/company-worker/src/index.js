@@ -116,7 +116,7 @@ import { LOOP_COLUMNS, LOOP_SCHEMA, effectTick, knownRoute, liveTick, loopRoute,
 import { OPS_ALERT_SQL, OPS_BADGE_SQL, OPS_SCHEMA, morningExtra, opsAlertsFrom, opsArea, opsRoute, opsSteps } from "./admin-ops.js";
 // 1.38 [ADM3-01] 패스키(지문) 로그인.
 import { PASSKEY_SCHEMA, passkeyCheck, passkeyMine, passkeyStart } from "./passkey.js";
-import { canaryStats, countFailure, deployInfo, flushWatch, jobRow, pruneWatch, recordError, recordRequest, recordRowErrors, rowTroubleQuery, rowTroubleRows, runJobs, serverVersions } from "./ops-watch.js";
+import { canaryStats, countFailure, deployInfo, flushWatch, jobRow, pruneWatch, recordError, recordRequest, recordRowErrors, rowTroubleQuery, rowTroubleRows, noteShareDeploy, runJobs, serverVersions } from "./ops-watch.js";
 import { FIVE_STEPS, hourlyAgo, hourlyWatch } from "./incident.js";
 import { RETENTION, deviceColumns, forgetSweep, retentionPrune } from "./retention.js";
 import { TEXT_RULES } from "./text-rules.js";
@@ -323,7 +323,8 @@ const allHourlySteps = (env) => [
   ["trials", () => stopUnconsentedTrials(env, Date.now())],
   ["lapsed", () => recheckLapsed(env, Date.now())],
   ["rest", () => autoRest(env, Date.now())],
-  ["share", () => syncShareSwitch(env)],
+  // 2.0.0 [RVN-24] 검토 SVC-105: 공유 서버 판이 바뀌었으면 '공유 서버 배포'로 적어요.
+  ["share", () => syncShareSwitch(env).then(() => noteShareDeploy(env, Date.now()))],
   // AM 1.28 [FLAG-25][FLAG-28] flags turning on by date, the launch, the day-before news.
   ["flags", () => flagTick(env, Date.now())],
   ["alerts", () => alertTick(env, Date.now())],

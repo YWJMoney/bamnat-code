@@ -1,10 +1,10 @@
-import { BUDGET_WARN, LIMITS, audit, batch, can, cfPlan, json, one, randomId, readJson, stmt } from "./index.js";
+import { BUDGET_WARN, LIMITS, audit, batch, can, cfPlan, json, one, randomId, readJson, refuse, stmt } from "./index.js";
 import { DEV, actorName, devEvent } from "./inquiries.js";
 import { signalsOfDev } from "./observe.js";
 import { ROW_WHERE, SCREEN_ERROR, WATCH_SCHEMA, errorState, healthBoard, jobRow, recordScreenError, requiredSetup, setErrorState, speedState } from "./ops-watch.js";
 import { moneyBoard, moneyYesterday, savePriceTable } from "./money-board.js";
 import { findDevice, personView } from "./person.js";
-import { RELEASE_SCHEMA, changeMarks, releaseRoute, versionHealth } from "./release-desk.js";
+import { CHANGE_KINDS, RELEASE_SCHEMA, changeMarks, releaseRoute, versionHealth } from "./release-desk.js";
 import { KEEP_SCHEMA, backupTick, keepRoute, requestTick } from "./keep.js";
 import { securityView } from "./security-board.js";
 import { REVIEW_SCHEMA, reviewCounts, reviewRoute, reviewTick } from "./store-reviews.js";
@@ -344,6 +344,16 @@ export async function opsRoute(request, env, url, path, method, now, vitals) {
     const to = Number(url.searchParams.get("to")) || now;
     const from = Number(url.searchParams.get("from")) || to - 28 * DAY;
     return json({ marks: await changeMarks(env, Math.max(from, to - 400 * DAY), to) });
+  }
+  // 2.0.0 [RVN-24] 검토 SVC-105: 서버가 스스로 모르는 바뀜(사이트 서버·remote/ 파일·공개 페이지)을 한 줄 적어 두면 바꾼 것·사고 타임라인에 나와요.
+  if (path === "/changes" && method === "POST") {
+    if (!can(actor, "ops", "edit")) return json({ error: "no_permission", area: "ops" }, 403);
+    const body = await readJson(request, 1024);
+    const kind = Object.hasOwn(CHANGE_KINDS, body?.kind) ? body.kind : refuse("kind", "kind");
+    const text = String(body?.text ?? "").replace(/[\u0000-\u001f]/g, " ").trim().slice(0, 120);
+    if (!text) refuse("text", "text");
+    await audit(env, now, "change_note", kind, text);
+    return json({ ok: true, marks: await changeMarks(env, now - 28 * DAY, now + 1) });
   }
   if (path === "/data-requests" || path.startsWith("/data-requests/") || path === "/backup" || path.startsWith("/backup/")) {
     const r = await keepRoute(request, env, url, path, method, now);

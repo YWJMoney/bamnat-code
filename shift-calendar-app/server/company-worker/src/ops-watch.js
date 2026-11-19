@@ -1,4 +1,4 @@
-import { all, run } from "./index.js";
+import { all, audit, one, run } from "./index.js";
 import { DAY, HOUR } from "./units.js";
 import { SERVER_VERSION } from "./version.js";
 
@@ -485,6 +485,26 @@ export function deployInfo(env) {
   const tag = typeof m.tag === "string" && /^[0-9a-f]{7,40}$/.test(m.tag) ? m.tag.slice(0, 8) : null;
   const at = typeof m.timestamp === "string" && !Number.isNaN(Date.parse(m.timestamp)) ? Date.parse(m.timestamp) : null;
   return { version: SERVER_VERSION, commit: tag, id: typeof m.id === "string" ? m.id.slice(0, 8) : null, at };
+}
+
+/**
+ * 2.0.0 [RVN-24] 검토 SVC-105: 공유 서버는 회사 서버처럼 스스로 '배포'를 적지 못해요. 매시 공유 서버 판(판 이름 + 배포 번호, 없으면 커밋)을 보고
+ * 지난번과 다르면 활동 기록 'share_deployed'를 남겨 바꾼 것·사고 타임라인에 나와요. 처음 본 판은 적어 두기만 해요. 닿지 않으면 아무것도 안 해요.
+ */
+export async function noteShareDeploy(env, now = Date.now()) {
+  const { share } = await serverVersions(env);
+  if (!share?.ok || !share.version) return false;
+  const name = `${share.version}${share.id ? ` · ${share.id}` : share.commit ? ` · ${share.commit}` : ""}`;
+  const was = (await one(env, "SELECT value FROM settings WHERE key = 'share_version'"))?.value ?? null;
+  if (was === name) return false;
+  if (was === null) {
+    await run(env, "INSERT OR IGNORE INTO settings (key, value) VALUES ('share_version', ?)", name);
+    return false;
+  }
+  const r = await env.DB.prepare("UPDATE settings SET value = ? WHERE key = 'share_version' AND value = ?").bind(name, was).run();
+  if (!r?.meta?.changes) return false;
+  await audit(env, now, "share_deployed", name, `${was} → ${name}`);
+  return true;
 }
 
 export async function serverVersions(env) {

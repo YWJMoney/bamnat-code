@@ -17,6 +17,8 @@ export function adminLib() {
     title_first: "부탁 글 그대로는 올리지 않아요. 누구나 알아볼 짧은 제목으로 다듬어 주세요",
     notice_risk: "판이 나갈 때 그대로 나가는 글이라 링크·전화번호·이메일, AI·자동 답이라는 말, 서버·주소 같은 보안 정보는 넣을 수 없어요",
     version_unknown: "Play에서도 서버에서도 아직 못 본 판이에요. 판 번호를 다시 봐 주세요",
+    // 2.0.0 [RVN-24] 검토 SVC-102 출시 점검표의 '24시간 뒤 판 건강'
+    health_early: "판 건강은 나간 판을 저장하고 하루가 지난 뒤에 볼 수 있어요",
     // 2.0.0 [RVD-15][RVD-16] 보상 1년 12달, 이미 바뀐 보상
     cap: "이분은 1년에 받을 수 있는 보상 12개월을 넘어요. 남은 개월만 드리거나 취소해 주세요",
     state: "그사이 다른 곳에서 바뀌었어요. 새로 고친 뒤 다시 해 주세요",
@@ -1357,7 +1359,7 @@ export function adminLib() {
    * code still reads as words: its first part (reward_x → 보상) and "처리".
    */
   const ACTION_NAMES = {
-    login: "로그인", login_failed: "로그인 실패", login_unlock: "로그인 잠금 풀기", server_deployed: "서버 배포", logout_all: "모든 기기에서 로그아웃", password: "비밀번호 바꿈",
+    login: "로그인", login_failed: "로그인 실패", login_unlock: "로그인 잠금 풀기", server_deployed: "서버 배포", share_deployed: "공유 서버 배포", change_note: "바뀐 것 적어 둠", logout_all: "모든 기기에서 로그아웃", password: "비밀번호 바꿈",
     second_on: "두 번째 확인 켬", second_off: "두 번째 확인 끔", // R131 1.31 [ADMX-16]
     passkey_add: "패스키 만듦", passkey_remove: "패스키 지움", session_end: "로그인 하나 끊음", // 2.0.0 [RVQ-06][RVQ-07]
     invite: "관리자 초대", invite_remove: "초대 취소", join: "관리자 계정 만듦", admin_update: "관리자 권한·상태 바꿈", admin_remove: "관리자 삭제",
