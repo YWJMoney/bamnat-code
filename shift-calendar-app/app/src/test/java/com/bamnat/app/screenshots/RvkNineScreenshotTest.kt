@@ -86,7 +86,8 @@ class RvkNineScreenshotTest : ScreenshotBase() {
     @Test fun summaryReadOnDarkBig() = shoot("rvk9_09_summary_budget_folded_dark_200", DARK, 2f, summaryReadOn().let { s -> {
         s()
         assertTrue("예산 줄이 보임", appears("이번 달 예산", exact = false))
-        assertFalse("읽어 내려가는 동안 떠 있는 단추는 비켜 있음", shows("돈 적기", exact = true))
+        // 갈래 P 5 (HQ-75·HQ-111): 돈 적기 is the bar under the page, so nothing read is under it.
+        assertTrue("읽어 내려가는 동안 돈 적기가 금액을 덮지 않음", LayoutCheck.underFab(nodes(merged = false)).isEmpty())
     } })
     @Test fun summaryTopDarkBig() = shoot("rvk9_10_summary_top_folded_dark_200", DARK, 2f, style(WorkStyle.DAY) {
         ledgerPage(null)()

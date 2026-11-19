@@ -289,9 +289,13 @@ def main(argv):
             bad.append(name)
     if other:
         print(f"\n{len(other)} key shots belong to the other shard.")
-    if seen == 0:
+    # 2.0.0 [RVR-45] A shard whose classes take none of the key shots (shots-a after the split into five, run 44438558572)
+    # has nothing to compare; that is no failure as long as every key shot belongs to a class that did not run here.
+    if seen == 0 and not (other and not lost):
         print("none of the key screenshots was found", file=sys.stderr)
         return 1
+    if seen == 0:
+        print("\nNo key shot is drawn by this shard's classes; the other shards compare them.")
     for name in bad:
         print(f"changed: {name} (if it was meant, run: python3 tools/shot_hashes.py update app/build/screenshots)", file=sys.stderr)
     for name in lost:

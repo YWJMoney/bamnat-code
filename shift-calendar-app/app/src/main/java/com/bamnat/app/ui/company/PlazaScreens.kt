@@ -416,18 +416,24 @@ fun RatesScreen(vm: RatesViewModel, onBack: () -> Unit) {
     val c = androidx.compose.ui.platform.LocalContext.current.appContainer
     // 2.0.0 [RVP-06] The add button shrinks to its icon while the page scrolls down (검토 UIX-19 떠 있는 단추 규칙).
     val fab = com.bamnat.app.ui.components.rememberFabOpen()
+    val dockAdd = com.bamnat.app.ui.components.addDocks()
+    val tell = {
+        // [SRV-04] Paused by the developer: said here, not after the form is filled.
+        if (c.flags.paused(com.bamnat.core.ops.ServerSwitch.PLAZA_WRITE)) {
+            com.bamnat.app.ui.PutOnNotice.say(com.bamnat.core.ops.ServerSwitch.pausedText(com.bamnat.core.ops.ServerSwitch.PLAZA_WRITE))
+        } else rules.ensure { adding = true }
+    }
     Scaffold(
         modifier = Modifier.nestedScroll(fab.connection),
         topBar = {
             TopAppBar(title = { Text("임금표") }, navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "뒤로") } })
         },
         floatingActionButton = {
-            com.bamnat.app.ui.components.AddFab("시세 알려 주기", onClick = {
-                // [SRV-04] Paused by the developer: said here, not after the form is filled.
-                if (c.flags.paused(com.bamnat.core.ops.ServerSwitch.PLAZA_WRITE)) {
-                    com.bamnat.app.ui.PutOnNotice.say(com.bamnat.core.ops.ServerSwitch.pausedText(com.bamnat.core.ops.ServerSwitch.PLAZA_WRITE))
-                } else rules.ensure { adding = true }
-            }, open = fab.open)
+            if (!dockAdd) com.bamnat.app.ui.components.AddFab("시세 알려 주기", onClick = tell, open = fab.open)
+        },
+        bottomBar = {
+            // 2.0.0 갈래 P 5 (HQ-75·HQ-111·조건 9): the add button is the bar under the page, never over a line ([com.bamnat.app.ui.components.addDocks]).
+            if (dockAdd) com.bamnat.app.ui.components.AddDock("시세 알려 주기", onClick = tell)
         },
     ) { padding ->
         Box(Modifier.fillMaxSize().padding(padding), contentAlignment = Alignment.TopCenter) {

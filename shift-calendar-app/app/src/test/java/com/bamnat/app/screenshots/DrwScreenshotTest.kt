@@ -92,7 +92,9 @@ class DrwScreenshotTest : ScreenshotBase() {
         drawer()
         tapText("조각 · 내 것")
         assertTrue(appears("스튜디오에서 꾸미기", exact = true))
-        assertTrue(appears("서랍에서 빼기", exact = true))
+        // 2.0.0 [RVM-61] HQ-148: one filled button; 묶음·빼기 under ⋮ 더 보기 beside the name.
+        tapText("더 보기", exact = true)
+        assertTrue(inPopup("서랍에서 빼기"))
     }
 
     @Test fun oneThingsSheet() = shoot("1492_drw_sheet", PHONE_393) {
@@ -101,8 +103,11 @@ class DrwScreenshotTest : ScreenshotBase() {
         tapText("🎨 겨울 밤 내 테마")
         assertTrue(appears("바로 입기", exact = true))
         assertTrue(appears("스튜디오로 고치기", exact = true))
-        assertTrue(appears("묶음 바꾸기", exact = true))
-        assertTrue(appears("지우기", exact = true))
+        // 2.0.0 [RVM-61] HQ-148: the rest under ⋮ 더 보기.
+        assertTrue(gone("지우기", exact = true))
+        tapText("더 보기", exact = true)
+        assertTrue(inPopup("묶음 바꾸기"))
+        assertTrue(inPopup("지우기"))
     }
 
     @Test fun wornAtOnceWithItsUndoLine() = shoot("1493_drw_worn_undo", PHONE_393) {

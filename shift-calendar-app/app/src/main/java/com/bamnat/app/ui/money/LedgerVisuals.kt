@@ -18,6 +18,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.wrapContentWidth
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicText
@@ -27,6 +28,16 @@ import androidx.compose.material.icons.automirrored.outlined.Label
 import androidx.compose.material.icons.automirrored.outlined.TrendingUp
 import androidx.compose.material.icons.outlined.AccountBalance
 import androidx.compose.material.icons.outlined.AccountBalanceWallet
+import androidx.compose.material.icons.outlined.LocalGasStation
+import androidx.compose.material.icons.outlined.FitnessCenter
+import androidx.compose.material.icons.outlined.Flight
+import androidx.compose.material.icons.outlined.MusicNote
+import androidx.compose.material.icons.outlined.Spa
+import androidx.compose.material.icons.outlined.LocalBar
+import androidx.compose.material.icons.outlined.Laptop
+import androidx.compose.material.icons.outlined.Build
+import androidx.compose.material.icons.outlined.FavoriteBorder
+
 import androidx.compose.material.icons.outlined.CardGiftcard
 import androidx.compose.material.icons.outlined.Checkroom
 import androidx.compose.material.icons.outlined.ChildCare
@@ -105,8 +116,55 @@ import androidx.compose.ui.semantics.Role
 import com.bamnat.app.ui.theme.Tone
 import com.bamnat.app.ui.theme.color
 
-/** [LEDG-15] A picture for each built-in category, so a list reads at a glance; the user's own get a label. */
-fun categoryIcon(name: String): ImageVector = when (name) {
+/**
+ * 2.0.0 [RVK-46] (검토 U06a-15·I06aa-09) The icon and color the user gave each category (분류 고치기), by name. The app provides the main
+ * calendar's; the money tab its own calendar's.
+ */
+val LocalCategoryLooks = androidx.compose.runtime.staticCompositionLocalOf<Map<String, com.bamnat.core.money.CategoryEdit>> { emptyMap() }
+
+/** 2.0.0 [RVK-46] The picture for each [com.bamnat.core.money.CategoryLook.ICONS] key. */
+fun lookIcon(key: String): ImageVector? = when (key) {
+    "food" -> Icons.Outlined.Restaurant
+    "cafe" -> Icons.Outlined.LocalCafe
+    "store" -> Icons.Outlined.Storefront
+    "delivery" -> Icons.Outlined.DeliveryDining
+    "cart" -> Icons.Outlined.ShoppingCart
+    "bus" -> Icons.Outlined.DirectionsBus
+    "car" -> Icons.Outlined.DirectionsCar
+    "fuel" -> Icons.Outlined.LocalGasStation
+    "hospital" -> Icons.Outlined.LocalHospital
+    "phone" -> Icons.Outlined.PhoneAndroid
+    "bill" -> Icons.Outlined.Receipt
+    "subscribe" -> Icons.Outlined.Subscriptions
+    "home" -> Icons.Outlined.Home
+    "gift" -> Icons.Outlined.CardGiftcard
+    "school" -> Icons.Outlined.School
+    "game" -> Icons.Outlined.SportsEsports
+    "clean" -> Icons.Outlined.CleaningServices
+    "clothes" -> Icons.Outlined.Checkroom
+    "insurance" -> Icons.Outlined.HealthAndSafety
+    "pet" -> Icons.Outlined.Pets
+    "child" -> Icons.Outlined.ChildCare
+    "fitness" -> Icons.Outlined.FitnessCenter
+    "travel" -> Icons.Outlined.Flight
+    "music" -> Icons.Outlined.MusicNote
+    "beauty" -> Icons.Outlined.Spa
+    "drink" -> Icons.Outlined.LocalBar
+    "laptop" -> Icons.Outlined.Laptop
+    "tools" -> Icons.Outlined.Build
+    "work" -> Icons.Outlined.WorkOutline
+    "savings" -> Icons.Outlined.Savings
+    "money" -> Icons.Outlined.Payments
+    "heart" -> Icons.Outlined.FavoriteBorder
+    else -> null
+}
+
+/** [LEDG-15] A picture for each built-in category, so a list reads at a glance; the user's own get a label. 2.0.0 [RVK-46] Or the one the user picked. */
+@Composable
+@ReadOnlyComposable
+fun categoryIcon(name: String): ImageVector = LocalCategoryLooks.current[name]?.let { lookIcon(it.icon) } ?: usualCategoryIcon(name)
+
+fun usualCategoryIcon(name: String): ImageVector = when (name) {
     "식비" -> Icons.Outlined.Restaurant
     "카페" -> Icons.Outlined.LocalCafe
     "편의점" -> Icons.Outlined.Storefront
@@ -160,7 +218,13 @@ private val CATEGORY_ORDER = (MoneyCategories.expense - MoneyCategories.INTEREST
 
 @Composable
 @ReadOnlyComposable
-fun categoryColor(name: String): Color = if (name == Reports.JOB_COSTS) LedgerColors.at(5) else LedgerColors.of(name, CATEGORY_ORDER)
+fun categoryColor(name: String): Color = LocalCategoryLooks.current[name]?.color?.let(com.bamnat.core.money.CategoryLook::color)?.takeIf { it > 0 }?.let { lookColor(it) }
+    ?: usualCategoryColor(name)
+
+/** 2.0.0 [RVK-46] A picked palette place (1 on) in the current theme. */
+@Composable
+@ReadOnlyComposable
+fun lookColor(place: Int): Color = LedgerColors.at(place - 1)
 
 @Composable
 @ReadOnlyComposable
@@ -195,6 +259,18 @@ fun IconAvatar(icon: ImageVector, tint: Color, size: Dp = 40.dp, modifier: Modif
 
 @Composable
 fun CategoryAvatar(category: String, size: Dp = 40.dp) = IconAvatar(categoryIcon(category), categoryColor(category), size)
+
+/** 2.0.0 [RVK-46] A category's badge with a look being picked (분류 고치기), before it is saved. */
+@Composable
+fun CategoryAvatar(category: String, icon: String, color: Int, size: Dp, modifier: Modifier = Modifier) = IconAvatar(
+    lookIcon(icon) ?: usualCategoryIcon(category),
+    com.bamnat.core.money.CategoryLook.color(color).takeIf { it > 0 }?.let { lookColor(it) } ?: usualCategoryColor(category),
+    size, modifier,
+)
+
+@Composable
+@ReadOnlyComposable
+fun usualCategoryColor(name: String): Color = if (name == Reports.JOB_COSTS) LedgerColors.at(5) else LedgerColors.of(name, CATEGORY_ORDER)
 
 /** [TIER-05][LEDG-15] "프로" beside a pro feature; [TIER-06] since 1.25 the app's one [com.bamnat.app.ui.components.ProBadge]. */
 @Composable
@@ -304,6 +380,10 @@ data class Slice(val label: String, val amount: Long, val color: Color)
  */
 @Composable
 fun Donut(slices: List<Slice>, center: String, caption: String, modifier: Modifier = Modifier, size: Dp = 168.dp) {
+    // 2.0.0 [RVK-59] (HQ-151 사진, 조건 12): at 150% and up the ring grows with the letters and the amount is one step down with '원' under
+    // it, so '2,438,582원' is whole, not '2,438,…'.
+    val big = androidx.compose.ui.platform.LocalDensity.current.fontScale >= 1.5f
+    @Suppress("NAME_SHADOWING") val size = if (big) size * 1.5f else size
     val total = slices.sumOf { it.amount.coerceAtLeast(0) }.coerceAtLeast(1)
     val track = MaterialTheme.colorScheme.surfaceContainerHighest
     val said = slices.take(4).joinToString(", ") { "${it.label} ${(it.amount * 100 / total)}%" }
@@ -326,7 +406,11 @@ fun Donut(slices: List<Slice>, center: String, caption: String, modifier: Modifi
         }
         Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.widthIn(max = size * 0.66f)) {
             Text(caption, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
-            Text(center, style = MaterialTheme.typography.titleMedium.merge(NumberStyle), fontWeight = FontWeight.Bold, maxLines = 1,
+            if (big && center.endsWith("원")) {
+                Text(center.dropLast(1), style = MaterialTheme.typography.titleSmall.merge(NumberStyle), fontWeight = FontWeight.Bold, maxLines = 1,
+                    softWrap = false)
+                Text("원", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
+            } else Text(center, style = MaterialTheme.typography.titleMedium.merge(NumberStyle), fontWeight = FontWeight.Bold, maxLines = 1,
                 overflow = TextOverflow.Ellipsis)
         }
     }
@@ -416,12 +500,19 @@ fun PairBars(
 ) {
     val cal = LocalCalendarColors.current
     val top = maxOf(income.maxOrNull() ?: 0, spent.maxOrNull() ?: 0).coerceAtLeast(1)
-    Row(modifier.fillMaxWidth().height(150.dp), horizontalArrangement = Arrangement.spacedBy(2.dp), verticalAlignment = Alignment.Bottom) {
+    // 2.0.0 [RVK-55] (HQ-120, 조건 12) Twelve columns on half a wide screen at 200% left '10'·'11'·'12' cut to '1': where two
+    // digits do not fit a column, every third month and the picked one say their number, drawn whole over the next columns.
+    val fontScale = androidx.compose.ui.platform.LocalDensity.current.fontScale
+    androidx.compose.foundation.layout.BoxWithConstraints(modifier.fillMaxWidth()) {
+    val column = (maxWidth - 2.dp * (labels.size - 1).coerceAtLeast(0)) / labels.size.coerceAtLeast(1)
+    val every = if (labels.any { it.length > 1 } && column < 16.dp * fontScale) 3 else 1
+    Row(Modifier.fillMaxWidth().height(150.dp), horizontalArrangement = Arrangement.spacedBy(2.dp), verticalAlignment = Alignment.Bottom) {
         labels.forEachIndexed { i, label ->
             val on = i == selected
             Column(
-                Modifier.weight(1f).fillMaxHeight().clip(MaterialTheme.shapes.extraSmall)
-                    .background(if (on) MaterialTheme.colorScheme.primary.copy(alpha = 0.08f) else Color.Transparent)
+                // Not clipped: a month's number may be drawn wider than its column (above).
+                Modifier.weight(1f).fillMaxHeight()
+                    .background(if (on) MaterialTheme.colorScheme.primary.copy(alpha = 0.08f) else Color.Transparent, MaterialTheme.shapes.extraSmall)
                     .clickable(role = Role.Button) { onSelect(i) }
                     .semantics(mergeDescendants = true) { contentDescription = descriptions.getOrElse(i) { label } },
                 horizontalAlignment = Alignment.CenterHorizontally,
@@ -437,11 +528,13 @@ fun PairBars(
                         )
                     }
                 }
-                Text(label, style = MaterialTheme.typography.labelSmall, maxLines = 1,
+                Text(if (every == 1 || i % every == 0 || on) label else "", style = MaterialTheme.typography.labelSmall, maxLines = 1, softWrap = false,
                     color = if (on) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
-                    fontWeight = if (on) FontWeight.Bold else FontWeight.Normal, modifier = Modifier.padding(vertical = 4.dp))
+                    fontWeight = if (on) FontWeight.Bold else FontWeight.Normal,
+                    modifier = Modifier.wrapContentWidth(unbounded = true).padding(vertical = 4.dp))
             }
         }
+    }
     }
 }
 
@@ -493,22 +586,37 @@ fun ShareRow(
             Spacer(Modifier.width(12.dp))
         }
         Column(Modifier.weight(1f)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Row(Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically) {
-                    Text(title, style = MaterialTheme.typography.bodyMedium, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
-                    if (caption != null) {
-                        Text("  $caption", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
+            // 2.0.0 [RVK-59] (총괄 HQ-151, 조건 12): the name keeps its whole width and the amount sits beside it while both fit, else
+            // under it at the right. At 200% on a folded phone the name, %, amount and '새로' shared one line and the name went first
+            // ('일감…', '장보…').
+            val big = androidx.compose.ui.platform.LocalDensity.current.fontScale >= 1.5f
+            // At a big font the % goes with the amount, so a long name ('장보기·생활용품') is not broken in the middle to make room for it.
+            val share: @Composable () -> Unit = {
+                if (caption != null) Text("$caption  ", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1, softWrap = false)
+            }
+            com.bamnat.app.ui.components.TextThenAmount(start = {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(title, style = MaterialTheme.typography.bodyMedium, maxLines = if (big) 2 else 1, overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f, fill = false))
+                    if (caption != null && !big) {
+                        Text("  $caption", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1,
+                            softWrap = false)
                     }
                 }
-                Spacer(Modifier.width(8.dp))
-                Text(Fmt.won(amount), style = MaterialTheme.typography.bodyMedium.merge(NumberStyle), fontWeight = FontWeight.SemiBold, maxLines = 1)
-            }
+            }, end = {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    if (big) share()
+                    Text(Fmt.won(amount), style = MaterialTheme.typography.bodyMedium.merge(NumberStyle), fontWeight = FontWeight.SemiBold, maxLines = 1,
+                        softWrap = false)
+                }
+            })
             Spacer(Modifier.height(5.dp))
             Row(verticalAlignment = Alignment.CenterVertically) {
                 LedgerTrack(fraction, color, Modifier.weight(1f), height = 6.dp)
                 if (trailingNote != null) {
                     Text(trailingNote, style = MaterialTheme.typography.labelSmall.merge(NumberStyle), color = trailingColor,
-                        modifier = Modifier.padding(start = 8.dp), maxLines = 1)
+                        modifier = Modifier.padding(start = 8.dp), maxLines = 1, softWrap = false)
                 }
             }
         }

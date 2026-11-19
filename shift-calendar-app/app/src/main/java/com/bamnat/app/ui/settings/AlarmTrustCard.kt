@@ -47,6 +47,12 @@ import com.bamnat.app.ui.theme.color
 
 /** [EASE-17] The row title settings search points at. */
 const val SKIP_ONCE_ROW = "이번만 끄기"
+
+/**
+ * 2.0.0 [RVO-10] The card's own name, which 설정 찾기 lands on ('이번만 끄기' finds it): since [RVI-65] each alarm is a row with a switch,
+ * so '이번만 끄기' is not a button's name any more, and with no alarm ahead it is not drawn at all.
+ */
+const val NEXT_ALARM_ROW = "다음 알람"
 /** [ALRM-27] */
 const val GUARD_ROW = "알람 지킴이"
 
@@ -67,9 +73,11 @@ internal fun AlarmTrustCard(settings: AppSettings, onOpenDiagnostics: (Boolean) 
     val checks = remember(refresh, settings.alarmsEnabled, upcoming) { runCatching { alarmChecks(c, context) }.getOrDefault(emptyList()) }
     val ahead by c.alarmScheduler.ahead.collectAsStateWithLifecycle()
     val skips = remember(refresh, upcoming, ahead) { AlarmSoon.skippedAll(context).toSet() }
-    val bad = checks.filter { it.ok == false }
+    // 2.0.0 [RVO-16] 검토 SET-02·U11a-02: the one verdict, as 설정 첫 화면 and 알람 점검 say it; what must be fixed comes first.
+    val verdict = com.bamnat.app.ui.diag.alarmVerdict(checks)
+    val bad = verdict.must + verdict.better
     val today = Today.date()
-    SectionCard(title = "다음 알람", modifier = Modifier.focusMark(SKIP_ONCE_ROW)) {
+    SectionCard(title = NEXT_ALARM_ROW, modifier = Modifier.focusMark(NEXT_ALARM_ROW)) {
         Column(Modifier.padding(horizontal = 16.dp, vertical = 4.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
             Text(nextLine(settings.alarmsEnabled, upcoming, today, settings.workStyle), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
             // [ALRM-26] 1.38: the next few, each with its own 이번만 끄기 / 다시 켜기 (not only the very next one).
@@ -109,13 +117,18 @@ internal fun AlarmTrustCard(settings: AppSettings, onOpenDiagnostics: (Boolean) 
         HorizontalDivider()
         Column(Modifier.padding(horizontal = 16.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(if (bad.isEmpty()) Icons.Filled.CheckCircle else Icons.Filled.Error, null,
-                    tint = if (bad.isEmpty()) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error,
+                val ready = verdict.must.isEmpty()
+                Icon(if (ready) Icons.Filled.CheckCircle else Icons.Filled.Error, null,
+                    tint = if (ready) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error,
                     modifier = Modifier.padding(end = 8.dp).size(20.dp))
                 Text(
-                    if (bad.isEmpty()) "알람이 울릴 준비가 다 됐어요 · ${checks.size}가지 확인" else "알람이 안 울리거나 늦을 수 있어요 · 고칠 것 ${bad.size}가지",
+                    when {
+                        bad.isEmpty() -> "알람이 울릴 준비가 다 됐어요 · ${checks.size}가지 확인"
+                        ready -> "알람이 울릴 준비가 됐어요 · ${verdict.counts}"
+                        else -> "알람이 안 울리거나 늦을 수 있어요 · ${verdict.counts}"
+                    },
                     style = MaterialTheme.typography.titleSmall,
-                    color = if (bad.isEmpty()) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.error,
+                    color = if (ready) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.error,
                 )
             }
             // 2.0.0 [RVI-91] (검토 I03c-02) How the week went, and the silent daytime rehearsals: trust shown, not only promised.

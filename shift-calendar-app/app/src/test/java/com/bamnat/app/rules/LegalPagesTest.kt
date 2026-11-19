@@ -490,9 +490,10 @@ class LegalPagesTest {
         val posted = tag("posted", c.REVISION_POSTED)
         val p7 = tag("p7", c.REVISION_EFFECTIVE)
         val p30 = tag("p30", c.REVISION_EFFECTIVE_30)
-        // Every date tag on the pages is one of the three, so moving the 게시일 moves them all.
-        val tags = Regex("<time data-legal=\"[a-z0-9]+\" datetime=\"[0-9-]+\">[^<]*</time>")
-        val allowed = setOf(posted, p7, p30)
+        // Every date tag on the pages is one of the three of 3.13 or of 3.14 (`r314-`), so moving a 게시일 moves its own.
+        val tags = Regex("<time data-legal=\"[a-z0-9-]+\" datetime=\"[0-9-]+\">[^<]*</time>")
+        val allowed = setOf(posted, p7, p30, tag("r314-posted", c.REVISION14_POSTED), tag("r314-p7", c.REVISION14_EFFECTIVE),
+            tag("r314-p30", c.REVISION14_EFFECTIVE_30))
         (tags.findAll(text) + tags.findAll(terms)).forEach { assertTrue("날짜 표시 ${it.value}", it.value in allowed) }
         assertTrue(text.contains("처리방침 ${c.REVISION_VERSION} · 앱 버전 2.0.0 기준 · 게시일 $posted · 시행일 $p7(3.12를 대신함."))
         assertTrue(text.contains("1-12항 친구 초대의 바뀐 곳은 ${p30}부터)"))
@@ -526,8 +527,100 @@ class LegalPagesTest {
         assertTrue(terms.contains("할 일·값 칸·단추 위젯 추가(두 번째부터)"))
         // The app's 설정 rows name the same versions.
         val pages = File("src/main/java/com/bamnat/app/ui/settings/SettingsPages.kt").readText()
-        assertTrue(pages.contains("\"\${com.bamnat.core.ops.PolicyConsent.REVISION_VERSION} · 무엇을 휴대폰에 두고 무엇을 보내는지\""))
+        assertTrue(pages.contains("\"\${com.bamnat.core.ops.PolicyConsent.REVISION14_VERSION} · 무엇을 휴대폰에 두고 무엇을 보내는지\""))
         assertTrue(pages.contains("\"\${com.bamnat.core.ops.PolicyConsent.TERMS_VERSION} · 프로 구독·체험·해지·환불\""))
+    }
+
+    /**
+     * 2.0.0 [RVO-26] 처리방침 3.14 (사용자 2026-11-19 카드 '16줄 모두'): its own 게시일 ([PolicyConsent.REVISION14_POSTED]) gives a 7-day
+     * and a 30-day 시행일 apart from 3.13's, the newest header names both, each of the 16 rows is on the page with the right day, the
+     * 광장 운영 규칙 3 takes effect with the 7-day line, and the flags that send something new wait for 3.14.
+     */
+    @Test fun policy314FollowsItsOwnPostedDay() {
+        val policy = File(site, "privacy/index.html")
+        val rulesFile = File(site, "community/index.html")
+        needs("privacy·community index.html", policy.exists() && rulesFile.exists())
+        val text = policy.readText()
+        val rules = rulesFile.readText()
+        val c = com.bamnat.core.ops.PolicyConsent
+        assertEquals("3.14", c.REVISION14_VERSION)
+        assertEquals(c.REVISION14_POSTED.plusDays(7), c.REVISION14_EFFECTIVE)
+        assertEquals(c.REVISION14_POSTED.plusDays(30), c.REVISION14_EFFECTIVE_30)
+        assertTrue("3.14 is posted after 3.13", c.REVISION14_POSTED.isAfter(c.REVISION_POSTED))
+        assertFalse("3.14 has no calendar card", c.REVISION14_VERSION in c.ASKED_VERSIONS)
+        fun tag(kind: String, d: java.time.LocalDate) = "<time data-legal=\"$kind\" datetime=\"$d\">${d.year}년 ${d.monthValue}월 ${d.dayOfMonth}일</time>"
+        val posted = tag("r314-posted", c.REVISION14_POSTED)
+        val p7 = tag("r314-p7", c.REVISION14_EFFECTIVE)
+        val p30 = tag("r314-p30", c.REVISION14_EFFECTIVE_30)
+        assertTrue(text.contains("처리방침 3.14 · 앱 버전 2.0.0 기준 · 게시일 $posted · 시행일 $p7(3.13을 대신함."))
+        assertTrue("3.14 is the newest version line", text.indexOf("처리방침 3.14 ·") < text.indexOf("(이전) 처리방침 3.13 ·"))
+        assertTrue(text.contains("3.13의 1-7항·1-9항·1-12항 바뀐 곳은 그대로 ${tag("p30", c.REVISION_EFFECTIVE_30)}부터)"))
+        assertTrue(text.contains("3.14도 따로 동의를 묻지 않고, ${posted}에 앱 공지와 이 페이지로 먼저 알린 뒤 7일 뒤인 ${p7}에 시행합니다"))
+        assertTrue(text.contains("30일 뒤인 ${p30}에 시행합니다. 광장 운영 규칙 3은"))
+        // The 16 rows, each with its day: 30-day rows send something new, 7-day rows match what is done or keep it on the phone.
+        val thirty = listOf(
+            "‘확인했어요’를 누르면 누른 시각 하나도 둠",                    // 1
+            "그날만 쓰는 표시(네트워크와 브라우저 정보를 비밀 값과 섞어 변환한 값)를 두었다가 <b>이틀 안에 지우고</b>", // 2
+            "페이지 이름 하나(근무표·영업일·일정·달력 가운데 하나)",             // 3
+            "⑧ ⑥의 일하는 방식을 그날 쓴 기능 이름과 횟수에도 붙여",            // 4
+            "⑨ 웹 페이지(교대 달력·시급 계산기·명세서 맞추기)에서 이어 온 분께", // 5
+            "⑩ 앱이 닫히거나 응답이 없었을 때 그 일이 난 앱 코드 위치",         // 6
+            "장터 작품을 넣은 뒤 30분 안에 다시 뺐는지",                        // 7
+            "그 열쇠 하나(32바이트)만 Google Play 서비스의 Block Store에 맡김", // 8
+            "근무표 약어(약어 글자와 그 회사 근무 이름만, 20개까지",            // 9
+            "리더에게 앱으로 받는 팀원 수(3명 이상일 때만)",                    // 14
+        )
+        thirty.forEach { assertTrue("30일 줄: $it", text.contains(it)) }
+        val seven = listOf(
+            "이 두 광장의 글과 투표 보기에 이용자가 직접 금액(예: 이번 달 야간 수당 32만 원)을 적을 수 있습니다", // 10
+            "근무주기(근무 이름·순서), 근무 시간, 급여 계산 방식을 하나씩 ‘저절로·묻기·안 함’ 중에서 고르고",   // 11
+            "명세서로 맞춰 본 분 수도",                                         // 12
+            "급여 설정에 적은 생년(선택)",                                      // 13
+            "고장에 대비한 서버 복구 기록에는 지운 것이 최대 30일 남았다가",    // 15
+            "링크 페이지가 열린 수를 날짜와 휴대폰 종류별 합계로만 400일 둡니다", // 16
+        )
+        seven.forEach { assertTrue("7일 줄: $it", text.contains(it)) }
+        // Each new-sending row names its 30-day date beside it; the 7-day rows that change what users can do name theirs.
+        assertTrue(text.contains("처리방침 3.14 시행일($p30)부터는 팀원이 링크 페이지나 앱에서 ‘확인했어요’를 누르면"))
+        assertTrue(text.contains("<b>폰 바꾸기</b>(선택, 앱 2.0.0부터 처리방침 3.14 시행일 ${p30}부터)"))
+        assertTrue(text.contains("금액이 든 글은 처리방침 3.14 시행일($p7) 전까지 받지 않으며"))
+        assertTrue(text.contains("앱 2.0.0부터(처리방침 3.14 시행일 ${p7}부터) 급여 설정에 적은 생년(선택)"))
+        // 5항 is not where Block Store goes (총괄 11-19): the operator neither receives nor entrusts it, like Google's own backup.
+        val five = text.substringAfter("<h2>5. 제3자 제공").substringBefore("<h2>6.")
+        assertFalse(five.contains("Block Store"))
+        // 광장 운영 규칙 3: 4항 '금액과 연락처' from the 7-day line, the 2판 kept as (이전).
+        assertTrue(rules.contains("운영 규칙 3 · 앱 버전 2.0.0 기준 · 게시일 $posted · 시행일 $p7"))
+        assertTrue(rules.contains("<h2>4. 금액과 연락처</h2>"))
+        assertTrue(rules.contains("서버는 전화번호·메일 주소·계좌번호가 든 글을 받지 않습니다."))
+        assertTrue(rules.indexOf("운영 규칙 3 ·") < rules.indexOf("(이전) 운영 규칙 2 ·"))
+        // The link word is the one LEGAL flag already in the app; it waits for 3.14's 시행일 and its yes.
+        val word = com.bamnat.core.flags.FlagCatalog.of(com.bamnat.core.flags.FlagCatalog.SHARE_WORD)!!
+        assertTrue(word.conditions.any { it is com.bamnat.core.flags.Condition.Date && it.policy == c.REVISION14_VERSION })
+        assertTrue(word.conditions.any { it is com.bamnat.core.flags.Condition.Policy && it.version == c.REVISION14_VERSION })
+        assertFalse(word.default)
+        // The share server's switch is empty until the day of posting, or the 30-day date (`legal_dates.py --share`).
+        val share = File(site, "shift-calendar-app/server/share-worker/src/index.js").readText()
+        val from = Regex("export const POLICY_314_FROM = \"([0-9-]*)\";").find(share)!!.groupValues[1]
+        assertTrue("POLICY_314_FROM = $from", from.isEmpty() || from == c.REVISION14_EFFECTIVE_30.toString())
+    }
+
+    /**
+     * 2.0.0 [RVO-26] 3.14 '나. 추가 후보' (총괄 11-19): every candidate in docs/legal/3.14-extra.json still finds its one place on its page
+     * (or is already in), so `tools/legal_extra.py add <id>` keeps working while the pages change.
+     */
+    @Test fun policy314ExtraCandidatesStillApply() {
+        val data = File("../docs/legal/3.14-extra.json")
+        needs("docs/legal/3.14-extra.json", data.exists())
+        val json = data.readText()
+        fun unq(x: String) = x.replace("\\n", "\n").replace("\\\"", "\"")
+        val edits = Regex("\"page\": \"([^\"]+)\",\\s*\"find\": \"((?:[^\"\\\\]|\\\\.)*)\",\\s*\"replace\": \"((?:[^\"\\\\]|\\\\.)*)\"").findAll(json).toList()
+        assertTrue("후보 ${edits.size}개", edits.size >= 6)
+        for (e in edits) {
+            val (page, find, replace) = e.destructured
+            val text = File(site, page).readText()
+            val head = unq(replace).substringBefore("{P")
+            assertTrue("$page: ${unq(find).take(40)}", text.split(unq(find)).size - 1 == 1 || text.contains(head))
+        }
     }
 
     /**
@@ -542,7 +635,7 @@ class LegalPagesTest {
             val (sum, path) = line.trim().split(Regex("\\s+"), limit = 2)
             path to sum
         }
-        assertEquals(setOf("privacy/index.html", "terms/index.html"), want.keys)
+        assertEquals(setOf("privacy/index.html", "terms/index.html", "community/index.html"), want.keys)
         for ((path, sum) in want) {
             val bytes = File(site, path).readBytes()
             val got = java.security.MessageDigest.getInstance("SHA-256").digest(bytes).joinToString("") { "%02x".format(it) }

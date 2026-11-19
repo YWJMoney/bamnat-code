@@ -270,9 +270,12 @@ class InquiryViewModel(private val c: AppContainer) : ViewModel() {
         if (edit) c.inquiryStore.saveDraft(q.kind, q.text)
     }
 
-    /** 2.0.0 [RVQ-50] 검토 U22b-01: [photos] go with it (made small on the phone, at most [com.bamnat.app.company.InquiryPhotos.left]). */
-    fun more(id: String, text: String, photos: List<ByteArray> = emptyList(), done: (Inquiry?, String?) -> Unit) = act(done) {
-        c.inquiryApi.more(device, id, text, InquiryClient.newRequestId(), photos).also { updated ->
+    /**
+     * 2.0.0 [RVQ-50] 검토 U22b-01: [photos] go with it (made small on the phone, at most [com.bamnat.app.company.InquiryPhotos.left]).
+     * [diag]: 2.0.0 [RVO-28] HQ-150 '점검 기록도 보내기'를 켠 답장의 기록, 끄면 null.
+     */
+    fun more(id: String, text: String, photos: List<ByteArray> = emptyList(), diag: String? = null, done: (Inquiry?, String?) -> Unit) = act(done) {
+        c.inquiryApi.more(device, id, text, InquiryClient.newRequestId(), photos, diag).also { updated ->
             c.inquiryStore.saveReply(id, "")
             _list.value = _list.value.orEmpty().map { if (it.id == id) updated else it }
         }

@@ -116,8 +116,23 @@ class ThemeWardrobe(private val c: AppContainer, context: Context) {
     }
 
     /** Whether ads may run (the `ads` switch) and the user is on 프로; before launch the gate says 프로, so nothing runs. */
-    fun adsOn(): Boolean = c.flags.on(com.bamnat.core.flags.FlagCatalog.ADS)
-    fun pro(): Boolean = c.featureGate.allows(com.bamnat.app.tier.Feature.THEME_WARDROBE)
+    fun adsOn(): Boolean = adsSeen?.on ?: c.flags.on(com.bamnat.core.flags.FlagCatalog.ADS)
+    fun pro(): Boolean = adsSeen?.pro ?: c.featureGate.allows(com.bamnat.app.tier.Feature.THEME_WARDROBE)
+
+    /** Tests only: the ads switch, 프로 and when the app was put on, instead of this phone's. */
+    data class AdsSeen(val on: Boolean, val pro: Boolean, val installedAt: java.time.Instant?)
+    @androidx.annotation.VisibleForTesting internal var adsSeen: AdsSeen? = null
+
+    /**
+     * 2.0.0 [RVM-60] 검토 RCP-14·U09b-05: the first days after install ([com.bamnat.core.tier.AdRules.quiet], the server's
+     * adQuietDays) the ads SDK never starts, so no theme asks for an ad: it goes on at once ('바로 입기') instead of '광고를 준비하는
+     * 중…' for 15 seconds and then going on anyway. The free count runs as before, so nothing is given or taken that the wait did not.
+     */
+    fun adsQuiet(): Boolean = com.bamnat.core.tier.AdRules.quiet(adsOn(), pro(), adsSeen?.installedAt ?: c.installedAt, Today.instant(),
+        c.remoteConfig.current.adQuietDays)
+
+    /** How many days after install go without ads (the line under 바로 입기). */
+    fun quietDays(): Int = c.remoteConfig.current.adQuietDays
 
     fun state(): ThemeLease.State = _lease.value.state(Today.date().toEpochDay(), adsOn(), pro())
     fun ask(): Boolean {
@@ -128,10 +143,14 @@ class ThemeWardrobe(private val c: AppContainer, context: Context) {
         return _lease.value.ask(Today.date().toEpochDay(), adsOn(), p)
     }
     /** [THM-01] Whether putting a theme on asks for an ad; [shared] is one of mine in 장터 (never asks). */
-    fun needsAd(shared: Boolean): Boolean = _lease.value.needsAd(shared, adsOn(), pro())
+    fun needsAd(shared: Boolean): Boolean = _lease.value.needsAd(shared, adsOn(), pro()) && !adsQuiet()
 
     /** The theme kept under [code] (or mine named [title]) and whether it asks for an ad now. */
     fun needsAdFor(code: String, title: String): Boolean = needsAd(kept(code, title)?.free == true)
+
+    /** [RVM-60] It would ask for an ad but goes on at once for the quiet days: the button says why in one line. */
+    fun quietFor(code: String, title: String): Boolean = quietFor(kept(code, title)?.free == true)
+    fun quietFor(shared: Boolean): Boolean = _lease.value.needsAd(shared, adsOn(), pro()) && adsQuiet()
 
     fun kept(code: String, title: String): ThemeLease.Wear? = code.ifEmpty { "own:$title" }.let { k -> _lease.value.history.firstOrNull { it.key == k } }
 
@@ -272,7 +291,8 @@ class ThemeWardrobe(private val c: AppContainer, context: Context) {
     /** [FREE-10] The day's count of a free theme by why, in 사용 통계 (only when the user turned it on; never who). */
     private fun tell(reason: String) {
         val key = "theme_free_" + (reason.takeIf { it in listOf("no_fill", "timeout", "show_failed", "not_ready") } ?: "other")
-        if (reason != "flag_off" && reason != "offline") runCatching { c.telemetry.event(key) }
+        // [RVM-60] The quiet days ask for no ad at all, so nothing failed and nothing is sent.
+        if (reason != "flag_off" && reason != "offline" && reason != QUIET) runCatching { c.telemetry.event(key) }
     }
 
     /** A theme put on with no ad able to come: counted only. */
@@ -722,6 +742,9 @@ class ThemeWardrobe(private val c: AppContainer, context: Context) {
     }
 
     companion object {
+        /** [RVM-60] The reason a theme or bundle went on without an ad in the quiet days (no ad was asked for). */
+        const val QUIET = "quiet"
+
         /**
          * 1.37 [SHR-31] The code of a theme that came in a 근무표 링크 (+ the link's id). It starts with `builtin:` so every place that
          * leaves 장터 out for a built-in theme (쓰는 분 세기, 새 판 찾기, 고쳐 만들기의 원작) leaves it out too; its days and ad follow

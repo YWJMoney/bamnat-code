@@ -37,7 +37,9 @@ enum class InquiryKind(val code: String, val label: String, val hint: String, va
     }
 }
 
-data class InquiryMessage(val fromDeveloper: Boolean, val text: String, val at: Instant)
+data class InquiryMessage(val fromDeveloper: Boolean, val text: String, val at: Instant,
+    /** 2.0.0 [RVO-28] HQ-150: 이 답장과 함께 점검 기록이 갔어요(서버의 diag: true). */
+    val withCheck: Boolean = false)
 
 /**
  * One question and its answers [ADMIN-02]. [status]: open (waiting for the developer), answered or closed.
@@ -187,6 +189,16 @@ interface InquiryApi {
      */
     suspend fun more(device: String, id: String, text: String, requestId: String, photos: List<ByteArray>): Inquiry = more(device, id, text, requestId)
 
+    /**
+     * 2.0.0 [RVO-28] HQ-150 (PC-201): 답장과 함께 점검 기록([diag], 새 문의의 info.diag와 같은 것). 운영팀이 기록을 부탁한 답에
+     * 보고서를 글로 붙여 넣으면 2,000자를 넘어서, 새 문의처럼 '점검 기록도 보내기'로 따로 보내요.
+     */
+    suspend fun more(device: String, id: String, text: String, requestId: String, diag: String?): Inquiry = more(device, id, text, requestId)
+
+    /** Both at once: photos and a check record. A fake that knows only one of them gets that one. */
+    suspend fun more(device: String, id: String, text: String, requestId: String, photos: List<ByteArray>, diag: String?): Inquiry =
+        if (photos.isEmpty()) more(device, id, text, requestId, diag) else more(device, id, text, requestId, photos)
+
     /** 1.36 [PUSH-01] This phone's FCM token for 문의 답 바로 알림, or null to forget it. True when the server can send now. */
     suspend fun pushPhone(device: String, token: String?): Boolean = false
 
@@ -283,13 +295,18 @@ class InquiryClient(
 
     override suspend fun more(device: String, id: String, text: String): Inquiry = more(device, id, text, newRequestId())
 
-    override suspend fun more(device: String, id: String, text: String, requestId: String): Inquiry = more(device, id, text, requestId, emptyList())
+    override suspend fun more(device: String, id: String, text: String, requestId: String): Inquiry = more(device, id, text, requestId, emptyList(), null)
 
-    override suspend fun more(device: String, id: String, text: String, requestId: String, photos: List<ByteArray>): Inquiry = serverCall {
+    override suspend fun more(device: String, id: String, text: String, requestId: String, photos: List<ByteArray>): Inquiry = more(device, id, text, requestId, photos, null)
+
+    override suspend fun more(device: String, id: String, text: String, requestId: String, diag: String?): Inquiry = more(device, id, text, requestId, emptyList(), diag)
+
+    override suspend fun more(device: String, id: String, text: String, requestId: String, photos: List<ByteArray>, diag: String?): Inquiry = serverCall {
         val body = JSONObject().put("text", text.trim()).put("key", requestId)
         if (photos.isNotEmpty()) {
             body.put("photos", org.json.JSONArray(photos.take(InquiryPhotos.MAX).map { android.util.Base64.encodeToString(it, android.util.Base64.NO_WRAP) }))
         }
+        diag?.takeIf { it.isNotBlank() }?.let { body.put("info", JSONObject().put("diag", it.take(DIAG_MAX))) }
         inquiry(onceRequest(baseUrl, "/api/inquiries/$id/messages", body, device, requestId))
     }
 
@@ -370,7 +387,8 @@ class InquiryClient(
     }
 
     private fun messages(o: JSONObject) = o.optJSONArray("messages").objects().map {
-        InquiryMessage(fromDeveloper = it.optString("from") == "admin", text = it.optString("text"), at = Instant.parse(it.getString("at")))
+        InquiryMessage(fromDeveloper = it.optString("from") == "admin", text = it.optString("text"), at = Instant.parse(it.getString("at")),
+            withCheck = it.optBoolean("diag"))
     }
 
     private fun inquiry(o: JSONObject) = Inquiry(

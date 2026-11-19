@@ -273,7 +273,7 @@ fun RepeatSuggestCard(suggestions: List<RepeatFinder.Suggestion>, onAdd: (Repeat
                 Text(s.place, style = MaterialTheme.typography.bodyMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 Text("매달 ${s.day}일쯤 ${Fmt.won(s.amount)} · 최근 ${s.months}달", style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant)
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                androidx.compose.foundation.layout.FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     FilledTonalButton(onClick = { onAdd(s) }) { Text("반복으로 등록") }
                     TextButton(onClick = { onNo(s) }) { Text("아니에요") }
                 }
