@@ -1209,7 +1209,7 @@ form[data-form="dev-ship-note"] textarea{min-height:5rem}
 .banner.bad{background:var(--bad-bg);color:var(--bad)}
 .incident-band{justify-content:flex-start;text-align:left;text-decoration:none;gap:.5rem}
 .incident-band svg{flex:none;width:1.15rem;height:1.15rem}
-.incident-band span{flex:1;min-width:0}
+.incident-band span{flex:1;min-width:0;display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;overflow:hidden}
 .incident-open{border-color:color-mix(in srgb,var(--bad) 45%,var(--line))}
 .day-bars circle.mark{fill:var(--gold);stroke:var(--surface);stroke-width:1.5}
 .key.mark{background:var(--gold);border-radius:50%}

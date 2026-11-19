@@ -3,7 +3,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { server, device } from "./helpers.mjs";
-import { incidentSignals, incidentTick, unmuted, hourlyWatch, hourlyAgo, FIVE_STEP, INCIDENT } from "../src/incident.js";
+import { incidentSignals, incidentTick, incidentView, unmuted, hourlyWatch, hourlyAgo, FIVE_STEP, INCIDENT } from "../src/incident.js";
 import { recordRequest, flushWatch, watchHour } from "../src/ops-watch.js";
 
 const HOUR = 3600 * 1000;
@@ -74,6 +74,21 @@ test("SVC-81: 닫은 사고는 같은 신호로 다음 시각에 다시 열리�
   // 1.3배 넘게 나빠지면 다시 열려요.
   const worse = await incidentTick(env, T + 2 * HOUR, { crash: 0.03, users: 300 });
   assert.ok(worse.open);
+});
+
+test("PC-207: 사고를 열고 닫은 뒤에도 '그 전 48시간에 바꾼 것'에 사고 시작·사고 끝 줄은 끼어들지 않아요", async () => {
+  const s = await ready();
+  const { env } = s;
+  const vitals = { crash: 0.02, users: 300 };
+  const first = await incidentTick(env, T, vitals);
+  assert.ok(first.open);
+  const { incidentRoute } = await import("../src/incident.js");
+  const req = new Request("https://x/close", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ note: "고쳤어요", days: 0 }) });
+  const closed = await incidentRoute(req, { ...env, actor: { name: "주인" } }, `/incident/${first.open}/close`, "POST", T + 1000, async () => vitals);
+  assert.equal(closed.status, 200);
+  const view = await incidentView(env, T + 2000, vitals);
+  assert.equal(view.marks.filter((m) => m.kind === "incident_open" || m.kind === "incident_close").length, 0, "닫은 사고의 열림·닫힘은 지난 사고 칸에만 있어요");
+  assert.equal(view.past.length, 1, "지난 사고 칸에는 남아요");
 });
 
 test("SVC-81: 꺼졌다 다시 켜진 신호는 새 일이고, 고른 날 수가 지나면 다시 물어요", () => {

@@ -217,8 +217,9 @@ export async function incidentView(env, now = Date.now(), vitals = null) {
     // 2.0.0 [RVN-01] 다시 묻지 않기로 한 신호: 화면에 무엇을 언제까지 조용히 두는지 보여요(U22c-01).
     open: open ? read(open) : null, signals: signals.map((s) => ({ ...s, muted: Boolean(mutes[s.key]) && !(s.v >= mutes[s.key].v * INCIDENT.worse) })),
     mutes: Object.entries(mutes).map(([key, m]) => ({ key, until: m.until ?? null, at: m.at ?? null })),
-    // 2.0.0 [RVN-02] '그 전 48시간에 바꾼 것'에 이 사고가 열린 일 자체는 빼요.
-    marks: marks.filter((m) => !(open && m.kind === "incident_open" && m.at >= open.opened_at)), bugs: bugs.map((b) => ({ id: b.id, at: b.created_at, app: b.app, first: String(b.first ?? "").slice(0, 80) })),
+    // 2.0.0 [RVN-02] '그 전 48시간에 바꾼 것'에 이 사고가 열린 일 자체는 빼요. [RVN-24] PC-207: 닫은 일도 늘 빼요(사고를 열고 닫은 줄은
+    // 지난 사고 칸에 이미 있어서, 닫은 뒤 '그 전 48시간에 바꾼 것'에 '사고 시작'·'사고 끝' 두 줄이 끼어들었어요).
+    marks: marks.filter((m) => m.kind !== "incident_open" && m.kind !== "incident_close"), bugs: bugs.map((b) => ({ id: b.id, at: b.created_at, app: b.app, first: String(b.first ?? "").slice(0, 80) })),
     past: past.map(read),
     notice: "지금 일부 기능이 잘 안 될 수 있어요. 원인을 찾고 있고, 고치는 대로 다시 알려 드릴게요. 불편을 드려 죄송해요.",
     steps: ["무엇이 늘었는지 보기", "바로 전에 바꾼 것 되돌리기(판·기능)", "필요하면 기능 강제로 끄기", "공지 올리기", "문제 신고를 개발사항 하나로 묶기", "고친 뒤 무엇을 했는지 적고 닫기"],
