@@ -348,6 +348,9 @@ class AEScreenshotTest : ScreenshotBase() {
     @Test fun theServersRulesAreSaid() = shoot("1056_ae_rules_from_server", FOLDED) {
         api.rulesAnswer = InviteTerms(need = 3, days = 10, months = 2, capMonths = 6)
         openPro()
+        // 2.0.0 [RVO-27] (HQ-156): the card says the one-line promise, and how a friend counts is behind its ⓘ.
+        reveal("친구 3명이 10일 쓰면 프로 2개월 · 1년에 6개월까지.", exact = true)
+        tapText("설명 보기", exact = true)
         reveal("친구 3명이 각자 10일 이상 쓰면 나에게 프로 2개월")
         assertTrue(appears("10일이 지나 앱을 다시 열면"))
         assertTrue(appears("1년에 6개월까지"))
