@@ -1940,9 +1940,18 @@ internal fun ago(millis: Long, now: Long = com.bamnat.core.time.Today.millis()):
     return when { m < 1 -> "방금"; m < 60 -> "${m}분 전"; m < 60 * 24 -> "${m / 60}시간 전"; else -> "${m / (60 * 24)}일 전" }
 }
 
-/** [STU-41] 1.36 장터 표지 자동: the studio's example as a picture when 올리기 opened, offered as the 표지 there. */
+/**
+ * [STU-41] 1.36 장터 표지 자동: the studio's example as a picture when 올리기 opened, offered as the 표지 there.
+ * 2.0.0 [RVS-15] (총괄 11-19, M RVM-57 같은 꼴): a picture 올리기 never used stayed in memory, so a later 만들기 of another work offered
+ * an old studio's example as its 표지. It is good for [FRESH_MS] after it was taken, and gone once it is made the 표지.
+ */
 object StudioShot {
-    @Volatile var last: android.graphics.Bitmap? = null
+    const val FRESH_MS = 10 * 60_000L
+    @Volatile private var shot: android.graphics.Bitmap? = null
+    @Volatile private var at = 0L
+    var last: android.graphics.Bitmap?
+        get() = shot?.takeIf { System.currentTimeMillis() - at in 0..FRESH_MS }
+        set(v) { shot = v; at = System.currentTimeMillis() }
 }
 
 /**
