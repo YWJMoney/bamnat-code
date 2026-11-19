@@ -21,6 +21,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.wrapContentHeight
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -62,6 +63,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.liveRegion
@@ -236,9 +238,8 @@ fun ProScreen(onBack: () -> Unit) {
                         Text(closedBillingWords(gate.access, thanks, zone), style = MaterialTheme.typography.bodyMedium)
                         // 1.36 PC 통합 확인 f629c6f1 (프로 화면에 '사업자 정보'가 없어요): before 정식 출시 the 결제 card has no plans, and
                         // the 사업자 정보 lived only under them; it is shown here too.
-                        var seller by remember { mutableStateOf(false) }
-                        TextButton(onClick = { seller = true }) { Text("사업자 정보") }
-                        if (seller) com.bamnat.app.ui.settings.SellerInfoDialog { seller = false }
+                        // 2.0.0 [RVO-27] HQ-109: the same quiet line as under the plans.
+                        PolicyLinks()
                     }
                 }
 
@@ -249,7 +250,7 @@ fun ProScreen(onBack: () -> Unit) {
                 }
 
                 if (c.tierApi.enabled) {
-                    PassesCard(c, pro, onMessage = say("passes"), zone = zone)
+                    PassesCard(c, pro, onMessage = say("passes"), zone = zone, style = settings.workStyle)
                     Said("passes")
                     // 2.0.0 [RVO-06] (검토 SET-10) 연결된 휴대폰에만: 상태와 연결 끊기. 코드는 아래 한 칸에서 받아요.
                     if (pro.passes?.admin != null) AdminCard(c, pro, onMessage = say("admin"))
@@ -459,7 +460,10 @@ internal fun PayNotice(plans: List<Plan>, pass: String?) {
     }
 }
 
-/** 구매 복원·약관·처리방침·사업자 정보 (and Play's own page for someone subscribed), as word buttons: none of them is the thing to do now. */
+/**
+ * 구매 복원·결제·환불 문의 (and Play's own page for someone subscribed) as buttons, then 약관·처리방침·사업자 정보 as one quiet line.
+ * 2.0.0 [RVO-27] HQ-109 (조건 2): the papers are read, not done, so they are links under the buttons, not two more word buttons.
+ */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun PayLinks(c: AppContainer, manage: Boolean, onMessage: (String) -> Unit) {
@@ -474,37 +478,64 @@ private fun PayLinks(c: AppContainer, manage: Boolean, onMessage: (String) -> Un
                 onMessage(restoreWords(c.billing.state.value, c.proStore.current, Today.instant(), Today.zone()))
             }
         }) { Text("구매 복원") }
-        // 조건 2 (글자 단추는 둘까지): 약관·처리방침·사업자 정보(1.36 [MON-12])는 한 단추의 메뉴로.
-        var menu by remember { mutableStateOf(false) }
-        var seller by remember { mutableStateOf(false) }
-        Box {
-            TextButton(onClick = { menu = true }) { Text(PAY_PAPERS) }
-            // The app's menu (AppDialogsTest): keeps the app's text size and is not built while closed.
-            com.bamnat.app.ui.components.DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
-                // 2.0.0 [RVQ-30] 검토 SVC-21: 결제·환불 문의 straight from where it was paid, as its own kind (나만 보기, 사람이 먼저 봐요).
-                androidx.compose.material3.DropdownMenuItem(text = { Text("결제·환불 문의") }, onClick = {
-                    menu = false
-                    com.bamnat.app.ui.settings.InquiryLinks.ask(com.bamnat.app.ui.settings.InquiryStart(about = "프로·결제", kind = com.bamnat.app.company.InquiryKind.BILLING))
-                })
-                androidx.compose.material3.DropdownMenuItem(text = { Text("이용약관") }, onClick = {
-                    menu = false; com.bamnat.app.ui.components.PolicyPage.open(context, TERMS_URL, "이용약관")
-                })
-                androidx.compose.material3.DropdownMenuItem(text = { Text("개인정보처리방침") }, onClick = {
-                    menu = false; com.bamnat.app.ui.components.PolicyPage.open(context, PRIVACY_URL, "개인정보 처리방침")
-                })
-                androidx.compose.material3.DropdownMenuItem(text = { Text("사업자 정보") }, onClick = { menu = false; seller = true })
-            }
-        }
-        if (seller) com.bamnat.app.ui.settings.SellerInfoDialog { seller = false }
+        // 2.0.0 [RVQ-30] 검토 SVC-21: 결제·환불 문의 straight from where it was paid, as its own kind (나만 보기, 사람이 먼저 봐요).
+        TextButton(onClick = {
+            com.bamnat.app.ui.settings.InquiryLinks.ask(com.bamnat.app.ui.settings.InquiryStart(about = "프로·결제", kind = com.bamnat.app.company.InquiryKind.BILLING))
+        }) { Text(PAY_ASK) }
     }
+    PolicyLinks()
 }
 
-// 2.0.0 [RVQ-30] 검토 SVC-21: 결제·환불 문의 is the menu's first line, so its button says so.
-internal const val PAY_PAPERS = "결제 문의·약관"
+// 2.0.0 [RVO-27] HQ-109: the one word button beside 구매 복원.
+internal const val PAY_ASK = "결제·환불 문의"
+
+/** 2.0.0 [RVO-27] HQ-109: the three papers' names as they read in the quiet line (tests find them by these). */
+internal val POLICY_LINK_WORDS = listOf("이용약관", "개인정보처리방침", "사업자 정보")
+
+/**
+ * 2.0.0 [RVO-27] HQ-109 (조건 2·9·12): 이용약관 · 개인정보처리방침 · 사업자 정보 as one quiet line of links, each 48dp tall to tap, under the
+ * 결제 buttons of the 프로 화면 and the 요금제 창. At 글자 200% or the folded width the line wraps between words, never inside one.
+ */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+internal fun PolicyLinks(modifier: Modifier = Modifier) {
+    val context = LocalContext.current
+    var seller by remember { mutableStateOf(false) }
+    val color = MaterialTheme.colorScheme.onSurfaceVariant
+    FlowRow(modifier, verticalArrangement = Arrangement.Center) {
+        POLICY_LINK_WORDS.forEachIndexed { i, word ->
+            if (i > 0) Text(" · ", style = MaterialTheme.typography.bodySmall, color = color,
+                modifier = Modifier.heightIn(min = 48.dp).wrapContentHeight(Alignment.CenterVertically).clearAndSetSemantics { })
+            Text(word, style = MaterialTheme.typography.bodySmall.copy(textDecoration = androidx.compose.ui.text.style.TextDecoration.Underline),
+                color = color,
+                modifier = Modifier.heightIn(min = 48.dp)
+                    .clickable(role = Role.Button, onClickLabel = "$word 열기") {
+                        when (i) {
+                            0 -> com.bamnat.app.ui.components.PolicyPage.open(context, TERMS_URL, "이용약관")
+                            1 -> com.bamnat.app.ui.components.PolicyPage.open(context, PRIVACY_URL, "개인정보 처리방침")
+                            else -> seller = true
+                        }
+                    }
+                    .padding(horizontal = 4.dp).wrapContentHeight(Alignment.CenterVertically))
+        }
+    }
+    if (seller) com.bamnat.app.ui.settings.SellerInfoDialog { seller = false }
+}
+
+/**
+ * 2.0.0 [RVO-27] PC-166 (조건 13): when 보상 이용권 come, in the ways this kind of work can get them. 회사 근태·급여 방식이 채택되는 길은
+ * 회사에 다니는 교대·일근·알바에게만; 현장·가게·투자는 친구 초대, 제안 반영, 작품 채택과 문제 신고만.
+ */
+internal fun passesWhen(style: com.bamnat.core.work.WorkStyle?): String {
+    val company = style == null || style.usesPayEngine
+    val ways = if (company) "회사 근태·급여 방식이 채택되거나 제안이 반영될 때, 만든 작품이 이달의 주제에 뽑히거나 모두의 도구·기본 도구가 될 때, 초대한 친구가 밤낮을 쓸 때"
+    else "초대한 친구가 밤낮을 쓸 때, 보내 주신 제안이 반영될 때, 만든 작품이 이달의 주제에 뽑히거나 모두의 도구·기본 도구가 될 때"
+    return "받는 때: $ways. 보내 주신 문제 신고가 고쳐지면 3일(한 달 14일까지). 받을수록 기간이 이어져요."
+}
 
 /** [MON-08] Reward passes and the recovery code that moves them to a new phone. */
 @Composable
-private fun PassesCard(c: AppContainer, pro: ProState, zone: ZoneId, onMessage: (String) -> Unit) {
+private fun PassesCard(c: AppContainer, pro: ProState, zone: ZoneId, style: com.bamnat.core.work.WorkStyle?, onMessage: (String) -> Unit) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val passes = pro.passes
@@ -514,7 +545,7 @@ private fun PassesCard(c: AppContainer, pro: ProState, zone: ZoneId, onMessage: 
         // [RVO-13] HQ-58 (총괄 11-12): the 1년 12개월 only while the server counts it (처리방침 3.13 30일 줄, RVD-21), not before 12-12.
         val rules = com.bamnat.app.ui.settings.rememberInviteTerms()
         Text(passesHead(rules, Today.date()), style = MaterialTheme.typography.bodyMedium)
-        Text("받는 때: 회사 근태·급여 방식이 채택되거나 제안이 반영될 때, 만든 작품이 이달의 주제에 뽑히거나 모두의 도구·기본 도구가 될 때, 초대한 친구가 밤낮을 쓸 때. 보내 주신 문제 신고가 고쳐지면 3일(한 달 14일까지). 받을수록 기간이 이어져요.",
+        Text(passesWhen(style),
             style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         passes?.items?.forEach { item ->
             Text("• 프로 ${item.months}개월 (${item.what ?: passWhy(item.why)}, ${dateWords(item.at.atZone(zone).toLocalDate())})",

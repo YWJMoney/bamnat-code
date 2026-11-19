@@ -353,6 +353,10 @@ internal fun Note(text: String, modifier: Modifier = Modifier) {
     Text(text, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = modifier)
 }
 
+/** 2.0.0 [RVO-27] HQ-141: 업종 기념일 is for work at an 기관 (교대·일근, and a calendar from before kinds of work). */
+internal fun orgDaysFit(style: com.bamnat.core.work.WorkStyle?): Boolean =
+    style == null || style == com.bamnat.core.work.WorkStyle.SHIFT || style == com.bamnat.core.work.WorkStyle.DAY
+
 /**
  * [CYC-04] 1.38 업종 기념일: on or off, and which work's days (소방의 날, 경찰의 날…). Picking a public cycle of that 업종 sets
  * the group by itself; here it can be changed or turned off.

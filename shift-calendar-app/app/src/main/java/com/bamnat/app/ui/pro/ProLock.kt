@@ -28,6 +28,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.blur
 import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.text
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.bamnat.app.ui.components.OutlinedButton
@@ -106,10 +107,10 @@ private fun LockPanel(feature: Feature, gate: Gate, modifier: Modifier) {
                 LeaseAdOption(feature, gate, withNote = false)
                 if (invite) InviteButton(feature)
                 androidx.compose.material3.TextButton(onClick = { ProPaywall.show(plans = true) }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
-                    Text(proButtonText())
+                    WholeWords(proButtonText())
                 }
             } else {
-                Button(onClick = { ProPaywall.show(plans = true) }, modifier = Modifier.fillMaxWidth()) { Text(proButtonText()) }
+                Button(onClick = { ProPaywall.show(plans = true) }, modifier = Modifier.fillMaxWidth()) { WholeWords(proButtonText()) }
                 if (invite) InviteButton(feature)
                 LeaseAdOption(feature, gate, withNote = false)
             }
@@ -120,7 +121,21 @@ private fun LockPanel(feature: Feature, gate: Gate, modifier: Modifier) {
 // AG 1.27 [MON-12][INVITE-11] The third way, as in the sheet. 2.0.0 [RVO-13] (HQ-48) by the same name everywhere.
 @Composable
 private fun InviteButton(feature: Feature) {
-    OutlinedButton(onClick = { openPro(feature) }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text(INVITE_FREE_TITLE) }
+    OutlinedButton(onClick = { openPro(feature) }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { WholeWords(INVITE_FREE_TITLE) }
+}
+
+/**
+ * 2.0.0 [RVO-27] HQ-143 (조건 12): a button's words on the lock card, centred, and when they take two lines at 글자 200% the break is
+ * between words ('친구를 초대하면 / 무료로 써요'), never inside one ('무료 / 로'): a word joiner (U+2060, drawn as nothing) between
+ * letters with no space, as the 근무일 증빙 PDF does. Read aloud and found by tests as the plain words.
+ */
+@Composable
+internal fun WholeWords(words: String) {
+    val glued = buildString(words.length * 2) {
+        words.forEachIndexed { i, ch -> if (i > 0 && !ch.isWhitespace() && !words[i - 1].isWhitespace()) append('\u2060'); append(ch) }
+    }
+    Text(glued, textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+        modifier = Modifier.clearAndSetSemantics { text = androidx.compose.ui.text.AnnotatedString(words) })
 }
 
 /** 2.0.0 [RVO-25] (PC-186) The lock card's one line; the rest is under its ⓘ. */

@@ -235,6 +235,8 @@ internal object SettingsIndex {
         // What follows a 근무표 (교대·일근·알바).
         "하루 브리핑", "잘 준비", "하루 다이얼", "광장 시세와 내 단가 견주기", "견줄 내 지역", SHIFT_PREVIEW_ROW -> style.usesPayEngine
         DAY_CLOSE_ROW -> style != com.bamnat.core.work.WorkStyle.BUSINESS && style != com.bamnat.core.work.WorkStyle.INVEST
+        // 2.0.0 [RVO-27] HQ-141: 업종 기념일 (소방의 날·경찰의 날) for 교대·일근 only, as the page draws it.
+        "우리 업종 기념일" -> orgDaysFit(style)
         // An investor has no end of work and no hourly pay.
         "퇴근 후 잠들기까지", WORK_TIME_ROW -> style != com.bamnat.core.work.WorkStyle.INVEST
         // 2.0.0 [RVO-22] Any other notice on the 알림 한눈에 board is found where the board draws it (메모·할 일 [RVIB-05] and the next ones).

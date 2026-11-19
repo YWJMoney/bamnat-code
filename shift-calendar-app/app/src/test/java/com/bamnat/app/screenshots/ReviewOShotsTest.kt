@@ -104,8 +104,8 @@ class ReviewOShotsTest : ScreenshotBase() {
         app.container.settingsRepository.update { it.copy(previewTier = Tier.FREE) }
         app.container.featureGate.refresh()
         open(FeatureRoute(Place.PRO))
-        // 2.0.0 [RVO-05] 요금제 카드 끝(약관·사업자 정보는 한 단추의 메뉴로).
-        reveal(com.bamnat.app.ui.pro.PAY_PAPERS, exact = true)
+        // 2.0.0 [RVO-05] 요금제 카드 끝. [RVO-27] HQ-109: 약관·처리방침·사업자 정보는 조용한 링크 한 줄로.
+        reveal("사업자 정보", exact = true)
     }
 
     // ---- 2차 PR: 프로 화면 한 장(U11b-01·02·03, PRO-12·30), 페이월 가격 한 줄(U11b-04). 같은 시험을 바탕과 고친 커밋에서 돌려요. ----
@@ -275,5 +275,47 @@ class ReviewOShotsTest : ScreenshotBase() {
         app.container.flags.refresh()
         app.container.featureGate.refresh()
         open(FeatureRoute(Place.PRO))
+    }
+
+    // ---- 5차: HQ-109 결제 아래 줄 ----
+
+    /**
+     * 2.0.0 [RVO-27] HQ-109 (조건 2·9): under the plans of the 프로 화면 and on the 요금제 창, 구매 복원 and 결제·환불 문의 are the only word
+     * buttons; 이용약관·개인정보처리방침·사업자 정보 are one quiet line whose words are each at least 48dp tall to tap.
+     */
+    @Test fun payLinksQuietLine() {
+        val missed = mutableListOf<String>()
+        fun Screen.check(where: String) {
+            val look = "${RuntimeEnvironment.getQualifiers().substringBefore("-port")} ${app.resources.configuration.fontScale} $where"
+            val all = nodes(merged = true)
+            fun textOf(n: androidx.compose.ui.semantics.SemanticsNode) =
+                n.config.getOrElseNullable(androidx.compose.ui.semantics.SemanticsProperties.Text) { null }?.joinToString { it.text }
+            val min = 48 * app.resources.displayMetrics.density - 1
+            for (word in com.bamnat.app.ui.pro.POLICY_LINK_WORDS) {
+                val n = all.firstOrNull { textOf(it) == word }
+                if (n == null) { missed += "$look: '$word' 없음"; continue }
+                if (n.boundsInWindow.height < min) missed += "$look: '$word' 높이 ${n.boundsInWindow.height}"
+            }
+            if (all.any { textOf(it)?.trim() == "·" }) missed += "$look: 사이 점이 따로 읽혀요"
+        }
+        all("20_pay_links_pro") {
+            app.container.settingsRepository.update { it.copy(previewTier = Tier.FREE) }
+            app.container.featureGate.refresh()
+            open(FeatureRoute(Place.PRO))
+            reveal("사업자 정보", exact = true)
+            if (!appears(com.bamnat.app.ui.pro.PAY_ASK, exact = true)) missed += "프로 화면: 결제·환불 문의 단추가 없음"
+            check("프로 화면")
+        }
+        all("21_pay_links_paywall") {
+            invites()
+            launched().invoke(this)
+            content { com.bamnat.app.ui.pro.ProPaywallContent(app.container, onClose = {}) }
+            // The plans are the last page: '다음' until it is gone.
+            repeat(3) { settle(); if (shows("다음", exact = true)) tapText("다음", exact = true) }
+            settle()
+            reveal("사업자 정보", exact = true)
+            check("요금제 창")
+        }
+        org.junit.Assert.assertEquals(emptyList<String>(), missed)
     }
 }

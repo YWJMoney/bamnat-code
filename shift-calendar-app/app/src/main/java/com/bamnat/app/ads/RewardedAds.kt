@@ -80,7 +80,7 @@ fun LeaseAdOption(feature: com.bamnat.app.tier.Feature?, gate: Gate, modifier: M
                         android.widget.Toast.LENGTH_SHORT).show()
                     onOpened()
                 }
-            }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text("처음 7일 무료로 열기") }
+            }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { com.bamnat.app.ui.pro.WholeWords("처음 7일 무료로 열기") }
             if (withNote) Text(firstWeekNote(bundle), style = small, color = dim, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth())
         }
         return
@@ -235,7 +235,7 @@ fun ThemeAdButton(label: String, note: String, onReward: () -> Unit, onQuit: () 
             },
             enabled = !loading,
             modifier = Modifier.fillMaxWidth(),
-        ) { Text(if (loading) "광고를 준비하는 중…" else label) }
+        ) { com.bamnat.app.ui.pro.WholeWords(if (loading) "광고를 준비하는 중…" else label) }
         if (loading && late) {
             // 2.0.0 [RVO-18] 검토 U11b-08: '그만두기' stops waiting, quietly and with nothing given (the ad that comes after is dropped);
             // the button is there again to try later.

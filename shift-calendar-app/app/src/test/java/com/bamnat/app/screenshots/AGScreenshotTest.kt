@@ -351,6 +351,16 @@ class AGScreenshotTest : ScreenshotBase() {
         // 2.0.0 [RVO-25] PC-151: one line that reads.
         reveal("친구 2명이 더 7일 쓰면 프로 1개월 · 3명 셌어요 · 2명은 7일 채우는 중", exact = true)
         assertTrue(gone("다음 프로까지"))
+        // 2.0.0 [RVO-27] HQ-144: how a friend counts is behind the card's ⓘ, under its one-line promise.
+        val promise = nodes(merged = false).first { n ->
+            n.config.getOrElseNullable(androidx.compose.ui.semantics.SemanticsProperties.Text) { null }.orEmpty().any { it.text == "친구 5명이 7일 쓰면 프로 1개월." }
+        }.boundsInWindow
+        val info = nodes(merged = false).filter { n ->
+            n.config.getOrElseNullable(androidx.compose.ui.semantics.SemanticsProperties.ContentDescription) { null }.orEmpty().contains("설명 보기")
+        }.minBy { kotlin.math.abs(it.boundsInWindow.center.y - promise.center.y) }.boundsInWindow.center
+        val d = app.resources.displayMetrics.density
+        tap(info.x / d, info.y / d)
+        settle()
         assertTrue(appears("5명 더 채울 때마다 또 1개월"))
         assertTrue(appears("같은 친구·같은 휴대폰은 한 번만"))
         assertTrue(gone("넘게 쓸 때마다"))

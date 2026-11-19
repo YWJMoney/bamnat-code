@@ -31,7 +31,6 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -162,7 +161,10 @@ internal fun InviteCard(c: AppContainer, onMessage: (String) -> Unit, short: Boo
             if (view?.capReached == true && !more) Text(InviteRules.capped(terms.capMonths, view.pending), style = MaterialTheme.typography.bodySmall)
         }
         // AG 1.27 [INVITE-09] 리뷰 2026-10-25: each five different friends, not one friend's days.
-        if (!short || more) Text(InviteRules.details(terms), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        // 2.0.0 [RVO-27] HQ-144 (조건 4): the buyer's card says the one-line promise and keeps how a friend counts behind ⓘ (it was six lines).
+        if (!short) com.bamnat.app.ui.components.Explain(key = "invite_rules", text = InviteRules.details(terms),
+            summary = "${InviteRules.promise(terms)}.", iconOnly = false, firstInFull = false)
+        else if (more) Text(InviteRules.details(terms), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         if (view?.code != null && (!short || more)) {
             // 2.0.0 [RVD-14] 확인 뒤 들어와요. [RVO-13] PC-114: at the year's cap the one line says both, never '모두 받았어요' over months still waiting.
             // [RVO-25] PC-151: what came of it first (months the 운영팀 is looking at), the next goal under it, then the count.
@@ -170,7 +172,8 @@ internal fun InviteCard(c: AppContainer, onMessage: (String) -> Unit, short: Boo
             else if (view.pending > 0) Text(InviteRules.pending(view.pending), style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.primary)
             InviteProgressLines(c)
             Text(InviteRules.summary(view.friends, view.given), style = MaterialTheme.typography.bodyMedium)
-            Text("내 초대 코드 ${InviteRules.shown(view.code)}", style = MaterialTheme.typography.bodyMedium, fontFamily = FontFamily.Monospace)
+            // [RVO-27] HQ-144 (조건 5): the app's own type; the code reads in groups (ABCD 2345) without a typewriter face.
+            Text("내 초대 코드 ${InviteRules.shown(view.code)}", style = MaterialTheme.typography.bodyMedium)
         }
         // 2.0.0 [RVO-06] 조건 2: 이 화면의 채운 단추는 '프로 시작하기' 하나라, 초대 링크는 옅은 채움 단추.
         InviteShareAction(c, onMessage, tonal = true) {

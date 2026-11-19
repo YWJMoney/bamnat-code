@@ -121,6 +121,8 @@ internal fun ProPaywallContent(c: AppContainer, onClose: () -> Unit) {
                     // 2.0.0 [RVO-07] (검토 PRO-05) 결제 단추가 있는 곳의 고지는 프로 화면과 같은 부품: 한 줄 + 모두 보기(청약철회·판매자까지).
                     PayNotice(plans, shownPass(gate, playPass)?.price)
                     TextButton(onClick = { onClose(); goPro() }) { Text("자세한 안내와 해지 방법") }
+                    // 2.0.0 [RVO-27] HQ-109: 결제 단추가 있는 장에도 약관·처리방침·사업자 정보를 프로 화면과 같은 조용한 한 줄로.
+                    PolicyLinks()
                 }
             }
             // 2.0.0 [RVO-13] 검토 HQ-48: 돈을 내지 않고 여는 길도 장마다 한 줄로(프로 화면의 초대 카드로 가요).

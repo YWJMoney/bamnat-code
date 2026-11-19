@@ -807,8 +807,10 @@ private fun CalendarPage(vm: SettingsViewModel, settings: AppSettings, onOpenCal
                 CellLine.LUNAR to "음력 (8.24)", (CellLine.BOTH to "둘 다 (8h·8.24)").takeIf { hoursShown }), line) { l ->
             vm.update { it.copy(showHoursInCells = l == CellLine.HOURS || l == CellLine.BOTH, showLunar = l == CellLine.LUNAR || l == CellLine.BOTH) }
         }
-        // [CYC-04] 1.38 업종 기념일.
-        OrgDayRows(settings.orgDayGroup, settings.orgDaysOn) { g, on -> vm.update { it.copy(orgDayGroup = g, orgDaysOn = on) } }
+        // [CYC-04] 1.38 업종 기념일. 2.0.0 [RVO-27] HQ-141 (조건 13): 소방의 날·경찰의 날은 기관에 다니는 교대·일근의 날이라 그 둘에게만
+        // (가게·현장·알바·투자에는 업종 칩이 맞지 않아요). 이미 켜 둔 휴대폰은 끌 수 있게 그대로 보여요.
+        if (orgDaysFit(LocalSettingsStyle.current) || settings.orgDaysOn && settings.orgDayGroup.isNotEmpty())
+            OrgDayRows(settings.orgDayGroup, settings.orgDaysOn) { g, on -> vm.update { it.copy(orgDayGroup = g, orgDaysOn = on) } }
         // [CVW-02] 1.35 달력 모양: cells, marks, memo lines and their order.
         HorizontalDivider()
         com.bamnat.app.ui.calendar.CalendarViewEditor(com.bamnat.core.recipe.CalendarView.decode(settings.calView), { v ->
