@@ -2,9 +2,10 @@ import { all, audit, batch, iso, json, notifyAdmins, one, randomId, readJson, re
 import { releaseWaiting, textProblemExcept } from "./recipes.js";
 import { replyRiskOf } from "./ask-check.js";
 import { NOTICE, noticeRows } from "./usage.js";
-import { compareVersions, handoff, sortInbox, version } from "./inbox.js";
-import { slaKey, slaTargets } from "./inquiries.js";
+import { compareVersions, handoff, needsPerson, sortInbox, version } from "./inbox.js";
+import { HELD_FOR_PERSON, slaKey, slaTargets } from "./inquiries.js";
 import { DAY, HOUR } from "./units.js";
+import { diagMark } from "./crash-repeat.js";
 
 // ---- 1.37 [ADM2] 운영 장부: 나간 판, 흐름(관제), Claude 운영 열쇠 (사용자 2026-11-04 "전달하고 개발 후 배포한 뒤 너가 모든 사항을
 // 처리하도록 … 관리성 관측성 처리성 인터랙션") ----
@@ -37,6 +38,9 @@ export const DESK = {
   news: 80,
   /** 넘김 기록을 몇 개까지 보여 줄지. */
   handoffLog: 10,
+  /** 2.0.0 [RVQ-34] 출시 안내 편지함: 한 줄을 몇 번까지 다시 해 볼지(그 뒤는 '실패', 사람이 '다시 보내기'), 한 번에 몇 줄까지 보낼지. */
+  outboxTries: 5,
+  outboxRun: 200,
   /** 1.38 [DESK-09] Claude 열쇠로 보낸 답: 이만큼 '보류 중'으로 두었다가 가요(그 사이 취소·고치기), 하루 이만큼까지. */
   hold: 10 * 60 * 1000,
   claudeAnswersDay: 30,
@@ -51,6 +55,12 @@ export const DESK_SCHEMA = [
     asks TEXT NOT NULL DEFAULT '[]', items TEXT NOT NULL DEFAULT '[]', result_at INTEGER, result TEXT NOT NULL DEFAULT '')`,
   `CREATE TABLE IF NOT EXISTS admin_keys (id TEXT PRIMARY KEY, hash TEXT NOT NULL UNIQUE, label TEXT NOT NULL DEFAULT '', created_at INTEGER NOT NULL,
     expires_at INTEGER NOT NULL, revoked_at INTEGER, last_at INTEGER, day TEXT NOT NULL DEFAULT '', n INTEGER NOT NULL DEFAULT 0, writes INTEGER NOT NULL DEFAULT 0)`,
+  // 2.0.0 [RVQ-34] 검토 SVC-08·I22a-01: 나간 판마다 묶인 문의에 갈 출시 안내 한 줄씩(보낼 편지함). 실제로 갔을 때만 '알렸음'(dev_links.told_at)이에요.
+  // state: wait(보낼 것) → sent(감) | person(사람이 봐야 할 문의: 사람이 '지금 보내기'를 누르는 보류 답으로 올림) | gone(문의가 닫힘·없음·보내지 않기로) |
+  // failed(여러 번 실패: 자동 순환의 '다시 보내기').
+  `CREATE TABLE IF NOT EXISTS ship_outbox (version TEXT NOT NULL, inquiry_id TEXT NOT NULL, item_id TEXT NOT NULL, text TEXT NOT NULL,
+    state TEXT NOT NULL DEFAULT 'wait', tries INTEGER NOT NULL DEFAULT 0, why TEXT NOT NULL DEFAULT '', at INTEGER NOT NULL, done_at INTEGER,
+    PRIMARY KEY (version, inquiry_id))`,
 ];
 
 /**
@@ -142,6 +152,90 @@ export async function markTold(env, item, inquiries, now) {
     // 1.39 [LOOP-16] '아직이에요' 뒤 다시 고친 판 안내: 해결됐나요를 다시 물어요.
     await run(env, `UPDATE inquiries SET fixed = 0, fixed_at = NULL WHERE fixed = -1 AND id IN (${part.map(() => "?").join(", ")})`, ...part).catch(() => null);
   }
+}
+
+// ---- 2.0.0 [RVQ-34] 출시 안내 편지함 (검토 SVC-08·I22a-01·U22-02) ----
+//
+// 전에는 문의마다 답을 해 보고 결과와 상관없이 '알렸음'을 찍어, 사람이 봐야 할 문의(돈·개인정보…)라 답이 가지 않은 분의 앱에는 안내 없이
+// '해결됐나요?'만 열리고 다음 판에도 다시 시도되지 않았어요. 이제 판·문의마다 한 줄을 편지함에 넣고, 실제로 간 것만 '알렸음'이에요.
+// 사람이 봐야 할 문의는 사람이 '지금 보내기'를 누르는 보류 답(held_replies, 그 개발사항 번호와 함께)으로 올라가 결정함·운영 장부에 보여요.
+// 끊겨도 남은 줄부터 이어 보내고(같은 답은 inboxAnswer가 다시 보내지 않아요), 여러 번 실패한 줄은 자동 순환에서 '다시 보내기'로 돌려요.
+
+/** 사람이 그 출시 안내를 '보내지 않기'로 한 줄의 까닭: 다음 판에도 그 문의·개발사항에는 다시 넣지 않아요. */
+export const OUTBOX_DROPPED = "사람이 보내지 않기로 함";
+
+/** [v]의 출시 안내를 편지함에 넣어요(이미 있는 줄은 그대로). */
+async function fillOutbox(env, v, targets, now) {
+  for (let i = 0; i < targets.length; i += 50) {
+    await batch(env, targets.slice(i, i + 50).map((t) => stmt(env, `INSERT OR IGNORE INTO ship_outbox (version, inquiry_id, item_id, text, at)
+      SELECT ?, ?, ?, ?, ? WHERE NOT EXISTS (SELECT 1 FROM ship_outbox WHERE inquiry_id = ? AND item_id = ? AND state = 'gone' AND why = ?)`,
+    v, t.inquiry, t.item, t.text, now, t.inquiry, t.item, OUTBOX_DROPPED)));
+  }
+}
+
+/**
+ * 답이 가지 않은 까닭: 같은 답이 이미 갔거나 곧 가는 보류 중이면 '감', 사람이 봐야 할 문의·글이면 사람이 보낼 보류 답으로 올려 '사람 확인',
+ * 문의가 닫혔거나 없으면 '닫힘'.
+ */
+async function outboxSkip(env, o, now) {
+  const q = await one(env, "SELECT status FROM inquiries WHERE id = ?", o.inquiry_id);
+  if (!q) return { state: "gone", why: "문의가 지워졌어요" };
+  const held = await one(env, "SELECT id, until, ship_item FROM held_replies WHERE inquiry_id = ? AND text = ?", o.inquiry_id, o.text);
+  if (held && held.until >= HELD_FOR_PERSON && !held.ship_item) await run(env, "UPDATE held_replies SET ship_item = ? WHERE id = ?", o.item_id, held.id);
+  if (held) return held.until >= HELD_FOR_PERSON ? { state: "person", why: "사람 확인 대기" } : { state: "sent", why: "보류 중인 같은 답" };
+  if (await one(env, "SELECT 1 AS x FROM inquiry_messages WHERE inquiry_id = ? AND sender = 'admin' AND text = ?", o.inquiry_id, o.text)) return { state: "sent", why: "같은 답이 이미 감" };
+  if (q.status === "closed") return { state: "gone", why: "문의가 닫혔어요" };
+  const why = (await needsPerson(env, o.inquiry_id)) || replyRiskOf(o.text);
+  if (!why) return { state: "gone", why: "보내지 못했어요" };
+  await run(env, `INSERT INTO held_replies (inquiry_id, text, by, actor_id, close, template, at, until, pile, ship_item) VALUES (?, ?, '자동 정리', NULL, 0, NULL, ?, ?, '', ?)`,
+    o.inquiry_id, o.text, now, HELD_FOR_PERSON, o.item_id);
+  await audit(env, now, "inquiry_reply_held", o.inquiry_id, `사람이 보내기(${why}) · ${o.version} 출시 안내`);
+  return { state: "person", why };
+}
+
+/** 편지함에서 [v]의 보낼 것을 보내요. 실제로 간 것만 '알렸음'. 몇 줄이 어떻게 됐는지. */
+async function drainOutbox(env, v, now, answer) {
+  const rows = await all(env, "SELECT * FROM ship_outbox WHERE version = ? AND state = 'wait' ORDER BY at, inquiry_id LIMIT ?", v, DESK.outboxRun);
+  const n = { sent: 0, person: 0, gone: 0, failed: 0, again: 0 };
+  for (const o of rows) {
+    let got;
+    try {
+      // [RVA-51] 보내는 문에 걸려 멈춘 답("held")은 간 것이 아니에요: 사람 확인 대기로(그 보류 답에 이 개발사항을 이어요).
+      const said = await answer(env, o.inquiry_id, o.text, now);
+      got = said === true ? { state: "sent", why: "" } : await outboxSkip(env, o, now);
+    } catch (e) {
+      const tries = o.tries + 1;
+      const why = String(e?.message ?? e).slice(0, 120);
+      console.error(`ship ${v} ${o.inquiry_id}: ${why}`);
+      await run(env, "UPDATE ship_outbox SET state = ?, tries = ?, why = ? WHERE version = ? AND inquiry_id = ? AND state = 'wait'",
+        tries >= DESK.outboxTries ? "failed" : "wait", tries, why, v, o.inquiry_id);
+      n[tries >= DESK.outboxTries ? "failed" : "again"]++;
+      continue;
+    }
+    if (got.state === "sent") await markTold(env, o.item_id, [o.inquiry_id], now);
+    await run(env, "UPDATE ship_outbox SET state = ?, tries = tries + 1, why = ?, done_at = ? WHERE version = ? AND inquiry_id = ? AND state = 'wait'", got.state, got.why, now, v, o.inquiry_id);
+    n[got.state]++;
+  }
+  return n;
+}
+
+/** 자동 순환 화면의 한 줄: [v]의 편지함이 몇 줄이고 어떻게 됐는지. */
+export async function outboxOf(env, v) {
+  const rows = await all(env, "SELECT state, COUNT(*) AS n FROM ship_outbox WHERE version = ? GROUP BY state", v).catch(() => []);
+  const n = Object.fromEntries(rows.map((r) => [r.state, r.n]));
+  return { total: rows.reduce((a, r) => a + r.n, 0), sent: n.sent ?? 0, wait: n.wait ?? 0, person: n.person ?? 0, gone: n.gone ?? 0, failed: n.failed ?? 0 };
+}
+
+/**
+ * 2.0.0 [RVQ-34] 검토 U22-02: 자동 순환의 '다시 보내기'. 여러 번 실패한 안내를 다시 보낼 것으로 돌리고, 못 올린 업데이트 소식 공지와 남은 장터
+ * 작품까지 한 번 더 해요. 지금 나간 판만 돼요. 이 서버 전에 저장한 판은 공지를 다시 올리지 않아요(올렸는지 기록이 없어서).
+ */
+export async function retryShip(env, v, now, answer) {
+  const s = await shippedVersion(env);
+  if (!s || s.v !== v) return null;
+  await run(env, "UPDATE ship_outbox SET state = 'wait', tries = 0, why = '' WHERE version = ? AND state = 'failed'", v);
+  const r = await shipNow(env, v, { notify: s.notify === true, notice: s.post === true, resume: { ...s, tries: 0 } }, now, answer);
+  return { ...r, outbox: await outboxOf(env, v) };
 }
 
 /** 1.37 [ADM2-10] 이번에 새로 나간 개발사항: [was] 다음부터 [v]까지(처음 저장이면 [v] 그 판만). */
@@ -288,16 +382,18 @@ export async function shipNow(env, v, { dry = false, notify = false, notice: pos
   const mark = (extra) => run(env, "INSERT OR REPLACE INTO settings (key, value) VALUES ('shipped_version', ?)", JSON.stringify({ v, at: resume?.at ?? now, by: name, ...extra }));
   const going = { pending: true, was: was?.v ?? null, notify, post, noticeId: resume?.noticeId ?? null, tries: (resume?.tries ?? 0) + 1, code };
   await mark(going);
+  // 2.0.0 [RVQ-34] 검토 SVC-08: 편지함으로. 실제로 간 답만 '알렸음', 사람이 봐야 할 문의는 사람이 보낼 보류 답으로.
   let answered = 0;
   let failed = 0;
-  if (notify) for (const t of targets) {
-    try {
-      if (await answer(env, t.inquiry, t.text, now)) answered++;
-      await markTold(env, t.item, [t.inquiry], now);
-    } catch (e) {
-      failed++;
-      console.error(`ship ${v} ${t.inquiry}: ${e?.message ?? e}`);
-    }
+  let person = 0;
+  let left = 0;
+  if (notify) {
+    await fillOutbox(env, v, targets, now);
+    const n = await drainOutbox(env, v, now, answer);
+    answered = n.sent;
+    failed = n.failed + n.again;
+    person = n.person;
+    left = (await one(env, "SELECT COUNT(*) AS n FROM ship_outbox WHERE version = ? AND state = 'wait'", v))?.n ?? 0;
   }
   // 공지는 따로 끄지 않는 한 올려요(notice: false면 안 올림). 이어 보낼 때는 이미 올린 공지를 다시 올리지 않아요.
   if (notice && post && !going.noticeId) going.noticeId = await postNotice(env, notice).catch(() => null);
@@ -313,15 +409,17 @@ export async function shipNow(env, v, { dry = false, notify = false, notice: pos
       console.error(`ship ${v} market: ${e?.message ?? e}`);
     }
   }
-  await audit(env, now, "shipped_version", v, [name && `${name}`, resume && "이어 보냄", answered && `문의 ${answered}건에 업데이트 안내`, noticeId && !resume?.noticeId && "업데이트 소식 공지",
-    released && `장터 작품 ${released}개 공개(앱 ${code}부터)`, failed && `${failed}건 실패(5분 뒤 다시)`, marketFailed && "장터 작품 공개 실패(5분 뒤 다시)",
+  await audit(env, now, "shipped_version", v, [name && `${name}`, resume && "이어 보냄", answered && `문의 ${answered}건에 업데이트 안내`, person && `사람 확인 ${person}건`,
+    noticeId && !resume?.noticeId && "업데이트 소식 공지", notice && post && !noticeId && "업데이트 소식 공지 못 올림",
+    released && `장터 작품 ${released}개 공개(앱 ${code}부터)`, failed && `${failed}건 실패${left ? "(5분 뒤 다시)" : ""}`, marketFailed && "장터 작품 공개 실패(5분 뒤 다시)",
     blocked.length && !resume && `글 검사로 뺀 것 ${blocked.length}`].filter(Boolean).join(" · "));
   // [RVQ-28] 뺀 글은 처음 보낼 때 한 번만 알려요(개발사항에서 고쳐 두면 다음 판부터 그대로 나가요).
   if (blocked.length && !resume) await notifyAdmins(env, "inquiry", { title: `${v} 안내에서 뺀 글 ${blocked.length}개`,
     body: `${blocked.slice(0, 3).map((b) => b.title).join(", ")}: 링크·연락처나 AI·보안 표현이 있어 공지 줄은 빼고 출시 답은 기본 답으로 보냈어요`,
     url: `/admin/#/dev/${blocked[0].id}` }, now).catch(() => null);
-  await mark(failed || marketFailed ? going : {});
-  return { version: v, was: was?.v ?? null, answered, failed, notice: noticeId ? { id: noticeId, title: notice?.title ?? "" } : null, code, market: released };
+  // 2.0.0 [RVQ-34] 검토 U22-02: 끝낸 뒤에도 공지를 올렸는지·올려야 했는지를 남겨 자동 순환이 '공지 안 나감'을 보여 줘요(다시 보내기도 이것으로).
+  await mark(left || marketFailed ? going : { was: going.was, notify, post, noticeId: noticeId ?? null, noticeWanted: Boolean(notice && post), code });
+  return { version: v, was: was?.v ?? null, answered, failed, person, notice: noticeId ? { id: noticeId, title: notice?.title ?? "" } : null, code, market: released };
 }
 
 /** 1.40 [RVD-11] 끝나지 않은 나간 판 저장을 이어요(5분마다, 한 판에 12번까지 = 1시간쯤). 이어 보낸 게 없으면 null. */
@@ -481,9 +579,16 @@ export async function keySession(request, env, path, method, now) {
   return { actor: keyActorOf(row) };
 }
 
-/** 문의 하나를 열쇠로 읽을 때: 알람 점검 기록은 빼요(설계 9장, Claude는 읽지 않아요). */
+/**
+ * 문의 하나를 열쇠로 읽을 때: 알람 점검 기록은 가려요(설계 9장, Claude는 읽지 않아요).
+ * 2.0.0 [RVA-64] HQ-132: 말없이 빼면 '기록이 안 왔다'로 읽혀서, 내용 대신 표식(줄 수·멈춤 기록 있음·없음·못 읽음)을 남겨요.
+ */
 export function keyView(d) {
-  if (d?.context) delete d.context["알람 점검"];
+  if (d?.context && "알람 점검" in d.context) {
+    const mark = diagMark(d.context["알람 점검"]);
+    if (mark) d.context["알람 점검"] = `(${mark})`;
+    else delete d.context["알람 점검"];
+  }
   return d;
 }
 
@@ -542,7 +647,7 @@ async function desk(env, now) {
       "개발사항의 공지 한 줄(news)·출시 답(shipReply)은 판이 나갈 때 사람 확인 없이 나가요. 그래서 링크·전화번호·이메일, AI·자동 답이라는 말, 보안 정보가 있으면 적히지 않아요.",
       "스튜디오 부탁이 셋(서로 다른 네트워크도 셋) 모이면 '올리기 전 확인'(GET /growth/needs?state=ready)에 와요. 부탁 글을 그대로 올리지 말고, 누구나 알아볼 짧은 제목(사용자 말, 60자)으로 다듬어 POST /growth/needs/<id> {action:'market', title}로 올려요. 연락처·금액·링크·단톡방이 있으면 올라가지 않아요.",
       "나간 판 저장(POST /desk/ship)은 Play에서 본 판이나 서버가 아는 판만 돼요. 열쇠로 부르면 바로 나가지 않고 10분 보류와 관리자 알림 뒤에 문의 안내와 업데이트 소식 공지가 나가요(dry:true로 먼저 몇 건인지 봐요).",
-      "1.38 운영 장부: GET /api/admin/ledger?view=claude(Claude 차례)·owner(최고 관리자 확인)·today·late. 줄마다 key(type:id)·번호(K-0001)·겹침 후보·단계·답·담당·기한. 맨 위 crashRepeats는 7일 안 같은 보낸 분·같은 기기에서 되풀이된 닫힘 문의 묶음이고 줄마다 crash(멈춤 기록 있음·없음)·repeat(몇 번째), 기록이 없으면 crashDraft(알람 점검 › 보고서 복사 부탁 답)로 답해요. 처리한 줄은 POST /ledger/state {keys, state:'done', reason}로 끝내고(이유: answered·duplicate·fixed·dev·wontfix·spam·nothing·handled), 한 줄 요약은 POST /ledger/summary {key, text}.",
+      "1.38 운영 장부: GET /api/admin/ledger?view=claude(Claude 차례)·owner(최고 관리자 확인)·today·late. 줄마다 key(type:id)·번호(K-0001)·겹침 후보·단계·답·담당·기한. 맨 위 crashRepeats는 7일 안 같은 보낸 분·같은 기기에서 되풀이된 닫힘 문의 묶음이고 줄마다 crash(멈춤 기록 있음·없음)·repeat(몇 번째), 기록이 없으면 crashDraft(알람 점검 › 보고서 복사 부탁 답)로 답해요. 열쇠로는 점검 기록 내용을 볼 수 없어요: 문의의 context['알람 점검']과 장부 줄의 diag는 '(가려짐: 운영자만 봐요 · n줄 · 멈춤 기록 …)' 표식이에요. 표식이 있으면 기록은 온 것이니 '안 왔다'고 적지 말고 표식을 봐요(없으면 기록이 안 온 것). 처리한 줄은 POST /ledger/state {keys, state:'done', reason}로 끝내고(이유: answered·duplicate·fixed·dev·wontfix·spam·nothing·handled), 한 줄 요약은 POST /ledger/summary {key, text}.",
     ],
     shipped,
     flow: { stages: f.stages, metrics: f.metrics, next: f.next },

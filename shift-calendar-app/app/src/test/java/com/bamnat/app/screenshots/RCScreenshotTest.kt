@@ -200,6 +200,8 @@ class RCScreenshotTest : ScreenshotBase() {
         val vm = RecipeDetailViewModel(c, api.code(i), PersonalCalendar.MAIN)
         content { RecipeDetailScreen(vm, onBack = {}, onRemake = {}) }
         settle()
+        // 2.0.0 [QA-11] The preview is worked out off the main thread (with the 앱 동작 choices since RVS-15): wait for its sides.
+        waitUntil { vm.state.value.pieces.firstOrNull { it.kind == com.bamnat.core.recipe.PieceKind.ALARMS }?.sides?.isNotEmpty() == true }
         val alarms = vm.state.value.pieces.first { it.kind == com.bamnat.core.recipe.PieceKind.ALARMS }
         assertTrue("알람 조각의 전후 줄: 내 야간 둘 다", alarms.sides.count { it.what == "야간 알람" && it.changed } == 2)
         assertTrue("내 야간은 1시간 전에서 더해져요", alarms.sides.any { it.what == "야간 알람" && it.now.contains("(1시간 전)") && it.then.startsWith("2시간 전") })
