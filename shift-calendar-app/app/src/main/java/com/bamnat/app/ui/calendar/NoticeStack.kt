@@ -560,7 +560,7 @@ internal fun sheetLine(line: String, label: String?): String? = when {
 /** PC-180: what closing a 권유 says (조건 16: where it went and for how long, in a person's words). */
 internal const val SUGGEST_RESTS = "닫았어요. 2주 동안 다시 권하지 않을게요"
 /** PC-180: the same kind closed with ✕ a second time: off for good, as 다시 보지 않기. */
-internal const val SUGGEST_OFF = "다시 권하지 않을게요. 기능 켜고 끄기에서 다시 켤 수 있어요"
+internal const val SUGGEST_OFF = "다시 권하지 않을게요 · 기능 켜고 끄기에서 켜요"
 
 /**
  * 2.0.0 갈래 P 5 검토 PC-180 (사용자 '거부를 하면 여러 번 반복해서 알림으로 보여 주지 마'): one rule for every 권유 of the calendar, closed
