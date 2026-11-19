@@ -3943,3 +3943,61 @@ test("[RVA-70] 사람이 봐야 하는 문의는 답 칸 위에 미리 한 줄�
   assert.match(u.text("dialog form[data-form=confirm] p"), /^답에 AI·자동 답 표현이 있어 멈췄어요\. 고친 뒤 보내는 게 좋아요\. 보낸 분 앱에 바로 보이고 알림이 가요\.$/);
   assert.deepEqual(u.errors, []);
 });
+
+test("[RVA-71] 오늘: 손가락으로 왼쪽으로 밀면 내일 볼게요, 숨긴 줄은 보기 칩 숫자에서도 빠지고, 되돌리기 단추 글은 끊기지 않아요", async (t) => {
+  offline(t);
+  const { env } = await world();
+  const u = await asOwner(env, t);
+  await u.go("#/home");
+  const chip = () => Number(u.$('#main details[data-key="home:todo"] .seg[data-key="all"] .n')?.textContent ?? 0);
+  const head = () => Number(u.text('#main details[data-key="home:todo"] > summary small').match(/할 일 (\d+)/)[1]);
+  const swipeLeft = async (li) => {
+    const touch = (type, x) => li.dispatchEvent(new u.window.PointerEvent(type, { bubbles: true, pointerType: "touch", clientX: x, clientY: 100 }));
+    touch("pointerdown", 300);
+    touch("pointermove", 260);
+    touch("pointermove", 180);
+    touch("pointerup", 180);
+    await u.settle();
+  };
+  // 위 셋에 주의 필요가 먼저 오면 그것부터 밀어 할 일 줄이 맨 위에 오게 해요(주의 필요는 할 일 숫자와 상관없어요).
+  for (let i = 0; i < 6 && u.$("#main .today-three li").dataset.swipe.startsWith("a:"); i++) await swipeLeft(u.$("#main .today-three li"));
+  const li = u.$("#main .today-three li");
+  const first = li.dataset.swipe;
+  assert.ok(!first.startsWith("a:"), "a to-do row is on top");
+  const before = chip();
+  assert.equal(before, head(), "chip and header agree at first");
+  await swipeLeft(li);
+  assert.match(u.text("#toast"), /내일 아침까지/);
+  assert.notEqual(u.$("#main .today-three li")?.dataset.swipe, first, "the pushed row is put off");
+  assert.equal(chip(), before - 1, "the 모두 chip drops with it");
+  assert.equal(chip(), head(), "and still matches the header");
+  // 민 바로 뒤 0.4초의 누르기는 먹어요(손을 뗀 자리의 다음 줄을 잘못 열지 않게). 사람 손처럼 잠깐 뒤에 되돌려요.
+  await new Promise((r) => setTimeout(r, 450));
+  await u.click("#toast [data-undo]");
+  assert.equal(u.$("#main .today-three li").dataset.swipe, first);
+  assert.equal(chip(), before);
+  assert.deepEqual(u.errors, []);
+  const css = await adminFile("/admin/app.css").text();
+  assert.match(css, /\.toast \.undo\{white-space:nowrap/, "되돌리기 never breaks in two");
+  assert.match(css, /\.toast\.has-undo\{flex-wrap:wrap/, "on a narrow screen the button moves to the next line instead");
+});
+
+test("[RVA-72] 장터 이달의 제작자·이번 주 고른 것·사진 검토는 설명을 목록 아래 접힌 한 줄로 두어 첫 줄이 위에서 시작해요", async (t) => {
+  offline(t);
+  const { env } = await world();
+  const u = await asOwner(env, t);
+  for (const [tab, how] of [["month", "recipe-month-how"], ["picks", "recipe-picks-how"], ["images", "recipe-images-how"]]) {
+    await u.go("#/recipes");
+    await u.click(`#main [data-act="recipe-tab"][data-key="${tab}"]`);
+    await u.settle(30);
+    assert.equal(u.$$("#main > p.hint").length, 0, `${tab}: no long hint above the list`);
+    const tip = u.$(`#main details.tip[data-key="${how}"]`);
+    assert.ok(tip, `${tab}: the explanation is a folded line`);
+    assert.ok(!tip.open);
+    assert.ok(tip.querySelector("summary").textContent.length <= 70, `${tab}: the folded line is one short sentence`);
+  }
+  assert.deepEqual(u.errors, []);
+  const css = await adminFile("/admin/app.css").text();
+  assert.match(css, /\.list-head \.icon-btn\{width:min\(2\.75rem,52px\)/, "찾기·거르기 단추는 큰 글자에서 커지지 않고 멈춰요");
+  assert.match(css, /select\)\{min-height:min\(3rem,56px\)/, "입력 칸도 큰 글자에서 96px까지 커지지 않아요");
+});
