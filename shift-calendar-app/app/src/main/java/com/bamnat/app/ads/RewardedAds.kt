@@ -112,7 +112,8 @@ fun LeaseAdOption(feature: com.bamnat.app.tier.Feature?, gate: Gate, modifier: M
                 onReward = { opened(FeatureLease.Why.AD, null, "") },
                 onQuit = {},
                 onOffline = { opened(FeatureLease.Why.NO_AD, "offline", "인터넷이 없어 광고 없이 열었어요") },
-                onNoAd = { why -> opened(FeatureLease.Why.NO_AD, why, "광고가 오지 않아 그냥 열었어요") },
+                onNoAd = { why -> opened(FeatureLease.Why.NO_AD, why,
+                    if (why == com.bamnat.app.recipe.ThemeWardrobe.QUIET) "처음 며칠은 광고 없이 열어요" else "광고가 오지 않아 그냥 열었어요") },
                 modifier = modifier,
                 // The bundle counts its own grant (FeatureLease.granted) and says 'two today' above.
                 shared = false)
@@ -158,6 +159,18 @@ fun ThemeAdButton(label: String, note: String, onReward: () -> Unit, onQuit: () 
         return
     }
     val rewarded: () -> Unit = { if (shared) c.featureGate.countThemeAd(); onReward() }
+    // 2.0.0 [RVM-60] 검토 RCP-14: in the first days after install the ads SDK never starts, so no ad can come. Asked here anyway (묶음
+    // 열기, 그림 묶음), it goes ahead at once and says so, instead of '광고를 준비하는 중…' for 15 seconds. The same days as after the wait.
+    if (adsRow && gate.tier < Tier.PRO && AdRules.quiet(adsRow, false, c.wardrobe.adsSeen?.installedAt ?: c.installedAt, Today.instant(),
+            c.remoteConfig.current.adQuietDays)) {
+        Column(modifier) {
+            OutlinedButton(onClick = { onNoAd(com.bamnat.app.recipe.ThemeWardrobe.QUIET) },
+                modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text(label.removePrefix("광고 보고 ")) }
+            Text("앱을 깐 뒤 ${c.remoteConfig.current.adQuietDays}일 동안은 광고 없이 바로 돼요", style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth())
+        }
+        return
+    }
     // 2.0.0 [RVO-18] 검토 PRO-01: the sheet or screen closed while the ad was on its way (or the app went behind): the ad that comes
     // after is dropped, with no reward, toast or 'no ad' open. [cancel] ends the wait in progress, from here or from '그만두기'.
     val lifecycle = androidx.lifecycle.compose.LocalLifecycleOwner.current.lifecycle
