@@ -135,7 +135,9 @@ fun CompanyBoardScreen(
     val list = rememberLazyListState()
     // 사용자 2026-11-03: in 마을 the 광장 tab pressed again goes back to the top.
     val reselect = com.bamnat.app.ui.hub.LocalHubReselect.current
-    LaunchedEffect(reselect) { if (reselect > 0) list.animateScrollToItem(0) }
+    // 2.0.0 [RVO-31] PRO-21: only a tap on the tab (or a 소식) after this part opened goes to the top, not every coming in.
+    val reselectAt = remember { reselect }
+    LaunchedEffect(reselect) { if (reselect > reselectAt) list.animateScrollToItem(0) }
     val nearEnd by remember { derivedStateOf { list.layoutInfo.visibleItemsInfo.lastOrNull()?.index?.let { it >= list.layoutInfo.totalItemsCount - 3 } ?: false } }
     LaunchedEffect(nearEnd, adopted) { if (nearEnd) vm.more() }
 
