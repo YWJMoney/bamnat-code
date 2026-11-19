@@ -183,7 +183,9 @@ fun ScreenSkin(key: String, modifier: Modifier = Modifier, bars: Boolean = false
             // [BLU-12] PC 15차: on a ground of its own the parts' 어두운 화면 lines follow that ground (a white 화면 색 on a dark phone
             // keeps the light lines, so a light-grey 금액 meant for dark does not land on white).
             val raw = com.bamnat.app.ui.parts.LocalBlueprintRaw.current
-            val grounded = if (!inked && !darkened) com.bamnat.app.ui.parts.LocalBlueprint.current else androidx.compose.runtime.remember(raw, dark) { raw.forDark(dark) }
+            // 2.0.0 [RVS-06] SD-02: re-chosen for this ground, the floors are kept on it too (the page's own colour under the words).
+            val pageArgb = page.toArgb().toLong() and 0xFFFFFFFFL
+            val grounded = if (!inked && !darkened) com.bamnat.app.ui.parts.LocalBlueprint.current else androidx.compose.runtime.remember(raw, dark, pageArgb) { raw.forDark(dark).floored(pageArgb) }
             CompositionLocalProvider(LocalScreenLook provides look, LocalCalendarColors provides fitted, LocalBackdrop provides holder,
                 // PC 확인 C10: the ground goes with the words' ink (dark under light words on a dark photo), so a pale cell never turns grey.
                 com.bamnat.app.ui.decor.LocalOnPhoto provides if (!onPhoto) null else photoCard,

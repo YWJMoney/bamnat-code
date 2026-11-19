@@ -51,6 +51,9 @@ class ExampleCalendarGuardTest {
 
     @Test fun `every kind of work makes a full example in no-backup storage, alarms off`() = runBlocking {
         WorkStyle.entries.forEach { style ->
+            // Browsing before it is made, as 우선 둘러볼게요 does: the app's own sweep at start (still running after the first
+            // shifts are there) keeps it, instead of taking it away between the checks (#528 CI: "SHIFT 급여" read 내 달력's setup).
+            c.browse.set(Browse.start(style, LocalDate.of(2026, 10, 23)))
             val cal = c.example.make(style)
             assertTrue(cal.isExample)
             assertFalse(cal.alarms)

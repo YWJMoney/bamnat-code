@@ -51,7 +51,6 @@ import com.bamnat.app.ui.money.AmountField
 import com.bamnat.app.ui.money.amountDigits
 import com.bamnat.app.ui.money.toAmount
 import com.bamnat.app.ui.money.wonBrief
-import com.bamnat.app.ui.theme.LocalCalendarColors
 import com.bamnat.core.money.MoneyBook
 import com.bamnat.core.pay.RateTable
 import com.bamnat.core.work.LaborCost
@@ -87,7 +86,6 @@ fun ShopToolCards(calendarId: String, book: MoneyBook, month: YearMonth, today: 
 private fun SimpleTaxCard(book: MoneyBook, today: LocalDate) {
     val y = remember(book.sales, today) { SimpleTaxLimit.of(today, book.sales) }
     if (y.sales <= 0) return
-    val cal = LocalCalendarColors.current
     val warn = y.level != SimpleTaxLimit.Level.UNDER
     SectionCard(title = "간이과세 기준 (${y.year}년)") {
         Text("${Fmt.won(y.sales)} / ${Fmt.won(SimpleTaxLimit.LIMIT)} · ${y.percent}%", style = MaterialTheme.typography.titleMedium)
@@ -263,8 +261,10 @@ private fun StaffCostCard(calendarId: String, book: MoneyBook, month: YearMonth)
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             StatTile("인건비", Fmt.won(cost.total), Modifier.weight(1f), caption = "${roster.staff.size}명 · ${cost.minutes / 60}시간")
             val ratio = cost.ratio(sales)
-            StatTile("인건비율", ratio?.let { "$it%" } ?: "-", Modifier.weight(1f), caption = if (sales > 0) "매출 ${wonBrief(sales)} 대비" else "매출을 적으면 나와요",
-                caution = (ratio ?: 0) >= 35)
+            // 2.0.0 [RVJ-66] (HQ-103, 조건 6) 인건비율이 높은 것은 주의예요(빨간 칸이었어요): 말과 주의 색.
+            StatTile("인건비율", ratio?.let { "$it%" } ?: "-", Modifier.weight(1f),
+                caption = if (sales > 0) "매출 ${wonBrief(sales)} 대비" + (if ((ratio ?: 0) >= 35) " · 높아요" else "") else "매출을 적으면 나와요",
+                captionTone = if ((ratio ?: 0) >= 35) com.bamnat.app.ui.theme.Tone.Caution else com.bamnat.app.ui.theme.Tone.Plain)
         }
         Column(Modifier.padding(top = 8.dp)) {
             cost.lines.forEach { l ->
@@ -296,8 +296,9 @@ private fun LedgerCostCard(place: com.bamnat.core.boss.Workplace, sales: Long, m
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 StatTile("인건비", Fmt.won(ledger.total), Modifier.weight(1f), caption = "${ledger.lines.size}명 · ${ledger.lines.sumOf { it.workMinutes } / 60}시간")
                 val ratio = if (sales > 0) (ledger.total * 100 / sales).toInt() else null
-                StatTile("인건비율", ratio?.let { "$it%" } ?: "-", Modifier.weight(1f), caption = if (sales > 0) "매출 ${wonBrief(sales)} 대비" else "매출을 적으면 나와요",
-                    caution = (ratio ?: 0) >= 35)
+                StatTile("인건비율", ratio?.let { "$it%" } ?: "-", Modifier.weight(1f),
+                    caption = if (sales > 0) "매출 ${wonBrief(sales)} 대비" + (if ((ratio ?: 0) >= 35) " · 높아요" else "") else "매출을 적으면 나와요",
+                    captionTone = if ((ratio ?: 0) >= 35) com.bamnat.app.ui.theme.Tone.Caution else com.bamnat.app.ui.theme.Tone.Plain) // [RVJ-66]
             }
             Column(Modifier.padding(top = 8.dp)) {
                 ledger.lines.forEach { l -> ValueLine(l.staff.name.ifBlank { "이름 없음" }, Fmt.won(l.employerTotal)) }
@@ -425,7 +426,7 @@ private fun StaffEditor(s: Staff, minimum: Long, minYear: Int, breaks: Boolean, 
         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
             OutlinedTextField(s.name, { onChange(s.copy(name = it.take(12))) }, label = { Text("이름") }, singleLine = true, modifier = Modifier.fillMaxWidth())
             AmountField("시급", amountDigits(s.hourlyWage), { onChange(s.copy(hourlyWage = it.toAmount())) })
-            if (s.hourlyWage in 1 until minimum) com.bamnat.app.ui.components.ToneLine("${minYear}년 최저임금 ${Fmt.won(minimum)}보다 적어요", tone = Tone.Danger) // 법 위반: 위험
+            if (s.hourlyWage in 1 until minimum) com.bamnat.app.ui.components.ToneLine("${minYear}년 최저임금 ${Fmt.won(minimum)}보다 적어요") // [RVJ-66] 인건비 어림의 입력 확인: 주의(급여 대장이 위험을 알려요)
             SwitchLine("주휴수당 주기", s.holidayPay, { onChange(s.copy(holidayPay = it)) }, "한 주 15시간이 안 되면 저절로 빠져요")
             // 2.0.0 [RVJ-54]: under 15 hours a week only the 고용보험 share is counted ([LaborCost.shortWeek]); the line says so.
             SwitchLine("4대보험 가입", s.insured, { onChange(s.copy(insured = it)) },

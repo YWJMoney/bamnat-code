@@ -10,8 +10,8 @@ import org.junit.Test
 
 /** 1.38 관리 화면 할 일 (사용자 2026-11-05). */
 class ManageDeskTest {
-    private fun team(confirmed: Boolean = true, empty: Int = 0, danger: Int = 0, short: Int = 0, next: Boolean = false, members: Int = 8) =
-        TeamGlance("t1", "7병동", members, confirmed, 1, empty, danger, short, next, 40)
+    private fun team(confirmed: Boolean = true, empty: Int = 0, danger: Int = 0, short: Int = 0, next: Boolean = false, members: Int = 8, law: Int = 0) =
+        TeamGlance("t1", "7병동", members, confirmed, 1, empty, danger, short, next, 40, law = law)
 
     private fun shop(five: Boolean = true, closed: Boolean = true, lines: Int = 3, paid: Int = 3, sent: Int = 3, staff: Int = 3, warn: Int = 0) =
         ShopGlance("p1", "우리 가게", staff, five, closed, lines, paid, sent, LocalDate.of(2026, 11, 10), warn)
@@ -23,7 +23,7 @@ class ManageDeskTest {
     @Test fun dangerAndUnconfirmedComeFirst() {
         val l = ManageDesk.todos(LocalDate.of(2026, 11, 20), listOf(team(confirmed = false, empty = 12, danger = 2, short = 3)), listOf(shop(sent = 1)))
         assertTrue(l.take(2).all { it.urgent })
-        assertTrue(l[0].text, l[0].text.contains("위험 2개"))
+        assertTrue(l[0].text, l[0].text.contains("기준 넘김 2건"))
         assertTrue(l[1].text, l[1].text.contains("확정 전") && l[1].text.contains("빈칸 12"))
         // 15일부터 다음 달 짜기, 25일 전에는 급하지 않음.
         val nextJob = l.single { it.key.startsWith("team-next") }
@@ -36,6 +36,10 @@ class ManageDeskTest {
     @Test fun aTeamMadeForNextMonthIsNotAskedForThisOne() {
         val t = TeamGlance("t1", "7병동", 8, false, 0, 240, 0, 0, false, 240, painted = 0)
         assertEquals(emptyList<ManageDesk.Todo>(), ManageDesk.todos(LocalDate.of(2026, 11, 3), listOf(t), emptyList()))
+        // 2.0.0 [RVJ-73] (PC-176) Made with 12월 confirmed and 근무별 인원 set: this month's every day is short, still not a to-do.
+        val made = TeamGlance("t1", "6병동", 5, false, 0, 150, 0, 30, true, 0, painted = 0)
+        assertEquals(emptyList<ManageDesk.Todo>(), ManageDesk.todos(LocalDate.of(2026, 11, 20), listOf(made), emptyList()))
+        assertEquals(1, ManageDesk.todos(LocalDate.of(2026, 11, 20), listOf(made.copy(painted = 3)), emptyList()).count { it.key.startsWith("team-short") })
     }
 
     @Test fun aTeamWithNobodyHasNothingToDo() {
@@ -55,10 +59,16 @@ class ManageDeskTest {
         assertTrue(ManageDesk.todos(LocalDate.of(2026, 11, 10), emptyList(), listOf(shop(paid = 2))).single().urgent)
     }
 
-    /** 2.0.0 [RVJ-50] 검토 PC-118: an urgent to-do is a 주의; only a team's 휴식·연속·주 52시간 signs are a 위험 (red). */
+    /**
+     * 2.0.0 [RVJ-50] 검토 PC-118: an urgent to-do is a 주의; only a team's 주 52시간 weeks are a 위험 (red). [RVJ-68] (총괄 HQ-107) 휴식·연속
+     * are the team's 기준, a 주의 like the board's 확인할 것.
+     */
     @Test fun onlyTheTeamsSignsAreADanger() {
-        val l = ManageDesk.todos(LocalDate.of(2026, 11, 26), listOf(team(confirmed = false, empty = 12, danger = 2)), listOf(shop(five = false, closed = false)))
+        val l = ManageDesk.todos(LocalDate.of(2026, 11, 26), listOf(team(confirmed = false, empty = 12, danger = 2, law = 1)), listOf(shop(five = false, closed = false)))
         assertEquals(listOf("team-danger"), l.filter { it.danger }.map { it.key.substringBefore("-t1") })
+        assertEquals("7병동 11월: 주 52시간 넘김 1건 · 기준 넘김 1건(휴식·연속)", l.single { it.danger }.text)
         assertTrue("마감·확정·5인 이상은 주의", l.filter { it.urgent && !it.danger }.size >= 3)
+        val rules = ManageDesk.todos(LocalDate.of(2026, 11, 26), listOf(team(danger = 3)), emptyList()).single { it.key.startsWith("team-danger") }
+        assertEquals(true to false, rules.urgent to rules.danger)
     }
 }

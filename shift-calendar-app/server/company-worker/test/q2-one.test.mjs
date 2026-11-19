@@ -275,7 +275,7 @@ test("[RVA-56] 장터 건강: CI가 묶은 작품 사진 대조·옛 앱 열기 
   const { readFile } = await import("node:fs/promises");
   const app = await readFile(new URL("../src/admin-app.js", import.meta.url), "utf8") + await readFile(new URL("../src/admin/views/market.js", import.meta.url), "utf8");
   assert.match(app, /\["health", "장터 건강"\]/);
-  assert.match(app, /recipes: \{ tab: "recipeTab" \}/);
+  assert.match(app, /recipes: \{ tab: "recipeTab", code: "recipeCode" \}/, "[RVA-65] 작품 하나 보기 주소도");
   const ci = await readFile(new URL("../../../../.github/workflows/android.yml", import.meta.url), "utf8");
   assert.match(ci, /tools\/market_health\.py --shots app\/build\/market-compare\.json/);
 });
@@ -375,4 +375,177 @@ test("[RVA-59] 다가오는 날짜: 날짜 약속 장부를 KST 오늘부터 남
   const loop = (await call("GET", "/api/admin/loop", undefined, owner)).data;
   assert.ok(Array.isArray(loop.dates.upcoming) && Array.isArray(loop.dates.gaps));
   assert.match(loop.dates.today, /^\d{4}-\d{2}-\d{2}$/);
+});
+
+// ---- 2.0.0 [RVA-63] HQ-124: 되풀이되는 닫힘 문의 (시험 자료는 모두 지어낸 값) ----
+import { CRASH_ASK_DRAFT, crashOf, crashRecord, crashRepeats, repeatPlaces } from "../src/crash-repeat.js";
+
+test("[RVA-63] 멈춤 기록 읽기: '앱 멈춤' 칸에 줄이 있으면 있음, '기록 없음'이면 없음, 점검 기록이 없으면 안 옴", () => {
+  assert.equal(crashRecord("[앱 멈춤]\n03-16 09:00 IllegalStateException in Calendar\n\n[앱 멈춤 관찰]\n기록 없음"), "has");
+  assert.equal(crashRecord("[앱 멈춤]\n기록 없음\n\n[앱 멈춤 관찰]\n화면 꺼짐 3번"), "none");
+  assert.equal(crashRecord("[알람]\n다음 알람 07:00\n\n[앱 멈춤]\n기록 없음"), "none", "칸이 뒤에 있어도");
+  assert.equal(crashRecord("[알람]\n다음 알람 07:00"), "nostop", "2.0.0 [RVA-64] 점검 기록은 왔지만 그 칸이 없음");
+  assert.equal(crashRecord(undefined), "unsent");
+  // 2.0.0 모양(갈래 L RVL-84): '가장 최근 기록:'이 맨 앞, '남은 기록: N개'와 '최근 30일: …'은 늘 있어요. '(못 읽음)' 줄은 멈춘 줄이 아니에요.
+  const v2 = (body, more = "") => `[앱 멈춤]\n${body}${more}`;
+  assert.equal(crashRecord(v2("가장 최근 기록:\n11/18 21:04 IllegalStateException@a.b:3\n최근 30일: 멈춤 1회 · 응답 없음(ANR) 0회 · 기기 쪽 멈춤 0회 · 메모리 부족 0회\n남은 기록: 1개",
+    "\n\n[점검 못 읽음]\n(못 읽음) 나머지 점검: SecurityException@a.b.c:12")), "has");
+  assert.equal(crashRecord(v2("최근 30일: 멈춤 0회 · 응답 없음(ANR) 0회 · 기기 쪽 멈춤 0회 · 메모리 부족 0회\n남은 기록: 0개")), "none", "30일·남은 기록 모두 0");
+  assert.equal(crashRecord(v2("남은 기록: 0개")), "none", "안드로이드 10 아래");
+  assert.equal(crashRecord(v2("최근 30일: 멈춤 0회 · 응답 없음(ANR) 2회 · 기기 쪽 멈춤 0회 · 메모리 부족 0회\n남은 기록: 0개")), "has", "ANR도 멈춤");
+  assert.equal(crashRecord(v2("(못 읽음) 멈춤 기록: SecurityException@a.b:1")), "unread");
+  assert.equal(crashOf("bug", "앱이 닫혀요", { diag: v2("(못 읽음) 멈춤 기록: SecurityException@a.b:1") }).recordName, "멈춤 기록 못 읽음");
+  // 닫힘 문의만: 오류 종류이고 말에 닫힘이 있거나 앱이 '앱 멈춤'을 앞에 붙였을 때. 느려요·아이디어는 아니에요.
+  assert.equal(crashOf("bug", "앱이 갑자기 닫혀요", {}).recordName, "점검 기록 없이 옴");
+  assert.equal(crashOf("question", "쓰다가 자꾸 꺼져요", { diag: "[앱 멈춤]\n기록 없음" }).record, "none");
+  assert.equal(crashOf("other", "그냥 궁금해요", { diag: "[앱 멈춤]\n03-16 IllegalStateException" }).record, "has");
+  assert.equal(crashOf("bug", "달력이 좀 느려요", {}), null);
+  assert.equal(crashOf("idea", "앱이 닫힐 때 저장해 주세요", {}), null);
+  assert.equal(crashOf("bug", "알람 소리가 작아요", { diag: "[알람]\n…" }), null);
+  // 묶음: 같은 보낸 분이 먼저, 같은 기기·안드로이드·판 묶음이 같은 보낸 분 하나뿐이면 한 번만.
+  const D = 86_400_000;
+  const now = Date.parse("2027-03-17T03:00:00Z");
+  const base = { model: "Test Fold 9", android: "17 (API 37)", app: "1.39.0", record: "none" };
+  const g1 = crashRepeats([{ id: "a", device: "p1", at: now - 3 * D, ...base }, { id: "b", device: "p1", at: now - D, ...base }, { id: "c", device: "p1", at: now - 9 * D, ...base }], now);
+  assert.equal(g1.length, 1);
+  assert.deepEqual([g1[0].by, g1[0].n, g1[0].ids, g1[0].noRecord], ["same", 2, ["a", "b"], 2], "7일 밖(c)은 빼요");
+  assert.match(g1[0].label, /^같은 보낸 분 · Test Fold 9 · 안드로이드 17 · 1\.39\.0$/);
+  assert.ok(!JSON.stringify(g1).includes("p1"), "보낸 분 번호는 표지로만");
+  const g2 = crashRepeats([{ id: "a", device: "p1", at: now - 2 * D, ...base }, { id: "b", device: "p2", at: now - D, ...base, record: "has" }], now);
+  assert.deepEqual([g2.length, g2[0].by, g2[0].people, g2[0].noRecord], [1, "model", 2, 1]);
+  // 한 분의 되풀이(p1 둘)에 다른 분 한 건이 붙은 것은 같은 보낸 분 묶음 하나만, 다른 분이 둘 넘으면 기기 묶음도.
+  const one = [{ id: "a", device: "p1", at: now - 3 * D, ...base }, { id: "b", device: "p1", at: now - 2 * D, ...base }, { id: "c", device: "p2", at: now - D, ...base }];
+  assert.deepEqual(crashRepeats(one, now).map((g) => g.by), ["same"]);
+  assert.deepEqual(crashRepeats([...one, { id: "d", device: "p3", at: now - D / 2, ...base }], now).map((g) => [g.by, g.n]), [["model", 4], ["same", 2]]);
+  assert.equal(crashRepeats([{ id: "a", device: "p1", at: now - D, ...base }], now).length, 0, "한 건은 묶음이 아니에요");
+  assert.deepEqual([...repeatPlaces(g1)], [["a", { key: g1[0].key, nth: 1, n: 2 }], ["b", { key: g1[0].key, nth: 2, n: 2 }]]);
+  // 답 초안: 상담원 말투, '밤낮 운영팀', 앱 안 길만(주소·코드·자동 답이라는 말 없음).
+  assert.match(CRASH_ASK_DRAFT, /알람 점검/);
+  assert.match(CRASH_ASK_DRAFT, /보고서 복사/);
+  assert.match(CRASH_ASK_DRAFT, /밤낮 운영팀$/);
+  assert.doesNotMatch(CRASH_ASK_DRAFT, /https?:|\/api|AI|자동|서버|관리자|열쇠|코드/);
+});
+
+test("[RVA-63] 되풀이되는 닫힘 문의: 운영 장부 맨 위 묶음(몇 번째·첫 날·마지막 날), 줄과 문의에 멈춤 기록 표식과 부탁 답, 숫자 › 개선 신호", async (t) => {
+  const { call, DB } = server({ t });
+  const owner = await signIn(call);
+  const DAY = 24 * HOUR;
+  const fold = { app: "1.39.0 (53)", model: "Test Fold 9", android: "17 (API 37)" };
+  const send = async (n, text, kind, info, daysAgo) => {
+    const r = await call("POST", "/api/inquiries", { v: 1, device: device(n), kind, text, info }, from(n));
+    assert.equal(r.status, 201, r.text);
+    const at = TEST_NOW - daysAgo * DAY;
+    await DB.prepare("UPDATE inquiries SET created_at = ?1, updated_at = ?1 WHERE id = ?2").bind(at, r.data.id).run();
+    return r.data.id;
+  };
+  const none = "[앱 멈춤]\n기록 없음\n\n[앱 멈춤 관찰]\n화면 꺼짐 2번";
+  // 같은 보낸 분(61)이 나흘 동안 세 건, 그 전 9일 전 한 건(7일 밖). 같은 기기 이름의 다른 분(62)은 멈춘 줄이 있는 한 건.
+  const old = await send(61, "앱이 갑자기 닫혀요 (지난주)", "bug", { ...fold, diag: none }, 9);
+  const a1 = await send(61, "앱이 갑자기 닫혀요", "bug", { ...fold, diag: none }, 4);
+  const a2 = await send(61, "또 앱이 저절로 꺼졌어요", "bug", { ...fold }, 2);
+  const a3 = await send(61, "오늘도 닫힘. 근무 넣다가 튕겨요", "question", { ...fold, diag: none }, 0.5);
+  const b1 = await send(62, "달력 넘기다 앱이 닫혔어요", "bug", { ...fold, diag: "[앱 멈춤]\n03-16 09:00 IllegalStateException in Month\n\n[알람]\n…" }, 1);
+  await send(63, "앱이 닫힐 때 적던 것을 남겨 주세요", "idea", { ...fold }, 1);
+  await send(64, "달력이 좀 느려요", "bug", { ...fold }, 1);
+  const c1 = await send(65, "앱이 자꾸 꺼져요", "other", { ...fold, diag: none }, 1.5);
+
+  const led = (await call("GET", "/api/admin/ledger?view=all", undefined, owner)).data;
+  assert.ok(!JSON.stringify(led).includes(device(61)), "보낸 분 번호는 화면으로 가지 않아요");
+  assert.equal(led.crashRepeats.length, 2, JSON.stringify(led.crashRepeats));
+  const same = led.crashRepeats.find((g) => g.by === "same");
+  assert.deepEqual([same.n, same.noRecord, same.lines.map((l) => l.key)], [3, 3, [a1, a2, a3].map((id) => `inquiry:${id}`)]);
+  assert.equal(same.first, new Date(TEST_NOW - 4 * DAY).toISOString());
+  assert.equal(same.last, new Date(TEST_NOW - 0.5 * DAY).toISOString());
+  assert.ok(same.lines.every((l) => /^K-\d{4}$/.test(l.no)));
+  assert.match(same.label, /^같은 보낸 분 · Test Fold 9 · 안드로이드 17 · 1\.39\.0$/);
+  const model = led.crashRepeats.find((g) => g.by === "model");
+  assert.deepEqual([model.n, model.people, model.noRecord], [5, 3, 4]);
+  assert.match(led.crashDraft, /보고서 복사/);
+  const row = (id) => led.items.find((r) => r.key === `inquiry:${id}`);
+  assert.deepEqual([row(a1).crash.recordName, row(a2).crash.recordName, row(b1).crash.recordName], ["멈춤 기록 없음", "점검 기록 없이 옴", "멈춤 기록 있음"]);
+  assert.deepEqual([row(a1).repeat.nth, row(a3).repeat.nth, row(a3).repeat.n], [1, 3, 3], "같은 보낸 분 묶음의 몇 번째");
+  assert.equal(row(old).repeat, undefined, "7일 밖은 묶음에 없어요");
+  assert.equal(row(old).crash.record, "none", "표식은 그대로");
+  assert.equal(led.items.filter((r) => r.crash).length, 6, "아이디어·느려요는 닫힘 문의가 아니에요");
+  assert.deepEqual(row(c1).repeat, { key: model.key, nth: 3, n: 5 }, "같은 보낸 분 묶음이 없으면 기기 묶음의 몇 번째");
+
+  // 문의 화면: 줄 표식, 상세의 되풀이와 부탁 답(기록이 있으면 부탁 답 없음).
+  const list = (await call("GET", "/api/admin/inquiries?status=open", undefined, owner)).data.inquiries;
+  assert.equal(list.find((q) => q.id === a2).crash.recordName, "점검 기록 없이 옴");
+  const d3 = (await call("GET", `/api/admin/inquiries/${a3}`, undefined, owner)).data;
+  assert.deepEqual([d3.crash.record, d3.crash.repeat.nth, d3.crash.repeat.n], ["none", 3, 3], "상세도 장부와 같은 7일(9일 전 것은 빼요)");
+  const d1 = (await call("GET", `/api/admin/inquiries/${a1}`, undefined, owner)).data;
+  assert.deepEqual([d1.crash.repeat.nth, d1.crash.repeat.n, d1.crash.repeat.noRecord], [1, 3, 3]);
+  const dOld = (await call("GET", `/api/admin/inquiries/${old}`, undefined, owner)).data;
+  assert.deepEqual([dOld.crash.repeat.nth, dOld.crash.repeat.n], [1, 3], "오래된 문의는 그 뒤 7일(9일 전 → 2일 전 것까지)");
+  assert.equal(d3.crash.draft, CRASH_ASK_DRAFT);
+  assert.ok(!JSON.stringify(d3.crash).includes(device(61)));
+  const db1 = (await call("GET", `/api/admin/inquiries/${b1}`, undefined, owner)).data;
+  assert.deepEqual([db1.crash.record, db1.crash.draft, db1.crash.repeat], ["has", undefined, undefined]);
+  // 앱(보낸 분)에는 아무것도 더 가지 않아요.
+  const mine = (await call("GET", `/api/inquiries/${a3}`, undefined, { "x-device": device(61) })).data;
+  assert.equal(mine.crash, undefined);
+
+  // 숫자 › 개선 신호 '같은 판에서 닫힘 되풀이'(묶음마다, 운영 장부로).
+  const o = (await call("GET", "/api/admin/observe", undefined, owner)).data;
+  const sigs = o.found.filter((f) => f.kind === "crash-repeat" && f.on);
+  assert.equal(sigs.length, 2, JSON.stringify(o.found.map((f) => f.kind)));
+  const s = sigs.find((x) => x.subject === same.key);
+  assert.match(s.title, /^같은 판에서 닫힘 되풀이: 같은 보낸 분 · Test Fold 9 · 안드로이드 17 · 1\.39\.0 3건\(03-13~03-17\) · 멈춤 기록 없음 3건$/);
+  assert.equal(s.to, "#/desk");
+  assert.equal(s.tone, "bad", "세 건부터는 위험");
+  assert.ok(!JSON.stringify(o.crashRepeats).includes(device(61)));
+});
+
+// ---- 2.0.0 [RVA-64] HQ-132: 열쇠로 읽는 점검 기록은 내용 없이 표식만 (시험 자료는 모두 지어낸 값) ----
+import { diagMark } from "../src/crash-repeat.js";
+
+test("[RVA-64] 열쇠로 읽는 점검 기록 표식: 문의·장부 줄·넘길 글에 '(가려짐 · n줄 · 멈춤 기록 …)'만, 내용과 멈춘 곳은 없음, 안 온 것은 표식 없음", async (t) => {
+  assert.equal(diagMark(undefined), null);
+  assert.equal(diagMark("  \n"), null);
+  assert.equal(diagMark("[앱 멈춤]\n기록 없음\n\n[알람]\n다음 알람 07:00"), "가려짐: 운영자만 봐요 · 4줄 · 멈춤 기록 없음");
+  assert.equal(diagMark("[알람]\n다음 알람 07:00"), "가려짐: 운영자만 봐요 · 2줄 · 멈춤 칸 없음");
+  assert.equal(diagMark("[앱 멈춤]\n(못 읽음) 멈춤 기록: SecurityException@a.b:1"), "가려짐: 운영자만 봐요 · 2줄 · 멈춤 기록 못 읽음");
+
+  const { call } = server({ t });
+  const owner = await signIn(call);
+  const key = (await call("POST", "/api/admin/keys", { label: "Claude 시험" }, owner)).data.key;
+  const claude = { authorization: `Bearer ${key}`, "x-admin": "1" };
+  const fold = { app: "1.39.0 (53)", model: "Test Fold 9", android: "17 (API 37)" };
+  const send = async (n, text, info) => {
+    const r = await call("POST", "/api/inquiries", { v: 1, device: device(n), kind: "bug", text, info }, from(n));
+    assert.equal(r.status, 201, r.text);
+    return r.data.id;
+  };
+  const crashed = "[앱 멈춤]\n가장 최근 기록:\n11/18 21:04 TestCrashException@x.y.Month:3\n최근 30일: 멈춤 1회 · 응답 없음(ANR) 0회\n남은 기록: 1개\n\n[알람]\n다음 알람 07:00";
+  const has = await send(71, "앱이 갑자기 닫혀요", { ...fold, diag: crashed });
+  const none = await send(72, "앱이 또 꺼졌어요", { ...fold, diag: "[앱 멈춤]\n기록 없음" });
+  const unsent = await send(73, "앱이 저절로 닫혔어요", { ...fold });
+  const leak = (x) => /TestCrashException|x\.y\.Month|다음 알람 07:00/.test(JSON.stringify(x));
+
+  // 문의 하나: 운영자는 그대로, 열쇠는 표식만.
+  assert.match((await call("GET", `/api/admin/inquiries/${has}`, undefined, owner)).data.context["알람 점검"], /TestCrashException/);
+  const k1 = (await call("GET", `/api/admin/inquiries/${has}`, undefined, claude)).data;
+  assert.equal(k1.context["알람 점검"], "(가려짐: 운영자만 봐요 · 7줄 · 멈춤 기록 있음)");
+  assert.ok(!leak(k1), "기록 내용·멈춘 곳은 열쇠로 가지 않아요");
+  assert.equal(k1.crash.recordName, "멈춤 기록 있음", "닫힘 문의 표식도 같은 셈");
+  assert.equal((await call("GET", `/api/admin/inquiries/${none}`, undefined, claude)).data.context["알람 점검"], "(가려짐: 운영자만 봐요 · 2줄 · 멈춤 기록 없음)");
+  assert.ok(!("알람 점검" in (await call("GET", `/api/admin/inquiries/${unsent}`, undefined, claude)).data.context), "안 온 것은 자리가 없어요");
+
+  // 운영 장부 줄(Claude 차례)과 넘길 글.
+  const led = await call("GET", "/api/admin/ledger?view=claude", undefined, claude);
+  assert.equal(led.status, 200, led.text);
+  const row = (id) => led.data.items.find((r) => r.key === `inquiry:${id}`);
+  assert.deepEqual([row(has).diag, row(none).diag, row(unsent).diag], ["가려짐: 운영자만 봐요 · 7줄 · 멈춤 기록 있음", "가려짐: 운영자만 봐요 · 2줄 · 멈춤 기록 없음", undefined]);
+  assert.ok(!leak(led.data));
+  const hand = await call("GET", "/api/admin/inquiries/handoff", undefined, claude);
+  assert.equal(hand.status, 200, hand.text);
+  const text = hand.data.text;
+  assert.match(text, /점검 기록: \(가려짐: 운영자만 봐요 · 7줄 · 멈춤 기록 있음\)/);
+  assert.match(text, /'점검 기록' 줄은 내용을 가린 표식이에요/);
+  assert.equal(text.match(/^  점검 기록: /gm).length, 2, "안 온 문의에는 그 줄이 없어요");
+  assert.ok(!leak(text));
+  const desk = (await call("GET", "/api/admin/desk", undefined, claude)).data;
+  assert.ok(!leak(desk));
+  assert.match(desk.guide ?? JSON.stringify(desk), /없다고 적지 말고|'안 왔다'고 적지 말고/);
 });
