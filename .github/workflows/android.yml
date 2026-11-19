@@ -58,7 +58,7 @@ jobs:
         working-directory: shift-calendar-app
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-java@v4
+      - uses: actions/setup-java@v6
         with:
           distribution: temurin
           java-version: 17
@@ -135,7 +135,7 @@ jobs:
         working-directory: shift-calendar-app
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-java@v4
+      - uses: actions/setup-java@v6
         with:
           distribution: temurin
           java-version: 17
@@ -359,7 +359,7 @@ jobs:
             echo "server=1" >> "$GITHUB_OUTPUT"
           fi
       - if: steps.changed.outputs.server == '1'
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v6
         with:
           distribution: temurin
           java-version: 17
@@ -441,7 +441,7 @@ jobs:
             echo "run=1" >> "$GITHUB_OUTPUT"
           fi
       - if: steps.changed.outputs.run == '1'
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v6
         with:
           distribution: temurin
           java-version: 17
@@ -583,7 +583,7 @@ jobs:
         working-directory: shift-calendar-app
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-java@v4
+      - uses: actions/setup-java@v6
         with:
           distribution: temurin
           java-version: 17
