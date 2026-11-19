@@ -3745,11 +3745,13 @@ test("[RVA-63] 되풀이되는 닫힘 문의: 운영 장부 맨 위 묶음 카�
   await u.go(`#/inquiries/${ids[1]}`);
   await u.settle(30);
   assert.match(u.text("#main .crash-note"), /같은 보낸 분의 닫힘 문의 2건 중 2번째/);
+  // [RVA-67] PC-201: 보고서 복사는 답장 칸(2,000자)보다 길어요. 점검 기록을 켠 새 문의로.
+  assert.match(u.text("#main .crash-note"), /점검 기록을 켠 새 문의\('앱이 이상해요'\)로 받아 봐요/);
   await u.type("#reply", "안녕하세요.");
   await u.click('#main [data-act="crash-draft"]');
   const v = u.$("#reply").value;
   assert.match(v, /^안녕하세요\.\n\n불편을 드려/, "what was typed stays first");
-  assert.match(v, /보고서 복사/);
+  assert.match(v, /점검 기록도 보내기/);
   assert.match(v, /밤낮 운영팀$/);
   assert.deepEqual(u.errors, []);
 });

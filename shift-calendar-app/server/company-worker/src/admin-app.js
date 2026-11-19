@@ -2285,11 +2285,11 @@ function adminApp(L, BUILD, M) {
     const lead = r ? `같은 보낸 분의 닫힘 문의 ${r.n}건 중 ${r.nth}번째예요 (${day(r.first)}~${day(r.last)}).` : "";
     // 2.0.0 [RVA-66] PC-195: 화면에 보이는 칸 이름으로('함께 온 정보 › 알람 점검'의 [앱 멈춤] 줄), 누르면 그 줄로 가요.
     const has = c.record === "has" && q.context?.["알람 점검"];
-    const ask = c.record === "has" ? "함께 온 정보 › 알람 점검의 [앱 멈춤] 줄을 봐요." : "알람 점검 › 보고서 복사로 받아 봐요.";
+    const ask = c.record === "has" ? "함께 온 정보 › 알람 점검의 [앱 멈춤] 줄을 봐요." : "점검 기록을 켠 새 문의('앱이 이상해요')로 받아 봐요.";
     const can_ = editable && q.status !== "closed" && c.record !== "has";
     return `<div class="note${r ? " warn" : ""} crash-note">${crashPill(c)} <span>${esc(lead ? `${lead} ${ask}` : ask)}</span>${has
       ? ' <button type="button" class="btn small" data-act="crash-diag">멈춤 줄 보기</button>' : ""}${can_
-      ? ' <button type="button" class="btn small" data-act="crash-draft" data-target="reply" title="알람 점검 › 보고서 복사를 부탁하는 답을 답 칸에 넣어요">기록 부탁 답 넣기</button>' : ""}</div>`;
+      ? ' <button type="button" class="btn small" data-act="crash-draft" data-target="reply" title="점검 기록을 켠 새 문의를 부탁하는 답을 답 칸에 넣어요. 보고서는 답장 칸(2,000자)보다 길어요">기록 부탁 답 넣기</button>' : ""}</div>`;
   }
 
   function inquiryDetail(q) {
