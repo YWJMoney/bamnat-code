@@ -192,7 +192,10 @@ fun PayslipFillDialog(
         val slot = texts.withIndex().filter { it.value.isNotBlank() }.getOrNull(photos.slipIndex)?.index
         val voted = slot?.let { listOf(scan, scanSecond)[it]?.takeIf { s -> s.text == texts[it] }?.slip }
         val raw = voted?.read ?: photos.slip ?: PayslipReader.read(text)
-        val taught = SlipNames.apply(raw, fixes.slipNames())
+        // 2.0.0 [RVN-24] 검토 I10ac-01: the company the payslip names, whichever way it was read (명세서로 찾기 fills the search with it).
+        val taught = SlipNames.apply(raw, fixes.slipNames()).let { r ->
+            if (r.company != null) r else r.copy(company = texts.filter { it.isNotBlank() }.firstNotNullOfOrNull(PayslipReader::companyOf))
+        }
         if (taught.lines.isEmpty() && photos.rules.isEmpty() && texts.any { it.isNotBlank() }) {
             notice = "글자는 읽었는데 금액 줄을 찾지 못했어요. 아래 읽힌 글에서 ‘기본급 2,508,000’처럼 이름과 금액이 한 줄에 있게 고친 뒤 ‘읽기’를 눌러 주세요."
             typing = true
