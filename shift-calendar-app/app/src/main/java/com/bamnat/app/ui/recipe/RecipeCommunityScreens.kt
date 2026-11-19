@@ -49,6 +49,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -236,7 +237,8 @@ fun RequestsScreen(vm: RequestsViewModel, onBack: () -> Unit, onOpen: (String) -
                                         }
                                         q.state == "waiting" && !q.mine && vm.canWrite -> TextButton(onClick = { takingAsk = q.id }) { Text("만들게요") }
                                     }
-                                    if (q.mine) TextButton(onClick = { deleting = q.id }) { Text("지우기", color = MaterialTheme.colorScheme.error) }
+                                    // Q1 3c (조건 2): while the answer is being asked, 맞아요 · 아니에요 · 작품 보기 are the only words; 지우기 comes back after.
+                                    if (q.mine && !q.askCheck) TextButton(onClick = { deleting = q.id }) { Text("지우기", color = MaterialTheme.colorScheme.error) }
                                 }
                                 // 1.36 [VIL-15] 올리고 돌아오면 바로 잇기: my newest public recipe, one tap.
                                 if (q.taking && q.state == "making") s.mine.firstOrNull()?.let { r ->
@@ -270,7 +272,10 @@ fun RequestsScreen(vm: RequestsViewModel, onBack: () -> Unit, onOpen: (String) -
         var text by remember { mutableStateOf(draft?.take(200).orEmpty()) }
         // 1.39 발굴(마을 돌봄): 요청 글도 거친 말이면 올리기 전에 한 번 물어요(막지 않아요).
         var nudge by remember { mutableStateOf(false) }
-        val go = { vm.write(text) { ok -> if (ok) writing = false } }
+        // 2.0.0 [RVM-67] 검토 MKT-16 (창 뒤에 가려진 실패, 두 번 누르면 두 번 올라가요): waits for the answer, and says a failure inside the window.
+        var sending by remember { mutableStateOf(false) }
+        var failed by remember { mutableStateOf(false) }
+        val go = { sending = true; failed = false; vm.write(text) { ok -> sending = false; if (ok) writing = false else failed = true } }
         if (nudge) com.bamnat.app.ui.hub.NudgeDialog(text, onEdit = { nudge = false }, onSend = { nudge = false; go() })
         AlertDialog(
             onDismissRequest = { writing = false },
@@ -279,9 +284,11 @@ fun RequestsScreen(vm: RequestsViewModel, onBack: () -> Unit, onOpen: (String) -
                 Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                     OutlinedTextField(text, { if (it.length <= 200) text = it }, label = { Text("예: 간호사 3교대 근무별 알람 세트") }, minLines = 2)
                     Text("금액·연락처·링크는 적지 않아요 (5~200자)", style = MaterialTheme.typography.bodySmall)
+                    if (failed) Text("올리지 못했어요 · 쓴 글은 그대로예요. 잠시 뒤 다시 눌러 주세요", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error,
+                        modifier = Modifier.semantics { liveRegion = androidx.compose.ui.semantics.LiveRegionMode.Polite })
                 }
             },
-            confirmButton = { TextButton(enabled = text.trim().length >= 5, onClick = { if (com.bamnat.core.plaza.PostNudge.needed(text)) nudge = true else go() }) { Text("올리기") } },
+            confirmButton = { TextButton(enabled = text.trim().length >= 5 && !sending, onClick = { if (com.bamnat.core.plaza.PostNudge.needed(text)) nudge = true else go() }) { Text(if (sending) "올리는 중…" else "올리기") } },
             dismissButton = { TextButton(onClick = { writing = false }) { Text("닫기") } },
         )
     }

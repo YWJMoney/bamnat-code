@@ -945,15 +945,27 @@ private fun dayOfMonth(day: Int): String = if (day >= 31) "말일" else "${day}�
 /** 2.0.0 [RVK-42] (검토 MONEY-15) What the editor saves for one kind: its rows in order and the names changed (from → to). */
 data class CategoryChange(val kind: MoneyKind, val edits: List<CategoryEdit>, val renames: List<Pair<String, String>>)
 
-/** One category in the editor: its name now, the name it had, whether it is hidden, and (2.0.0 [RVK-46]) the icon and color picked. */
-private data class EditRow(val name: String, val was: String?, val hidden: Boolean, val icon: String = "", val color: Int = 0) {
+/**
+ * One category in the editor: its name now, the name it had, whether it is hidden, (2.0.0 [RVK-46]) the icon and color picked, and
+ * (2.0.0 [RVK-60]) its fixed id and 집·일 choice, which a rename never changes.
+ */
+private data class EditRow(
+    val name: String, val was: String?, val hidden: Boolean, val icon: String = "", val color: Int = 0,
+    val id: String = "", val scope: com.bamnat.core.money.CategoryScope = com.bamnat.core.money.CategoryScope.FOLLOW,
+) {
+    /** The name its usual picture and color go by: a renamed built-in one keeps its first name's. */
+    val usual: String get() = com.bamnat.core.money.CategoryIds.builtinName(id) ?: name
+
     companion object {
-        /** Kept as five strings a row (name, the name it had or "", 숨김 "1", icon key, color place). */
+        /** Kept as seven strings a row (name, the name it had or "", 숨김 "1", icon key, color place, id, 집·일 code). */
         val Rows = androidx.compose.runtime.saveable.listSaver<androidx.compose.runtime.snapshots.SnapshotStateList<EditRow>, String>(
-            save = { l -> l.flatMap { listOf(it.name, it.was.orEmpty(), if (it.hidden) "1" else "", it.icon, it.color.toString()) } },
+            save = { l -> l.flatMap { listOf(it.name, it.was.orEmpty(), if (it.hidden) "1" else "", it.icon, it.color.toString(), it.id, it.scope.code.toString()) } },
             restore = { v ->
                 mutableStateListOf<EditRow>().apply {
-                    v.chunked(5).forEach { (n, w, h, i, c) -> add(EditRow(n, w.ifEmpty { null }, h == "1", i, c.toIntOrNull() ?: 0)) }
+                    v.chunked(7).forEach { r ->
+                        add(EditRow(r[0], r[1].ifEmpty { null }, r[2] == "1", r[3], r[4].toIntOrNull() ?: 0, r[5],
+                            com.bamnat.core.money.CategoryScope.of(r[6].toIntOrNull() ?: 0)))
+                    }
                 }
             },
         )
@@ -981,7 +993,9 @@ fun CategoryEditor(
         val hidden = mine.filter { it.hidden }.map { it.name }
         val look = mine.associateBy { it.name }
         fun row(name: String, hidden: Boolean) = EditRow(name, name, hidden,
-            look[name]?.icon?.let(com.bamnat.core.money.CategoryLook::icon).orEmpty(), look[name]?.color?.let(com.bamnat.core.money.CategoryLook::color) ?: 0)
+            look[name]?.icon?.let(com.bamnat.core.money.CategoryLook::icon).orEmpty(), look[name]?.color?.let(com.bamnat.core.money.CategoryLook::color) ?: 0,
+            // 2.0.0 [RVK-60] Its fixed id goes along whatever it is renamed to.
+            id = com.bamnat.core.money.CategoryIds.resolve(k, name, mine), scope = look[name]?.scope ?: com.bamnat.core.money.CategoryScope.FOLLOW)
         return shown.map { row(it, false) } + hidden.map { row(it, true) }
     }
     // 2.0.0 [RVK-42] (검토 MONEY-15·U06a-15) Each kind keeps its own changes: 지출 이름 셋을 고치고 수입 탭을 봐도 지출 쪽 고침이 남고, 저장은
@@ -1022,7 +1036,7 @@ fun CategoryEditor(
                         // 2.0.0 [RVK-46] (검토 U06a-15·I06aa-09) The badge opens the icon and color for this category.
                         Box(Modifier.size(48.dp).clip(CircleShape).clickable(onClickLabel = "아이콘·색 고르기") { looking = i }
                             .semantics { contentDescription = "${r.name} 아이콘·색 바꾸기" }, contentAlignment = Alignment.Center) {
-                            CategoryAvatar(r.name, r.icon, r.color, size = 32.dp)
+                            CategoryAvatar(r.usual, r.icon, r.color, size = 32.dp)
                         }
                         Spacer(Modifier.width(2.dp))
                         Text(r.name + if (r.hidden) " (숨김)" else "", style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f),
@@ -1046,8 +1060,9 @@ fun CategoryEditor(
                         label = { Text("새 분류") }, modifier = Modifier.weight(1f))
                     Spacer(Modifier.width(8.dp))
                     val clean = MoneyCategories.clean(adding)
-                    TextButton(enabled = clean.isNotEmpty() && rows.none { it.name == clean } && clean != MoneyCategories.OTHER, onClick = {
-                        rows.add(EditRow(clean, null, false))
+                    TextButton(enabled = clean.isNotEmpty() && rows.none { it.name == clean } && clean != MoneyCategories.OTHER &&
+                        MoneyCategories.nameFree(kind, clean, ""), onClick = {
+                        rows.add(EditRow(clean, null, false, id = com.bamnat.core.money.CategoryIds.own()))
                         adding = ""
                     }) { Text("더하기") }
                 }
@@ -1060,7 +1075,7 @@ fun CategoryEditor(
                     // Every kind changed; with none, the kind on show as before.
                     onSave(changed.ifEmpty { listOf(kind) }.map { k ->
                         val list = rowsBy.getValue(k)
-                        CategoryChange(k, list.mapIndexed { i, r -> CategoryEdit(k, r.name, i, r.hidden, r.icon, r.color) },
+                        CategoryChange(k, list.mapIndexed { i, r -> CategoryEdit(k, r.name, i, r.hidden, r.icon, r.color, id = r.id, scope = r.scope) },
                             list.mapNotNull { r -> r.was?.takeIf { it != r.name }?.let { it to r.name } })
                     })
                 },
@@ -1070,15 +1085,15 @@ fun CategoryEditor(
     }
     looking?.let { i ->
         val r = rows.getOrNull(i) ?: return@let
-        CategoryLookDialog(r.name, r.icon, r.color, onDismiss = { looking = null }) { icon, color ->
+        CategoryLookDialog(r.name, r.icon, r.color, usual = r.usual, onDismiss = { looking = null }) { icon, color ->
             rows[i] = r.copy(icon = icon, color = color)
             looking = null
         }
     }
     renaming?.let { i ->
         val r = rows.getOrNull(i) ?: return@let
-        // 2.0.0 [RVK-08] (MONEY-03·T06a-10): 급여·카드값·이자·금융 and the like are read by name in the sums; renamed, 급여 would be
-        // counted twice. They say so instead of opening a field; hiding them still works.
+        // 2.0.0 [RVK-08] (MONEY-03·T06a-10) kept 급여·카드값 from being renamed; 2.0.0 [RVK-60] (I06ab-01) the sums read them by their fixed
+        // id now, so only 기타 says so instead of opening a field.
         if (!MoneyCategories.renamable(r.was ?: r.name)) {
             AlertDialog(
                 onDismissRequest = { renaming = null },
@@ -1091,7 +1106,9 @@ fun CategoryEditor(
         var text by remember(i) { mutableStateOf(r.name) }
         val clean = MoneyCategories.clean(text)
         val taken = rows.any { it !== r && it.name == clean }
-        val fixed = clean.isNotEmpty() && !MoneyCategories.renamable(clean)
+        // [RVK-60] Never 기타, nor the first name of another 급여·카드값-like one (부수입 renamed 급여 is not pay).
+        val fixed = clean.isNotEmpty() && (!MoneyCategories.renamable(clean) || !MoneyCategories.nameFree(kind, clean, r.id))
+        val role = com.bamnat.core.money.CategoryIds.role(r.id)
         AlertDialog(
             onDismissRequest = { renaming = null },
             title = { Text("이름 바꾸기") },
@@ -1101,6 +1118,8 @@ fun CategoryEditor(
                     supportingText = when {
                         taken -> { { Text("이미 있는 이름이에요") } }
                         fixed -> { { Text("계산에 쓰는 이름이라 쓸 수 없어요") } }
+                        // [RVK-60] 급여·카드값 renamed still count as they did.
+                        role != null -> { { Text("이름을 바꿔도 계산은 그대로예요") } }
                         else -> null
                     })
             },
@@ -1120,14 +1139,14 @@ fun CategoryEditor(
  * preview, '원래대로' back to the usual look. Nothing is kept until 분류 저장.
  */
 @Composable
-private fun CategoryLookDialog(name: String, icon: String, color: Int, onDismiss: () -> Unit, onPick: (String, Int) -> Unit) {
+private fun CategoryLookDialog(name: String, icon: String, color: Int, usual: String = name, onDismiss: () -> Unit, onPick: (String, Int) -> Unit) {
     var pickedIcon by rememberSaveable(name) { mutableStateOf(icon) }
     var pickedColor by rememberSaveable(name) { mutableStateOf(color) }
     AlertDialog(
         onDismissRequest = onDismiss,
         title = {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                CategoryAvatar(name, pickedIcon, pickedColor, size = 40.dp)
+                CategoryAvatar(usual, pickedIcon, pickedColor, size = 40.dp)
                 Spacer(Modifier.width(12.dp))
                 Text(name, maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
@@ -1138,7 +1157,7 @@ private fun CategoryLookDialog(name: String, icon: String, color: Int, onDismiss
                 androidx.compose.foundation.layout.FlowRow(horizontalArrangement = Arrangement.spacedBy(4.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                     // 2.0.0 [RVK-46] (총괄 사진 검토, 조건 2): '기본' is the first choice, so the dialog keeps two buttons below.
                     LookDefault(selected = pickedIcon.isEmpty(), what = "아이콘", onClick = { pickedIcon = "" }) {
-                        Icon(usualCategoryIcon(name), null, tint = if (pickedIcon.isEmpty()) MaterialTheme.colorScheme.primary
+                        Icon(usualCategoryIcon(usual), null, tint = if (pickedIcon.isEmpty()) MaterialTheme.colorScheme.primary
                             else MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(24.dp))
                     }
                     com.bamnat.core.money.CategoryLook.ICONS.forEach { key ->
@@ -1149,14 +1168,14 @@ private fun CategoryLookDialog(name: String, icon: String, color: Int, onDismiss
                             .selectable(selected = on, role = androidx.compose.ui.semantics.Role.RadioButton) { pickedIcon = if (on) "" else key }
                             .semantics { contentDescription = LOOK_NAMES[key] ?: key },
                             contentAlignment = Alignment.Center) {
-                            Icon(lookIcon(key) ?: usualCategoryIcon(name), null, tint = tint, modifier = Modifier.size(24.dp))
+                            Icon(lookIcon(key) ?: usualCategoryIcon(usual), null, tint = tint, modifier = Modifier.size(24.dp))
                         }
                     }
                 }
                 Text("색", style = MaterialTheme.typography.labelLarge)
                 androidx.compose.foundation.layout.FlowRow(horizontalArrangement = Arrangement.spacedBy(4.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                     LookDefault(selected = pickedColor == 0, what = "색", onClick = { pickedColor = 0 }) {
-                        Box(Modifier.fillMaxSize().background(usualCategoryColor(name)))
+                        Box(Modifier.fillMaxSize().background(usualCategoryColor(usual)))
                     }
                     (1..com.bamnat.core.money.CategoryLook.COLORS).forEach { place ->
                         val on = pickedColor == place

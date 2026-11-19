@@ -532,6 +532,10 @@ background:var(--info-bg);color:var(--info);font-size:.86rem;font-weight:800;tex
 .empty .actions.mid{justify-content:center;margin-top:1rem}.empty .actions.mid .btn{margin-top:0}
 .toast .undo{margin-left:.75rem;border:0;border-radius:var(--r);padding:.45rem .9rem;background:var(--accent-soft);color:var(--fg);font-size:.95rem;font-weight:900;cursor:pointer;pointer-events:auto;min-height:2.75rem}
 .toast.has-undo{font-size:.95rem;padding:.6rem .8rem .6rem 1.1rem;display:flex;align-items:center;gap:.25rem}
+/* 2.0.0 [RVA-71] PC-208: 좁은 폭·큰 글자에서 '되돌리기'가 '되돌리 / 기'로 끊기지 않게, 자리가 모자라면 단추가 아랫줄 오른쪽으로 */
+.toast.has-undo{flex-wrap:wrap;row-gap:.35rem;column-gap:.75rem}
+.toast.has-undo>span{flex:1 1 9rem;min-width:0;text-align:start}
+.toast .undo{white-space:nowrap;flex:none;margin-left:auto}
 .toast.show.has-undo{pointer-events:auto}
 .toast.has-undo.mini{left:auto;right:max(1rem,env(safe-area-inset-right));transform:none;padding:.3rem;box-shadow:var(--shadow-lg)}
 .toast.has-undo.mini>span{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
@@ -871,6 +875,7 @@ button.tile{font:inherit;text-align:left;cursor:pointer;color:inherit}button.til
 hr.split{border:0;border-top:2px dashed var(--line);margin:1.5rem 0}
 .linkish{background:none;border:0;padding:0;color:var(--accent,#2b6cb0);text-decoration:underline;cursor:pointer;font:inherit}
 .kv dd .ctx-at{display:block;margin-bottom:4px}
+.composer .send-ask{margin:0 0 .5rem}
 li.flash,.kv dd.flash{outline:2px solid var(--accent,#2b6cb0);outline-offset:2px;transition:outline-color .3s}
 img.photo-big{display:block;width:100%;max-width:512px;height:auto;margin:0 auto;image-rendering:auto;border-radius:8px}
 @media (max-width:640px){.rows.work .row{flex-wrap:wrap}.rows.work .row-side{width:100%;max-width:none;flex-direction:column;align-items:stretch;gap:.4rem}
@@ -1855,4 +1860,12 @@ details.fold-field[open]>summary{margin-bottom:.5rem}
 /* 2.0.0 [RVA-21] 380 폭·글자 200%에서 긴 단추(파일 고르기(여러 개), 내 계정의 '다른 기기 모두 로그아웃' 같은 것)가 화면 밖으로 나가지 않게:
    한 줄에 안 들어갈 때만 띄어쓰기에서 줄을 바꿔요(낱말은 가르지 않아요). 차트의 읽어 주는 표는 1px 상자 안에(가로 넘침 0). */
 .actions .btn,.filepick .btn{max-width:100%;white-space:normal;word-break:keep-all;text-align:center;padding-top:.35rem;padding-bottom:.35rem}
+/* 2.0.0 [RVA-72] PC-209(조건 1·12): 380 폭·글자 200%에서 목록 첫 줄이 화면의 34~49%에서 시작했어요. 위 틈과 목록 머리의 '찾기·거르기' 단추는
+   글자를 따라 두 배로 커지지 않고 멈춰요(누르는 곳은 48px 넘게 그대로). */
+@media (max-width:599.98px){.main{padding-top:min(1rem,16px)}}
+.list-head .icon-btn{width:min(2.75rem,52px);height:min(2.75rem,52px)}
+.list-head .icon-btn svg{width:min(1.4rem,26px);height:min(1.4rem,26px)}
+/* 한 줄 입력·고르기 칸도 글자 200%에서 96px까지 커지지 않게(보통 글자에서는 그대로 48px). 회사 찾기 줄 같은 머리가 두 줄이어도 위 틈이 작아요. */
+:is(input:not([type]),input[type=search],input[type=text],input[type=email],input[type=password],input[type=url],input[type=date],input[type=number],select){min-height:min(3rem,56px);padding-block:min(.6rem,10px);line-height:1.3}
+.chips.one-line{flex-wrap:nowrap;overflow-x:auto;scrollbar-width:none}.chips.one-line .chip{flex:0 0 auto;white-space:nowrap}
 `;

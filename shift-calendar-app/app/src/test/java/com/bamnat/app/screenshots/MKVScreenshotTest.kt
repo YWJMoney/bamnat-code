@@ -139,11 +139,11 @@ class MKVScreenshotTest : ScreenshotBase() {
         model.kind(RecipeClient.SCOPE_LOGIC)
         settle()
         assertTrue("규칙·단추는 도구로", model.state.value.kind == RecipeClient.SCOPE_TOOL)
-        // 2.0.0 [RVM-31] HQ-42: 장터 has one row of chips; ▾ shows all of it.
+        // 2.0.0 [RVM-64] 검토 U08a-01: 도구's 종류 and 쓰는 화면 are in 거르기.
         openChips()
         assertTrue(appears("🧱 부품", exact = true))
         assertTrue(appears("⚡ 자동 규칙", exact = true))
-        assertTrue("쓰는 화면 칩은 둘째 줄에 펼쳐져 있어요", appears("모든 화면", exact = true))
+        assertTrue("쓰는 화면도 거르기에", scrolledTo("모든 화면", exact = true))
     }
 
     /** 1.39 [MKC-01] 탭별 작품: 탭 칩 아래 꾸미기·기능 칩. */
@@ -159,7 +159,10 @@ class MKVScreenshotTest : ScreenshotBase() {
         tapText("🎨 꾸미기", exact = true)
         settle()
         assertTrue(model.state.value.kind == RecipeClient.tabKind("", "look"))
-        assertTrue(appears("🗂 탭별 작품", exact = true))
+        closeChips()
+        // [RVM-64]: the 구간 picked is its tab; 꾸미기 shows as a chip under the top with its X.
+        assertTrue(appears("탭별 작품", exact = true))
+        assertTrue(appears("🎨 꾸미기 빼기", exact = true))
     }
 
     /** 1.39 [MKC-02][MKC-03] 도구 전후 해 보기: 새 단추를 눌러 보면 무엇을 하는지, 규칙은 상황을 만들어 지금 ↔ 넣으면. */
@@ -302,12 +305,18 @@ class MKVScreenshotTest : ScreenshotBase() {
         settle()
         assertTrue(model.state.value.kind == RecipeClient.toolKind("", null, fx = true))
         assertTrue("프로 기능 작품만", model.state.value.items.isNotEmpty() && model.state.value.items.all { it.fx.isNotEmpty() })
+        closeChips()
         // [RVM-12] 쓰는 사람 말: 값 칸·단추 위젯 → '홈 화면 단추 · 숫자 세기'.
         assertTrue("무엇이 들었는지 한 줄", appears("✦ 홈 화면 단추 · 숫자 세기", exact = true))
-        // 다른 칩을 고르면 '✦ 프로 기능'은 풀려요.
+        // 2.0.0 [RVM-64]: 값 (✦ 프로 · 무료) is its own part of 거르기, so a 종류 picked keeps it; its X under the top takes it off.
+        openChips()
         tapText("🧱 부품", exact = true)
         settle()
-        assertTrue(!RecipeClient.fxOnly(model.state.value.kind))
+        assertTrue(RecipeClient.fxOnly(model.state.value.kind) && RecipeClient.toolOf(model.state.value.kind) == "part")
+        closeChips()
+        tapText("✦ 프로 기능 빼기", exact = true)
+        settle()
+        assertTrue(!RecipeClient.fxOnly(model.state.value.kind) && RecipeClient.toolOf(model.state.value.kind) == "part")
     }
 
     /** 1.39 [MKC-04] 무료 폰의 상세: 프로 기능 카드에 하루 써 보기·프로 보기, 시작하면 넣는 길로. */
@@ -371,10 +380,11 @@ class MKVScreenshotTest : ScreenshotBase() {
         settle()
         model.kind(RecipeClient.SCOPE_THEME)
         settle()
-        // 1.39 [MKD-60] 칩 줄은 한 줄로 밀어 보고, 넘치면 ▾로 펼쳐요.
+        // 2.0.0 [RVM-64]: 작게 보기 is under 거르기 › 보기.
         openChips()
         tapText("작게 보기", exact = true)
         settle()
+        closeChips()
         assertTrue("이 폰에 기억해요", app.getSharedPreferences("market_view", 0).getBoolean("small", false))
         scrollUp(300)
         assertTrue(appears("작품 모습", exact = true, ms = 5_000))
@@ -413,8 +423,7 @@ class MKVScreenshotTest : ScreenshotBase() {
         assertTrue("만든 분을 누르면 프로필로", maker == "mk1")
     }
 
-    /** 1.39 [MKD-60] 2.0.0 [RVM-31]: 장터's row of chips starts as one line; ▾ shows all of it, as a person would to see the rest. */
-    private fun Screen.openChips() {
-        repeat(3) { if (shows("칩 모두 펼쳐 보기", exact = true)) { tapText("칩 모두 펼쳐 보기", exact = true); settle() } }
-    }
+    /** 2.0.0 [RVM-64] 검토 U08a-01: what was a row of chips is 거르기, one sheet opened from beside the search box. */
+    private fun Screen.openChips() { tapText("거르기·정렬", exact = true); settle() }
+    private fun Screen.closeChips() { tapText("다 됐어요", exact = true); settle() }
 }

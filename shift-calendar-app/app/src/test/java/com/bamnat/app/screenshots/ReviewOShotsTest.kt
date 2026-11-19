@@ -1,5 +1,7 @@
 package com.bamnat.app.screenshots
 
+import androidx.compose.foundation.layout.padding
+import androidx.compose.ui.unit.dp
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.bamnat.app.data.PersonalCalendar
 import com.bamnat.app.tier.Tier
@@ -379,5 +381,74 @@ class ReviewOShotsTest : ScreenshotBase() {
         }
         if (sent.size != looks.size || sent.any { it.isNullOrBlank() }) missed += "답장과 함께 간 기록: $sent"
         org.junit.Assert.assertEquals(emptyList<String>(), missed)
+    }
+
+    // ---- 7차: PC-204 결제·환불 안내, HQ-154 단계 띠, HQ-152 홀로 남는 점 ----
+
+    /**
+     * 2.0.0 [RVO-29] PC-204 (조건 4·13): 결제·환불 문의의 보내기 위 안내는 그 종류의 말로 시작하고, 예시대로 Play 주문 번호를 적어도
+     * '금액' 말이 나오지 않아요. 보관 글은 '보관 기간·지우기' ⓘ 뒤.
+     */
+    @Test fun billingNotice() {
+        val missed = mutableListOf<String>()
+        val lead = com.bamnat.app.ui.settings.inquiryNotice(com.bamnat.app.company.InquiryKind.BILLING, share = false).lead
+        all("24_billing_notice") {
+            inquiriesOn()
+            // The order number as the 결제·환불 example asks, written in (InquiryStart.text fills the field as the user would).
+            askFromScreen(com.bamnat.app.ui.settings.InquiryStart(about = "프로·결제", kind = com.bamnat.app.company.InquiryKind.BILLING,
+                text = "어제 프로 1년을 결제했는데 아직 안 열려요. Play 주문 번호는 GPA.3312-4459-2207-48812예요"))
+            reveal("보관 기간·지우기", exact = true)
+            val look = "${RuntimeEnvironment.getQualifiers().substringBefore("-port")} ${app.resources.configuration.fontScale}"
+            if (!shows(lead, exact = true)) missed += "$look: 결제·환불 안내 첫 문장이 없음"
+            if (shows("회사 방식은", exact = false)) missed += "$look: 결제 문의에 회사 방식 글"
+            if (shows("금액은 적지 말아 주세요", exact = false)) missed += "$look: 주문 번호가 금액으로 막힘"
+        }
+        org.junit.Assert.assertEquals(emptyList<String>(), missed)
+    }
+
+    /**
+     * 2.0.0 [RVO-29] HQ-154 (조건 12): 내 문의의 단계 띠. 이름이 칸에 맞으면 여섯 이름, 맞지 않으면(접은 폭 200%) 띠 아래 '답변 · 3/6' 한 줄.
+     * 어느 쪽이든 말줄임표(…)로 잘린 이름이 없어요.
+     */
+    @Test fun stepsNeverCut() {
+        val missed = mutableListOf<String>()
+        all("25_steps") {
+            inquiriesOn(asked = true)
+            inquiryThread()
+            val look = "${RuntimeEnvironment.getQualifiers().substringBefore("-port")} ${app.resources.configuration.fontScale}"
+            val texts = nodes(merged = false).flatMap { n ->
+                n.config.getOrElseNullable(androidx.compose.ui.semantics.SemanticsProperties.Text) { null }.orEmpty().map { it.text }
+            }
+            val names = listOf("접수", "확인 중", "답변", "개발 목록", "만드는 중", "반영")
+            if (!(names.all { it in texts } || "답변 · 3/6" in texts)) missed += "$look: 단계 이름도 '답변 · 3/6'도 없음 $texts"
+            if (texts.any { it.endsWith("…") && names.any { n -> n.startsWith(it.dropLast(1)) } }) missed += "$look: 잘린 이름"
+        }
+        org.junit.Assert.assertEquals(emptyList<String>(), missed)
+    }
+
+    /**
+     * 2.0.0 [RVO-29] HQ-152 (조건 12): the lines joined by dots (친구 초대 진행, 결제 고지, 요금제 창의 가격·할인, 약관 링크) side by side:
+     * at 100% on the open width each is one line with its dots; where it does not fit, one part a line and no dot left alone.
+     */
+    @Test fun noDotLeftAlone() = all("26_dot_lines") {
+        content {
+            androidx.compose.foundation.layout.Column(androidx.compose.ui.Modifier.padding(16.dp),
+                verticalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(12.dp)) {
+                val plans = samplePlans
+                com.bamnat.app.ui.components.DotText(com.bamnat.core.tier.InviteRules.next(3, 2, com.bamnat.core.tier.InviteTerms.DEFAULT),
+                    androidx.compose.material3.MaterialTheme.typography.titleMedium)
+                com.bamnat.app.ui.components.DotText(com.bamnat.app.ui.pro.priceLine(plans)!!, androidx.compose.material3.MaterialTheme.typography.labelLarge,
+                    androidx.compose.material3.MaterialTheme.colorScheme.primary)
+                com.bamnat.app.ui.components.DotText(com.bamnat.app.ui.pro.trialHead(com.bamnat.core.time.Today.date(), "연 39,000원"),
+                    androidx.compose.material3.MaterialTheme.typography.labelLarge, androidx.compose.material3.MaterialTheme.colorScheme.primary)
+                com.bamnat.app.ui.pro.PayNotice(plans, null)
+                com.bamnat.app.ui.pro.PolicyLinks()
+            }
+        }
+        settle()
+        val texts = nodes(merged = false).flatMap { n ->
+            n.config.getOrElseNullable(androidx.compose.ui.semantics.SemanticsProperties.Text) { null }.orEmpty().map { it.text }
+        }
+        org.junit.Assert.assertFalse("홀로 남은 점: $texts", texts.any { it.trim() == "·" || it.trimEnd().endsWith(" ·") || it.trimStart().startsWith("· ") })
     }
 }

@@ -36,7 +36,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         // 2.0.0 [RVK-46] Version 36: 일감 받은 기록.
         JobPaymentEntity::class,
     ],
-    version = 36,
+    version = 37,
     exportSchema = true,
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -82,6 +82,7 @@ abstract class AppDatabase : RoomDatabase() {
                 MIGRATION_21_22, MIGRATION_22_23, MIGRATION_23_24, MIGRATION_24_25,
                 MIGRATION_25_26, MIGRATION_26_27, MIGRATION_27_28, MIGRATION_28_29, MIGRATION_29_30,
                 MIGRATION_30_31, MIGRATION_31_32, MIGRATION_32_33, MIGRATION_33_34, MIGRATION_34_35, MIGRATION_35_36,
+                MIGRATION_36_37,
             )
 
         /**
@@ -549,6 +550,25 @@ abstract class AppDatabase : RoomDatabase() {
                 db.execSQL("CREATE TABLE IF NOT EXISTS `job_payments` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `jobId` INTEGER NOT NULL, " +
                     "`epochDay` INTEGER NOT NULL, `amount` INTEGER NOT NULL, `label` TEXT NOT NULL, `note` TEXT NOT NULL)")
                 db.execSQL("CREATE INDEX IF NOT EXISTS `index_job_payments_jobId` ON `job_payments` (`jobId`)")
+            }
+        }
+
+        /**
+         * Version 37 (2.0.0 갈래 K, 총괄이 준 번호) [RVK-60] 검토 I06ab-01: 분류를 고정 id로. A category keeps a fixed id (`uid`, with what the
+         * sums read it as, 집·일 and its 표준 묶음), and every line, split part and repeating line points at it (`categoryId`, `partIds`); the
+         * names stay as they were, now only what is shown. Every row of 36 gets the id its name stands for ([CategoryIdFill]), so nothing
+         * moves: a built-in name gets its built-in id, any other the id of its name.
+         */
+        val MIGRATION_36_37 = object : Migration(36, 37) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE `money_entries` ADD COLUMN `categoryId` TEXT NOT NULL DEFAULT ''")
+                db.execSQL("ALTER TABLE `money_entries` ADD COLUMN `partIds` TEXT NOT NULL DEFAULT ''")
+                db.execSQL("ALTER TABLE `fixed_costs` ADD COLUMN `categoryId` TEXT NOT NULL DEFAULT ''")
+                db.execSQL("ALTER TABLE `money_categories` ADD COLUMN `uid` TEXT NOT NULL DEFAULT ''")
+                db.execSQL("ALTER TABLE `money_categories` ADD COLUMN `role` TEXT NOT NULL DEFAULT ''")
+                db.execSQL("ALTER TABLE `money_categories` ADD COLUMN `scope` INTEGER NOT NULL DEFAULT 0")
+                db.execSQL("ALTER TABLE `money_categories` ADD COLUMN `std` TEXT NOT NULL DEFAULT ''")
+                CategoryIdFill.fill(db)
             }
         }
 

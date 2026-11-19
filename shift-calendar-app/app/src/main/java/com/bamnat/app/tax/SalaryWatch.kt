@@ -69,8 +69,8 @@ object SalaryWatch {
         for (s in seen) {
             val e = s.entry
             // Filed as 급여 so the money tab counts it once; a split line keeps its parts.
-            if (e.shareOf(MoneyCategories.SALARY) == 0L && e.parts.isEmpty()) {
-                val moved = e.copy(category = MoneyCategories.SALARY)
+            if (e.shareOf(com.bamnat.core.money.CategoryRole.SALARY) == 0L && e.parts.isEmpty()) {
+                val moved = e.copy(category = MoneyCategories.SALARY, categoryId = com.bamnat.core.money.CategoryRole.SALARY.id)
                 save(moved)
                 refiled += moved
             }
@@ -91,7 +91,7 @@ object SalaryWatch {
             val payer = SalaryDeposits.key(entry.merchant)
             s.copy(notPay = s.notPay + entry.id, payers = s.payers.filter { SalaryDeposits.key(it) != payer || payer.isEmpty() }.toSet())
         }
-        if (entry.category == MoneyCategories.SALARY) money.save(entry.copy(category = category))
+        if (entry.isRole(com.bamnat.core.money.CategoryRole.SALARY)) money.save(entry.copy(category = category))
     }
 
     /**

@@ -878,7 +878,7 @@ internal fun SlipAuditCard(m: PayslipMatch, slip: Payslip, read: PayslipRead?, s
             deductions.forEach { d ->
                 Row(Modifier.fillMaxWidth().heightIn(min = 40.dp).clickable(onClickLabel = "${d.name} 설명") { open = if (open == d.name) null else d.name }
                     .padding(vertical = 2.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Text(d.name + if (open == d.name) " ▴" else " ▾", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
+                    Text(d.name + if (open == d.name) "\u00A0▴" else "\u00A0▾", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
                     Text("${d.slip?.let(::won) ?: "없음"} · ${d.estimate?.let(::won) ?: "-"}", style = MaterialTheme.typography.bodySmall)
                 }
                 if (open == d.name) Text(com.bamnat.core.pay.SlipAudit.explain(d.name, m.gross, m.month), style = MaterialTheme.typography.bodySmall,

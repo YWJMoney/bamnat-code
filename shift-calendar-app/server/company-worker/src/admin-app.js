@@ -2272,7 +2272,6 @@ function adminApp(L, BUILD, M) {
     const tail = "보낸 분이 앱을 열면 답은 보여요.";
     if (p.why === "gone") return `알림을 보낼 수 없어요(앱을 지웠거나 알림을 껐어요). ${tail}`;
     if (p.why === "busy" && p.retry) return `구글이 바빠 답 알림이 아직 못 갔어요. ${moment(p.retry)}에 다시 보내요. ${tail}`;
-    if (p.why === "busy") return `답 알림이 ${p.tries}번 못 갔어요. ${tail}`;
     return `답 알림이 못 갔어요. ${tail}`;
   }
 
@@ -2332,13 +2331,13 @@ function adminApp(L, BUILD, M) {
             <span class="bubble-meta admin">${esc(h.by)} · ${h.person ? `<b>사람이 보내야 해요</b>${heldWhyText(h)}` : `<b>보류 중</b>, ${Math.max(1, Math.ceil((Date.parse(h.until) - Date.now()) / 60000))}분 뒤 보내져요`}${h.close ? " · 보내면 닫혀요" : ""}${editable ? `
             <button class="btn small${h.person ? " primary" : " ghost"}" data-act="held-send" data-id="${h.id}">지금 보내기</button><button class="btn small ghost" data-act="held-edit" data-id="${h.id}">고치기</button><button class="btn small ghost" data-act="held-cancel" data-id="${h.id}">보내지 않기</button>${h.person && h.why && !h.why.reply ? `<button class="linkish" type="button" data-act="held-miss" data-id="${h.id}">판정이 틀렸어요</button>` : ""}` : ""}</span>`).join("")}</div>
           ${q.push ? `<p class="meta" role="status"><span class="pill warn">알림 못 감</span> ${esc(pushLine(q.push))}</p>` : ""}
-          ${q.photos ? `<div class="photos">${(q.photoList ?? Array.from({ length: q.photos }, (_, i) => ({ n: i + 1 }))).map((p) =>
-            `<a href="/api/admin/inquiries/${esc(q.id)}/photos/${p.n}" target="_blank" rel="noopener"><img src="/api/admin/inquiries/${esc(q.id)}/photos/${p.n}" alt="보낸 분이 붙인 사진 ${p.n}${p.at && p.at !== q.createdAt ? ` · ${esc(moment(p.at))}에 이어 쓴 글과 함께` : ""}" loading="lazy"></a>`).join("")}</div>
-            ${(q.photoList ?? []).some((p) => p.at !== q.createdAt) ? `<p class="meta">이어 쓴 글과 함께 온 사진도 있어요.</p>` : ""}
+          ${q.photos ? `<div class="photos">${(q.photoList ?? []).map((p) =>
+            `<a href="/api/admin/inquiries/${esc(q.id)}/photos/${p.n}" target="_blank" rel="noopener"><img src="/api/admin/inquiries/${esc(q.id)}/photos/${p.n}" alt="보낸 분이 붙인 사진 ${p.n}${p.at !== q.createdAt ? " · 이어 쓴 글과 함께" : ""}" loading="lazy"></a>`).join("")}</div>
             <p class="meta">사진은 위치 정보를 지운 채로 받았어요. ${q.billing ? "결제·환불 기록이라 문의와 함께 3년 동안 둬요." : "문의를 닫고 90일 뒤에 지워져요."}</p>` : ""}</div>
         ${q.appeal ? appealCard(q, editable) : ""}
         ${q.typing?.length ? `<p class="typing" role="status">${esc(q.typing.join(", "))}님이 지금 답을 쓰고 있어요. 겹치지 않게 확인해 주세요.</p>` : ""}
         ${editable && q.status !== "closed" ? `<form class="composer" data-form="reply">
+          ${sendAskLine(q)}
           <label class="sr" for="reply">답</label>
           <textarea id="reply" name="text" maxlength="2000" placeholder="${q.public ? "보낸 분 앱과 모두의 문의에" : "보낸 분 앱에"} 보일 답을 적어요. 이름, 연락처, 금액은 묻지 않아요." required></textarea>
           <input type="hidden" name="template" value="">
@@ -2392,6 +2391,18 @@ function adminApp(L, BUILD, M) {
       <p class="meta">${b ? `법에 따라 ${esc(day(b.keepUntil))}까지 보관해요(마지막 글부터 3년).` : "아니에요. 마지막 글부터 180일 뒤에 지워져요."}
         ${q.leftByAsker ? " 보낸 분이 앱에서 지웠어요. 앱에는 보이지 않고 답도 닿지 않아요." : ""}</p>
       ${editable ? `<div class="actions start"><button class="btn" data-act="inquiry-billing" data-on="${b ? "" : "1"}"${words ? ' data-miss="1"' : ""}>${b ? (words ? "아니에요 · 기록에서 빼기" : "기록에서 빼기") : "결제·환불 기록으로 정하기"}</button></div>` : ""}</section>`;
+  }
+
+  /**
+   * 2.0.0 [RVA-70] PC-205: 사람이 봐야 하는 문의면 답 칸 바로 위에 한 줄(조건 10·16: 보내고 나서 멈춘 것을 알기 전에).
+   * 최고 관리자가 여기서 직접 쓴 답은 확인한 것으로 보고 바로 가요(sendGate typed). 다른 관리자의 답은 한 번 멈추고 읽은 뒤 '지금 보내기'로 가요.
+   * 답 글에 AI·보안 표현이 있으면 누구든 멈춰요(이 줄과 따로).
+   */
+  function sendAskLine(q) {
+    const a = q.sendAsk;
+    if (!a) return "";
+    const what = `${esc(a.name)} 문의예요${a.word ? `(보낸 분 글의 ‘${esc(a.word)}’)` : ""}`;
+    return `<p class="meta send-ask" role="note">${what}. ${S.me?.owner ? "여기서 직접 쓴 답은 바로 가요." : "보내면 한 번 멈추고, 읽은 뒤 '지금 보내기'로 보내요."}</p>`;
   }
 
   /** 2.0.0 [RVA-41] 사람이 보내야 하는 답의 까닭: 답 글의 표현이면 그 이름, 아니면 문의 글에서 걸린 말과 기준. */
@@ -4760,7 +4771,13 @@ function adminApp(L, BUILD, M) {
     // 1.35 [INBOX-01]~[INBOX-07] 문의 정리함: 1.38 [DESK-03] 카드 처리는 운영 장부 줄(ledger-sort·ledger-skip)로, 넘기기·자동 대응은 여기 그대로.
     // 1.38 [DESK-09] Claude 답 보류 중: 보내기 전에 취소하거나 글을 고쳐요.
     // 1.39 [LOOP-37] 보류 중인 Claude 답을 사람이 읽고 지금 보내요(사람이 봐야 할 문의는 이 단추로만 가요).
-    "held-send": ({ id }) => confirmBox("이 답을 지금 보낼까요?", "보낸 분 앱에 바로 보이고 알림이 가요.", "지금 보내기", async () => {
+    // 2.0.0 [RVA-70] PC-205: 사람이 보내야 해서 멈춘 답이면 확인 창에서 걸린 까닭과 말을 한 번 더 말해요(조건 10).
+    "held-send": ({ id }) => confirmBox("이 답을 지금 보낼까요?", (() => {
+      const h = S.data.inquiry?.held?.find((x) => String(x.id) === String(id));
+      const w = h?.person ? h.why : null;
+      const why = !w ? "" : w.reply ? `${w.name}이 있어 멈췄어요. 고친 뒤 보내는 게 좋아요. ` : `${w.name} 문의라 멈췄어요${w.word ? `(보낸 분 글의 ‘${w.word}’)` : ""}. `;
+      return `${why}보낸 분 앱에 바로 보이고 알림이 가요.`;
+    })(), "지금 보내기", async () => {
       const q = await act(() => api(`/inquiries/${S.route.id}/held/${id}`, "POST", { send: true }), "보냈어요");
       if (q) { S.data.inquiry = q; render({ keepScroll: true }); }
     }, "primary"),
@@ -6633,7 +6650,7 @@ function adminApp(L, BUILD, M) {
         if (!pv) return;
         form.querySelector(".public-preview")?.remove();
         form.querySelector('[name="publicQ"]')?.closest(".fieldset")?.insertAdjacentHTML("afterend", `<div class="public-preview" role="status">
-          <p class="label">밤낮 Q&A에 이렇게 보여요(누구나, 기록에 전문이 남아요)</p>
+          <p class="label">밤낮 Q&A에 이렇게 보여요(누구나 봐요)</p>
           <dl class="lines confirm-rows"><div><dt>묻는 말</dt><dd>${esc(body.publicQ)}</dd></div><div><dt>답</dt><dd>${esc(pv.publicA ?? "")}</dd></div></dl></div>`);
         const go = form.querySelector('button[type="submit"]');
         if (go) go.textContent = "올리기";

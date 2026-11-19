@@ -287,8 +287,11 @@ class RecipeMakeViewModel(
         val s = _state.value
         val picks = s.recipe.pieces.filter { it.kind != PieceKind.BUNDLE }.map { com.bamnat.app.recipe.RecipeRepository.Pick(it.kind, if (it.kind == PieceKind.LOGIC) com.bamnat.app.recipe.RecipePieces.Mode.BOTH else com.bamnat.app.recipe.RecipePieces.Mode.REPLACE) }
         val answers = s.recipe.inputs.associate { it.id to it.default }
-        val id = runCatching { c.recipes.apply(s.recipe.copy(title = s.recipe.title.ifBlank { "내가 만든 판" }), "", 0, calendar, picks, answers) }.getOrNull()
-        _state.value = _state.value.copy(putMine = id ?: -1L)
+        // 2.0.0 [RVM-67] 검토 MKT-24 (실패해도 "바뀐 것이 없어요", 그리고 다시 못 눌러요): -1 = nothing changed, -2 = it did not go in (and can be pressed again).
+        var failed = false
+        val id = runCatching { c.recipes.apply(s.recipe.copy(title = s.recipe.title.ifBlank { "내가 만든 판" }), "", 0, calendar, picks, answers) }
+            .onFailure { failed = true; android.util.Log.w("RecipeMake", "putOnMine failed", it) }.getOrNull()
+        _state.value = _state.value.copy(putMine = id ?: if (failed) -2L else -1L)
         saveDraft()
     }
 
@@ -1098,7 +1101,7 @@ private fun StepCheck(s: RecipeMakeViewModel.State, vm: RecipeMakeViewModel, onT
     // 자유도 점검 F-47: what happened shows above the buttons, where the eye is, not under them off the screen.
     var kept by rememberSaveable { mutableStateOf(false) }
     val done = s.putMine?.takeIf { it > 0 }?.let { "내 앱에 넣었어요. 7일 안에 마을 › 공방 › 내 것 › 받은 작품에서 되돌릴 수 있어요" }
-        ?: if (s.putMine == -1L) "지금 내 설정과 같아서 바뀐 것이 없어요" else null
+        ?: if (s.putMine == -2L) "넣지 못했어요 · 잠시 뒤 다시 눌러 주세요" else if (s.putMine == -1L) "지금 내 설정과 같아서 바뀐 것이 없어요" else null
         ?: if (kept) "저장했어요. 마을 › 공방 › 내 것 › 만들던 작품에서 이어서 만들어요" else null
     if (done != null) Surface(color = MaterialTheme.colorScheme.surfaceContainerLow, shape = MaterialTheme.shapes.medium, modifier = Modifier.fillMaxWidth()) {
         Text("✓ $done", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurface,
@@ -1107,7 +1110,7 @@ private fun StepCheck(s: RecipeMakeViewModel.State, vm: RecipeMakeViewModel, onT
         style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         OutlinedButton(onClick = { vm.keepDraft(); kept = true }, modifier = Modifier.weight(1f).heightIn(min = 48.dp)) { Text("만들기만 (저장)") }
-        OutlinedButton(onClick = vm::putOnMine, enabled = s.putMine == null, modifier = Modifier.weight(1f).heightIn(min = 48.dp)) { Text("내 앱에만 넣기") }
+        OutlinedButton(onClick = vm::putOnMine, enabled = s.putMine == null || s.putMine == -2L, modifier = Modifier.weight(1f).heightIn(min = 48.dp)) { Text("내 앱에만 넣기") }
     }
 }
 
