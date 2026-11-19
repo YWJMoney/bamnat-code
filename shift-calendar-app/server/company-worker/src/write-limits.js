@@ -3,7 +3,7 @@
 // (or an admin hid) is a strike; enough strikes in a while restrict that install for a time, each restriction stricter than the one
 // before, and a long quiet stretch steps it back down. Only the install's hash is kept.
 import { DAY } from "./units.js";
-import { careAutoWarn, careOn } from "./community-care.js";
+import { careAutoWarn, careOn, keepOtherMute, restoreMute } from "./community-care.js";
 
 export const WRITE_LIMITS = {
   /** Strikes within this many days count together. */
@@ -150,7 +150,7 @@ async function weigh(d, env, dev, kind, ref, now, rules, by) {
     d.stmt(env, `INSERT INTO write_limits (device, step, since, until, per_day, times) VALUES (?, ?, ?, ?, ?, 1)
       ON CONFLICT (device) DO UPDATE SET step = excluded.step, since = excluded.since, until = excluded.until, per_day = excluded.per_day,
         times = write_limits.times + 1`, dev, step, now, until, s.perDay),
-    ...(s.perDay === 0 ? [d.stmt(env, `INSERT INTO muted (device, until, reason) VALUES (?, ?, 'strikes')
+    ...(s.perDay === 0 ? [keepOtherMute(d, env, dev, now), d.stmt(env, `INSERT INTO muted (device, until, reason) VALUES (?, ?, 'strikes')
       ON CONFLICT (device) DO UPDATE SET until = MAX(muted.until, excluded.until), reason = excluded.reason`, dev, until)] : []),
   ]);
   return { step, until, perDay: s.perDay };
@@ -223,6 +223,8 @@ export async function strikeTakenBack(d, env, dev, now, rules = null) {
   await d.batch(env, [
     d.stmt(env, "UPDATE write_limits SET until = ?, step = MAX(0, step - 1), times = MAX(0, times - 1) WHERE device = ?", now, dev),
     d.stmt(env, "DELETE FROM muted WHERE device = ? AND reason = 'strikes'", dev),
+    // 2.0.0 [RVQ-55] 검토 SVC-37: 남은 마을 쉬기·운영자 말 못 하기는 그대로.
+    restoreMute(d, env, dev, now),
   ]);
   return { lifted: true };
 }

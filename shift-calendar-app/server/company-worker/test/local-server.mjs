@@ -12,6 +12,20 @@ import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
+/**
+ * 2.0.0 [RVQ-60] 이 빌드의 앱 판: `--app 2.0.0`, 없으면 shift-calendar-app/gradle.properties의 bamnat.versionName(저장소에서 띄울 때),
+ * 서버 zip만 풀었으면 '2.0.0'(지금 만드는 판).
+ */
+const APP_NOW = (() => {
+  const at = process.argv.indexOf("--app");
+  if (at > 0 && /^\d{1,2}\.\d{1,2}\.\d{1,3}$/.test(process.argv[at + 1] ?? "")) return process.argv[at + 1];
+  try {
+    return readFileSync(fileURLToPath(new URL("../../../gradle.properties", import.meta.url)), "utf8").match(/^bamnat\.versionName=(\S+)/m)?.[1] ?? "2.0.0";
+  } catch {
+    return "2.0.0";
+  }
+})();
+
 const args = process.argv.slice(2);
 const port = Number(args.find((a) => /^\d+$/.test(a)) || 8788);
 const file = args.includes("--db") ? args[args.indexOf("--db") + 1] : ":memory:";
@@ -113,6 +127,9 @@ async function seed() {
     const newer = i < 10 ? Math.round(phones * 0.7) : 0;
     await run("INSERT OR IGNORE INTO usage_days (day, app, phones) VALUES (?, '1.24.0', ?)", day, newer);
     await run("INSERT OR IGNORE INTO usage_days (day, app, phones) VALUES (?, '1.23.0', ?)", day, phones - newer);
+    // 2.0.0 [RVQ-60] PC-206: 이 빌드의 판(gradle.properties)으로 쓰는 휴대폰도 며칠. 실서버처럼 '쓰는 휴대폰이 있는 판'이라 열쇠로 부른
+    // '나간 판 저장'(Q1-500 12번)이 그 판으로 돼요. 나가기 전 판은 판 번호 표(APP_CODES)에 없어 이 줄이 없으면 409 version_unknown이에요.
+    if (i <= 3) await run("INSERT OR IGNORE INTO usage_days (day, app, phones) VALUES (?, ?, 2)", day, APP_NOW);
     for (const [event, share] of [["open", 0.9], ["pay_view", 0.35], ["share_made", 0.08], ["plaza_apply", 0.05], ["inquiry", 0.02], ["backup", 0.1]]) {
       const n = Math.max(1, Math.round(phones * share));
       await run("INSERT OR IGNORE INTO usage_events (day, app, event, phones, total, recent) VALUES (?, '1.23.0', ?, ?, ?, ?)", day, event, Math.round(n / 3), n, n);
