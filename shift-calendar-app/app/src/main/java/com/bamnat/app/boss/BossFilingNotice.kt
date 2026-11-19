@@ -30,9 +30,10 @@ import java.time.YearMonth
  * 대장 on its 다가올 신고·지급.
  */
 object BossFilingNotice {
-    private const val REQUEST = 3760
-    private const val REQUEST_OPEN = 3761
-    const val ID = 7660
+    // 2.0.0 [RVJ-96] numbers of its own: 7660 and 3760·3761 are the 광장 글 알림's ([com.bamnat.app.company.PlazaAfterShift], joined at the 통합 합침).
+    private const val REQUEST = 3780
+    private const val REQUEST_OPEN = 3781
+    const val ID = 7670
     private const val ACTION_FIRE = "com.bamnat.app.BOSS_FILING"
     /** What the 관리 화면 opens on from the notice ([com.bamnat.app.imports.SharedToManage.openLedger]). */
     const val OPENS = "FILINGS"
