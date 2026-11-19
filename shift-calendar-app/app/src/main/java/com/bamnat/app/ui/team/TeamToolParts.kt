@@ -50,6 +50,16 @@ internal enum class TeamStage {
     SENT,
 }
 
+/** [RVP-46] The month's order as the band under the board shows it: 신청 (may be left out) → 채우기 → 확정 → 보내기. */
+internal val TEAM_STEPS = listOf("신청", "채우기", "확정", "보내기")
+
+internal fun TeamStage.step(): Int = when (this) {
+    TeamStage.ASKING -> 0
+    TeamStage.REVIEW, TeamStage.FILL -> 1
+    TeamStage.CONFIRM, TeamStage.RECONFIRM -> 2
+    TeamStage.SENT -> 3
+}
+
 /** One tool: what it says, whether it can be pressed now, and what it does. */
 internal class TeamTool(val label: String, val enabled: Boolean = true, val onClick: () -> Unit)
 
@@ -94,6 +104,8 @@ internal fun TeamToolBar(stage: TeamStage, tools: TeamTools) {
     val l = tools.layout(stage)
     var more by rememberSaveable { mutableStateOf(false) }
     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        // 2.0.0 [RVP-46] (UIX-03·T13-04·U13-16) The month's order, so what to press now is read from where the month is.
+        com.bamnat.app.ui.components.StepBand(TEAM_STEPS, stage.step(), Modifier.padding(bottom = 8.dp), optional = setOf(0), name = "이달 순서")
         l.filled?.let { t -> Button(onClick = t.onClick, enabled = t.enabled, modifier = Modifier.fillMaxWidth()) { Text(t.label) } }
         FlowRow(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
             l.beside.forEach { t -> TextButton(onClick = t.onClick, enabled = t.enabled) { Text(t.label) } }
