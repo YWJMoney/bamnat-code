@@ -407,6 +407,26 @@ class ReviewOShotsTest : ScreenshotBase() {
     }
 
     /**
+     * 2.0.0 [RVO-30] PC-214 (조건 7·13): a 결제·환불 question is kept for the 운영팀 only whatever the switch said; the 내 문의 row says
+     * "나만 보기" and the thread opens with the line that says why nobody else sees it (and who answers).
+     */
+    @Test fun billingPrivateLine() {
+        val missed = mutableListOf<String>()
+        all("27_billing_private") {
+            inquiriesOn(asked = true)
+            (app.container.inquiryApi as FakeInquiryApi).addBilling()
+            askFromScreen(com.bamnat.app.ui.settings.InquiryStart(help = true))
+            tapText("내 문의:", prefix = true, scrolls = 30)
+            val look = "${RuntimeEnvironment.getQualifiers().substringBefore("-port")} ${app.resources.configuration.fontScale}"
+            if (!shows("결제·환불 · 나만 보기", exact = false)) missed += "$look: 내 문의 줄에 '나만 보기'가 없음"
+            tapText("어제 프로 1년을", prefix = true)
+            if (!shows("나만 보기 · 운영팀이 직접 읽고 답해요", exact = true)) missed += "$look: 문의 안에 나만 보기 한 줄이 없음"
+            if (shows("모두의 문의에 올라가 있어요", exact = false)) missed += "$look: 나만 보기 문의에 '올라가 있어요'"
+        }
+        org.junit.Assert.assertEquals(emptyList<String>(), missed)
+    }
+
+    /**
      * 2.0.0 [RVO-29] HQ-154 (조건 12): 내 문의의 단계 띠. 이름이 칸에 맞으면 여섯 이름, 맞지 않으면(접은 폭 200%) 띠 아래 '답변 · 3/6' 한 줄.
      * 어느 쪽이든 말줄임표(…)로 잘린 이름이 없어요.
      */
