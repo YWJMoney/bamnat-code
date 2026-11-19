@@ -60,7 +60,11 @@ object FlagCatalog {
     const val PAY_BIRTH_YEAR = "pay.birthyear"
     /** 2.0.0 [RVJ-82] 결정 3: '명세서로 맞춰 본 분 n명' on a version's card, once 처리방침 3.14 names it among what a card shows. */
     const val SLIP_COUNT = "company.slipcount"
-    /** 2.0.0 [RVJ-81][RVJ-82] The 처리방침 판 that names both (O's 3.14 문장표 12·13번); its calendar day is the 30-day line until O's 7-day constant lands. */
+    /**
+     * 2.0.0 [RVJ-81][RVJ-82][RVJ-83] The 처리방침 판 that names all three (O's 3.14 문장표 12·13·14번). 생년 and 명세서 수 are 7-day lines and
+     * wait for [PolicyConsent.REVISION14_EFFECTIVE] (게시일 + 7일, by the server's clock) alone, as 3.13's 7-day row does (3.14 asks no phone, so
+     * a 3.14 hold would keep every phone installed before the 게시일 off until the 30-day day); 앱으로 받는 팀원 수 is the 30-day line, the 판's own day.
+     */
     const val PAY_314_POLICY = "3.14"
     /** 2.0.0 [RVJ-83] SPREAD-38: '앱으로 받는 팀원 n명' for a 팀 리더 (3명부터, 숫자만), once 처리방침 3.14's 30-day line names the mark. */
     const val TEAM_APP_COUNT = "team.app_count"
@@ -365,9 +369,9 @@ object FlagCatalog {
     val PAY_BIRTH_YEAR_FLAG = Flag(
         PAY_BIRTH_YEAR, "급여 설정에 생년 적기",
         what = "급여 설정의 ‘떼지 않는 보험’에 생년(선택)을 적으면 만 60세 국민연금과 65세 이후 새로 일한 곳의 고용보험을 예상 실수령에서 저절로 빼요. 생년은 휴대폰 안 급여 설정과 직접 만든 백업에만 있고 보내지 않아요.",
-        whyOff = "처리방침 3.14의 시행일부터 서버 시각으로 저절로 켜져요. 그 전에는 지금처럼 ‘떼지 않는 보험’을 직접 골라요.",
+        whyOff = "처리방침 3.14의 7일 줄 시행일(${PolicyConsent.REVISION14_EFFECTIVE.monthValue}월 ${PolicyConsent.REVISION14_EFFECTIVE.dayOfMonth}일, 게시일 + 7일)부터 서버 시각으로 저절로 켜져요. 그 전에는 지금처럼 ‘떼지 않는 보험’을 직접 골라요.",
         basis = Basis(policy = PAY_314_POLICY, requirement = "RVJ-81", note = "2.0.0 결정 5, 3.14 문장표 13번"),
-        conditions = listOf(Condition.Date(policy = PAY_314_POLICY), Condition.Policy(PAY_314_POLICY)),
+        conditions = listOf(Condition.Date(from = PolicyConsent.REVISION14_EFFECTIVE)),
         default = false, risk = Risk.LEGAL, since = "2.0.0", group = FlagGroup.LAW,
     )
 
@@ -379,9 +383,9 @@ object FlagCatalog {
     val SLIP_COUNT_FLAG = Flag(
         SLIP_COUNT, "판 카드에 명세서로 맞춰 본 분 수",
         what = "‘지난달 명세서로 맞추기’에서 판마다 ‘명세서로 맞춰 본 분 n명’을 보여요. 서버가 1.32부터 세는 명세서 확인 표시의 수이고 금액은 없어요.",
-        whyOff = "처리방침 3.14의 시행일부터 서버 시각으로 저절로 켜져요. 그 전에는 판 카드에 맞아요 수만 보여요.",
+        whyOff = "처리방침 3.14의 7일 줄 시행일(${PolicyConsent.REVISION14_EFFECTIVE.monthValue}월 ${PolicyConsent.REVISION14_EFFECTIVE.dayOfMonth}일, 게시일 + 7일)부터 서버 시각으로 저절로 켜져요. 그 전에는 판 카드에 맞아요 수만 보여요.",
         basis = Basis(policy = PAY_314_POLICY, requirement = "RVJ-82", note = "2.0.0 결정 3, 3.14 문장표 12번"),
-        conditions = listOf(Condition.Date(policy = PAY_314_POLICY), Condition.Policy(PAY_314_POLICY)),
+        conditions = listOf(Condition.Date(from = PolicyConsent.REVISION14_EFFECTIVE)),
         default = false, risk = Risk.LEGAL, since = "2.0.0", group = FlagGroup.LAW,
     )
 

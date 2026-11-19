@@ -1484,9 +1484,11 @@ abstract class ScreenshotBase {
     internal fun policy314() {
         val now = Today.instant()
         val day = Today.date()
+        // The server's clock on 3.14's 30-day day (the shots' own day is 10-14): its 7-day rows ([PolicyConsent.REVISION14_EFFECTIVE]) are on too.
+        val after = com.bamnat.core.ops.PolicyConsent.REVISION14_EFFECTIVE_30.atTime(10, 30).atZone(com.bamnat.core.flags.KST).toInstant()
         app.container.remoteConfig.save(com.bamnat.app.tier.LaunchConfig(
-            policy = listOf(com.bamnat.core.flags.PolicyVersion("3.14", day.minusDays(45), day.minusDays(15))), serverTime = now, fetchedAt = now))
-        repeat(200) { if (app.container.flags.on(com.bamnat.core.flags.FlagCatalog.TEAM_APP_COUNT)) return; Thread.sleep(20) }
+            policy = listOf(com.bamnat.core.flags.PolicyVersion("3.14", day.minusDays(45), day.minusDays(15))), serverTime = maxOf(now, after), fetchedAt = now))
+        repeat(200) { if (app.container.flags.on(com.bamnat.core.flags.FlagCatalog.TEAM_APP_COUNT) && app.container.flags.on(com.bamnat.core.flags.FlagCatalog.PAY_BIRTH_YEAR)) return; Thread.sleep(20) }
     }
 
     internal fun launched(config: com.bamnat.app.tier.LaunchConfig = com.bamnat.app.tier.LaunchConfig(billingLive = true),

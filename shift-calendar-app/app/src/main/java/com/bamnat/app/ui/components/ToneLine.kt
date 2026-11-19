@@ -51,8 +51,9 @@ fun ToneLine(
     modifier: Modifier = Modifier,
     tone: Tone = Tone.Caution,
     style: TextStyle = MaterialTheme.typography.bodySmall,
-    onClick: (() -> Unit)? = null,
+    // [action] before [onClick], so a line written `ToneLine(…) { go() }` keeps its tap as the last argument.
     action: String? = null,
+    onClick: (() -> Unit)? = null,
 ) = ToneLine(AnnotatedString(text), modifier, tone, style, onClick, action = action)
 
 /**
@@ -67,8 +68,8 @@ fun ToneLine(
     style: TextStyle = MaterialTheme.typography.bodySmall,
     onClick: (() -> Unit)? = null,
     onClickLabel: String? = null,
-    trailing: (@Composable () -> Unit)? = null,
     action: String? = null,
+    trailing: (@Composable () -> Unit)? = null,
 ) {
     val tint = if (tone == Tone.Plain) MaterialTheme.colorScheme.onSurfaceVariant else tone.color()
     val said = when (tone) { Tone.Caution -> "주의"; Tone.Danger -> "위험"; else -> null }
