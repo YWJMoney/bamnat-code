@@ -44,6 +44,9 @@ object TypeWords {
             "회사 규칙 광장", "야간·휴일 가산", "야간 가산",
             // 2.0.0 [RVJ-88] 검토 BOSS-68: the 직원's 출퇴근 the 사장님 keeps (급여 대장 › 출퇴근 기록), as 직원 출근 is.
             "출퇴근 기록", "출퇴근 링크",
+            // 2.0.0 [RVG-40] 검토 PC-175: the days two people are both off (a friend's day off and the shop's 휴무), as the received
+            // calendar names them; the shop's own day stays 휴무.
+            "같이 쉬는 날", "둘 다 쉬는 날",
         )
         WorkStyle.INVEST -> listOf("회사 규칙 광장", "회사 정보")
         else -> emptyList()

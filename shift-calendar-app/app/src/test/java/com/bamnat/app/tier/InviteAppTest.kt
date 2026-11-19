@@ -57,7 +57,7 @@ class InviteAppTest {
         setRules(url, """{"friends":2,"days":7}""")
         inviter.refresh()
         // 2.0.0 [RVD-21] Until 처리방침 3.13 is in the calendar the year's cap is not in force (약관 1.3·처리방침 3.12 promise none),
-        // and the server says so: 0, which the card words as '상한 없음'.
+        // and the server says so: 0, and the cards say no cap (2.0.0 [RVO-24] PC-133: not '상한 없음').
         assertEquals(InviteTerms(need = 2, days = 7, months = 1, capMonths = 0), inviter.store.current.rules)
         // The owner saves 3.13 in 기능 관리 › 일정 as posted a month and a half back, so its 30-day date has passed.
         // [RVD-15] Now the server says the year's cap: 12 months of rewards, all kinds together.

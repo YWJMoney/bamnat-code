@@ -197,8 +197,9 @@ object TakeHome {
     }.let { r -> ageNotes(r, profile, month, mode) }
 
     /**
-     * 2.0.0 [RVJ-81] 결정 5: a line left out by the 생년 says the age as its reason instead of the hand-picked chip's, and a year the app
-     * cannot tell (the year of turning 60, a 입사 year of 65, no 입사일) says what happens, for the ways that take that line.
+     * 2.0.0 [RVJ-81] 결정 5: a line left out by the 생년 says the age as its reason instead of the hand-picked chip's ('국민연금은 떼지
+     * 않아요 (생년 1958년)', short: the 생년 field below says the rule with its '그래도 내요'), and a year the app cannot tell (the year of
+     * turning 60, a 입사 year of 65, no 입사일) says what happens, for the ways that take that line.
      */
     private fun ageNotes(r: TakeHomeResult, profile: PayProfile, month: java.time.YearMonth, mode: TaxMode): TakeHomeResult {
         val age = InsuranceAge.lines(profile, month).filter { it.line !in profile.insuranceKeep }
@@ -206,7 +207,7 @@ object TakeHome {
         val takes = { l: InsuranceLine -> mode == TaxMode.INSURANCE_4 || (mode == TaxMode.DAILY_WORKER && l == InsuranceLine.EMPLOYMENT) }
         val byAge = age.filter { it.off && it.line !in profile.insuranceOff }.associateBy { it.line }
         val notes = r.notes.map { n ->
-            byAge.values.firstOrNull { n == "${it.line.label}은 떼지 않아요 (${it.line.why})" }?.let { "${it.note} (생년 ${profile.birthYear}년)" } ?: n
+            byAge.values.firstOrNull { n == "${it.line.label}은 떼지 않아요 (${it.line.why})" }?.let { "${it.line.label}은 떼지 않아요 (생년 ${profile.birthYear}년)" } ?: n
         } + age.filter { !it.off && takes(it.line) && it.line !in profile.insuranceOff }.map { it.note }
         return r.copy(notes = notes)
     }

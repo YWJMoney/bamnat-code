@@ -27,6 +27,7 @@ import androidx.compose.material.icons.filled.DeleteSweep
 import androidx.compose.material.icons.filled.Event
 import androidx.compose.material.icons.filled.SwapHoriz
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.AssistChip
 import com.bamnat.app.ui.components.Button
 import androidx.compose.material3.CircularProgressIndicator
@@ -201,6 +202,15 @@ fun PatternScreen(
                 title = { CalendarTitle(if (setup) "1/2 $name" else name, vm) },
                 navigationIcon = { IconButton(onClick = leave) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "뒤로") } },
                 actions = {
+                    // [RVH-68] SPREAD-31 같은 조 동료에게 보내기: the saved order on the site's 교대 달력, for 교대 only and not while a change is
+                    // unsaved (what is sent is what the calendar holds). The order's letters and a day, nothing about the person.
+                    val link = remember(existing, typesById, today) {
+                        (existing as? WorkPattern.Rotation)?.let { com.bamnat.core.setup.WebStartDraft.shiftPage(it, typesById, today) }
+                    }
+                    if (link != null && shiftWork && !setup && !unsaved) {
+                        val context = androidx.compose.ui.platform.LocalContext.current
+                        IconButton(onClick = { sendToCoworkers(context, link) }) { Icon(Icons.Filled.Share, "같은 조 동료에게 보내기") }
+                    }
                     TextButton(onClick = save, enabled = valid) { Text(if (setup && existing == null) "다음" else "저장") }
                 },
             )
@@ -583,6 +593,13 @@ fun PatternScreen(
 }
 
 private const val MAX_STEPS = 62
+
+/** [RVH-68] SPREAD-31: the share sheet with the site's calendar for the same order; whoever opens it sees the month at once. */
+private fun sendToCoworkers(context: android.content.Context, link: String) {
+    val send = android.content.Intent(android.content.Intent.ACTION_SEND).setType("text/plain")
+        .putExtra(android.content.Intent.EXTRA_TEXT, "우리 조 근무 순서예요. 누르면 달력으로 바로 보여요.\n$link")
+    runCatching { context.startActivity(android.content.Intent.createChooser(send, "같은 조 동료에게 보내기")) }
+}
 
 /** One period in the history, e.g. "2024.10.14 – 2026.11.30 · 주주휴휴야야". */
 /**

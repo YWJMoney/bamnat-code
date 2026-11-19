@@ -34,7 +34,8 @@ internal val LocalWidgetParts = compositionLocalOf { Blueprint.EMPTY }
 @Composable
 internal fun widgetPart(id: String, states: Set<String> = emptySet()): PartStyle {
     val bp = LocalWidgetParts.current
-    return if (bp.isEmpty || !bp.touches("widget")) PartStyle.NONE else bp.style(id, states)
+    // 2.0.0 [RVS-19] SN-09: what a launcher draws of it, the same reduction the studio's widget example draws (core WidgetDraws).
+    return if (bp.isEmpty || !bp.touches("widget")) PartStyle.NONE else com.bamnat.core.recipe.WidgetDraws.of(bp.style(id, states))
 }
 
 internal fun PartStyle.widgetFill(): Color? = fill?.let { c -> Color(c.toInt()).let { k -> fillA?.let { a -> k.copy(alpha = k.alpha * a.coerceIn(0, 100) / 100f) } ?: k } }

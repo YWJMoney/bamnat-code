@@ -52,6 +52,8 @@ fun Explain(
      * read like a page at 글자 200% and that is not needed to use it (받은 달력 넣기 카드's 'what happens after 넣기').
      */
     firstInFull: Boolean = true,
+    /** 2.0.0 [RVO-25] (PC-186) For a centred card (the 프로 lock): the line and ⓘ in the middle, the full words centred. */
+    centered: Boolean = false,
 ) {
     val context = LocalContext.current
     val preview = LocalInspectionMode.current
@@ -63,14 +65,15 @@ fun Explain(
     val ink = MaterialTheme.colorScheme.onSurfaceVariant
     val style = MaterialTheme.typography.bodySmall
     when {
-        seen == 0 && firstInFull || open || short == text -> Text(text, style = style, color = ink, modifier = modifier.animateContentSize())
+        seen == 0 && firstInFull || open || short == text -> Text(text, style = style, color = ink, modifier = modifier.animateContentSize(),
+            textAlign = if (centered) androidx.compose.ui.text.style.TextAlign.Center else null)
         else -> Row(
             modifier.fillMaxWidth().semantics(mergeDescendants = true) {
                 stateDescription = "접힘"
                 onClick("설명 펼치기") { open = true; true }
             },
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(4.dp),
+            horizontalArrangement = Arrangement.spacedBy(4.dp, if (centered) Alignment.CenterHorizontally else Alignment.Start),
         ) {
             if (seen <= 1 || !iconOnly) Text(short, style = style, color = ink, maxLines = 1, overflow = TextOverflow.Ellipsis,
                 modifier = Modifier.weight(1f, fill = false))

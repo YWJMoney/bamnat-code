@@ -36,6 +36,7 @@ import com.bamnat.app.share.StatementImage
 import com.bamnat.app.ui.Fmt
 import com.bamnat.app.ui.components.SectionCard
 import com.bamnat.app.ui.components.StatTile
+import com.bamnat.app.ui.components.StatTiles
 import com.bamnat.app.ui.money.AmountField
 import com.bamnat.app.ui.money.amountDigits
 import com.bamnat.app.ui.money.toAmount
@@ -66,7 +67,7 @@ import com.bamnat.core.time.Today
 fun FieldStatsCards(book: MoneyBook, month: YearMonth, today: LocalDate = Today.date(), calendarId: String = com.bamnat.app.data.PersonalCalendar.MAIN) {
     val units = remember(book, month) { DayRate.month(month, book.jobs) }
     if (units.days > 0) {
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        StatTiles {
             StatTile("${month.monthValue}월 공수", DayRate.label(units.units), Modifier.weight(1f), caption = "${units.days}일")
             StatTile("일당 합계", Fmt.won(units.amount), Modifier.weight(1f),
                 caption = if (units.units > 0) "1공 평균 ${wonBrief((units.amount / units.units).toLong())}" else null)
@@ -90,7 +91,7 @@ fun FieldStatsCards(book: MoneyBook, month: YearMonth, today: LocalDate = Today.
 private fun FieldYearCards(book: MoneyBook, month: YearMonth, today: LocalDate, monthDays: Int, yearDays: Int, dayLabor: Boolean = true) {
     val year = month.year
     SectionCard(title = "출역일") {
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        StatTiles {
             StatTile("${month.monthValue}월", "${monthDays}일", Modifier.weight(1f), caption = if (YearMonth.from(today) == month) "오늘까지" else null)
             StatTile("${year}년", "${yearDays}일", Modifier.weight(1f), caption = if (year == today.year) "오늘까지" else null)
         }
@@ -277,6 +278,7 @@ private fun TargetCard(rules: ShopMoney, book: MoneyBook, month: YearMonth, toda
     if (editing) {
         var digits by rememberSaveable { mutableStateOf(amountDigits(rules.monthlyTarget)) }
         AlertDialog(
+            fields = true, // 2.0.0 [RVH-69] 검토 PC-135: its fields scroll above the keyboard.
             onDismissRequest = { editing = false },
             title = { Text("한 달 목표 매출") },
             text = { AmountField("목표 매출", digits, { digits = it }) },

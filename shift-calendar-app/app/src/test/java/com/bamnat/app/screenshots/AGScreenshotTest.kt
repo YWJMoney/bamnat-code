@@ -126,7 +126,8 @@ class AGScreenshotTest : ScreenshotBase() {
         openNotice("친구 초대")
         reveal("초대한 분께 알렸어요")
         assertTrue(gone("친구 초대로 오셨나요?"))
-        assertTrue(appears("당신도 친구 5명이 각자 7일 이상 쓰면"))
+        // 2.0.0 [RVO-24] PC-133: the same one-line promise as 설정 › 프로 (InviteRules.promise).
+        assertTrue(appears("내 링크로 친구를 부르면 당신도 받아요. 친구 5명이 7일 쓰면 프로 1개월.", exact = true))
         assertTrue(appears("내 초대 링크 만들기", exact = true))
     })
 
@@ -189,13 +190,45 @@ class AGScreenshotTest : ScreenshotBase() {
         tapText("알림 ", prefix = true, scrolls = 0)
         tapText("닫기: $NUDGE", exact = true, scrolls = 0)
         assertTrue(gone(NUDGE, exact = true))
+        // 갈래 P 5 (PC-180): its own two weeks are written once 되돌리기 is gone (the 알림함 closed), as 전체 지움 does (HQ-91).
+        tab(1, wide = false); tab(0, wide = false)
+        settle()
         assertEquals(Today.date(), c.grow.current.inviteClosedOn)
+    })
+
+    /**
+     * 총괄 11-13 (사용자 11-12 20:38 KST "거부를 하면 여러 번 반복해서 알림으로 보여 주지 마"): the invite row is a 권유 of the 알림함 that
+     * '다시 보지 않기' turns off for good (back only from 기능 켜고 끄기), and its one line is the server's promise ([RVO-24] PC-133).
+     */
+    @Test fun theInviteRowSaidNoToStaysAway() = shoot("1084c_ag_invite_muted", FOLDED, style(WorkStyle.SHIFT) {
+        c.invites.installedAt = { Today.instant().minus(Duration.ofDays(4)) }
+        api.viewAnswer = view(progress = 3, waiting = 1, friends = 3)
+        runBlocking { c.invites.makeLink() }
+        tab(1, wide = false); tab(0, wide = false)
+        settle()
+        tapText("알림 ", prefix = true, scrolls = 0)
+        assertTrue(appears("친구 5명이 7일 쓰면 프로 1개월"))
+        assertTrue(gone("상한 없음"))
+        // ⋮ › '이런 알림 다시 보지 않기' is Compose's DropdownMenu, a popup [find] does not read: the button is checked, and the kind
+        // turned off the way the menu does it (NoticeStack NoticeRow onMute).
+        assertTrue(appears("더 보기: $NUDGE", exact = true))
+        com.bamnat.app.inbox.Inbox.get(app).mute("invite.friend", NUDGE)
+        settle()
+        assertTrue(gone(NUDGE, exact = true))
+        // The next day, the calendar opened again: still not there.
+        Today.fix(SHOT_TIME.plusDays(1))
+        tab(1, wide = false); tab(0, wide = false)
+        settle()
+        assertTrue(gone(NUDGE, exact = true))
+        com.bamnat.app.inbox.Inbox.get(app).unmute("invite.friend")
     })
 
     @Test fun settingsStartsWithGrowingTogether() = shoot("1085_ag_settings_top", FOLDED, style(WorkStyle.SHIFT) {
         tab(SETTINGS_TAB, wide = false)
         reveal("함께 만들어요", exact = true)
-        assertTrue(appears("친구 5명이 각자 7일 이상 쓰면 나에게 프로 1개월, 5명 더 채울 때마다 또 1개월(상한 없음)."))
+        // 2.0.0 [RVO-24] PC-133: the one line of 설정 › 프로, never '상한 없음'.
+        assertTrue(appears("친구 5명이 7일 쓰면 프로 1개월.", exact = true))
+        assertTrue(gone("상한 없음"))
         assertTrue(appears("불편한 점 알려 주기"))
         assertTrue(appears("개발자가 직접 읽고 답을 드리고"))
         // [J133-77] 1.33: while this card says 친구 초대, the 더 보기 row does not say it again.
@@ -318,8 +351,19 @@ class AGScreenshotTest : ScreenshotBase() {
         tab(SETTINGS_TAB, wide = false)
         tapText("프로", exact = true)
         tapText("친구 초대", exact = true, scrolls = 30)
-        reveal("3/5명 · 2명은 사용 기간 채우는 중", exact = true)
-        assertTrue(appears("다음 프로까지 2명", exact = true))
+        // 2.0.0 [RVO-25] PC-151: one line that reads.
+        reveal("친구 2명이 더 7일 쓰면 프로 1개월 · 3명 셌어요 · 2명은 7일 채우는 중", exact = true)
+        assertTrue(gone("다음 프로까지"))
+        // 2.0.0 [RVO-27] HQ-144: how a friend counts is behind the card's ⓘ, under its one-line promise.
+        val promise = nodes(merged = false).first { n ->
+            n.config.getOrElseNullable(androidx.compose.ui.semantics.SemanticsProperties.Text) { null }.orEmpty().any { it.text == "친구 5명이 7일 쓰면 프로 1개월." }
+        }.boundsInWindow
+        val info = nodes(merged = false).filter { n ->
+            n.config.getOrElseNullable(androidx.compose.ui.semantics.SemanticsProperties.ContentDescription) { null }.orEmpty().contains("설명 보기")
+        }.minBy { kotlin.math.abs(it.boundsInWindow.center.y - promise.center.y) }.boundsInWindow.center
+        val d = app.resources.displayMetrics.density
+        tap(info.x / d, info.y / d)
+        settle()
         assertTrue(appears("5명 더 채울 때마다 또 1개월"))
         assertTrue(appears("같은 친구·같은 휴대폰은 한 번만"))
         assertTrue(gone("넘게 쓸 때마다"))

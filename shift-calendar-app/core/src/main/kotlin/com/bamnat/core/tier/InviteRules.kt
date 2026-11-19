@@ -13,10 +13,12 @@ data class InviteTerms(val need: Int, val days: Int, val months: Int, val capMon
     /**
      * AG 1.27 [INVITE-09] As the user meant it (리뷰 2026-10-25): months for each [need] different friends who each used
      * the app [days] days, not for one friend's days. "친구 5명이 각자 7일 이상 쓰면 나에게 프로 1개월, 5명 더 채울 때마다 또
-     * 1개월(상한 없음)".
+     * 1개월".
+     * 2.0.0 [RVO-24] 통합 3차 PC-133: no '(상한 없음)' — the year's cap comes with 처리방침 3.13's 30-day line (12-13) and the server says it
+     * then ([capMonths] > 0); before it the words say nothing of a cap rather than promise none.
      */
     fun words(): String = "친구 ${need}명이 각자 ${days}일 이상 쓰면 나에게 프로 ${months}개월, ${need}명 더 채울 때마다 또 ${months}개월" +
-        if (capMonths > 0) "(1년에 ${capMonths}개월까지)" else "(상한 없음)"
+        if (capMonths > 0) "(1년에 ${capMonths}개월까지)" else ""
 
     /** AG 1.27 [INVITE-09] The short form for a button or a line: "친구 5명이 7일 쓰면 프로 1개월". */
     fun short(): String = "친구 ${need}명이 ${days}일 쓰면 프로 ${months}개월"
@@ -106,8 +108,11 @@ object InviteRules {
         "기다리는 친구 ${waiting}명".takeIf { waiting > 0 },
     ).joinToString(" · ").ifEmpty { null }
 
-    /** [INVITE-05] The inviter's line: "초대한 친구 2명 · 프로 2개월". */
-    fun summary(friends: Int, months: Int): String = "초대한 친구 ${friends}명 · 프로 ${months}개월"
+    /**
+     * [INVITE-05] The inviter's line: "초대한 친구 2명 · 프로 2개월". 2.0.0 [RVO-25] PC-151: no '프로 0개월' before any month came
+     * (it read as a loss next to months the 운영팀 is still looking at).
+     */
+    fun summary(friends: Int, months: Int): String = "초대한 친구 ${friends}명" + if (months > 0) " · 프로 ${months}개월" else ""
 
     /** 2.0.0 [RVD-14] "프로 1개월은 운영팀이 확인한 뒤 들어와요". */
     fun pending(months: Int): String = "프로 ${months}개월은 운영팀이 확인한 뒤 들어와요"
@@ -123,6 +128,16 @@ object InviteRules {
     /** [INVITE-08] Toward the next months: "3/5명 · 2명은 사용 기간 채우는 중". */
     fun progress(progress: Int, need: Int, waiting: Int): String =
         "$progress/${need}명" + if (waiting > 0) " · ${waiting}명은 사용 기간 채우는 중" else ""
+
+    /**
+     * 2.0.0 [RVO-25] 통합 4차 PC-151 ('0/1명 … 1명'이 헷갈려요): how far the next months are, in one line that reads as a sentence,
+     * "친구 2명이 더 7일 쓰면 프로 1개월 · 3명 셌어요 · 2명은 7일 채우는 중". Replaces [progress] and [toNext] on the cards.
+     */
+    fun next(progress: Int, waiting: Int, t: InviteTerms): String = listOfNotNull(
+        "친구 ${(t.need - progress).coerceAtLeast(1)}명이 더 ${t.days}일 쓰면 프로 ${t.months}개월",
+        "${progress}명 셌어요".takeIf { progress > 0 },
+        "${waiting}명은 ${t.days}일 채우는 중".takeIf { waiting > 0 },
+    ).joinToString(" · ")
 
     /** AG 1.27 [INVITE-09] The friends still to go for the next months: "다음 프로까지 2명". */
     fun toNext(progress: Int, need: Int): String = "다음 프로까지 ${(need - progress).coerceAtLeast(1)}명"

@@ -7,7 +7,7 @@ import { PLAY, playReady, playToken, rewardRules, REWARD_RULES, REWARD_MOST } fr
 import { DEV, actorName, cut, devEvent, devUpdate, forgetInquiries, plainText, inquiryText, INQUIRY, BILLING_RECORD, SLEEP_URGENT, URGENT, triage } from "./inquiries.js";
 import { compareVersions, inboxAnswer, titleFrom, version } from "./inbox.js";
 import { askOwner } from "./ledger.js";
-import { DESK, broadcastRisk, isOut, markTold, resumeShip, shipNow, shippedVersion, shipText } from "./desk.js";
+import { DESK, broadcastRisk, isOut, markTold, outboxOf, resumeShip, retryShip, shipNow, shippedVersion, shipText } from "./desk.js";
 import { versionHealth } from "./release-desk.js";
 import { flagStore, serverEval } from "./flags.js";
 import { kstDay } from "./usage.js";
@@ -42,8 +42,18 @@ export const LOOP = {
    * 올린 기기가 이만큼이면 나간 것으로 봐요. 테스트 트랙 사람은 그 전에 이미 올렸으니 이 수에 들지 않아요. 보고서는 하루 이틀 늦어요.
    */
   playMin: 3,
+  /**
+   * 2.0.0 [RVQ-34] 검토 SVC-19·I22b-04: 테스트 트랙·관리자 폰이 새 판을 먼저 받아 '나갔다'로 보이지 않게, 나갔다고 보는 두 기준은 이 수보다
+   * 커요(Play 비공개 테스트 12명). 최고 관리자가 자동 순환 › 멈춤 스위치에서 바꾸고, 관리자 앱에 연결된 폰이 더 많으면 그 수예요.
+   */
+  testers: 12,
   /** 정기 앱 업데이트 주기(사용자 2026-11-07: 2주 → 2026-11-08: 1주). */
   trainDays: 7,
+  /**
+   * 2.0.0 [HQ-78] 정기 열차 밖의 판: 정한 날이 아니라 끝나는 즉시 나가요(사용자 2026-11-12 "작업이 온전히 마무리 되는 즉시 출시").
+   * 이 판으로 고친 문의에는 '○월 ○일 정기 업데이트'가 아니라 '곧 나올 2.0.0 업데이트'라고 답해요. 최고 관리자가 자동 순환 › 정기 출시에서 바꿔요.
+   */
+  outsideTrain: ["2.0.0"],
   /** 알려진 문제판: 공개 제목이 있고 묶인 문의·나도 겪어요가 이만큼이면 보여요(한 사람만의 일은 안 보이게). */
   knownMin: 2,
   knownMax: 12,
@@ -106,6 +116,8 @@ export const LOOP_COLUMNS = [
   "ALTER TABLE dev_items ADD COLUMN remote TEXT NOT NULL DEFAULT ''",
   "ALTER TABLE dev_items ADD COLUMN flag TEXT NOT NULL DEFAULT ''",
   "ALTER TABLE dev_items ADD COLUMN events TEXT NOT NULL DEFAULT ''",
+  // 2.0.0 [RVQ-34] 검토 SVC-20: 잴 이벤트가 늘면 좋은지(up) 줄면 좋은지(down). 빈칸이면 숫자만으로 '좋아졌어요'를 붙이지 않아요.
+  "ALTER TABLE dev_items ADD COLUMN good TEXT NOT NULL DEFAULT ''",
   "ALTER TABLE dev_items ADD COLUMN tier TEXT NOT NULL DEFAULT ''",
   "ALTER TABLE dev_items ADD COLUMN tier_by TEXT NOT NULL DEFAULT ''",
   "ALTER TABLE dev_items ADD COLUMN tier_at INTEGER",
@@ -132,6 +144,9 @@ export const LOOP_COLUMNS = [
   "ALTER TABLE inquiries ADD COLUMN via TEXT",
   "ALTER TABLE held_replies ADD COLUMN pile TEXT NOT NULL DEFAULT ''",
   "ALTER TABLE held_replies ADD COLUMN edited INTEGER NOT NULL DEFAULT 0",
+  // 2.0.0 [RVQ-34] 검토 SVC-09: 사람이 '지금 보내기'를 눌러 나가는 답(나갈 때 다시 멈추지 않아요). SVC-08: 출시 안내에서 온 답의 개발사항.
+  "ALTER TABLE held_replies ADD COLUMN approved INTEGER NOT NULL DEFAULT 0",
+  "ALTER TABLE held_replies ADD COLUMN ship_item TEXT",
   "ALTER TABLE admin_keys ADD COLUMN scope TEXT NOT NULL DEFAULT 'ops'",
 ];
 
@@ -141,10 +156,14 @@ export const LOOP_COLUMNS = [
 const loopActor = (env, name = "자동") => (env.actor ? env : Object.assign(Object.create(env), { actor: { id: "", name, owner: false, perms: {}, auto: true } }));
 /** 사람·열쇠가 없는 자리의 답: 1.35 자동 대응처럼 '자동 정리'로(앱에는 보통 답으로 보여요). */
 export const autoReply = (env, id, text, now) => inboxAnswer(env, id, text, now, "자동 정리");
-/** 답 하나가 실패해도(하루 한도 등) 바퀴는 계속 돌아요. */
+/**
+ * 답 하나가 실패해도(하루 한도 등) 바퀴는 계속 돌아요. 2.0.0 [RVQ-34] 검토 SVC-08: 보내는 문(RVA-51)에 걸려 사람이 보낼 답으로 멈춘 것("held")은
+ * 간 것이 아니라 '알렸음'으로 세지 않아요.
+ */
 const tryAnswer = async (answer, env, id, text, now) => {
   try {
-    return await answer(env, id, text, now);
+    const r = await answer(env, id, text, now);
+    return r === "held" ? false : r;
   } catch {
     return false;
   }
@@ -162,10 +181,15 @@ const readSetting = async (env, key, fallback) => {
 const saveSetting = (env, key, value) => run(env, "INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)", key, JSON.stringify(value));
 
 /** [LOOP-04] 자동 멈춤 스위치: 처음엔 모두 켜짐(서비스 계정·열쇠가 없으면 어차피 아무것도 안 해요). */
-export const SWITCH_DEFAULT = { autoShip: true, sync: true, phone: true, halt: true, instant: [], urgentMin: 0, flexibleMin: 0 };
+export const SWITCH_DEFAULT = { autoShip: true, sync: true, phone: true, halt: true, instant: [], urgentMin: 0, flexibleMin: 0, testers: LOOP.testers };
 export const loopSwitches = (env) => readSetting(env, "loop_switches", SWITCH_DEFAULT);
 /** [LOOP-07] 정기 출시 열차: 첫 출발일과 주기. */
-export const loopTrain = (env) => readSetting(env, "loop_train", { start: "2026-11-23", days: LOOP.trainDays });
+export const loopTrain = async (env) => ({ outside: LOOP.outsideTrain, ...(await readSetting(env, "loop_train", { start: "2026-11-23", days: LOOP.trainDays })) });
+
+/** 2.0.0 [HQ-78] 판 [v]이 탈 정기 출발일, 열차 밖의 판(train.outside)이면 null(끝나는 즉시 나가요). */
+export function trainFor(train, v, now) {
+  return (Array.isArray(train?.outside) ? train.outside : LOOP.outsideTrain).includes(v) ? null : nextTrain(train, now);
+}
 
 /** 다음 정기 출발일(KST 'YYYY-MM-DD'): [start]부터 [days]마다, 오늘 이후 가장 가까운 날. */
 export function nextTrain(train, now) {
@@ -235,8 +259,11 @@ export async function playTick(env, now = Date.now()) {
       await run(env, "UPDATE loop_ships SET status = 'done', done_at = ?, by = ?, result = ? WHERE version = ? AND status = 'review'", now, "자동", "이미 저장된 판", r.version);
       continue;
     }
+    // 2.0.0 [RVQ-34] 검토 I22b-04 세 겹 확인 ①: 트랙이 지금도 이 판(이나 더 새 판)을 100% 완료로 말해야 해요. 멈추거나 내린 판은 기다려요.
+    const onTrack = Boolean(track.done) && compareVersions(version(r.version), version(track.done)) <= 0 && track.halted !== r.version;
+    if (!onTrack) continue;
     const seen = r.version === track.done && track.seen ? track.seen : await liveSeen(env, r.version, now, shipped?.v);
-    const why = seen.phones >= seen.need ? `이 판으로 쓰는 휴대폰 ${seen.phones}대` : `Play 보고서: 이 판을 새로 깔거나 올린 기기 ${seen.play}대`;
+    const why = seen.phones >= seen.need ? `100% 뒤 이 판으로 쓰는 휴대폰이 ${seen.phones}대 늘었어요` : `Play 보고서: 100% 뒤 이 판을 새로 깔거나 올린 기기 ${seen.play}대`;
     if (seen.live && sw.autoShip && await holdShip(env, r.version, now, why)) held = r.version;
   }
   let advice = null;
@@ -257,25 +284,50 @@ export async function playTick(env, now = Date.now()) {
 }
 
 /**
- * [LOOP-32] 이 판으로 쓰는 휴대폰 수(usage_days, 지난 [LOOP.liveDays]일 중 가장 많은 하루)와 나갔다고 볼 기준.
+ * [LOOP-32] 이 판으로 쓰는 휴대폰 수(usage_days)와 나갔다고 볼 기준.
  * 앞 판([prev])이 있으면 그 판 하루 휴대폰의 [LOOP.liveShare] 이상이어야 해요(테스트 트랙 사람만으로는 넘지 않게).
+ *
+ * 2.0.0 [RVQ-34] 검토 SVC-19·I22b-04 세 겹 확인 ②③: [phones]는 트랙 100%를 본 날(한국 날짜)부터 지난 [LOOP.liveDays]일 중 가장 많은
+ * 하루에서, 그 전 [LOOP.liveDays]일 중 가장 많은 하루를 뺀 '늘어난 휴대폰'이에요(검토 중에 미리 받은 테스터 폰은 앞에 들어 있어요).
+ * 두 기준(휴대폰·Play 보고서)은 테스터 수([testerCount])보다 커요. 사용 통계와 Play 보고서는 기기를 알려 주지 않아 수로만 빼요.
  */
 export async function liveSeen(env, v, now, prev = null, codes = null) {
-  const rows = await all(env, "SELECT app, MAX(phones) AS most FROM usage_days WHERE day >= ? AND app IN (?, ?) GROUP BY app",
-    kstDay(now - LOOP.liveDays * DAY), v, prev ?? v).catch(() => []);
-  const most = (a) => rows.find((r) => r.app === a)?.most ?? 0;
-  const phones = most(v);
-  const need = Math.max(LOOP.liveMin, prev && prev !== v ? Math.ceil(most(prev) * LOOP.liveShare) : 0);
-  const play = await playMoved(env, v, now, codes);
-  return { phones, need, live: phones >= need || (play !== null && play >= LOOP.playMin), ...(play !== null ? { play, playNeed: LOOP.playMin } : {}) };
+  const ship = await one(env, "SELECT seen_at FROM loop_ships WHERE version = ?", v).catch(() => null);
+  const seenAt = ship?.seen_at ?? now;
+  const from = kstDay(seenAt);
+  const recent = kstDay(now - LOOP.liveDays * DAY);
+  const after = from > recent ? from : recent;
+  const [rows, testers] = await Promise.all([
+    all(env, `SELECT app, MAX(CASE WHEN day >= ? THEN phones END) AS after, MAX(CASE WHEN day < ? THEN phones END) AS before,
+      MAX(CASE WHEN day >= ? THEN phones END) AS most FROM usage_days WHERE day >= ? AND app IN (?, ?) GROUP BY app`,
+      after, from, recent, kstDay(Math.min(seenAt, now) - LOOP.liveDays * DAY), v, prev ?? v).catch(() => []),
+    testerCount(env)]);
+  const row = (a) => rows.find((r) => r.app === a) ?? {};
+  const before = row(v).before ?? 0;
+  const phones = Math.max(0, (row(v).after ?? 0) - before);
+  const need = Math.max(LOOP.liveMin, testers + 1, prev && prev !== v ? Math.ceil((row(prev).most ?? 0) * LOOP.liveShare) : 0);
+  const playNeed = Math.max(LOOP.playMin, testers + 1);
+  const play = await playMoved(env, v, now, codes, ship);
+  return { phones, before, need, testers, live: phones >= need || (play !== null && play >= playNeed), ...(play !== null ? { play, playNeed } : {}) };
+}
+
+/**
+ * 2.0.0 [RVQ-34] 검토 SVC-19: 새 판을 Play보다 먼저 받을 수 있는 폰 수. 자동 순환 스위치 '테스터 수'(기본 [LOOP.testers])와 관리자 앱에
+ * 연결된 폰(관리자·가족 이용권) 중 큰 쪽이에요.
+ */
+export async function testerCount(env) {
+  const [sw, linked] = await Promise.all([loopSwitches(env).catch(() => SWITCH_DEFAULT),
+    one(env, "SELECT COUNT(*) AS n FROM admin_devices WHERE status = 'approved'").catch(() => null)]);
+  const set = Number.isInteger(sw.testers) && sw.testers >= 0 ? sw.testers : LOOP.testers;
+  return Math.max(set, Number(linked?.n) || 0);
 }
 
 /**
  * [LOOP-33] Play 보고서(판별 설치)에서 트랙 100%를 본 날(한국 날짜)부터 이 판 번호로 새로 깔거나 올린 기기. 보고서나 판 번호를 모르면 null.
  * 판 번호는 트랙 줄(versionCodes)에서, 없으면 마지막으로 읽은 트랙에서 가져와요.
  */
-async function playMoved(env, v, now, codes) {
-  const [ship, reports, track] = await Promise.all([one(env, "SELECT seen_at FROM loop_ships WHERE version = ?", v).catch(() => null),
+async function playMoved(env, v, now, codes, ship) {
+  const [reports, track] = await Promise.all([
     one(env, "SELECT value FROM settings WHERE key = 'play_reports'").catch(() => null),
     codes?.length ? null : one(env, "SELECT value FROM settings WHERE key = 'play_track'").catch(() => null)]);
   const read = (row) => {
@@ -567,6 +619,11 @@ export async function devQueue(env, limit = 60) {
 // ---- [LOOP-05] 저장소 → 서버 동기화 ----
 
 const SYNC_STATUS = { doing: "doing", check: "doing", done: "done", rejected: "rejected", todo: "todo" };
+/**
+ * 2.0.0 [HQ-78] 상태의 앞뒤: 저장소 동기화는 개발사항을 뒤로 돌리지 않아요(main의 dev-status가 통합보다 뒤처진 채 작은 PR이 합쳐지면
+ * done이 doing으로 돌아갔어요). 정말 다시 여는 줄은 reopen: true를 함께 적어요.
+ */
+const SYNC_RANK = { todo: 0, doing: 1, done: 2, rejected: 2 };
 const ID = /^d[A-Za-z0-9]{15}$/;
 const TRACK = /^[A-Z][A-Z0-9]{0,9}-\d{1,4}$/;
 
@@ -590,9 +647,9 @@ export async function syncDev(request, env, now, answer) {
     }
   }
   const summary = { made: results.filter((r) => r.made).length, changed: results.filter((r) => r.changed).length, told: results.reduce((n, r) => n + (r.told ?? 0), 0),
-    errors: results.filter((r) => r.error).length, held: results.filter((r) => r.held).length };
+    errors: results.filter((r) => r.error).length, held: results.filter((r) => r.held).length, kept: results.filter((r) => r.kept).length };
   await run(env, "INSERT INTO loop_syncs (at, sha, version, pr, n, result) VALUES (?, ?, ?, ?, ?, ?)", now, sha, ver ?? "", pr, items.length, JSON.stringify(summary));
-  await audit(env, now, "loop_sync", `${items.length}줄`, `${sha.slice(0, 8)} ${ver ?? ""} · 새 ${summary.made} · 바뀜 ${summary.changed} · 답 ${summary.told}${summary.errors ? ` · 오류 ${summary.errors}` : ""}${summary.held ? ` · 글 검사로 뺀 줄 ${summary.held}` : ""}`);
+  await audit(env, now, "loop_sync", `${items.length}줄`, `${sha.slice(0, 8)} ${ver ?? ""} · 새 ${summary.made} · 바뀜 ${summary.changed} · 답 ${summary.told}${summary.errors ? ` · 오류 ${summary.errors}` : ""}${summary.held ? ` · 글 검사로 뺀 줄 ${summary.held}` : ""}${summary.kept ? ` · 뒤로 가지 않은 줄 ${summary.kept}` : ""}`);
   const live = await liveTick(env, now, answer);
   return json({ ...summary, live: live.live, results });
 }
@@ -628,6 +685,8 @@ async function syncOne(env, x, { ver, sha, pr }, now, answer) {
   if (x.remote !== undefined) put("remote", remoteWant(x.remote) ? x.remote : "");
   if (x.flag !== undefined) put("flag", typeof x.flag === "string" && /^[A-Za-z0-9._]{2,50}$/.test(x.flag) ? x.flag : "");
   if (x.events !== undefined) put("events", (Array.isArray(x.events) ? x.events : []).filter((e) => typeof e === "string" && /^[a-z0-9_]{2,40}$/.test(e)).slice(0, 8).join(","));
+  // 2.0.0 [RVQ-34] 검토 SVC-20: 잴 이벤트의 좋은 방향.
+  if (x.good !== undefined) put("good", Object.hasOwn(EFFECT.goods, x.good) ? x.good : "");
   if (x.tierAsk !== undefined) put("tier_ask", pick(x.tierAsk, LOOP.tiers));
   if (x.tierWhy !== undefined) put("tier_why", plainText(x.tierWhy, 600, "tierWhy"));
   if (x.publicTitle !== undefined) put("public_title", x.publicTitle ? inquiryText(x.publicTitle).slice(0, LOOP.knownTitle) : "");
@@ -647,11 +706,18 @@ async function syncOne(env, x, { ver, sha, pr }, now, answer) {
   }
   // 상태·고친 판·출시 답·공지는 기존 길(devUpdate)로: 기록·보상·충돌 막기가 그대로예요.
   const upd = {};
-  const status = typeof x.status === "string" ? SYNC_STATUS[x.status] : undefined;
+  let status = typeof x.status === "string" ? SYNC_STATUS[x.status] : undefined;
+  let kept = null;
+  if (status && status !== row.status && (SYNC_RANK[status] ?? 0) < (SYNC_RANK[row.status] ?? 0) && x.reopen !== true) {
+    kept = row.status;
+    status = undefined;
+  }
   if (status && status !== row.status) upd.status = status;
-  if (status === "rejected") upd.reason = x.reason || "저장소에서 반려";
+  if (status === "rejected" && row.status !== "rejected") upd.reason = x.reason || "저장소에서 반려";
   const route = row.route;
-  if (status === "done" && ["app", "hotfix", ""].includes(route) && ver && ver !== row.released_in) upd.releasedIn = ver;
+  // [HQ-78] 고친 판은 앞으로만: 이미 적힌 판보다 낮은 판(뒤처진 main의 판 번호)으로 바꾸지 않아요.
+  const later = ver && (!row.released_in || !version(row.released_in) || compareVersions(version(ver), version(row.released_in)) > 0);
+  if (SYNC_STATUS[x.status] === "done" && ["app", "hotfix", ""].includes(route) && later) upd.releasedIn = ver;
   // 2.0.0 [RVQ-28] 검토 SVC-10: 글 검사에 걸린 공지 한 줄·출시 답은 그 칸만 빼고(상태·판은 그대로 반영) 결과에 적어요.
   const held = [];
   for (const k of ["news", "shipReply"]) {
@@ -674,17 +740,18 @@ async function syncOne(env, x, { ver, sha, pr }, now, answer) {
       told = await tellLater(env, row, route, now, answer);
     }
   }
-  return { id: row.id, track: row.track, made, changed, told, ...(held.length ? { held } : {}) };
+  return { id: row.id, track: row.track, made, changed, told, ...(held.length ? { held } : {}), ...(kept ? { kept } : {}) };
 }
 
 /** 출시 전 답(DESK.later를 담아 판이 나갈 때 다시 알림): 기다리는 문의에만, 다음 정기 출발일과 함께. */
 export function laterWords(v, route, train) {
-  const when = route === "hotfix" ? `곧 나올 ${v} 긴급` : train ? `${v} 버전으로 ${dayWords(train)} 정기` : `${v}`;
+  // 2.0.0 [HQ-78] 열차 밖의 판(train 없음)은 날짜 없이 '곧 나올'.
+  const when = route === "hotfix" ? `곧 나올 ${v} 긴급` : train ? `${v} 버전으로 ${dayWords(train)} 정기` : `곧 나올 ${v}`;
   return `불편을 드려 죄송해요. 말씀해 주신 내용은 원인을 찾아 고쳐 두었고, ${when} ${DESK.later}. 업데이트가 나오는 대로 이 문의에서 바로 알려 드릴게요. 조금만 기다려 주세요.`;
 }
 
 async function tellLater(env, row, route, now, answer) {
-  const text = laterWords(row.released_in, route, nextTrain(await loopTrain(env), now));
+  const text = laterWords(row.released_in, route, trainFor(await loopTrain(env), row.released_in, now));
   const waiting = await all(env, `SELECT i.id FROM dev_links l JOIN inquiries i ON i.id = l.inquiry_id WHERE l.item_id = ? AND i.status != 'closed'
     AND (SELECT m.sender FROM inquiry_messages m WHERE m.inquiry_id = i.id ORDER BY m.id DESC LIMIT 1) = 'user'`, row.id);
   let told = 0;
@@ -852,8 +919,10 @@ export async function tierBoard(env, now, params = new URLSearchParams()) {
  * [LOOP-19][LOOP-20] 답을 기다리는 문의(열림, 마지막 말이 사용자) 가운데 급함(알람·앱 실행·데이터·결제·수면 긴급 넷)과
  * 최고 관리자 확인(환불·법·개인정보·화남·약관·회사 방식). 결정함과 메뉴 숫자(/badges)가 같은 판단을 써요.
  */
+// 2.0.0 [RVQ-34] 검토 SVC-28: 최고 관리자 확인은 서버(needsPerson)처럼 문의한 분의 글 전부로 가려요(words). 급함은 첫 글로.
 export const WAITING_SQL = `SELECT i.id, i.kind, i.info, i.created_at,
     (SELECT m.text FROM inquiry_messages m WHERE m.inquiry_id = i.id AND m.sender = 'user' ORDER BY m.id LIMIT 1) AS first,
+    (SELECT GROUP_CONCAT(m.text, ' ') FROM inquiry_messages m WHERE m.inquiry_id = i.id AND m.sender = 'user') AS words,
     (SELECT m.sender FROM inquiry_messages m WHERE m.inquiry_id = i.id ORDER BY m.id DESC LIMIT 1) AS last
   FROM inquiries i WHERE i.status = 'open' ORDER BY i.created_at DESC LIMIT 300`;
 
@@ -872,7 +941,7 @@ export function waitingFrom(rows) {
     const t = triage(r.kind, r.first, info(r));
     if (t.urgency === "urgent") urgent.push({ ...r, topic: t.topicName });
   }
-  return { urgent, owner: waiting.filter((r) => askOwner(r.kind, r.first)) };
+  return { urgent, owner: waiting.filter((r) => askOwner(r.kind, r.words ?? r.first)) };
 }
 
 export async function waitingFlags(env) {
@@ -920,10 +989,23 @@ export const EFFECT = {
   move: 10,
   /** 앞뒤 각각 이만큼 휴대폰·날(사용 통계를 켠 폰)이 있어야 이벤트로 판정해요. */
   phoneDays: 30,
-  names: { better: "좋아졌어요", same: "그대로예요", worse: "나빠졌어요", none: "잴 숫자가 없어요" },
-  tones: { better: "ok", same: "warn", worse: "bad", none: "" },
+  /**
+   * 2.0.0 [RVQ-34] 검토 SVC-20: 앞뒤를 합쳐 이 이벤트를 쓴 휴대폰·날이 이만큼은 있어야 하고, 비율 차이의 95% 구간이 [move]를 넘어야
+   * 좋아짐·나빠짐, 구간이 ±[move] 안에 들어야 그대로예요. 아니면 '아직 몰라요'.
+   */
+  minEvents: 30,
+  z: 1.96,
+  /**
+   * 잴 이벤트의 좋은 방향(개발사항 good). 정하지 않으면 움직여도 '아직 몰라요'예요. 문의만으로 볼 때는 '해결됐어요'가 하나는 있어야
+   * 좋아짐이에요(다시 오지 않은 것만으로는 아직 몰라요).
+   */
+  goods: { up: "늘면 좋아요", down: "줄면 좋아요" },
+  names: { better: "좋아졌어요", same: "그대로예요", worse: "나빠졌어요", unknown: "아직 몰라요", none: "잴 숫자가 없어요", skip: "잴 수 없어요" },
+  tones: { better: "ok", same: "warn", worse: "bad", unknown: "", none: "", skip: "" },
   /** 한 번에 보는 수(매시). */
   batch: 20,
+  /** 2.0.0 [RVQ-34] 검토 SVC-33: 한 번에 훑는 줄(가벼운 칸만). 닿지 않을 줄은 '잴 수 없어요'로 빠져 창을 막지 않아요. */
+  scan: 2000,
 };
 
 /** 개발사항 [d]가 사용자에게 닿은 때(ms) 또는 null. [ships]는 '나간 판' 기록 [{ v, at }] 오래된 것부터. */
@@ -934,34 +1016,63 @@ export function reachedAt(d, ships) {
   return ships.find((s) => version(s.v) && compareVersions(version(s.v), want) >= 0)?.at ?? null;
 }
 
-/** 이벤트 비율과 다시 온 문의로 판정 한 줄. 순수 함수라 시험에서 바로 봐요. */
-export function effectVerdict({ events, before, after, beforeDays, afterDays, back = 0, yes = 0, asks = 0 }) {
-  const enough = events && beforeDays >= EFFECT.phoneDays && afterDays >= EFFECT.phoneDays;
-  const rb = enough ? before / beforeDays : null;
-  const ra = enough ? after / afterDays : null;
+/**
+ * 이벤트 비율과 다시 온 문의로 판정 한 줄. 순수 함수라 시험에서 바로 봐요.
+ *
+ * 2.0.0 [RVQ-34] 검토 SVC-20·I22c-01: 작은 표본과 '늘면 좋음'만으로 '좋아졌어요'를 붙였어요. 이제 이벤트는 앞뒤 합이 [EFFECT.minEvents]
+ * 이상이고, 비율 차이의 95% 구간(두 비율의 정규 근사)이 ±[EFFECT.move]%를 넘어야 움직인 것이고, 그 방향이 좋은지는 개발사항의 [good]
+ * (up·down)로 정해요. 구간이 ±[EFFECT.move]% 안이면 그대로, 둘 다 아니거나 방향을 모르면 '아직 몰라요'. 문의만으로는 '해결됐어요'가
+ * 다시 온 것보다 많아야 좋아짐이에요.
+ */
+export function effectVerdict({ events, good = "", before, after, beforeDays, afterDays, back = 0, yes = 0, asks = 0 }) {
+  const days = events && beforeDays >= EFFECT.phoneDays && afterDays >= EFFECT.phoneDays;
+  const enough = days && (before ?? 0) + (after ?? 0) >= EFFECT.minEvents;
+  const rate = (n, d) => Math.min(1, Math.max(0, n / d));
+  const rb = enough ? rate(before, beforeDays) : null;
+  const ra = enough ? rate(after, afterDays) : null;
   const pct = enough ? (rb ? Math.round(((ra - rb) / rb) * 100) : ra > 0 ? 100 : 0) : null;
   let effect;
-  if (pct !== null) effect = pct >= EFFECT.move ? "better" : pct <= -EFFECT.move ? "worse" : "same";
-  else if (back > 0) effect = "same";
-  else if (yes > 0 || asks > 0) effect = "better";
+  let unsure = "";
+  if (pct !== null) {
+    // 비율 차이의 95% 구간을 앞 비율에 견준 %로(앞이 0이면 1%p를 한 칸으로).
+    const se = Math.sqrt((rb * (1 - rb)) / beforeDays + (ra * (1 - ra)) / afterDays);
+    const scale = rb || 0.01;
+    const lo = ((ra - rb - EFFECT.z * se) / scale) * 100;
+    const hi = ((ra - rb + EFFECT.z * se) / scale) * 100;
+    const dir = lo > EFFECT.move ? "up" : hi < -EFFECT.move ? "down" : null;
+    if (dir && good) effect = dir === good ? "better" : "worse";
+    else if (dir) [effect, unsure] = ["unknown", `${dir === "up" ? "늘었지만" : "줄었지만"} 좋은 방향(늘면·줄면)을 정하지 않았어요`];
+    else if (lo > -EFFECT.move && hi < EFFECT.move) effect = "same";
+    else [effect, unsure] = ["unknown", `표본이 작아 구간이 넓어요(${Math.round(lo)}~${Math.round(hi)}%)`];
+  } else if (back > 0 && back >= yes) effect = "same";
+  else if (yes > 0) effect = "better";
+  else if (events || asks > 0) [effect, unsure] = ["unknown", events ? "" : "해결됐다는 답이 아직 없어요"];
   else effect = "none";
   // 숫자는 좋아져도 같은 문의가 다시 오면 '그대로'예요.
   if (effect === "better" && back > 0 && back >= yes) effect = "same";
-  const why = [pct !== null ? `${events} 쓰는 비율 ${pct > 0 ? "+" : ""}${pct}%` : events ? "사용 통계가 모자라요" : "",
-    asks ? `묶인 문의 ${asks}건` : "", yes ? `해결됐어요 ${yes}` : "", back ? `다시 옴 ${back}` : ""].filter(Boolean).join(" · ");
+  const why = [pct !== null ? `${events} 쓰는 비율 ${pct > 0 ? "+" : ""}${pct}%${good ? `(${EFFECT.goods[good]})` : ""}` : events ? `사용 통계가 모자라요(앞 ${before ?? 0}·뒤 ${after ?? 0})` : "",
+    unsure, asks ? `묶인 문의 ${asks}건` : "", yes ? `해결됐어요 ${yes}` : "", back ? `다시 옴 ${back}` : ""].filter(Boolean).join(" · ");
   return { effect, pct, why };
 }
 
 /** 매시: 닿은 지 2주가 지난 개발사항의 효과를 적어요. 적은 수. */
 export async function effectTick(env, now = Date.now()) {
-  const rows = await all(env, `SELECT id, title, route, released_in, live_at, events, size, updated_at FROM dev_items
-    WHERE deleted_at IS NULL AND status = 'done' AND effect = '' AND updated_at > ? ORDER BY updated_at LIMIT 200`, now - 180 * DAY).catch(() => []);
+  // 2.0.0 [RVQ-34] 검토 SVC-33: 200줄 창이 아직 닿지 않은(다음 판을 기다리는) 줄로 차면 그 뒤 줄은 재지 못했어요. 가벼운 칸만 넓게
+  // 훑고, 닿을 길이 없는 줄(앱 판도 서버로 닿은 때도 없음)은 '잴 수 없어요'로 빼요.
+  const rows = await all(env, `SELECT id, title, route, released_in, live_at, events, good, size, updated_at FROM dev_items
+    WHERE deleted_at IS NULL AND status = 'done' AND effect = '' AND updated_at > ? ORDER BY updated_at LIMIT ${EFFECT.scan}`, now - 180 * DAY).catch(() => []);
   if (!rows.length) return 0;
   const ships = (await all(env, "SELECT target AS v, MIN(at) AS at FROM audit WHERE action = 'shipped_version' GROUP BY target").catch(() => []))
     .filter((s) => version(s.v)).sort((a, b) => a.at - b.at);
+  const never = rows.filter((d) => !["server", "remote", "flag"].includes(d.route) && !version(d.released_in ?? "") && !d.live_at);
+  if (never.length) {
+    const note = JSON.stringify({ why: "고친 판(반영 버전)도 서버로 닿은 때도 없어요" });
+    await batch(env, never.map((d) => stmt(env, "UPDATE dev_items SET effect = 'skip', effect_at = ?, effect_note = ? WHERE id = ? AND effect = ''", now, note, d.id))).catch(() => null);
+  }
   let n = 0;
   for (const d of rows) {
     if (n >= EFFECT.batch) break;
+    if (never.includes(d)) continue;
     const at = reachedAt(d, ships);
     if (!at || at + EFFECT.days * DAY > now) continue;
     const span = EFFECT.days * DAY;
@@ -975,7 +1086,7 @@ export async function effectTick(env, now = Date.now()) {
       stmt(env, `SELECT COUNT(*) AS asks, SUM(i.created_at > ?) AS late, SUM(i.fixed = 1) AS yes FROM dev_links l JOIN inquiries i ON i.id = l.inquiry_id WHERE l.item_id = ?`, at + DAY, d.id),
       stmt(env, "SELECT COUNT(*) AS n FROM dev_history WHERE item_id = ? AND action = 'fixed_no' AND at > ?", d.id, at),
     ]).catch(() => [{ results: [{}] }, { results: [{}] }, { results: [{}] }, { results: [{}] }])).map((r) => r.results?.[0] ?? {});
-    const v = effectVerdict({ events: events.join(","), before: used.b ?? 0, after: used.a ?? 0, beforeDays: base.b ?? 0, afterDays: base.a ?? 0,
+    const v = effectVerdict({ events: events.join(","), good: d.good ?? "", before: used.b ?? 0, after: used.a ?? 0, beforeDays: base.b ?? 0, afterDays: base.a ?? 0,
       back: (links.late ?? 0) + (hist.n ?? 0), yes: links.yes ?? 0, asks: links.asks ?? 0 });
     const note = { from: iso(at), days: EFFECT.days, pct: v.pct, why: v.why };
     const r = await run(env, "UPDATE dev_items SET effect = ?, effect_at = ?, effect_note = ? WHERE id = ? AND effect = ''", v.effect, now, JSON.stringify(note), d.id).catch(() => null);
@@ -990,14 +1101,14 @@ export async function effectTick(env, now = Date.now()) {
 /** 개발사항 화면의 효과 한 줄(아직이면 언제 재는지). */
 export function effectOf(r) {
   if (r.status !== "done") return null;
-  if (!r.effect) return { key: "", name: "출시 2주 뒤에 재요", tone: "", why: "" };
+  if (!r.effect) return { key: "", name: "출시 2주 뒤에 재요", tone: "", why: "", good: r.good ?? "" };
   let note = {};
   try {
     note = JSON.parse(r.effect_note || "{}");
   } catch {
     note = {};
   }
-  return { key: r.effect, name: EFFECT.names[r.effect] ?? r.effect, tone: EFFECT.tones[r.effect] ?? "", why: note.why ?? "", from: note.from ?? null, at: r.effect_at ? iso(r.effect_at) : null };
+  return { key: r.effect, name: EFFECT.names[r.effect] ?? r.effect, tone: EFFECT.tones[r.effect] ?? "", why: note.why ?? "", from: note.from ?? null, at: r.effect_at ? iso(r.effect_at) : null, good: r.good ?? "" };
 }
 
 // ---- [LOOP-12] 믿을수록 더 맡기기 ----
@@ -1039,8 +1150,8 @@ export async function instantOk(env, pile, kind, text) {
 // ---- [LOOP-18] 연결 점검 ----
 
 /** [LOOP-32] 트랙 100% 판이 실제로 나갔는지 한 마디로. */
-const seenWords = (s) => (s.live ? `실제로 나감(휴대폰 ${s.phones}대${s.play !== undefined ? ` · Play 보고서 ${s.play}대` : ""})`
-  : `검토 중이거나 아직 안 나갔을 수 있어요(이 판 휴대폰 ${s.phones}/${s.need}대${s.play !== undefined ? ` · Play 보고서 ${s.play}/${s.playNeed}대` : ""})`);
+const seenWords = (s) => (s.live ? `실제로 나감(100% 뒤 늘어난 휴대폰 ${s.phones}대${s.play !== undefined ? ` · Play 보고서 ${s.play}대` : ""})`
+  : `검토 중이거나 아직 안 나갔을 수 있어요(100% 뒤 늘어난 휴대폰 ${s.phones}/${s.need}대${s.play !== undefined ? ` · Play 보고서 ${s.play}/${s.playNeed}대` : ""}${s.testers ? ` · 테스터 ${s.testers}대보다 많아야 해요` : ""})`);
 
 /** 2.0.0 [RVA-38] 검토 ADM-14·T23-06: 점검 줄의 때는 한국 시간 '11. 12. 15:04'로(전에는 2026-11-12T06:04:00.000Z). */
 const kstAt = (ms) => {
@@ -1091,7 +1202,7 @@ export async function loopCheck(env, now, { play = false } = {}) {
     line("sync", "저장소 동기화", r.errors ? "warn" : "ok", `마지막 ${kstAt(sync.at)}${sync.pr ? ` · PR #${sync.pr}` : ""}${sync.version ? ` · ${sync.version}` : ""} · ${sync.n}줄${r.errors ? ` · 오류 ${r.errors}` : ""}`,
       r.errors ? "GitHub › Actions의 개발 상태 보내기 기록에서 틀린 줄을 봐요" : "");
   }
-  line("train", "정기 출시 열차", "ok", `다음 출발 ${nextTrain(train, now)} · ${train.days}일마다`);
+  line("train", "정기 출시 열차", "ok", `다음 출발 ${nextTrain(train, now)} · ${train.days}일마다${train.outside?.length ? ` · 열차 밖(끝나는 즉시) ${train.outside.join("·")}` : ""}`);
   line("update", "인앱 업데이트 기준", sw.urgentMin || sw.flexibleMin ? "ok" : "warn",
     sw.urgentMin || sw.flexibleMin ? `긴급 ${sw.urgentMin || "—"} · 정기 ${sw.flexibleMin || "—"}` : "0이라 업데이트를 권하지 않아요", sw.urgentMin || sw.flexibleMin ? "" : "새 판을 낼 때 멈춤 스위치 › 인앱 업데이트에 정기 기준 판 번호를 넣어요");
   line("push", "관리자 폰 알림", pushReady(env) ? "ok" : "bad", pushReady(env) ? "됨 · 급함 문의는 조용한 시간에도 와요" : "폰 알림 열쇠가 서버에 없어 급함 문의 알림이 폰에 안 와요", pushReady(env) ? "" : "관리 › 서버 상태의 빠진 설정에서 넣어요");
@@ -1135,6 +1246,7 @@ export async function loopState(env, now) {
     all(env, "SELECT id, label, scope, last_at, expires_at, revoked_at FROM admin_keys WHERE scope = 'sync' ORDER BY created_at DESC LIMIT 3").catch(() => []),
     scoreCard(env), autonomy(env), rewardRules(env),
   ]);
+  const testers = await testerCount(env);
   // 2.0.0 [RVA-05] 검토 ADM-06: 인앱 업데이트 기준 칸 옆에 '지금 나간 번호'와 최근 7일 폰이 어느 번호에 있는지. 판 번호는 옛 표 + 문의가 실어 온
   // '1.39.0 (53)' + Play 트랙에서 읽은 번호로 알아요(원격 파일 화면과 같은 방법). 모르는 판은 code null.
   const [apps, learned] = await Promise.all([
@@ -1150,8 +1262,11 @@ export async function loopState(env, now) {
   const liveName = track.done ?? shipped?.v ?? null;
   if (liveName && Number.isFinite(liveCode)) codes[liveName] = liveCode;
   return {
-    now: iso(now), switches: sw, train: { ...train, next: nextTrain(train, now) }, play: { ready: Boolean(playReady(env)), ...track, at: track.at ? iso(track.at) : null },
-    shipped, ships: ships.map((s) => ({ version: s.version, status: s.status, seenAt: iso(s.seen_at), until: iso(s.until), doneAt: s.done_at ? iso(s.done_at) : null, by: s.by, result: s.result })),
+    now: iso(now), switches: { ...sw, testers: Number.isInteger(sw.testers) ? sw.testers : LOOP.testers }, testers,
+    train: { ...train, next: nextTrain(train, now) }, play: { ready: Boolean(playReady(env)), ...track, at: track.at ? iso(track.at) : null },
+    // 2.0.0 [RVQ-34] 검토 U22-02: 나간 판의 안내 편지함('안내 12/20건 · 사람 확인 2 · 공지 안 나감').
+    shipped, outbox: shipped ? await outboxOf(env, shipped.v) : null,
+    ships: ships.map((s) => ({ version: s.version, status: s.status, seenAt: iso(s.seen_at), until: iso(s.until), doneAt: s.done_at ? iso(s.done_at) : null, by: s.by, result: s.result })),
     syncs: syncs.map((s) => ({ at: iso(s.at), sha: s.sha, version: s.version, pr: s.pr, n: s.n, result: JSON.parse(s.result || "{}") })),
     waitingLive: notLive.map((d) => ({ id: d.id, title: d.title, route: d.route, routeName: LOOP.routes[d.route], want: d.route === "remote" ? d.remote : d.route === "flag" ? d.flag : "다음 서버 배포" })),
     syncKeys: keys.map((k) => ({ id: k.id, label: k.label, lastAt: k.last_at ? iso(k.last_at) : null, alive: !k.revoked_at && k.expires_at > now })),
@@ -1170,7 +1285,14 @@ export async function loopRoute(request, env, url, path, method, now, { answer, 
   if (path === "/loop/tiers" && method === "GET") return json(await tierBoard(env, now, url.searchParams));
   if (path === "/loop/autonomy" && method === "GET") return json(await autonomy(env));
   if (path === "/loop/check" && method === "GET") return json(await loopCheck(env, now, { play: url.searchParams.get("play") === "1" && !env.actor?.key }));
-  let m = path.match(/^\/loop\/ship\/(\d{1,2}\.\d{1,2}\.\d{1,3})\/(cancel|now|live)$/);
+  // 2.0.0 [RVQ-34] 검토 U22-02: 나간 판의 실패한 안내·못 올린 공지를 다시.
+  let m = path.match(/^\/loop\/ship\/(\d{1,2}\.\d{1,2}\.\d{1,3})\/retry$/);
+  if (m && method === "POST") {
+    if (env.actor?.key || !can(env.actor, "devStatus", "edit")) return json({ error: "no_permission" }, 403);
+    const r = await retryShip(env, m[1], now, answer);
+    return r ? json(r) : json({ error: "not_found" }, 404);
+  }
+  m = path.match(/^\/loop\/ship\/(\d{1,2}\.\d{1,2}\.\d{1,3})\/(cancel|now|live)$/);
   if (m && method === "POST") {
     if (env.actor?.key) return json({ error: "no_permission" }, 403);
     // [LOOP-32] '검토 중일 수 있음' 판은 멈추기와 '게시됨 확인'(사람이 Play Console에서 본 뒤)만 돼요.
@@ -1199,6 +1321,8 @@ export async function loopRoute(request, env, url, path, method, now, { answer, 
     for (const k of ["autoShip", "sync", "phone", "halt"]) if (typeof body[k] === "boolean") next[k] = body[k];
     if (Array.isArray(body.instant)) next.instant = body.instant.filter((p) => Object.hasOwn(LOOP.piles, p) && p !== "new");
     for (const k of ["urgentMin", "flexibleMin"]) if (body[k] !== undefined) next[k] = Number.isInteger(body[k]) && body[k] >= 0 && body[k] < 1e7 ? body[k] : refuse(k, k);
+    // 2.0.0 [RVQ-34] 검토 SVC-19: 출시 감지에서 뺄 테스터 수(0~500).
+    if (body.testers !== undefined) next.testers = Number.isInteger(body.testers) && body.testers >= 0 && body.testers <= 500 ? body.testers : refuse("testers", "testers");
     await saveSetting(env, "loop_switches", next);
     const diff = Object.keys(next).filter((k) => JSON.stringify(next[k]) !== JSON.stringify(was[k]));
     await audit(env, now, "loop_switches", diff.join(" ") || "같음", diff.map((k) => `${k}=${JSON.stringify(next[k])}`).join(" "));
@@ -1209,9 +1333,13 @@ export async function loopRoute(request, env, url, path, method, now, { answer, 
     const body = await readJson(request, 1024);
     const start = typeof body.start === "string" && /^\d{4}-\d{2}-\d{2}$/.test(body.start) && Number.isFinite(Date.parse(body.start)) ? body.start : refuse("start", "start");
     const days = Number.isInteger(body.days) && body.days >= 7 && body.days <= 60 ? body.days : refuse("days", "days");
-    await saveSetting(env, "loop_train", { start, days });
-    await audit(env, now, "loop_train", start, `${days}일마다`);
-    return json({ start, days, next: nextTrain({ start, days }, now) });
+    // 2.0.0 [HQ-78] 열차 밖의 판 목록: 보내지 않으면 그대로.
+    const was = await loopTrain(env);
+    const outside = body.outside === undefined ? was.outside
+      : Array.isArray(body.outside) && body.outside.length <= 10 && body.outside.every((v) => typeof v === "string" && version(v)) ? [...new Set(body.outside)] : refuse("outside", "outside");
+    await saveSetting(env, "loop_train", { start, days, outside });
+    await audit(env, now, "loop_train", start, `${days}일마다${outside.length ? ` · 열차 밖 ${outside.join("·")}` : ""}`);
+    return json({ start, days, outside, next: nextTrain({ start, days }, now) });
   }
   if (path === "/loop/rewards" && method === "POST") {
     if (!env.actor?.owner || env.actor?.key) return json({ error: "no_permission", area: "owner" }, 403);

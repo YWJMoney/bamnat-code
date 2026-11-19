@@ -80,13 +80,13 @@ class AppMarkTest {
         c.shareApi = api
         on314()
         assertTrue(c.flags.on(FlagCatalog.TEAM_APP_COUNT))
-        // A link nobody watches, or one only looked at, carries nothing.
-        c.received.put(id, share(watch = false), mine = true)
-        AppMark.sync(c)
-        assertTrue(api.marks.isEmpty())
+        // A link only looked at (not mine, 넣지 않기), or one nobody watches, carries nothing. 'Mine' stays once set, so the look comes first.
         c.received.put(id, share(watch = true))
         AppMark.sync(c)
         assertTrue("a link only looked at (넣지 않기) is not 앱으로 받음", api.marks.isEmpty())
+        c.received.put(id, share(watch = false), mine = true)
+        AppMark.sync(c)
+        assertTrue("a link the leader does not watch", api.marks.isEmpty())
         // The member's own link (바로 내 달력에 넣기 by default).
         c.received.put(id, share(watch = true), mine = true)
         AppMark.sync(c)

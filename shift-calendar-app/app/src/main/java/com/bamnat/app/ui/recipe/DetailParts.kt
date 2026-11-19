@@ -308,7 +308,9 @@ internal fun putBrief(s: RecipeDetailViewModel.State, fxOn: Boolean): List<PutLi
                 else PutLine("알람을 약하게 하는 설정은 빼고 넣어요 · $w", PutLine.Kind.ALARM_WEAK)
         }
     }
-    val rest = on.filter { it.kind !in kinds && it.kind != com.bamnat.core.recipe.PieceKind.LOGIC && it.kind != com.bamnat.core.recipe.PieceKind.ALARMS }
+    // 2.0.0 [RVS-15] 앱 동작 has its own lines under the brief ([FeelChoices]), each with its switch.
+    val rest = on.filter { it.kind !in kinds && it.kind != com.bamnat.core.recipe.PieceKind.LOGIC && it.kind != com.bamnat.core.recipe.PieceKind.ALARMS &&
+        it.kind != com.bamnat.core.recipe.PieceKind.APP_FEEL }
         .map { it.kind.label }
     if (rest.isNotEmpty()) out += PutLine("그 밖에 " + rest.take(3).joinToString(" · ") + if (rest.size > 3) " 등" else "", PutLine.Kind.OTHER)
     // 2.0.0 [RVM-23] U09b-01 (넣기 창 맨 위에 '조심 줄'을 따로, RCP-05·17·STU-23): what one would not see coming goes first — the alarm made

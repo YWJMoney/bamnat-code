@@ -41,6 +41,12 @@ class PartsSinceExportTest {
         val file = serverFile()
         val want = render(RecipeVocab.since(kept(), currentCode, RecipeVocab.now()))
         if (System.getenv("BAMNAT_WRITE_PARTS_SINCE") == "1") file.writeText(want)
+        // 2.0.0 [RVS-18] SI-04: the app reads the same table (RecipeNeeds), so the studio says what the server will.
+        val kt = File("src/main/kotlin/com/bamnat/core/recipe/PartsSinceTable.kt")
+        val wantKt = renderKt(RecipeVocab.since(kept(), currentCode, RecipeVocab.now()))
+        if (System.getenv("BAMNAT_WRITE_PARTS_SINCE") == "1") kt.writeText(wantKt)
+        assertEquals("${kt.path} is older than core. Write it again with: BAMNAT_WRITE_PARTS_SINCE=1 ./gradlew -p core test " +
+            "--tests '*PartsSinceExportTest*' --rerun", wantKt, if (kt.exists()) kt.readText() else "")
         assertEquals(
             "${file.path} is older than core. Write it again with: BAMNAT_WRITE_PARTS_SINCE=1 ./gradlew -p core test " +
                 "--tests '*PartsSinceExportTest*' --rerun (then `npm test` in server/company-worker)",
@@ -85,6 +91,28 @@ class PartsSinceExportTest {
         val js = render(RecipeVocab.since(kept(), currentCode, RecipeVocab.now()))
         assertTrue(js.lines().none { it.startsWith("import ") || (it.startsWith("export ") && !it.startsWith("export const ")) })
         for (k in RecipeVocab.KINDS) assertTrue(k, js.contains("\n  $k: {"))
+    }
+
+    /** The same table for the app (core [RecipeNeeds]): one map a category, a version's names on a line. */
+    private fun renderKt(since: Map<String, Map<String, Int>>): String = buildString {
+        appendLine("package com.bamnat.core.recipe")
+        appendLine()
+        appendLine("// 2.0.0 [RVS-18] 만든 파일이에요. 손으로 고치지 마세요. server/company-worker/src/parts-since.js와 같은 표(RecipeVocab.since).")
+        appendLine("// 다시 만들기: BAMNAT_WRITE_PARTS_SINCE=1 ./gradlew -p core test --tests '*PartsSinceExportTest*' --rerun (낡으면 그 시험이 실패해요)")
+        appendLine("/** Each name an older app does not read, by category ([RecipeVocab.KINDS]), with the first versionCode that reads it. */")
+        appendLine("internal object PartsSinceTable {")
+        appendLine("    val MAP: Map<String, Map<String, Int>> = mapOf(")
+        for (k in RecipeVocab.KINDS) {
+            val m = since[k].orEmpty()
+            if (m.isEmpty()) { appendLine("        \"$k\" to emptyMap(),"); continue }
+            appendLine("        \"$k\" to mapOf(")
+            m.entries.groupBy { it.value }.toSortedMap().forEach { (_, e) ->
+                e.chunked(5).forEach { line -> appendLine("            " + line.joinToString(" ") { "${RecipeCodec.canonical(it.key).replace("$", "\\$")} to ${it.value}," }) }
+            }
+            appendLine("        ),")
+        }
+        appendLine("    )")
+        appendLine("}")
     }
 
     private fun render(since: Map<String, Map<String, Int>>): String = buildString {

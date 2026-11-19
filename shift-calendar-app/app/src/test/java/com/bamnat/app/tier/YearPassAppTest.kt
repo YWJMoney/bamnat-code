@@ -39,6 +39,8 @@ class YearPassAppTest {
         assertEquals(t0.plus(Duration.ofDays(365)) to false, EndNotice.end(ProState(sub = yearly), now))
         assertNull("a monthly plan has no yearly notice", EndNotice.end(ProState(sub = yearly.copy(basePlan = ProductIds.MONTHLY)), now))
         assertNull("a trial has its own", EndNotice.end(ProState(sub = yearly.copy(trial = true)), now))
+        // 2.0.0 [RVO-15] 검토 PRO-04: the phone's own 3-day hold is not a renewal date (it went at every open).
+        assertNull("not read by the server", EndNotice.end(ProState(sub = yearly.copy(verified = false, expiry = now.plus(SubRecord.PHONE_HOLD))), now))
         assertEquals(t0.plus(Duration.ofDays(365)) to true, EndNotice.end(ProState(yearPasses = mapOf("GPA.1" to t0)), now))
         val (title, text) = EndNotice.words(t0.plus(Duration.ofDays(365)), pass = false, found = 68_400, zone = zone)
         assertEquals("프로 연 요금제가 1월 1일에 갱신돼요", title)

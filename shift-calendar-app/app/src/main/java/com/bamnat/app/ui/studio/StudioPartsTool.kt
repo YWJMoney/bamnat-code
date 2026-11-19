@@ -105,9 +105,21 @@ internal fun PartsTool(
             label = { Text(if (many) "여럿 고르기 · ${multi.size + 1}곳" else "여럿 고르기") })
         // PC 확인 C7 1.36 사용성 제안 (처음 부품이 같이 세어지는 줄 몰랐어요): the part already open is the first of them, said by name.
         val first = BlueprintParts.LABELS[id] ?: id
+        // 2.0.0 [RVS-20] The others by name when they are few (some may sit on other screens: 같은 줄·카드 함께).
+        val rest = if (multi.size in 1..3) multi.joinToString("·") { "‘${BlueprintParts.LABELS[it] ?: it}’" } else "칩 ${multi.size}개"
         if (many) Text(if (multi.isEmpty()) "지금 연 ‘$first’${com.bamnat.app.ui.Fmt.iga(first)} 첫 곳이에요. 칩을 눌러 더해요"
-            else "‘$first’${com.bamnat.app.ui.Fmt.wa(first)} 칩 ${multi.size}개. 고친 값이 고른 곳 모두에 들어가요", style = MaterialTheme.typography.labelSmall,
+            else "‘$first’${com.bamnat.app.ui.Fmt.wa(first)} $rest. 고친 값이 고른 곳 모두에 들어가요", style = MaterialTheme.typography.labelSmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.weight(1f))
+    }
+    // 2.0.0 [RVS-20] 검토 SI-05 (스튜디오 조사 6-1, 조건 8): 메모 카드·가계부 줄·급여 줄 are the same kind of thing on three screens, a
+    // list's repeated row; one chip takes the next changes to all of them, so the same look is not made three times on three screens.
+    val rowStyle = studioStyle()
+    val rows = remember(rowStyle) { sameRows(rowStyle) }
+    if (id in rows && on == null) {
+        val others = rows - id
+        val together = many && multi.toSet() == others.toSet()
+        FilterChip(selected = together, onClick = { if (together) { many = false; multi = emptyList() } else { many = true; multi = others } },
+            label = { Text(if (together) "✓ ${rows.joinToString("·") { BlueprintParts.LABELS[it] ?: it }} 함께" else "${others.joinToString("·") { BlueprintParts.LABELS[it] ?: it }}도 함께 고치기") })
     }
     // PC 확인 efc52400 사용성 제안: 달력 has some 30 parts and 타임라인 근무 막대 sat at the very bottom; a row of 묶음 (달력 머리, 날짜 칸,
     // 타임라인 판 …) on top narrows the chips to one family.
@@ -243,6 +255,19 @@ internal fun PartsTool(
     fun Said(f: com.bamnat.core.recipe.PartFloor.Fix, keep: (() -> Unit)? = null) {
         if (f in fixes) com.bamnat.app.ui.components.ToneLine(f.say + if (keep != null) " · 누르면 그 색으로 저장해요" else "",
             tone = com.bamnat.app.ui.theme.Tone.Plain, onClick = keep)
+    }
+    // 2.0.0 [RVS-19] SN-09: a 위젯 part says what the home screen leaves out (the example already draws it so), one quiet line.
+    if (id == "widget" || id.startsWith("widget.")) {
+        val leaves = remember(bp, id, on) { com.bamnat.core.recipe.WidgetDraws.leaves(bp.style(id, onStates)) }
+        if (leaves.isNotEmpty()) com.bamnat.app.ui.components.ToneLine("홈 화면 위젯에서는 그리지 않아요: " + leaves.joinToString(" · ") +
+            " · 예시도 위젯처럼 보여요", tone = com.bamnat.app.ui.theme.Tone.Plain)
+    }
+    // 2.0.0 [RVS-20] SI-05: with 같은 줄·카드 함께 on, the look already made here goes to the others in one tap (their other values stay).
+    if (many && on == null && whenNow == null && id in sameRows(studioStyle()) && multi.toSet() == (sameRows(studioStyle()) - id).toSet()) {
+        val look = line.filterKeys { it != "id" && it != "on" && it != "when" && it != "order" }
+        if (look.isNotEmpty()) TextButton(onClick = { setAll(*look.toList().toTypedArray()) }, modifier = Modifier.heightIn(min = 48.dp)) {
+            Text("지금 모양을 ${multi.size}곳에도 넣기")
+        }
     }
     // PC 확인 46b9004b 사용성 제안: the 막대 keep one 진하기 for "근무 색 그대로" and one for "한 가지 색으로", so going back and forth
     // brings each one back instead of starting again from 100%.
@@ -487,6 +512,13 @@ private fun fits(st: String, style: WorkStyle?): Boolean = when {
 
 /** 연차·잔업·대근: words of a job with an employer (TypeWords EMPLOYEE). */
 private val NO_EMPLOYER = setOf("leave", "extra", "cover")
+
+/**
+ * 2.0.0 [RVS-20] SI-05: a list's repeated row on each screen that has one for [style] (급여 has no screen for 가게·투자, as on their tabs),
+ * the parts 같은 줄·카드 함께 takes changes to.
+ */
+internal fun sameRows(style: WorkStyle?): List<String> =
+    listOf("memo.card", "money.row") + (if (style == WorkStyle.BUSINESS || style == WorkStyle.INVEST) emptyList() else listOf("pay.row"))
 
 /** 2.0.0 [RVS-10] The studio's own kind of work (the calendar's), for the words of '어떤 때'. */
 @Composable

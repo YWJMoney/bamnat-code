@@ -156,8 +156,15 @@ internal fun AlarmSheet(vm: InvestViewModel, state: InvestState, kind0: AlarmKin
             Repeat.ONCE -> OutlinedButton(onClick = { pickingOnce = true }) { Text(Fmt.dayTitle(runCatching { LocalDate.parse(once) }.getOrDefault(state.today))) }
             else -> Unit
         }
-        if (repeat != Repeat.ONCE) SwitchRow(
-            if (repeat == Repeat.MONTHLY) "휴장일이면 다음 장날에" else "주말·공휴일·휴장일은 건너뛰기", skip) { skip = it }
+        // 2.0.0 [RVK-52] (검토 MONEY-72): 코인 never shuts, so there is nothing to skip; 미국 주식 skips the NYSE's own days.
+        val venue = InvestAlarms.venue(preview)
+        if (repeat != Repeat.ONCE && venue != com.bamnat.core.invest.MarketDays.Venue.COIN) SwitchRow(
+            when {
+                repeat == Repeat.MONTHLY && venue == com.bamnat.core.invest.MarketDays.Venue.US -> "미국 증시 휴장일이면 다음 장날에"
+                repeat == Repeat.MONTHLY -> "휴장일이면 다음 장날에"
+                venue == com.bamnat.core.invest.MarketDays.Venue.US -> "주말·미국 증시 휴장일은 건너뛰기"
+                else -> "주말·공휴일·휴장일은 건너뛰기"
+            }, skip) { skip = it }
         if (needsHolding || kind == AlarmKind.CUSTOM) {
             FieldLabel("종목")
             val known = state.fullResult.byKey.take(8)

@@ -37,6 +37,9 @@ object ComposeMainReset {
         com.bamnat.app.ui.components.AppSnack.resetForTest()
         com.bamnat.app.ui.components.AskTurn.resetForTest()
         com.bamnat.app.ui.components.Busy.resetForTest()
+        // 2.0.0 [RVM-58] (총괄 HQ): and what 입어 보기 keeps for the JVM, as ScreenshotBase.seed empties it ([RVM-57]).
+        com.bamnat.app.recipe.RecipeLinks.resetForTest()
+        com.bamnat.app.ui.recipe.LiveTryOn.resetForTest()
     }
 
     /** [now] before everything else of a test, ahead of a Compose rule: `@get:Rule(order = Int.MIN_VALUE)`. */
