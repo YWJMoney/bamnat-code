@@ -123,6 +123,17 @@ class DeployWorkerTest(unittest.TestCase):
         self.assertTrue(d.config_problems("name = [", "company"))
         share = (Path(__file__).resolve().parent.parent / "server/share-worker/wrangler.toml").read_text(encoding="utf-8")
         self.assertEqual(d.config_problems(share, "share"), [])
+        # 2.0.0 [RVD-33] 앱 없는 팀원 방(Q1 4h)의 Durable Object 바인딩·migration은 받는 칸이에요.
+        room = ('\n[[durable_objects.bindings]]\nname = "TEAM_ROUND"\nclass_name = "TeamRound"\n'
+                '\n[[migrations]]\ntag = "v1-team-round"\nnew_sqlite_classes = ["TeamRound"]\n')
+        self.assertEqual(d.config_problems(share + room, "share"), [])
+
+    def test_pending_do_migration_points_to_migrate(self):
+        # 2.0.0 [RVD-33] wrangler 4.150.0이 적용 안 된 DO migration으로 versions upload를 막으면 다음에 할 일은 main 도구 migrate.
+        out = ("✘ [ERROR] This Worker has a pending Durable Object migration, which cannot be applied by `wrangler versions upload`. "
+               "Durable Object migrations must be applied with `wrangler deploy`.")
+        self.assertIn("migrate", d.upload_hint(out))
+        self.assertIsNone(d.upload_hint("✘ [ERROR] Authentication error [code: 10000]"))
 
     def test_failing_test_names(self):
         tap = "ok 1 - a\nnot ok 2 - login counts at once # TODO\n  ---\nnot ok 3 - test/accounts.test.mjs\n# fail 1\n"

@@ -47,7 +47,7 @@ class OpenAskTest {
     @Test fun theOrderIsTheLawThenTheUpdateThenTheRest() {
         assertEquals(
             listOf(OpenAsk.NEW_CONSENT, OpenAsk.TRIAL_CONSENT, OpenAsk.WHATS_NEW, OpenAsk.THEME_EXPIRY, OpenAsk.UPDATE_READY,
-                OpenAsk.THEME_UPDATE, OpenAsk.TEXT_SIZE, OpenAsk.LAUNCH_THANKS),
+                OpenAsk.THEME_UPDATE, OpenAsk.TEXT_SIZE, OpenAsk.LAUNCH_THANKS, OpenAsk.REVIEW),
             OpenAsk.entries.toList(),
         )
         // Each one alone shows.

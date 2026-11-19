@@ -1,5 +1,6 @@
 package com.bamnat.app.ui.pay
 
+import com.bamnat.app.appContainer
 import com.bamnat.app.ui.parts.drawClip
 import com.bamnat.app.ui.monthSwipe
 import androidx.compose.ui.layout.onGloballyPositioned
@@ -232,9 +233,17 @@ fun PayScreen(
     // the rules editor is open, so a 'done' kept inside it started again on the way back and opened the editor once more.
     var focusUsed by rememberSaveable { mutableStateOf(false) }
     // [PAYS-12] 자세히 고치기 from the easy setup; [PAYS-15] the 광장 ask after a payslip set the rules.
-    var detailedFrom by remember { mutableStateOf<DetailedStart?>(null) }
+    // 2.0.0 [RVJ-75] 검토 PAYU-04: open again after the screen is made again (the dark theme, Android closing the app in the background),
+    // on the setup it began from, so the answers [WizardDraft] kept come back onto the same one.
+    var wizardFrom by rememberSaveable { mutableStateOf<String?>(null) }
+    var detailedFrom by remember {
+        mutableStateOf(wizardFrom?.let { t -> DetailedStart(t.takeIf { it.isNotEmpty() }?.let { runCatching { com.bamnat.app.pay.PayCodec.decode(org.json.JSONObject(it)) }.getOrNull() }) })
+    }
+    androidx.compose.runtime.LaunchedEffect(detailedFrom) { wizardFrom = detailedFrom?.let { WizardDraft.initialText(it.from) } }
     /** 1.36 PC X4: the ← and back while 자세히 고치기 is open, handed to it so it can ask before leaving. */
     var wizardLeave by remember { androidx.compose.runtime.mutableIntStateOf(0) }
+    /** 2.0.0 [RVJ-75] The same for the easy setup over a pay that is there: it asks before its answers go. */
+    var quickLeave by remember { androidx.compose.runtime.mutableIntStateOf(0) }
     var rulesLeave by remember { androidx.compose.runtime.mutableIntStateOf(0) }
     var plazaAsk by rememberSaveable { mutableStateOf(false) }
     // [PAYIN-05][PAYIN-06] 1.37 B5·B6·B7: what a save did, the 7 days of changes, starting over.
@@ -263,6 +272,7 @@ fun PayScreen(
     com.bamnat.app.ui.components.KeyboardFirstBackHandler(enabled = editingSetup || editingRules || detailedFrom != null) {
         when {
             detailedFrom != null -> wizardLeave++
+            editingSetup && profile != null -> quickLeave++
             editingSetup -> editingSetup = false
             else -> rulesLeave++
         }
@@ -303,6 +313,7 @@ fun PayScreen(
                     IconButton(onClick = {
                         when {
                             detailedFrom != null -> wizardLeave++
+                            editingSetup && profile != null -> quickLeave++
                             editingSetup -> editingSetup = false
                             editingRules -> rulesLeave++
                             else -> onBack()
@@ -367,6 +378,8 @@ fun PayScreen(
                     if (detailed == null) PayQuickSetup(
                         initial = profile,
                         style = settings.workStyle,
+                        // [RVH-68] The 시급 taken from bamnat.app on the first setup, for the main calendar's first pay.
+                        webWage = if (vm.calendarId == com.bamnat.app.data.PersonalCalendar.MAIN) setupContext.appContainer.webStart.wage else null,
                         snapshot = snap,
                         preview = { draft -> vm.preview(draft, snap, month) },
                         slipRules = { base, read, rules -> vm.slipRules(base, snap, read, rules) },
@@ -382,10 +395,15 @@ fun PayScreen(
                         companyFind = companyFind,
                         // [PAYG-01] The company's way went in with its 기본급 (kept already): back to the month.
                         onApplied = { editingSetup = false },
+                        leaveAsk = quickLeave,
                     ) else PayWizard(
                         initial = detailed.from ?: profile,
                         onCancel = { detailedFrom = null },
-                        onDone = { p -> vm.saveSetup(p, fromSlip); editingSetup = false; detailedFrom = null },
+                        onDone = { p ->
+                            // 2.0.0 [RVJ-75] The easy setup's answers it came from are done with too.
+                            com.bamnat.app.ui.components.DraftStore.clear(setupContext, QuickDraft.KEY)
+                            vm.saveSetup(p, fromSlip); editingSetup = false; detailedFrom = null
+                        },
                         filledFromSlip = { fromSlip = it },
                         snapshot = snap,
                         preview = { draft -> vm.preview(draft, snap, month) },

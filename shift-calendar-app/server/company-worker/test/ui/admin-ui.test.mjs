@@ -3816,11 +3816,13 @@ test("[RVA-63] 되풀이되는 닫힘 문의: 운영 장부 맨 위 묶음 카�
   await u.go(`#/inquiries/${ids[1]}`);
   await u.settle(30);
   assert.match(u.text("#main .crash-note"), /같은 보낸 분의 닫힘 문의 2건 중 2번째/);
+  // [RVA-67] PC-201: 보고서 복사는 답장 칸(2,000자)보다 길어요. 점검 기록을 켠 새 문의로.
+  assert.match(u.text("#main .crash-note"), /점검 기록을 켠 새 문의\('앱이 이상해요'\)로 받아 봐요/);
   await u.type("#reply", "안녕하세요.");
   await u.click('#main [data-act="crash-draft"]');
   const v = u.$("#reply").value;
   assert.match(v, /^안녕하세요\.\n\n불편을 드려/, "what was typed stays first");
-  assert.match(v, /보고서 복사/);
+  assert.match(v, /점검 기록도 보내기/);
   assert.match(v, /밤낮 운영팀$/);
   assert.deepEqual(u.errors, []);
 });
@@ -3865,5 +3867,57 @@ test("[RVA-65] 장터 작품 '입은 뒤' 숫자: 줄에는 비율만(넣은 분
   await u.go("#/recipes?tab=one&code=%2Fx");
   await u.settle(30);
   assert.equal(u.$('#main [data-act="recipe-tab"][aria-pressed="true"]')?.dataset.key, "flagged", "이상한 코드는 신고됨으로");
+  assert.deepEqual(u.errors, []);
+});
+
+test("[RVA-66] 문의 상세 멈춤 안내는 화면에 보이는 칸 이름으로, '멈춤 줄 보기'를 누르면 그 줄로 가요", async () => {
+  const css = await adminFile("/admin/app.css").text();
+  assert.match(css, /li\.flash,\.kv dd\.flash\{outline/);
+  const { call, env } = await world();
+  // 지어낸 값: 멈춘 줄이 있는 닫힘 문의 하나.
+  const info = { app: "1.39.0 (53)", model: "Test Fold 9", android: "17 (API 37)", diag: "[앱 멈춤]\n11/18 21:04 TestCrashException@x.y:3\n\n[알람]\n다음 알람 07:00" };
+  const id = (await call("POST", "/api/inquiries", { v: 1, device: "test-device-00000081", kind: "bug", text: "앱이 갑자기 닫혀요", info }, from(81))).data.id;
+  const u = await signedIn(env);
+  await u.go(`#/inquiries/${id}`);
+  await u.settle(30);
+  const note = u.$("#main .crash-note");
+  assert.match(note.textContent, /함께 온 정보 › 알람 점검의 \[앱 멈춤\] 줄을 봐요\./, "PC-195: 화면에 보이는 칸 이름");
+  assert.doesNotMatch(note.textContent, /'앱 멈춤' 칸/);
+  assert.match(note.querySelector(".pill").title, /함께 온 정보 › 알람 점검의 \[앱 멈춤\] 줄/);
+  const dt = u.$("#main #ctx-diag");
+  assert.equal(dt.textContent, "알람 점검");
+  await u.click('#main [data-act="crash-diag"]');
+  assert.ok(dt.nextElementSibling.classList.contains("flash"), "누르면 그 줄로 가서 잠깐 표시해요");
+  assert.ok(!u.$('#main [data-act="crash-draft"]'), "기록이 있으면 부탁 답 단추는 없어요");
+  assert.deepEqual(u.errors, []);
+});
+
+test("[RVA-69] 2.0.0 문의의 기록 부탁은 답장으로, 답장과 함께 온 점검 기록은 대화와 함께 온 정보에 표시돼요", async () => {
+  const { call, env } = await world();
+  // 지어낸 값: 2.0.0 앱에서 온 닫힘 문의(기록 없음).
+  const dev = "test-device-00000082";
+  const id = (await call("POST", "/api/inquiries", { v: 1, device: dev, kind: "bug", text: "앱이 갑자기 닫혀요", info: { app: "2.0.0 (54)", model: "Test Fold 9", android: "17 (API 37)" } }, from(82))).data.id;
+  const u = await signedIn(env);
+  await u.go(`#/inquiries/${id}`);
+  await u.settle(30);
+  assert.match(u.text("#main .crash-note"), /답장의 '점검 기록도 보내기'로 받아 봐요/);
+  assert.match(u.$('#main [data-act="crash-draft"]').title, /답장에 점검 기록을 켜서/);
+  await u.click('#main [data-act="crash-draft"]');
+  assert.match(u.$("#reply").value, /답장 칸 밑의 '점검 기록도 보내기'/);
+  assert.doesNotMatch(u.$("#reply").value, /새 문의/);
+  // 보낸 분이 답장에 기록을 켜서 보내면.
+  await call("POST", `/api/inquiries/${id}/messages`, { text: "점검 기록을 함께 보내요.", info: { diag: "[앱 멈춤]\n가장 최근 기록: 11.19 07:02 · TestCrashException\n남은 기록: 1개" } }, { "x-device": dev });
+  await u.go("#/inquiries");
+  await u.settle(30);
+  await u.go(`#/inquiries/${id}`);
+  await u.settle(30);
+  const tag = u.$$('#main .bubble-meta [data-act="crash-diag"]');
+  assert.equal(tag.length, 1, "기록과 함께 온 답장 한 줄에만");
+  assert.equal(tag[0].textContent, "점검 기록 함께 옴");
+  assert.equal(u.$("#main #ctx-diag").textContent, "알람 점검", "칸 이름은 짧게(넓이를 뺏지 않게)");
+  assert.match(u.$("#main #ctx-diag").nextElementSibling.querySelector(".ctx-at").textContent, /^답장과 함께 받음 · /);
+  await u.click('#main .bubble-meta [data-act="crash-diag"]');
+  assert.ok(u.$("#main #ctx-diag").nextElementSibling.classList.contains("flash"));
+  assert.ok(!u.$('#main [data-act="crash-draft"]'), "기록이 오면 부탁 답 단추는 없어요");
   assert.deepEqual(u.errors, []);
 });

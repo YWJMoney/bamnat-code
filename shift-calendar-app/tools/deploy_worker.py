@@ -198,10 +198,22 @@ def crons_of(config_text: str) -> list[str] | None:
 
 # 2.0.0 [RVQ-01] 검토 SRV-02: build가 넘긴 설정에서 받는 칸. 그 밖의 칸(특히 [build]처럼 명령을 돌리는 칸, [site]·[assets]처럼 폴더를
 # 올리는 칸)이 있으면 ship이 멈춰요. 토큰이 있는 곳에서 고른 브랜치의 무엇도 '실행'되지 않게.
+# 2.0.0 [RVD-33] durable_objects·migrations: 공유 서버의 앱 없는 팀원 방(TeamRound, Q1 4h). 명령을 돌리거나 폴더를 올리는 칸이
+# 아니라 바인딩과 클래스 생애 선언이에요. 클래스를 새로 만드는 첫 판은 versions upload가 못 올려 main 도구 mode migrate로 따로 올리고
+# (그 판이 되돌리기 바닥), 그 뒤 판은 같은 설정으로 이 도구가 보통대로 올려요.
 CONFIG_KEYS = {
     "name", "main", "compatibility_date", "compatibility_flags", "workers_dev", "keep_vars", "placement", "triggers",
     "version_metadata", "d1_databases", "kv_namespaces", "vars", "observability", "limits", "upload_source_maps",
+    "durable_objects", "migrations",
 }
+
+DO_PENDING_NEXT = ("아직 적용되지 않은 Durable Object migration이 있어요. versions upload로는 못 올려요: main 배포 도구 mode "
+                   "migrate-check → migrate로 이 Worker만 따로 올린 뒤(그 판이 새 되돌리기 바닥) 다시 돌려요(손님은 앞 판 그대로)")
+
+
+def upload_hint(output: str) -> str | None:
+    """2.0.0 [RVD-33] versions upload 실패 글이 적용 안 된 DO migration 때문이면 다음에 할 일."""
+    return DO_PENDING_NEXT if "pending Durable Object migration" in output else None
 
 
 def config_problems(text: str, worker: str) -> list[str]:
@@ -716,7 +728,13 @@ def stage_upload(worker: str, src: Path, work: Path, sha: str, reason: str, allo
                           "--tag", sha[:12], "--message", f"{new_ver} {sha[:8]} {reason}"[:100]]
         for k, v in extra_vars.items():
             cmd += ["--var", f"{k}:{v}"]
-        p = run(cmd, work, {"WRANGLER_OUTPUT_FILE_PATH": str(out)}, stage="올리기")
+        try:
+            p = run(cmd, work, {"WRANGLER_OUTPUT_FILE_PATH": str(out)}, stage="올리기")
+        except Stop as e:
+            hint = upload_hint(str(e))
+            if hint:
+                raise Stop(str(e), stage="올리기", next_step=hint) from e
+            raise
         vid = upload_version_id(out.read_text(encoding="utf-8") if out.exists() else "", p.stdout + p.stderr)
         if not vid:
             raise Stop("올린 판 번호를 읽지 못했어요", stage="올리기")

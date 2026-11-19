@@ -28,13 +28,17 @@ test("[SEC-01] a network limit holds a whole /64: a new address per try does not
   assert.equal(other.status, 404, "the next /64 is another network");
 });
 
-test("[SEC-03] wrong link codes from many networks together spend every live code", async (t) => {
+// 2.0.0 [RVQ-49] 검토 SVC-73·T22b-07: the window rests, but the live codes are no longer spent (anyone's 30 wrong tries wiped the
+// family codes the owner had handed out).
+test("[SEC-03] wrong link codes from many networks together rest the window, and the codes others hold stay", async (t) => {
   t.mock.timers.enable({ apis: ["Date"], now: Date.parse("2026-11-12T03:00:00Z") });
   const { call } = server();
   const owner = await signIn(call);
   const code = (await call("POST", "/api/admin/me/link-code", {}, owner)).data.code;
   assert.match(code, /^\d{6}$/);
-  const wrong = code === "000000" ? "000001" : "000000";
+  const family = (await call("POST", "/api/admin/family/code", { name: "엄마" }, owner)).data.code;
+  assert.match(family, /^\d{6}$/);
+  const wrong = ["000000", "000001", "000002"].find((c) => c !== code && c !== family);
   let r;
   for (let i = 0; i < MONEY.linkWrongPerWindow; i++) {
     r = await call("POST", "/api/admin-link", { code: wrong }, { "x-device": device(100 + i), "cf-connecting-ip": `198.51.${i}.1` });
@@ -43,8 +47,10 @@ test("[SEC-03] wrong link codes from many networks together spend every live cod
   const late = await call("POST", "/api/admin-link", { code }, { "x-device": device(7), "cf-connecting-ip": "192.0.2.200" });
   assert.equal(late.status, 429, "the window rests after the guessing run");
   t.mock.timers.tick(MONEY.linkMs + 1000);
-  const spent = await call("POST", "/api/admin-link", { code }, { "x-device": device(7), "cf-connecting-ip": "192.0.2.200" });
-  assert.equal(spent.status, 404, "the code made before the run was spent");
+  const ran = await call("POST", "/api/admin-link", { code }, { "x-device": device(7), "cf-connecting-ip": "192.0.2.200" });
+  assert.equal(ran.status, 404, "the admin's ten-minute code ran out by itself");
+  const kept = await call("POST", "/api/admin-link", { code: family }, { "x-device": device(8), "cf-connecting-ip": "192.0.2.201" });
+  assert.equal(kept.status, 201, "the family code made before the run still works");
   const fresh = (await call("POST", "/api/admin/me/link-code", {}, owner)).data.code;
   const ok = await call("POST", "/api/admin-link", { code: fresh }, { "x-device": device(7), "cf-connecting-ip": "192.0.2.200" });
   assert.equal(ok.status, 201, "a new code works");

@@ -283,17 +283,21 @@ export function opsViews(A) {
     const marks = S.data.changes?.marks ?? [];
     const conv = p.paywall ? `${Math.round(((p.started + p.passes) / p.paywall) * 1000) / 10}%` : "—";
     const warn = d.missingPrice ? `<section class="card setup-card"><h2>가격표를 채워 주세요</h2><p class="hint">팔린 상품의 가격이 0원이라 금액이 비어 있어요. 아래 '가격표'에 Play Console의 가격을 적으면 바로 계산해요.</p></section>` : "";
+    // 2.0.0 [RVQ-48] 검토 SVC-68·U22b-12: 결제 금액은 가격표로 곱한 어림이라 이름에 '어림'을, 새로·갱신·환불은 따로.
+    const pp = p.parts ?? { fresh: p.amount, converted: 0, renewed: 0, refunded: 0 };
     const tiles = `<div class="tiles core">${tile("지금 프로", d.now.paid, `체험 ${d.now.trials} · 이용권 ${d.now.passes}`)}${tile("한 달 어림", won(d.now.monthly), "구독 가격 합(연간은 12로 나눔)")}
-      ${tile(`${d.days.length}일 매출`, won(p.amount), `수수료 뒤 ${won(p.afterFee)}`)}${tile("해지 · 환불", `${p.stopped} · ${p.refunds}`, `해지 예약 ${d.now.ending}`, p.refunds ? "hot" : "")}</div>`;
+      ${tile(`${d.days.length}일 결제(어림)`, won(p.amount), `새로 ${won(pp.fresh + pp.converted)} · 갱신 ${won(pp.renewed)}`)}${tile("해지 · 환불", `${p.stopped} · ${p.refunds}`, `환불 ${won(pp.refunded)} · 해지 예약 ${d.now.ending}`, p.refunds ? "hot" : "")}</div>`;
     const daysSeg = segs("money-days", [["7", "7일"], ["28", "28일"], ["90", "90일"]], String(S.moneyDays ?? 28));
     const chart = `<section class="card">${head("날마다 새 구독·이용권")}${daysSeg}${dayBars(d.days, d.days.map((_, i) => d.series.started[i] + d.series.passes[i]), marks, "날마다 새 구독과 이용권")}${markList(marks)}</section>`;
     const funnel = `<section class="card">${head("살 때까지")}<dl class="lines"><div><dt>프로 화면 봄</dt><dd>${p.paywall}</dd></div><div><dt>체험 누름</dt><dd>${p.trialTaps}</dd></div>
       <div><dt>구독 누름</dt><dd>${p.subscribeTaps}</dd></div><div><dt>새 구독·이용권</dt><dd>${p.started + p.passes} (${conv})</dd></div><div><dt>체험 시작</dt><dd>${p.trials}</dd></div>
+      <div><dt>체험 뒤 첫 결제 · 갱신</dt><dd>${p.converted ?? 0} · ${p.renewed ?? 0}</dd></div>
       <div><dt>팀·직원 요금 봄 · 누름</dt><dd>${p.planViews} · ${p.planTaps}</dd></div><div><dt>보상형으로 준 날</dt><dd>${p.rewardDays}일</dd></div>
       <div><dt>광고 못 보여 줌</dt><dd>${p.adFails}${Object.keys(d.adFailReasons).length ? ` <small>(${Object.entries(d.adFailReasons).map(([k, n]) => `${esc(k.replace("theme_free_", ""))} ${n}`).join(", ")})</small>` : ""}</dd></div></dl>
       <p class="hint">광고 수익은 AdMob 콘솔에서 봐요(서버에는 실패 수만 와요).</p></section>`;
-    const prods = `<section class="card">${head("상품마다")}${d.products.length ? `<div class="table-wrap"><table class="grid-table"><thead><tr><th scope="col">상품</th><th scope="col">지금</th><th scope="col">체험</th><th scope="col">새로</th><th scope="col">해지</th><th scope="col">이용권</th><th scope="col">금액</th></tr></thead>
-      <tbody>${d.products.map((x) => `<tr><th scope="row">${esc(x.name)}</th><td>${x.paid}</td><td>${x.trials}</td><td>${x.started}</td><td>${x.stopped}</td><td>${x.passes}</td><td>${won(x.amount)}</td></tr>`).join("")}</tbody></table></div>` : '<p class="hint">아직 팔린 것이 없어요.</p>'}</section>`;
+    const prods = `<section class="card">${head("상품마다")}${d.products.length ? `<div class="table-wrap prod-wrap"><table class="grid-table prod-table"><thead><tr><th scope="col">상품</th><th scope="col">지금</th><th scope="col">체험</th><th scope="col">새로</th><th scope="col">갱신</th><th scope="col">해지</th><th scope="col">환불</th><th scope="col">이용권</th><th scope="col">금액(어림)</th></tr></thead>
+      <tbody>${d.products.map((x) => `<tr><th scope="row">${esc(x.name)}</th><td data-label="지금">${x.paid}</td><td data-label="체험">${x.trials}</td><td data-label="새로">${x.started}</td><td data-label="갱신">${x.renewed ?? 0}</td><td data-label="해지">${x.stopped}</td><td data-label="환불">${x.refunds}</td><td data-label="이용권">${x.passes}</td><td data-label="금액(어림)" class="amt">${won(x.amount)}</td></tr>`).join("")}</tbody></table></div>
+      <p class="hint">금액은 가격표로 곱한 어림이에요. 환불을 빼고 수수료 ${d.table.fee ?? 15}%를 떼면 ${L.eyo(won(p.afterFee))}. 갱신·환불은 서버가 Play에 다시 물어 안 날로 세요. 실제 돈은 Play Console › 수익 보고서예요.</p>` : '<p class="hint">아직 팔린 것이 없어요.</p>'}</section>`;
     const t = d.table;
     const band = (kind) => t[kind].map((b, i) => `<tr><th scope="row">${b.cap}명</th>${["monthly", "yearly", "pass"].map((f) => `<td><input name="${kind}.${i}.${f}" type="number" min="0" max="1000000" value="${b[f]}" aria-label="${kind} ${b.cap}명 ${f}"><input type="hidden" name="${kind}.${i}.cap" value="${b.cap}"></td>`).join("")}</tr>`).join("");
     const prices = S.me?.owner ? `<details class="card" data-key="price-table"${S.opened.get("price-table") ?? d.missingPrice ? " open" : ""}><summary><b>가격표</b><span class="meta">Play Console 가격을 그대로</span></summary>

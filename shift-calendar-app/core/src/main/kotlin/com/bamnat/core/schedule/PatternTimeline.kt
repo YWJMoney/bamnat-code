@@ -21,6 +21,18 @@ object PatternTimeline {
     }
 
     /**
+     * 2.0.0 [RVH-90] 검토 PC-12 (알바에 지난 6개월 근무가 채워짐): a first 알바 order fills this month from its first day, not two
+     * years: a part-time job is often new, and months it never worked would count in its pay and hours. This month stays whole,
+     * so its pay and the month on screen are as before.
+     */
+    fun firstThisMonth(pattern: WorkPattern, today: LocalDate): WorkPattern =
+        pattern.withRange(minOf(pattern.startDate, today.withDayOfMonth(1)), pattern.endDate)
+
+    /** The first order as a first setup saves it: [firstThisMonth] for 알바, else [first]. */
+    fun firstFor(style: com.bamnat.core.work.WorkStyle?, pattern: WorkPattern, today: LocalDate): WorkPattern =
+        if (style == com.bamnat.core.work.WorkStyle.HOURLY) firstThisMonth(pattern, today) else first(pattern, today)
+
+    /**
      * Applies [pattern] from [from] on. Earlier periods are kept as they are, cut short the day
      * before [from]; periods that would only start on or after [from] are replaced.
      */

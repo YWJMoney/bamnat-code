@@ -388,7 +388,9 @@ class ScheduleRepository(
         saved.pattern(today)?.let { pattern ->
             val periods = patternDao.getAll().mapNotNull { it.toModel() }
             when {
-                periods.isEmpty() -> if (backfill) setFirstPattern(pattern, today) else replacePatterns(listOf(pattern))
+                // 2.0.0 [RVH-90] 검토 PC-12: an 알바's first order fills this month only (PatternTimeline.firstFor).
+                periods.isEmpty() -> if (backfill) replacePatterns(listOf(PatternTimeline.firstFor(draft.savedStyle, pattern, today)))
+                    else replacePatterns(listOf(pattern))
                 // A save cut short and finished on the next start: the order is already there.
                 PatternTimeline.on(periods, today)?.withRange(pattern.startDate, pattern.endDate) == pattern -> Unit
                 else -> changePatternFrom(pattern, today)
@@ -636,6 +638,15 @@ class ScheduleRepository(
     suspend fun changedDays(fromMillis: Long, untilMillis: Long): List<Pair<LocalDate, Long>> =
         changeDao.between(fromMillis, untilMillis).map { LocalDate.ofEpochDay(it.epochDay) to it.atMillis }
 
+    /**
+     * 2.0.0 [RVH-65] 검토 PC-73 최근 바꾼 기록: each day changed by hand from [fromMillis], the one changed last first, with its changes
+     * (newest first); the last [limit] changes at most.
+     */
+    fun recentChanges(fromMillis: Long, limit: Int = RECENT_CHANGES): Flow<List<Pair<LocalDate, List<DayChange>>>> =
+        changeDao.recent(fromMillis, limit).map { list ->
+            list.groupBy { it.epochDay }.map { (d, l) -> LocalDate.ofEpochDay(d) to l.map { DayChange(it.atMillis, it.text) } }
+        }
+
     /** [RVH-51] PC-72 Two days as they were before [moveDay], for 되돌리기. */
     data class DayMove(val from: LocalDate, val fromWas: DayEntry?, val to: LocalDate, val toWas: DayEntry?)
 
@@ -668,6 +679,8 @@ class ScheduleRepository(
 
     companion object {
         const val MAX_LABEL_LENGTH = 2
+        /** [RVH-65] PC-73 The changes 최근 바꾼 기록 reads at most. */
+        const val RECENT_CHANGES = 300
         const val MAX_ALARMS = 10
         /** 24 hours: one piece of extra work cannot be longer than that. */
         const val MAX_EXTRA_MINUTES = 24 * 60

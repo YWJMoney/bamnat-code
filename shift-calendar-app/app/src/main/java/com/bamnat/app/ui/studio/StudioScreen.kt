@@ -2,6 +2,7 @@ package com.bamnat.app.ui.studio
 
 import com.bamnat.core.recipe.widgetDraws
 import com.bamnat.app.ui.components.scrollEdges
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.foundation.shape.ZeroCornerSize
 
 import com.bamnat.app.ui.decor.nextPinned
@@ -173,7 +174,7 @@ private enum class Area(val label: String, val target: FreeTarget?, val tab: Str
     WIDGET("위젯", null, TabOrder.SETTINGS),
     ALARM("알람 화면", FreeTarget.ALARM, TabOrder.SETTINGS),
     /** 1.38 팀·가게 관리 (리더·사장님): 카드 순서·숨김, 색·배경은 설정 화면과 함께. 기능이 켜진 휴대폰에서만 보여요. */
-    MANAGE("팀·가게 관리", FreeTarget.SETTINGS, TabOrder.SETTINGS),
+    MANAGE(com.bamnat.app.ui.work.MANAGE_NAME, FreeTarget.SETTINGS, TabOrder.SETTINGS),
     // 사용자 2026-11-01 ("스튜디오에 결제 처리방침이 왜 있어"): 결제·처리방침·동의 화면은 꾸미지 않아요 — 늘 앱 기본 모양 ([ScreenSkin]).
     ALL("앱 전체", FreeTarget.ALL, TabOrder.CALENDAR),
     ;
@@ -645,7 +646,10 @@ fun StudioScreen(vm: StudioViewModel, onBack: () -> Unit, onOpen: (String) -> Un
                                 }
                             }
                             Row(verticalAlignment = Alignment.CenterVertically) {
-                                Text(s.origin.title, style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                                // 2.0.0 [RVS-21] (총괄 #520 사진, 조건 12: 글자 200%·접은 폭에서 '지금 …'으로 잘림) With big text the name takes two
+                                // lines (the bar grows to them, RVS-16) rather than two letters and '…'.
+                                val bigText = androidx.compose.ui.platform.LocalDensity.current.fontScale >= 1.5f
+                                Text(s.origin.title, style = MaterialTheme.typography.titleMedium, maxLines = if (bigText) 2 else 1, overflow = TextOverflow.Ellipsis,
                                     modifier = Modifier.weight(1f, fill = false))
                                 Icon(Icons.Filled.ArrowDropDown, null)
                             }
@@ -958,10 +962,14 @@ fun StudioScreen(vm: StudioViewModel, onBack: () -> Unit, onOpen: (String) -> Un
                         }
                     }
                     // PC 확인 1.37 A18: over a 판 opened big the hint would hide the strip of example left.
-                    if (sel == null && !hintSeen && !(panel && big)) PickHint(Modifier.align(Alignment.TopCenter).padding(top = 8.dp))
+                    // 2.0.0 HQ-139 (총괄 #520 사진, 조건 9·12): the hint keeps clear of the 배율 chip folded beside it at the top (its end was
+                    // under '🔍 105%'); it wraps onto a second line where the two do not fit side by side.
+                    var zoomChipW by remember { mutableStateOf(0) }
+                    val zoomRoom = with(androidx.compose.ui.platform.LocalDensity.current) { if (zoom.controlsOpen) 0.dp else zoomChipW.toDp() + 8.dp }
+                    if (sel == null && !hintSeen && !(panel && big)) PickHint(Modifier.align(Alignment.TopStart).padding(top = 8.dp, start = 8.dp, end = 4.dp + zoomRoom))
                     ZoomControls(zoom, onFocus = sel?.let { id -> { spots.boxes(id).firstOrNull()?.let { zoom.focus(it) }; Unit } },
                         modifier = (if (zoom.controlsOpen) Modifier.align(Alignment.BottomEnd).padding(end = 8.dp, bottom = 8.dp + if (panel) panelH else 0.dp)
-                            else Modifier.align(Alignment.TopEnd).padding(top = 4.dp, end = 4.dp)))
+                            else Modifier.align(Alignment.TopEnd).padding(top = 4.dp, end = 4.dp).onSizeChanged { zoomChipW = it.width }))
                 }
                 // Lines about the example, under it.
                 Column(Modifier.fillMaxWidth().padding(horizontal = 12.dp).animateContentSize()) {
@@ -1460,7 +1468,7 @@ private fun CardsTool(area: Area, style: WorkStyle?, d: com.bamnat.app.data.AppS
         }
         Area.STATS -> PartsEditor("통계 카드", StatsPart.entries.filter { fitsHere(FitSurface.STATS_PARTS, it.id, style) }.map { Triple(it.id, it.label, it.movable) },
             d.statsLayout.ifEmpty { null }) { line -> change { it.copy(statsLayout = line.orEmpty()) } }
-        Area.MANAGE -> PartsEditor("팀·가게 관리 카드", com.bamnat.app.ui.work.ManagePart.editable.map { Triple(it.id, it.label, true) }, d.manageLayout.ifEmpty { null },
+        Area.MANAGE -> PartsEditor("${com.bamnat.app.ui.work.MANAGE_NAME} 카드", com.bamnat.app.ui.work.ManagePart.editable.map { Triple(it.id, it.label, true) }, d.manageLayout.ifEmpty { null },
             note = "할 일은 늘 맨 위에 있어요. 이 순서는 이 휴대폰에만 남고 테마·작품에는 들어가지 않아요") { line -> change { it.copy(manageLayout = line.orEmpty()) } }
         else -> Unit
     }

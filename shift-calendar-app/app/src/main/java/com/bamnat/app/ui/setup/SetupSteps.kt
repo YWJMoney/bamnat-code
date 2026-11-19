@@ -493,6 +493,7 @@ internal fun TimesStep(vm: SetupViewModel, d: SetupDraft) {
                 editingId = null
             }) else null,
             showAlarms = false,
+            noun = com.bamnat.app.ui.shifts.dayKindNoun(d.style), // 2.0.0 [RVH-89] 검토 PC-12: a shop's 영업 in its own words here too
         )
     }
 }

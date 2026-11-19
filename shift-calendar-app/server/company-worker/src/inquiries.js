@@ -4,7 +4,7 @@ import { SORTING, autoAnswer, compareVersions, grams, likeness, needsPerson, nee
 import { replyRisk } from "./ledger.js";
 import { billingWordOf, isBillingRecord, replyRiskOf } from "./ask-check.js";
 import { careAppealOf } from "./community-care.js";
-import { CRASH, CRASH_ASK_DRAFT, crashOf, crashRepeats } from "./crash-repeat.js";
+import { CRASH, crashAskDraft, crashOf, crashRecord, crashRepeats, replyCarriesRecord } from "./crash-repeat.js";
 // 1.37 [ADM2-02] 나간 판.
 import { DESK, OUTBOX_DROPPED, broadcastRisk, isOut, shippedVersion } from "./desk.js";
 import { needFromInquiry } from "./growth.js";
@@ -82,7 +82,8 @@ export async function rescanBilling2(env, now, limit = 300) {
       AND NOT EXISTS (SELECT 1 FROM audit a WHERE a.action = 'inquiry_billing' AND a.target = i.id) ORDER BY i.id LIMIT ?`, limit);
   const on = rows.filter((r) => !r.billing_at && billingRecordOf(r.kind, r.words ?? ""));
   const off = rows.filter((r) => r.billing_at && !billingRecordOf(r.kind, r.words ?? ""));
-  const stmts = [...on.map((r) => stmt(env, "UPDATE inquiries SET billing_at = ? WHERE id = ?", r.created_at, r.id)),
+  // PC 5차 Q1-500 13: 결제·환불 기록은 모두의 문의에 두지 않아요(돈·주문 이야기는 운영자만 봐요).
+  const stmts = [...on.map((r) => stmt(env, "UPDATE inquiries SET billing_at = ?, public = 0 WHERE id = ?", r.created_at, r.id)),
     ...off.map((r) => stmt(env, "UPDATE inquiries SET billing_at = NULL WHERE id = ?", r.id))];
   stmts.push(rows.length < limit
     ? stmt(env, "INSERT OR REPLACE INTO settings (key, value) VALUES ('billing_rescan2', ?)", String(now))
@@ -175,6 +176,8 @@ export function triage(kind, text, info) {
   // nothing of the topic (every form can send it, and it always starts with 알람 상태), so a question with no word stays 기타
   // instead of 알람 — a settings-search question about 보상 came in as 문제 신고 · 알람.
   else if (/^\[앱 멈춤/.test(info?.diag ?? "")) topic = "app";
+  // 2.0.0 [RVA-68] PC-202: 낱말로 주제를 못 정한 글('app closed itself again')에 멈춘 기록이 실려 오면 앱 동작이에요. 낱말이 고른 주제는 그대로.
+  else if (topic === "etc" && crashRecord(info?.diag) === "has") topic = "app";
   // 1.36 [GRW-01] 스튜디오 요구는 꾸미기예요.
   if (kind === "studio") topic = "look";
   // 2.0.0 [RVQ-30] 앱의 '결제·환불'은 글과 상관없이 결제 주제.
@@ -284,14 +287,16 @@ export async function ask(request, env) {
   if (limitHit) return limitHit;
   const photos = await readPhotos(env, body.photos);
   const id = randomId(22);
+  // 2.0.0 [RVQ-30] PC 5차 Q1-500 13: '프로 샀는데 광고가 나와요'처럼 글이 결제·환불 기록이면 '모두의 문의에 올리기'를 켜도 운영자만 봐요.
+  const billing = billingRecordOf(body.kind, text);
   await batch(env, [
     // [SRV-06] Photos stay with the developer even on a public question.
     ...photos.list.map((data, i) => stmt(env, "INSERT INTO inquiry_photos (inquiry_id, n, data, bytes, at) VALUES (?, ?, ?, ?, ?)",
       id, i + 1, data.base64, data.bytes, now)),
     // Only an app that says so on its form sends public: true; a question from an older app stays the developer's.
     stmt(env, "INSERT INTO inquiries (id, device, kind, info, status, public, created_at, updated_at, billing_at) VALUES (?, ?, ?, ?, 'open', ?, ?, ?, ?)",
-      id, dev, body.kind, JSON.stringify(info), body.public === true && !PRIVATE_KINDS.includes(body.kind) ? 1 : 0, now, now,
-      billingRecordOf(body.kind, text) ? now : null),
+      id, dev, body.kind, JSON.stringify(info), body.public === true && !PRIVATE_KINDS.includes(body.kind) && !billing ? 1 : 0, now, now,
+      billing ? now : null),
     stmt(env, "INSERT INTO inquiry_messages (inquiry_id, sender, text, by, at) VALUES (?, 'user', ?, NULL, ?)", id, text, now),
     // Threads with nothing new for half a year go, answers, notes and 개발사항 links and all (결제·환불: 3 years).
     ...dropInquiries(env, ...expiredInquiries(now)),
@@ -443,7 +448,8 @@ export async function inquiryView(env, row, admin = false, app = null) {
     const same = mine.map((r) => ({ r, info: readInfo(r.info) })).map(({ r, info: i }) => ({ id: r.id, c: crashOf(r.kind, r.first, i), at: r.created_at, device: r.device, model: i.model, android: i.android, app: i.app }))
       .filter((x) => x.c).map((x) => ({ ...x, record: x.c.record }));
     const g = crashRepeats(same, Math.min(Date.now(), row.created_at + CRASH.days * DAY)).find((x) => x.by === "same" && x.ids.includes(row.id));
-    crashView = { ...crash, ...(crash.record !== "has" ? { draft: CRASH_ASK_DRAFT } : {}),
+    // [RVA-69] 기록 부탁 답은 그 문의의 앱 판에 맞게(2.0.0부터 답장에 기록, 그 전은 새 문의).
+    crashView = { ...crash, ...(crash.record !== "has" ? { draft: crashAskDraft(info.app), ...(replyCarriesRecord(info.app) ? { reply: true } : {}) } : {}),
       ...(g ? { repeat: { nth: g.ids.indexOf(row.id) + 1, n: g.n, first: iso(g.first), last: iso(g.last), noRecord: g.noRecord, ids: g.ids } } : {}) };
   }
   return {
@@ -453,6 +459,8 @@ export async function inquiryView(env, row, admin = false, app = null) {
     assignee: row.assignee ? { id: row.assignee, name: row.assignee_name ?? "" } : null,
     notes: notes.map((n) => ({ by: n.by, text: n.text, at: iso(n.at) })),
     ...(crashView ? { crash: crashView } : {}),
+    // [RVA-69] HQ-150: 점검 기록이 답장과 함께 마지막으로 온 때(함께 온 정보 › 알람 점검 옆에).
+    ...(info.diagAt ? { diagAt: iso(info.diagAt) } : {}),
     ...(env.actor && can(env.actor, "dev") ? { dev: items.map((d) => ({ id: d.id, title: d.title, status: d.status, links: d.links })) } : {}),
   };
 }
@@ -542,7 +550,7 @@ export async function publicList(env, params, device, hide) {
   const rows = cached && cached.until > Date.now() ? cached.rows : await all(env, `SELECT i.id, i.kind, i.status, i.info, i.same, i.device, i.created_at, i.updated_at,
       (SELECT m.text FROM inquiry_messages m WHERE m.inquiry_id = i.id ORDER BY m.id LIMIT 1) AS first,
       (SELECT COUNT(*) FROM inquiry_messages m WHERE m.inquiry_id = i.id AND m.sender = 'admin') AS answers
-    FROM inquiries i WHERE i.public = 1 AND i.hidden IS NULL ORDER BY ${order} LIMIT 500`);
+    FROM inquiries i WHERE i.public = 1 AND i.hidden IS NULL AND i.billing_at IS NULL ORDER BY ${order} LIMIT 500`);
   if (!cached || cached.rows !== rows) {
     if (!publicRows.has(env.DB ?? env)) publicRows.set(env.DB ?? env, new Map());
     publicRows.get(env.DB ?? env).set(cacheKey, { rows, until: Date.now() + PUBLIC_CACHE_MS });
@@ -601,7 +609,7 @@ export async function inquiryMark(request, env, id, kind) {
     ["network", `vote|${net.now}`, LIMITS.votesPerNetworkHour, HOUR]]);
   if (limitHit) return limitHit;
   const dev = await deviceHash(device);
-  const row = await one(env, "SELECT * FROM inquiries WHERE id = ? AND public = 1 AND hidden IS NULL", id);
+  const row = await one(env, "SELECT * FROM inquiries WHERE id = ? AND public = 1 AND hidden IS NULL AND billing_at IS NULL", id);
   if (!row) return json({ error: "not_found" }, 404);
   if (row.device === dev) return json({ error: "own" }, 400);
   if (kind === "same") {
@@ -693,7 +701,8 @@ export async function adminInquiries(request, env, url, path, now) {
       await batch(env, dropInquiries(env, "id = ?", row.id));
       return json({ deleted: true });
     }
-    await run(env, "UPDATE inquiries SET billing_at = ? WHERE id = ?", body.on ? row.billing_at ?? now : null, row.id);
+    // PC 5차 Q1-500 13: 관리자가 결제·환불 기록으로 켜면 모두의 문의에서도 내려요(끌 때 다시 올리지는 않아요).
+    await run(env, `UPDATE inquiries SET billing_at = ?${body.on ? ", public = 0" : ""} WHERE id = ?`, body.on ? row.billing_at ?? now : null, row.id);
   } else if (m[2] === "/visibility") {
     // 모두의 문의: hide (with a reason the writer's app shows) or show again; either way 신고 no longer hides it.
     if (!row.public) refuse("public", "action");

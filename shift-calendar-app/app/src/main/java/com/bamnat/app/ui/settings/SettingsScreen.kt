@@ -975,13 +975,13 @@ private fun SettingsHub(
         val flagRows by context.appContainer.flags.byKey.collectAsStateWithLifecycle()
         val leaderOn = flagRows[com.bamnat.core.flags.FlagCatalog.TEAM_LEADER]?.on == true
         val bossOn = flagRows[com.bamnat.core.flags.FlagCatalog.BOSS_PAYROLL]?.on == true
-        // 2.0.0 [RVO-19] 검토 T11a-15·SET-06 (TYPE-20): named for what is on and the work's words ('팀 관리', '직원 관리', 가게는 '가게
-        // 관리'), never a shop to someone with none; an investor sees it only once leading a team or a 사업장 made on this phone.
+        // 2.0.0 [RVO-19] 검토 T11a-15·SET-06 (TYPE-20): named for what is on and the work's words ('팀 관리', '사업장 관리', 가게는 '가게
+        // 관리', [RVH-78]), never a shop to someone with none; an investor sees it only once leading a team or a 사업장 made on this phone.
         val screenStyle = com.bamnat.app.ui.flags.rememberScreenStyle()
         val leads by remember(context) { context.appContainer.phaseThree.teamList.map { it.isNotEmpty() } }.collectAsStateWithLifecycle(false)
         val hasPlace by remember(context) { context.appContainer.phaseThree.workplaces.map { it.isNotEmpty() } }.collectAsStateWithLifecycle(false)
         if ((leaderOn || bossOn) && (screenStyle != com.bamnat.core.work.WorkStyle.INVEST || leads || hasPlace))
-            GroupRow(Icons.Outlined.Groups, manageTitle(leaderOn, bossOn, screenStyle),
+            GroupRow(Icons.Outlined.Groups, com.bamnat.app.ui.work.manageTitle(leaderOn, bossOn, screenStyle),
                 listOfNotNull("팀 근무표".takeIf { leaderOn }, "급여 대장·명세서·직원".takeIf { bossOn }, "할 일").joinToString(" · "), false) { SettingsLinks.go(SettingsGo.MANAGE) }
         // [INVITE-02] AE 1.26: 친구 초대 is on the 프로 screen; this row says it is there. AG 1.27 [INVITE-09]: the rules as meant.
         // [J133-77] 1.33 (유형별 점검: '친구 초대'가 설정에 두 번): not while the 함께 만들어요 card above says it.
@@ -1302,14 +1302,6 @@ internal fun alarmKindsButton(style: com.bamnat.core.work.WorkStyle?): String = 
     com.bamnat.core.work.WorkStyle.INVEST -> "투자 알람"
     else -> style.words().types
 }
-
-/**
- * 2.0.0 [RVO-19] 검토 T11a-15: the 관리 row in the words of what it holds: 팀 for a leader, 직원 for a boss (가게 for a shop's), both
- * joined, so an office worker leading a team never reads '가게'.
- */
-internal fun manageTitle(leader: Boolean, boss: Boolean, style: com.bamnat.core.work.WorkStyle?): String =
-    listOfNotNull("팀".takeIf { leader }, (if (style == com.bamnat.core.work.WorkStyle.BUSINESS) "가게" else "직원").takeIf { boss })
-        .ifEmpty { listOf("팀") }.joinToString("·") + " 관리"
 
 /** "7시간", "6시간 반". */
 internal fun sleepHours(m: Int): String = if (m % 60 == 0) "${m / 60}시간" else if (m % 60 == 30) "${m / 60}시간 반" else "${m / 60}시간 ${m % 60}분"

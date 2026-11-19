@@ -119,7 +119,7 @@ jobs:
       fail-fast: false
       matrix:
         # [RVR-14] A push to the integration branch runs the unit shard only (the screenshots and Android levels run on its PR).
-        set: ${{ fromJSON(github.event_name == 'push' && '["unit"]' || '["unit", "shots-a", "shots-b", "shots-c", "shots-d", "api"]') }}
+        set: ${{ fromJSON(github.event_name == 'push' && '["unit"]' || '["unit", "shots-a", "shots-b", "shots-c", "shots-d", "shots-e", "api"]') }}
     defaults:
       run:
         working-directory: shift-calendar-app
@@ -524,7 +524,10 @@ jobs:
   lint:
     if: github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && !github.event.pull_request.draft)
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    # 2.0.0 [RVR-45] With Gradle's cache cold, compiling the app takes about 14 minutes and lint's analysis about 15 more
+    # (run 44433028533: stopped at 30 in :app:lintAnalyzeDebugUnitTest, then the watch app never ran). A lint that is cut
+    # off reads as cancelled, not as what it found; 45 as the app's shards have.
+    timeout-minutes: 45
     defaults:
       run:
         working-directory: shift-calendar-app

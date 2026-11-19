@@ -294,7 +294,7 @@ internal object SettingsIndex {
         screen(N.title, "깨우는 구간", SettingsGo.SLEEP, "스마트 알람", "얕은 잠", "일찍 깨우기", "스마트 기상").takeIf { sleepSound },
         // 2.0.0 [RVI-89]
         row(N, com.bamnat.app.sleep.SleepRecordOffer.ROW, "충전", "소리 재기 알림", "측정 권하기", "코골이 재기 잊음").takeIf { sleepSound },
-        screen(N.title, "근무 맞춤 회복 도전", SettingsGo.SLEEP, "도전", "21일", "수면 챌린지"),
+        screen(N.title, "일정 맞춤 회복 도전", SettingsGo.SLEEP, "근무 맞춤 회복 도전", "도전", "21일", "수면 챌린지"),
         row(N, "휴식 점검", "11시간", "연속 야간", "휴식"),
         // [REST-01] The limits sheet, also opened from the calendar's check card.
         row(N, "근무표 점검 기준", "병원 기준", "야간 뒤 쉬는 날", "연속 야간", "한 달 야간", "나이트 뒤 쉬는 날", "연속 나이트", "한 달 나이트", "연속 근무", "N-O-D", "나오데", "이브데이", "점검 끄기"),

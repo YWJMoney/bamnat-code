@@ -16,6 +16,7 @@ import com.bamnat.app.ui.parts.verticalArrangement
 import com.bamnat.app.ui.parts.placeOf
 import com.bamnat.app.ui.parts.arrangement
 import com.bamnat.app.ui.parts.vertical
+import com.bamnat.app.ui.theme.color
 import com.bamnat.app.ui.theme.todayMotion
 import com.bamnat.app.ui.theme.fillWith
 import com.bamnat.core.holiday.KoreanLunar
@@ -126,6 +127,31 @@ import com.bamnat.app.ui.theme.container
 
 const val GRID_ROWS = 6
 
+/**
+ * 2.0.0 [RVH-67] 검토 CAL-01: how many day cells were drawn, counted only while a test asks ([MonthGridRedrawTest]): picking a day or
+ * the month turning must draw again the cells that changed, not all 42. Off, it costs one read of a field per cell.
+ */
+internal object CellDraws {
+    @JvmField @Volatile var counting = false
+    @JvmField @Volatile var count = 0
+}
+
+/**
+ * 2.0.0 [RVH-67] 검토 CAL-02: the width each day gets on its row, measured once by its grid for all 42 ([MonthGrid]); Unspecified
+ * outside a grid, where a cell measures for itself. A cell measuring on its own put a layout of its own (a 상자 that composes while it
+ * is laid out) in every cell, and the month's first frame paid for 42 of them.
+ */
+internal val LocalCellSlot = androidx.compose.runtime.staticCompositionLocalOf { Dp.Unspecified }
+
+/** 2.0.0 [RVH-70] A [MonthGrid] in 한 달 근무 넣기's preview: its cells say nothing of 바꾼 날 (every day there is new). */
+private val LocalGridPreview = androidx.compose.runtime.staticCompositionLocalOf { false }
+
+/** 2.0.0 [RVH-67] A box that knows how wide it is: [known] when the grid measured it, else measured here. */
+@Composable
+private fun SizedBox(known: Dp, modifier: Modifier, content: @Composable androidx.compose.foundation.layout.BoxScope.(maxWidth: Dp) -> Unit) {
+    if (known.value.isNaN()) BoxWithConstraints(modifier) { content(maxWidth) } else Box(modifier) { content(known) }
+}
+
 /** [CAL-01] Room left of each week for the bar that marks a week over the hour limit. */
 val WEEK_BAR_SPACE = 5.dp
 
@@ -214,6 +240,8 @@ internal class MonthMoneyCells(
     private val bestSales: Long,
     /** [FLD-04] The jobs on each day, for field work's client-coloured bars. */
     val field: Map<LocalDate, List<com.bamnat.core.money.Job>> = emptyMap(),
+    /** 2.0.0 [RVH-82] The days a job starts whose money is past its promised day ([com.bamnat.core.money.Job.overdue]). */
+    val late: Set<LocalDate> = emptySet(),
 ) {
     /** [CAL-06] How strong a shop's day was against the month's best, 0 for a day without sales. */
     fun heat(date: LocalDate): Float =
@@ -222,14 +250,14 @@ internal class MonthMoneyCells(
     companion object {
         val EMPTY = MonthMoneyCells(emptyMap(), emptyMap(), emptyMap(), emptyMap(), 0)
 
-        fun of(money: MoneyBook, months: List<YearMonth>, from: LocalDate, to: LocalDate): MonthMoneyCells {
+        fun of(money: MoneyBook, months: List<YearMonth>, from: LocalDate, to: LocalDate, today: LocalDate): MonthMoneyCells {
             if (money.jobs.isEmpty() && money.sales.isEmpty() && money.entries.isEmpty()) return EMPTY
             val days = months.distinct().fold(emptyMap<LocalDate, DayMoney>()) { acc, m -> acc + money.days(m) }
             val spans = HashMap<LocalDate, JobSpan>()
             for (j in money.jobs.filter { it.days > 1 && !it.lastDate.isBefore(from) && !it.date.isAfter(to) }.sortedBy { it.date }) {
                 var d = maxOf(j.date, from)
                 while (!d.isAfter(minOf(j.lastDate, to))) {
-                    spans.putIfAbsent(d, JobSpan(d == j.date, d == j.lastDate, j.unpaid > 0, j.title,
+                    spans.putIfAbsent(d, JobSpan(d == j.date, d == j.lastDate, j.overdue(today), j.title,
                         (d.toEpochDay() - j.date.toEpochDay()).toInt() + 1, j.days))
                     d = d.plusDays(1)
                 }
@@ -237,7 +265,8 @@ internal class MonthMoneyCells(
             val sales = money.sales.filter { it.date in from..to && it.sales > 0 }.associate { it.date to it.sales }
             val starts = money.jobs.filter { it.date in from..to }.groupingBy { it.date }.eachCount()
             return MonthMoneyCells(days, spans, sales, starts, sales.values.maxOrNull() ?: 0,
-                if (money.style == com.bamnat.core.work.WorkStyle.FIELD) fieldJobsOf(money, from, to) else emptyMap())
+                if (money.style == com.bamnat.core.work.WorkStyle.FIELD) fieldJobsOf(money, from, to) else emptyMap(),
+                money.jobs.filter { it.date in from..to && it.overdue(today) }.mapTo(HashSet()) { it.date })
         }
     }
 }
@@ -301,12 +330,20 @@ fun MonthGrid(
     listEmptyDays: Boolean = true,
     /** 1.39 [FLOW-03] Right after the first setup: how much of the month has come in (0 to 1), read while drawing ([SetupFill]). */
     fill: (() -> Float)? = null,
+    /**
+     * 2.0.0 [RVH-70] (검토 HQ-82) 한 달 근무 넣기 미리 보기: every day shown is about to be put in, so no 바꾼 날 dot on each (the
+     * [READ-37] rule for a calendar without an order), and a week over the limit is a 주의 bar, not red (조건 6, UIX-15).
+     */
+    preview: Boolean = false,
 ) {
     val cal = LocalCalendarColors.current
     val haptics = LocalHapticFeedback.current
     val firstCell = remember(month, weekStart) { month.atDay(1).with(java.time.temporal.TemporalAdjusters.previousOrSame(weekStart)) }
-    val cells = remember(money, month, firstCell) {
-        MonthMoneyCells.of(money, listOf(month), firstCell, firstCell.plusDays(GRID_ROWS * 7L - 1))
+    // 2.0.0 [RVH-67] 검토 CAL-01: the grid's days made once a month. A day made again on each pass is a new object, so each cell's
+    // tap (which holds its day) looked new and all 41 cells drew again on every pick; the same day objects let a cell skip.
+    val dates = remember(firstCell) { List(GRID_ROWS * 7) { firstCell.plusDays(it.toLong()) } }
+    val cells = remember(money, month, firstCell, today) {
+        MonthMoneyCells.of(money, listOf(month), firstCell, firstCell.plusDays(GRID_ROWS * 7L - 1), today)
     }
     val cardDue = rememberCardDue(money)
     val shades = remember(cells, spendHeat, month) {
@@ -363,10 +400,13 @@ fun MonthGrid(
         }
     }
     // [CAL-33] How many days the finger holds, said while it paints, not only after it lifts (I 리뷰 I4).
-    Box(modifier.fillMaxWidth()) {
+    BoxWithConstraints(modifier.fillMaxWidth()) {
+    // 2.0.0 [RVH-67] 검토 CAL-02: one measure for the month: a day's width on its row, less the board's insets, the week bar and the gaps.
+    val slot = (maxWidth - (((grid.out ?: 0) + (grid.padH ?: 0)) * 2).dp - WEEK_BAR_SPACE - gap * 6) / 7
+    androidx.compose.runtime.CompositionLocalProvider(LocalCellSlot provides slot, LocalGridPreview provides preview) {
     Column(Modifier.fillMaxWidth().partBox(grid).then(painting), verticalArrangement = Arrangement.spacedBy(gap)) {
         for (row in 0 until GRID_ROWS) {
-            val rowStart = firstCell.plusWeeks(row.toLong())
+            val rowStart = dates[row * 7]
             // [WEEK-01] The Monday-to-Sunday week that holds most of the row: on a grid from Sunday, the row's Monday on.
             val week = remember(calculator, rowStart) { calculator.week(rowStart.plusDays(3)) }
             // PC 02d6dabf (일요일 시작 달력에서 일요일 ✓가 다음 주 표시로 읽힘): the 주휴 week that has most of its days in this row (the
@@ -375,8 +415,9 @@ fun MonthGrid(
                 HourlyWork.week(rowStart.plusDays(3).with(java.time.temporal.TemporalAdjusters.previousOrSame(h.holidayWeekStart)), snapshot.resolver::resolve)
             } }
             // [CAL-01] A week over the limit gets a bar at its left instead of a tint that mixes with the shifts' colors.
-            // 2.0.0 [RVP-13] (HQ-54) Over the legal week: the one red on the month (위험).
-            val barColor = Tone.Danger.color()
+            // 2.0.0 [RVP-13] (HQ-54) Over the legal week: the one red on the month (위험). [RVH-70] (HQ-82) In a roster's preview,
+            // nothing is put in yet: the week that would go over is 주의 there, as the line under the month says.
+            val barColor = if (preview) Tone.Caution.color() else Tone.Danger.color()
             Row(
                 Modifier
                     .fillMaxWidth()
@@ -396,7 +437,7 @@ fun MonthGrid(
                 horizontalArrangement = Arrangement.spacedBy(gap),
             ) {
                 for (col in 0 until 7) {
-                    val date = rowStart.plusDays(col.toLong())
+                    val date = dates[row * 7 + col]
                     val day = remember(snapshot, date) { snapshot.resolver.resolve(date) }
                     val inMonth = date.year == month.year && date.month == month.month
                     DayCell(
@@ -409,6 +450,7 @@ fun MonthGrid(
                         isSelected = date == selected || remember(date) { derivedStateOf { date in dragged } }.value,
                         hasMemo = date in memoDates,
                         money = if (inMonth) cells.days[date] else null,
+                        jobLate = inMonth && date in cells.late,
                         memoText = if (dayList(memoLists, listEmptyDays, focus, cells.field[date], date) != null) null else memoTexts[date],
                         memoList = dayList(memoLists, listEmptyDays, focus, cells.field[date], date),
                         showHours = showHours,
@@ -456,6 +498,7 @@ fun MonthGrid(
             }
         }
     }
+    }
     val count by remember { derivedStateOf { dragged.size } }
     if (count > 1) {
         Surface(
@@ -502,13 +545,15 @@ fun WeekStrip(
     invest: com.bamnat.app.ui.invest.InvestCells? = null,
 ) {
     val month = YearMonth.from(selected)
-    val cells = remember(money, monday) {
-        MonthMoneyCells.of(money, listOf(YearMonth.from(monday), YearMonth.from(monday.plusDays(6))), monday, monday.plusDays(6))
+    val cells = remember(money, monday, today) {
+        MonthMoneyCells.of(money, listOf(YearMonth.from(monday), YearMonth.from(monday.plusDays(6))), monday, monday.plusDays(6), today)
     }
     val cardDue = rememberCardDue(money)
+    // [RVH-67] CAL-01 as in [MonthGrid]: the week's days made once, so a pick draws the two days it changes.
+    val dates = remember(monday) { List(7) { monday.plusDays(it.toLong()) } }
     Row(modifier.fillMaxWidth().height(cellHeight).padding(start = WEEK_BAR_SPACE)) {
         for (col in 0 until 7) {
-            val date = monday.plusDays(col.toLong())
+            val date = dates[col]
             val day = remember(snapshot, date) { snapshot.resolver.resolve(date) }
             DayCell(
                 day = day,
@@ -520,6 +565,7 @@ fun WeekStrip(
                 isSelected = date == selected,
                 hasMemo = date in memoDates,
                 money = cells.days[date],
+                jobLate = date in cells.late,
                 memoText = if (dayList(memoLists, listEmptyDays, focus, cells.field[date], date) != null) null else memoTexts[date],
                 memoList = dayList(memoLists, listEmptyDays, focus, cells.field[date], date),
                 showHours = showHours,
@@ -555,6 +601,8 @@ private fun DayCell(
     showHours: Boolean,
     showLunar: Boolean = false,
     money: DayMoney? = null,
+    /** 2.0.0 [RVH-82] A job starting here is owed past its promised day: its mark in 주의 colour. */
+    jobLate: Boolean = false,
     memoText: String? = null,
     onClick: () -> Unit,
     onQuickAction: (QuickAction) -> Unit,
@@ -595,6 +643,7 @@ private fun DayCell(
     /** [CELL-01] 1.39 The day's memo titles when the cells list their jobs and memos; null for the plain cell. */
     memoList: List<CellMemo>? = null,
 ) {
+    if (CellDraws.counting) CellDraws.count++
     // 1.39 [WTYP-30] PC 6차: 일근 says 야근 in the long-press menu and for TalkBack too.
     val extraStyle = ExtraText.styleHere()
     val cal = LocalCalendarColors.current
@@ -610,6 +659,7 @@ private fun DayCell(
     // [FREE-01][FREE-02] 1.35 칸 디자이너: this day's own look by the pattern (N칸·요일·근무), today's own if there is one.
     // [LINK-01] 1.39 What every 작품 surface reads of this day (쉬는 날의 대근·특근은 일한 날로, 연차·직접 바꾼 날도), worked out once.
     val dayWork = remember(day, snapshot.hasPattern) { com.bamnat.core.schedule.DayWork.of(day, snapshot.hasPattern) }
+    val preview = LocalGridPreview.current
     val cellLook = remember(view, day.date, dayWork, isToday) {
         view.lookFor(day.date.toEpochDay(), day.date.dayOfWeek.value, dayWork.role?.key, isToday)
     }
@@ -638,6 +688,9 @@ private fun DayCell(
     val cellPart = if (blueprint.isEmpty) com.bamnat.core.recipe.PartStyle.NONE else remember(blueprint, partStates, factScope) { blueprint.style("cal.cell", partStates, factScope) }
     val cellParts = if (blueprint.isEmpty) null else remember(blueprint, partStates, factScope) { com.bamnat.app.ui.parts.CellParts.of(blueprint, partStates, factScope) }
     val partShape = cellPart.shape(shape)
+    // 2.0.0 [RVH-67] 검토 CAL-02: the width inside the cell from the grid's one measure, less what the cell keeps around itself
+    // (its edge, its part's 바깥 간격); Unspecified in a week strip, where the boxes below measure for themselves.
+    val inside = LocalCellSlot.current - cellEdgePad(view, cellLook) * 2 - ((cellPart.out ?: 0) * 2).dp
     // [RCP-09] 1.34 달력 테마: the user's colours for 토·일·공휴일 and today, and how strong the wash is.
     val look = com.bamnat.app.ui.theme.LocalCalendarLook.current
     val numberRaw = when {
@@ -688,7 +741,7 @@ private fun DayCell(
             append(", ").append(ExtraText.name(e, extraStyle))
             if (e.entry.hasTimes || e.covered != null) append(" ").append(HoursFormat.korean(e.minutes))
         }
-        if (day.source == DaySource.OVERRIDE && snapshot.hasPattern || day.hasCustomTimes) append(", 직접 바꿈")
+        if (!preview && (day.source == DaySource.OVERRIDE && snapshot.hasPattern || day.hasCustomTimes)) append(", 직접 바꿈")
         // [VIS-02] Said the way the day screen says it.
         if (day.alarmSkipped) append(", 알람 꺼짐")
         // [CELL-03] 1.39 A listing cell cuts long lines with '…': its button reads each memo whole.
@@ -794,7 +847,7 @@ private fun DayCell(
             if (jobFirst && !fieldJobs.isNullOrEmpty()) {
                 FieldJobMarks(fieldJobs, date)
             } else if (jobFirst) {
-                JobMark(span = span, count = if (span != null && startsHere == 0) 0 else jobs, owed = (money?.unpaid ?: 0) > 0 || span?.owed == true && span.first)
+                JobMark(span = span, count = if (span != null && startsHere == 0) 0 else jobs, owed = jobLate || span?.owed == true && span.first)
             } else if (fullLeave != null) {
                 // A whole day of leave shows the leave instead of the shift it replaced [FEAT-10].
                 LeaveMark(fullLeave, size = size)
@@ -880,7 +933,7 @@ private fun DayCell(
             // The day's own shift as a small badge without its icon, so it fits beside the date in a 48dp cell; the rest as before.
             val plainShift = type != null && fullLeave == null && covered == null && badgeKind == null && !jobFirst &&
                 !(hourly != null && hourlyRange != null) && !(invest != null && invest.trades(date) > 0 && type.isOff)
-            BoxWithConstraints(Modifier.fillMaxSize()) {
+            SizedBox(inside, Modifier.fillMaxSize()) { maxWidth ->
             // [CELL-03] 1.39 (320dp·큰 글자에서 날짜 옆 '야'가 잘림): the shift's badge sits beside the date only where both fit; else on
             // its own line at the plain cell's size.
             val beside = maxWidth >= 50.dp && density.fontScale < 1.3f
@@ -904,7 +957,7 @@ private fun DayCell(
                     }
                     Spacer(Modifier.weight(1f))
                     if (day.alarmSkipped) Icon(Icons.Filled.AlarmOff, contentDescription = null, tint = cal.alarmOff, modifier = Modifier.size(10.dp))
-                    else if (!hasMark) cornerMarks(day, if (focus == CalendarFocus.SHIFTS && jobs > 0) (money?.unpaid ?: 0) > 0 || span?.owed == true else null, snapshot.hasPattern)
+                    else if (!hasMark) cornerMarks(day, if (focus == CalendarFocus.SHIFTS && jobs > 0) jobLate || span?.owed == true else null, snapshot.hasPattern, preview)
                         .firstOrNull()?.let { CornerMark(it, dot = true) }
                     if (wishOff) Spacer(Modifier.width(8.dp))
                     if (hasMark && plainShift && beside) Box(Modifier.padding(start = 1.dp)) {
@@ -920,7 +973,7 @@ private fun DayCell(
             parts = cellParts,
             view = view, cellLook = cellLook, filled = tint?.takeIf { cellLook?.mark == "fill" || cellLook?.bg != null } ?: cellFillGround(cellLook), date = date, isToday = isToday, numberColor = numberColor, weekendLine = weekendLine, dateSize = dateSize, footerSize = footerSize,
             todayColor = look.today, holidayName = holidayName, hasMemo = hasMemo, alarmOff = day.alarmSkipped,
-            marks = remember(day, jobs, snapshot.hasPattern) { cornerMarks(day, if (focus == CalendarFocus.SHIFTS && jobs > 0) (money?.unpaid ?: 0) > 0 || span?.owed == true else null, snapshot.hasPattern) },
+            marks = remember(day, jobs, snapshot.hasPattern, preview) { cornerMarks(day, if (focus == CalendarFocus.SHIFTS && jobs > 0) jobLate || span?.owed == true else null, snapshot.hasPattern, preview) },
             barColor = (type?.takeIf { !it.isOff && day.leave?.isFullDay != true } ?: day.coveredShift)?.colorArgb?.asColor()
                 ?.takeIf { !jobFirst && fullLeave == null && badgeKind == null && !(hourly != null && hourlyRange != null) && !(quietWorkDays && DayWork.isRoutine(day)) },
             // [CELL-02] The jobs are lines of their own when the cell lists them, so their marks are not drawn twice.
@@ -935,7 +988,8 @@ private fun DayCell(
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.SpaceBetween,
         ) {
-            BoxWithConstraints(Modifier.fillMaxWidth().height(20.dp)) {
+            // Inside the column's 2dp at either side.
+            SizedBox(inside - 4.dp, Modifier.fillMaxWidth().height(20.dp)) { maxWidth ->
                 val dots = maxWidth < DOT_CELL_WIDTH || density.fontScale >= 1.5f
                 Box(
                     Modifier
@@ -958,8 +1012,8 @@ private fun DayCell(
                 // [CAL-01] Two corners, filled in order: 알람 꺼짐 (always top left, so it is never pushed out),
                 // then the kinds of extra work, a part-day leave, a day changed by hand. What does not fit
                 // is still read out and shown under the calendar.
-                val jobCorner = if (focus == CalendarFocus.SHIFTS && jobs > 0) (money?.unpaid ?: 0) > 0 || span?.owed == true else null
-                val marks = remember(day, jobCorner, snapshot.hasPattern) { cornerMarks(day, jobCorner, snapshot.hasPattern) }
+                val jobCorner = if (focus == CalendarFocus.SHIFTS && jobs > 0) jobLate || span?.owed == true else null
+                val marks = remember(day, jobCorner, snapshot.hasPattern, preview) { cornerMarks(day, jobCorner, snapshot.hasPattern, preview) }
                 val alarmOff = day.alarmSkipped
                 val topEnd = marks.firstOrNull()
                 val topStart = if (alarmOff) null else marks.getOrNull(1)
@@ -1122,7 +1176,10 @@ private fun DayCell(
                 }
             }
             HorizontalDivider()
-            if (day.isWorkDay || day.coveredShift != null || day.alarmSkipped) {
+            // 2.0.0 [RVH-86] 검토 PC-168 (가게: 알람이 없는 날에 '이 날 알람 끄기'): only a day that rings (or was turned off) offers it,
+            // as the day sheet's own 알람 끄기 chip does ([plannedAlarms]).
+            val rings = remember(snapshot, day) { plannedAlarms(snapshot, day).isNotEmpty() }
+            if (rings || day.alarmSkipped) {
                 DropdownMenuItem(
                     text = { Text(if (day.alarmSkipped) "이 날 알람 켜기" else "이 날 알람 끄기") },
                     leadingIcon = { Icon(if (day.alarmSkipped) Icons.Filled.Alarm else Icons.Filled.AlarmOff, null) },
@@ -1201,7 +1258,7 @@ internal sealed interface Corner {
 }
 
 /** The corner marks of a day, in order; 알람 꺼짐 has its own place and is not among them. */
-private fun cornerMarks(day: ResolvedDay, job: Boolean? = null, pattern: Boolean = true): List<Corner> = buildList {
+private fun cornerMarks(day: ResolvedDay, job: Boolean? = null, pattern: Boolean = true, preview: Boolean = false): List<Corner> = buildList {
     day.entry?.attendance?.let { add(Corner.Attend(it)) }
     job?.let { add(Corner.Job(it)) }
     // [EXTRA-01] On a day off whose only work is extra work, the first kind is the day's badge, not a corner.
@@ -1210,7 +1267,8 @@ private fun cornerMarks(day: ResolvedDay, job: Boolean? = null, pattern: Boolean
     (if (kindIsBadge) kinds.drop(1) else kinds).forEach { add(Corner.Kind(it)) }
     day.leave?.takeIf { !it.isFullDay }?.let { add(Corner.PartLeave(it)) }
     // [READ-37] 1.38 PC: without an order (매달 근무표) every day is put in by hand or from a photo: no dot on each one.
-    if (day.source == DaySource.OVERRIDE && pattern || day.hasCustomTimes) add(Corner.Changed)
+    // 2.0.0 [RVH-70] Nor in 한 달 근무 넣기's preview, where every day is about to be put in.
+    if (!preview && (day.source == DaySource.OVERRIDE && pattern || day.hasCustomTimes)) add(Corner.Changed)
 }
 
 @Composable
@@ -1494,11 +1552,15 @@ internal fun Modifier.dayLine(c: Color?): Modifier = if (c == null) this else dr
 }
 
 /** [FREE-01] A cell's room and edge by its look (가늘게, 굵게, 점선) or 달력 모양's 칸마다 선. */
+/** The room [cellEdge] keeps around a cell, on each side. */
+internal fun cellEdgePad(view: com.bamnat.core.recipe.CalendarView, look: com.bamnat.core.recipe.CellLook?): Dp =
+    if (view.grid == "line" || look?.border != null) 0.5.dp else 1.5.dp
+
 internal fun Modifier.cellEdge(view: com.bamnat.core.recipe.CalendarView, look: com.bamnat.core.recipe.CellLook?, shape: androidx.compose.ui.graphics.Shape, outline: Color): Modifier {
     // [MAT-02] 1.36 테두리 두께(0.5~4dp)·진하기.
     val edge = (look?.borderColor?.let { Color((it or 0xFF000000L).toInt()) } ?: outline).let { c -> look?.borderAlpha?.let { c.copy(alpha = c.alpha * it / 100f) } ?: c }
     val width = look?.borderWidth?.let { (it / 10f).dp }
-    return padding(if (view.grid == "line" || look?.border != null) 0.5.dp else 1.5.dp).then(
+    return padding(cellEdgePad(view, look)).then(
         when (look?.border) {
             "thin" -> Modifier.border(width ?: 0.8.dp, edge, shape)
             "thick" -> Modifier.border(width ?: 2.dp, edge, shape)
