@@ -8,7 +8,7 @@ import { DONE_REASONS, WAIT_REASONS, WORK, WORK_GROUPS, WORK_GROUP_NAMES, WORK_S
 import { errorLine, recordRowErrors } from "./ops-watch.js";
 import { REVIEWS } from "./store-reviews.js";
 import { marketHealthRows } from "./market-health.js";
-import { CRASH_ASK_DRAFT, crashOf, crashRepeats, diagMark, repeatPlaces } from "./crash-repeat.js";
+import { CRASH_ASK_DRAFT, CRASH_ASK_DRAFT_REPLY, crashOf, crashRepeats, diagMark, repeatPlaces, replyCarriesRecord } from "./crash-repeat.js";
 
 // ---- 1.38 [DESK-02][DESK-03] 운영 장부: 들어온 모든 일을 한 줄씩, 한 화면에서 (설계 docs/plans/1.37-문의-개발-운영장부-설계.md 2장) ----
 //
@@ -292,7 +292,9 @@ export async function ledgerList(env, actor, now, { days = LEDGER.days } = {}) {
         assignee: q.assignee_name ?? null, stage,
         dueAt: waitingAdmin && (!d || stage === "notify") ? Math.min(q.updated_at + (sla[slaKey(q.kind)] ?? 24) * HOUR, owner?.key === "law" ? q.updated_at + LEDGER.safetyHours * HOUR : Infinity) : null,
         overlapsOf: waitingAdmin && !d ? { text, kind: q.kind, info, id: q.id } : null,
-        crash: crashes.has(q.id) ? { record: crashes.get(q.id).record, recordName: crashes.get(q.id).recordName } : null,
+        // [RVA-69] reply: 2.0.0부터는 기록 부탁을 답장(점검 기록도 보내기)으로.
+        crash: crashes.has(q.id) ? { record: crashes.get(q.id).record, recordName: crashes.get(q.id).recordName,
+          ...(crashes.get(q.id).record !== "has" && replyCarriesRecord(crashes.get(q.id).app) ? { reply: true } : {}) } : null,
         repeat: places.get(q.id) ?? null,
         // 2.0.0 [RVA-64] HQ-132: 점검 기록은 내용 없이 표식만(열쇠·Claude 장부도 '왔는지·멈춤 기록 있는지'를 알게).
         diag: diagMark(info.diag),
@@ -506,7 +508,7 @@ export async function ledgerQuery(env, actor, now, params) {
       doneToday: doneToday.reduce((n, r) => n + r.n, 0), byWho: doneToday.map((r) => ({ name: r.by_name || "앱", n: r.n })) },
     total: items.length, items, versions,
     // 2.0.0 [RVA-63] HQ-124: 운영 장부 맨 위 '같은 판에서 닫힘 되풀이'.
-    crashRepeats: repeats ?? [], crashDraft: CRASH_ASK_DRAFT,
+    crashRepeats: repeats ?? [], crashDraft: CRASH_ASK_DRAFT, crashDraftReply: CRASH_ASK_DRAFT_REPLY,
     names: { views: VIEWS, stages: STAGES, turns: TURNS, states: WORK_STATE_NAMES, wait: WAIT_REASONS, done: DONE_REASONS, types: LEDGER_TYPES, groups: WORK_GROUP_NAMES,
       piles: PILE_NAMES },
     rules: { backDays: WORK.backDays, safetyHours: LEDGER.safetyHours, skipBackDays: 7 },

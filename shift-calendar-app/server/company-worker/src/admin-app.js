@@ -2267,12 +2267,12 @@ function adminApp(L, BUILD, M) {
       ${moreButton(S.data.inquiries.next, "inquiries-more", S.data.inquiries.total, list.length)}</nav><div class="pane-main">${detail}</div></div>`;
   }
 
-  /** 2.0.0 [RVQ-51] 검토 I22bb-04: 답 알림이 보낸 분 폰에 못 갔을 때의 한 줄(앱을 열면 답은 보여요). */
+  /** [RVQ-51] 답 알림이 못 갔을 때의 한 줄. */
   function pushLine(p) {
     const tail = "보낸 분이 앱을 열면 답은 보여요.";
-    if (p.why === "gone") return `보낸 분 폰에 알림을 보낼 수 없어요(앱을 지웠거나 알림을 바꿨어요). ${tail}`;
+    if (p.why === "gone") return `알림을 보낼 수 없어요(앱을 지웠거나 알림을 껐어요). ${tail}`;
     if (p.why === "busy" && p.retry) return `구글이 바빠 답 알림이 아직 못 갔어요. ${moment(p.retry)}에 다시 보내요. ${tail}`;
-    if (p.why === "busy") return `답 알림을 ${p.tries}번 보냈는데 못 갔어요. ${tail}`;
+    if (p.why === "busy") return `답 알림이 ${p.tries}번 못 갔어요. ${tail}`;
     return `답 알림이 못 갔어요. ${tail}`;
   }
 
@@ -2294,11 +2294,13 @@ function adminApp(L, BUILD, M) {
     const lead = r ? `같은 보낸 분의 닫힘 문의 ${r.n}건 중 ${r.nth}번째예요 (${day(r.first)}~${day(r.last)}).` : "";
     // 2.0.0 [RVA-66] PC-195: 화면에 보이는 칸 이름으로('함께 온 정보 › 알람 점검'의 [앱 멈춤] 줄), 누르면 그 줄로 가요.
     const has = c.record === "has" && q.context?.["알람 점검"];
-    const ask = c.record === "has" ? "함께 온 정보 › 알람 점검의 [앱 멈춤] 줄을 봐요." : "점검 기록을 켠 새 문의('앱이 이상해요')로 받아 봐요.";
+    // [RVA-69] 2.0.0부터는 답장에 기록이 실려요(c.reply). 그 전 판은 새 문의로.
+    const ask = c.record === "has" ? "함께 온 정보 › 알람 점검의 [앱 멈춤] 줄을 봐요."
+      : c.reply ? "답장의 '점검 기록도 보내기'로 받아 봐요." : "점검 기록을 켠 새 문의('앱이 이상해요')로 받아 봐요.";
     const can_ = editable && q.status !== "closed" && c.record !== "has";
     return `<div class="note${r ? " warn" : ""} crash-note">${crashPill(c)} <span>${esc(lead ? `${lead} ${ask}` : ask)}</span>${has
       ? ' <button type="button" class="btn small" data-act="crash-diag">멈춤 줄 보기</button>' : ""}${can_
-      ? ' <button type="button" class="btn small" data-act="crash-draft" data-target="reply" title="점검 기록을 켠 새 문의를 부탁하는 답을 답 칸에 넣어요. 보고서는 답장 칸(2,000자)보다 길어요">기록 부탁 답 넣기</button>' : ""}</div>`;
+      ? ` <button type="button" class="btn small" data-act="crash-draft" data-target="reply" title="${c.reply ? "답장에 점검 기록을 켜서 보내 달라는 답을 답 칸에 넣어요" : "점검 기록을 켠 새 문의를 부탁하는 답을 답 칸에 넣어요. 보고서는 답장 칸(2,000자)보다 길어요"}">기록 부탁 답 넣기</button>` : ""}</div>`;
   }
 
   function inquiryDetail(q) {
@@ -2307,7 +2309,9 @@ function adminApp(L, BUILD, M) {
     const thread = q.messages.map((m) => {
       const mine = m.from !== "user";
       return `<div class="bubble ${mine ? "admin" : "user"}">${esc(m.text)}</div>
-        <span class="bubble-meta ${mine ? "admin" : ""}">${mine ? esc(m.by && m.by !== "admin" ? m.by : "개발자") : "보낸 분"} · ${esc(moment(m.at))}</span>`;
+        <span class="bubble-meta ${mine ? "admin" : ""}">${mine ? esc(m.by && m.by !== "admin" ? m.by : "개발자") : "보낸 분"} · ${esc(moment(m.at))}${
+          /* [RVA-69] HQ-150: 2.0.0 앱이 답장과 함께 보낸 점검 기록(함께 온 정보 › 알람 점검이 이 기록으로 바뀌어요) */
+          !mine && m.diag ? ' · <button type="button" class="link" data-act="crash-diag">점검 기록 함께 옴</button>' : ""}</span>`;
     }).join("");
     const status = { open: ["warn", "답 대기"], answered: ["ok", "답함"], closed: ["", "닫힘"] }[q.status] ?? ["", q.status];
     // [INQ-02] What the asker's app shows as the stage, so the admin answers with it in mind.
@@ -2330,7 +2334,7 @@ function adminApp(L, BUILD, M) {
           ${q.push ? `<p class="meta" role="status"><span class="pill warn">알림 못 감</span> ${esc(pushLine(q.push))}</p>` : ""}
           ${q.photos ? `<div class="photos">${(q.photoList ?? Array.from({ length: q.photos }, (_, i) => ({ n: i + 1 }))).map((p) =>
             `<a href="/api/admin/inquiries/${esc(q.id)}/photos/${p.n}" target="_blank" rel="noopener"><img src="/api/admin/inquiries/${esc(q.id)}/photos/${p.n}" alt="보낸 분이 붙인 사진 ${p.n}${p.at && p.at !== q.createdAt ? ` · ${esc(moment(p.at))}에 이어 쓴 글과 함께` : ""}" loading="lazy"></a>`).join("")}</div>
-            ${(q.photoList ?? []).some((p) => p.at !== q.createdAt) ? `<p class="meta">이어 쓴 글과 함께 온 사진도 있어요(사진을 누르면 크게, 설명에 보낸 때).</p>` : ""}
+            ${(q.photoList ?? []).some((p) => p.at !== q.createdAt) ? `<p class="meta">이어 쓴 글과 함께 온 사진도 있어요.</p>` : ""}
             <p class="meta">사진은 위치 정보를 지운 채로 받았어요. ${q.billing ? "결제·환불 기록이라 문의와 함께 3년 동안 둬요." : "문의를 닫고 90일 뒤에 지워져요."}</p>` : ""}</div>
         ${q.appeal ? appealCard(q, editable) : ""}
         ${q.typing?.length ? `<p class="typing" role="status">${esc(q.typing.join(", "))}님이 지금 답을 쓰고 있어요. 겹치지 않게 확인해 주세요.</p>` : ""}
@@ -2356,7 +2360,7 @@ function adminApp(L, BUILD, M) {
         ${copiedCard(q) /* AT 1.29 */}
         ${billingCard(q, editable) /* 1.36 [INQ-07] */}
         <section class="card"><h2>함께 온 정보</h2><p class="hint">보낸 분이 보내기 전에 보고 동의한 정보예요.</p>
-          ${ctx.length ? `<dl class="kv">${ctx.map(([k, v]) => `<dt${k === "알람 점검" ? ' id="ctx-diag"' : ""}>${esc(k)}</dt><dd>${esc(typeof v === "object" ? JSON.stringify(v) : v)}</dd>`).join("")}</dl>` : '<p class="meta">없어요</p>'}</section>
+          ${ctx.length ? `<dl class="kv">${ctx.map(([k, v]) => `<dt${k === "알람 점검" ? ' id="ctx-diag"' : ""}>${esc(k)}</dt><dd>${k === "알람 점검" && q.diagAt ? `<small class="meta ctx-at">답장과 함께 받음 · ${esc(moment(q.diagAt))}</small>` : ""}${esc(typeof v === "object" ? JSON.stringify(v) : v)}</dd>`).join("")}</dl>` : '<p class="meta">없어요</p>'}</section>
         ${q.public ? `<section class="card"><h2>모두의 문의</h2>
           <p class="hint">${q.hidden ? `숨겼어요: ${esc(q.hidden.text)}. 보낸 분 앱에는 이유가 보여요.` : "앱을 쓰는 모두가 이 문의와 답을 봐요. 함께 온 정보는 개발자만 봐요."}</p>
           <div class="chips">${publicPills(q)}${(q.reasons ?? []).map((r) => `<span class="chip">${esc(r.text)} ${r.n}</span>`).join("")}</div>
@@ -5430,9 +5434,12 @@ function adminApp(L, BUILD, M) {
       box.focus();
     },
     // 2.0.0 [RVA-63] HQ-124: 멈춤 기록 부탁 답(서버가 준 글)을 답 칸에. 적던 답이 있으면 지우지 않고 뒤에 붙여요(조건 10).
-    "crash-draft": ({ target }) => {
+    "crash-draft": ({ target, reply }) => {
       const box = document.getElementById(target || "reply");
-      const text = S.data.inquiry?.crash?.draft ?? S.data.ledger?.crashDraft;
+      // [RVA-69] 문의 상세는 서버가 판에 맞춰 고른 답, 운영 장부 줄은 그 줄의 판(data-reply)에 맞는 답.
+      const led = S.data.ledger;
+      const text = (!target || target === "reply") && S.data.inquiry?.crash?.draft ? S.data.inquiry.crash.draft
+        : reply ? led?.crashDraftReply ?? led?.crashDraft : led?.crashDraft;
       if (!box || !text) return;
       box.value = (box.value.trim() ? `${box.value.trimEnd()}\n\n` : "") + text;
       box.dispatchEvent(new Event("input", { bubbles: true }));
@@ -6545,7 +6552,7 @@ function adminApp(L, BUILD, M) {
       // 1.39 [ADM3-40] 큐 모드: the same answer to the alike ones ahead, which then leave the queue.
       const alike = form.elements.alike?.checked ? queueAhead(id) : [];
       S.sending = (S.sending ?? 0) + 1;
-      // 2.0.0 [RVQ-50] 검토 U22b-04: 내가 본 글 수를 함께 보내요. 그사이 다른 답이 갔거나 보낸 분이 더 썼으면 서버가 409로 알려 주고, 적던 답은 그대로 둔 채 한 번 물어요.
+      // [RVQ-50] 본 글 수(seen)를 보내요: 그사이 달라졌으면 409, 적던 답은 둔 채 한 번 물어요.
       const seen = S.data.inquiry?.id === id ? S.data.inquiry.messages?.length : undefined;
       let changed = null;
       const q = await act(async () => {
@@ -6562,15 +6569,15 @@ function adminApp(L, BUILD, M) {
         : `${r.sent ? `${r.sent + 1}건에 ` : ""}${close ? "답하고 닫았어요" : "답했어요"}. 보낸 분 앱에 보여요${r.missed ? ` (${r.missed}건은 못 보내 큐에 남겨 뒀어요)` : ""}`))
         .then((r) => r?.first).finally(() => { S.sending--; });
       if (changed) {
-        const who = changed.answered?.length ? `${changed.answered.map((n) => (n === "admin" ? "다른 관리자" : `${n}님`)).join(", ")}이 방금 답을 보냈어요` : "";
-        const more = changed.asked ? `보낸 분이 방금 글을 ${changed.asked}개 더 썼어요` : "";
+        const who = changed.answered?.length ? `${changed.answered.map((n) => (n === "admin" ? "다른 관리자" : `${n}님`)).join(", ")}이 방금 답했어요` : "";
+        const more = changed.asked ? `보낸 분이 글을 ${changed.asked}개 더 썼어요` : "";
         if (changed.view && S.route.name === "inquiries" && S.route.id === id) {
-          // 적던 답은 초안으로 남아요(KEEP). 새 글이 보이게 다시 그린 뒤 물어요.
+          // 적던 답은 초안으로 남겨요.
           writeDraft("reply", text, route);
           S.data.inquiry = changed.view;
           render();
         }
-        return confirmBox(who ? "방금 다른 답이 갔어요" : "새 글이 왔어요", [who, more].filter(Boolean).join(". ") + ". 위의 새 글을 읽고 보낼지 정해요.",
+        return confirmBox(who ? "방금 다른 답이 갔어요" : "새 글이 왔어요", [who, more].filter(Boolean).join(". ") + ". 새 글을 읽고 정해요.",
           "그래도 보내기", () => FORMS.reply(document.querySelector('form[data-form="reply"]') ?? form, submitter, true), "primary");
       }
       if (!q) return;
@@ -6618,8 +6625,7 @@ function adminApp(L, BUILD, M) {
     "template-add": async (form) => {
       const id = form.dataset.id;
       const body = { label: form.elements.label.value, text: form.elements.text.value, topic: form.elements.topic.value, publicQ: (form.elements.publicQ?.value ?? "").trim() };
-      // 2.0.0 [RVQ-52] 검토 SVC-67: 누구나 보는 밤낮 Q&A에 올라가거나 공개 글이 바뀌면, 서버가 검사한 공개 글을 같은 창 안에 먼저 보여 주고
-      // '올리기'를 한 번 더 눌러야 저장해요(다른 창으로 바꾸지 않아 적던 것이 그대로예요). 고쳐 적으면 미리 보기는 다시.
+      // [RVQ-52] 공개 글은 같은 창 안 미리 보기 뒤 '올리기'로 저장.
       const was = id ? (S.templates ?? []).find((x) => x.id === Number(id)) : null;
       const goesPublic = body.publicQ && (!was || was.publicQ !== body.publicQ || was.text !== body.text || (was.topic ?? "") !== body.topic);
       if (goesPublic && !form.dataset.sure) {
@@ -6627,7 +6633,7 @@ function adminApp(L, BUILD, M) {
         if (!pv) return;
         form.querySelector(".public-preview")?.remove();
         form.querySelector('[name="publicQ"]')?.closest(".fieldset")?.insertAdjacentHTML("afterend", `<div class="public-preview" role="status">
-          <p class="label">밤낮 Q&A에 이렇게 보여요(누구나, 활동 기록에 전문이 남아요)</p>
+          <p class="label">밤낮 Q&A에 이렇게 보여요(누구나, 기록에 전문이 남아요)</p>
           <dl class="lines confirm-rows"><div><dt>묻는 말</dt><dd>${esc(body.publicQ)}</dd></div><div><dt>답</dt><dd>${esc(pv.publicA ?? "")}</dd></div></dl></div>`);
         const go = form.querySelector('button[type="submit"]');
         if (go) go.textContent = "올리기";
