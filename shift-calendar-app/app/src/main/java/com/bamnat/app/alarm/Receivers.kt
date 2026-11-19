@@ -16,6 +16,14 @@ import com.bamnat.core.time.Today
 /** Receives the shift alarm and snooze alarms set by [AlarmScheduler]. */
 class AlarmReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
+        // 2.0.0 [RVIB-28] (PC-188) The keeping alarm of a ring the app was killed in: the same ring again, from where it was.
+        if (intent.action == RingKeeper.ACTION) {
+            (context.getSystemService(Context.POWER_SERVICE) as android.os.PowerManager)
+                .newWakeLock(android.os.PowerManager.PARTIAL_WAKE_LOCK, "bamnat:keeper").acquire(10_000L)
+            val log: ((String, String) -> Unit)? = if (BootAlarms.isLocked(context)) null else { n, d -> context.appContainer.telemetry.event(n, d) }
+            RingKeeper.wentOff(context, BootAlarms.ringSettings(context).ringMinutes, log) { startRinging(context, it) }
+            return
+        }
         val ring = RingRequest.fromIntent(intent)
         if (BootAlarms.isLocked(context)) {
             // [REL-10] Rebooted and not unlocked yet: ring from the intent and line up the next one
