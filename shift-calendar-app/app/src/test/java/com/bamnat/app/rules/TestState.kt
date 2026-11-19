@@ -34,6 +34,9 @@ object TestState {
         com.bamnat.app.ui.pro.ProOffer.close()
         com.bamnat.app.ui.settings.InquiryLinks.take()
         com.bamnat.app.ui.settings.SettingsLinks.target.value?.let { com.bamnat.app.ui.settings.SettingsLinks.consume(it) }
+        // H #507 (RVH-61·64): 새 판 첫 방문 별점 쉬기, 지난 판 다른 날 확인의 답 (TestStateTest가 찾음, 갈래 I가 합치며 이음).
+        com.bamnat.app.review.InAppReview.resetForTest()
+        com.bamnat.app.ui.calendar.TurnSlipAsk.resetForTest()
         clears++
     }
 
