@@ -68,6 +68,8 @@ import kotlinx.coroutines.launch
 internal fun MarketFlip(
     items: List<RecipeItem>, start: Int, style: WorkStyle?, onDismiss: () -> Unit,
     onOpen: (String) -> Unit, onTry: (RecipeItem) -> Unit, onAt: (Int) -> Unit = {},
+    /** [RVM-63] MKT-30: more works after these (read as the last few come up), so the count says '+'. */
+    more: Boolean = false,
 ) {
     if (items.isEmpty()) return
     Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)) {
@@ -84,7 +86,7 @@ internal fun MarketFlip(
                     // Where in the list, and a way back by one (a finger may not reach the far side of a fold).
                     // [RVM-35] HQ-66: a quick second tap counts from the work it is going to (targetPage), not the one still under the finger.
                     if (pager.currentPage > 0) androidx.compose.material3.TextButton(onClick = { scope.launch { pager.animateScrollToPage((pager.targetPage - 1).coerceAtLeast(0)) } }) { Text("◀ 이전") }
-                    Text("${pager.currentPage + 1} / ${items.size}", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    Text("${pager.currentPage + 1} / ${items.size}${if (more) "+" else ""}", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.padding(horizontal = 6.dp))
                     if (pager.currentPage < items.lastIndex) androidx.compose.material3.TextButton(onClick = { scope.launch { pager.animateScrollToPage((pager.targetPage + 1).coerceAtMost(items.lastIndex)) } }) { Text("다음 ▶") }
                 }
