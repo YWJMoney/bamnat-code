@@ -13,6 +13,7 @@
 import { DAY } from "./units.js";
 import { cleanText, reservedName, textProblem } from "./recipes.js";
 import { purgeAsset } from "./recipe-community.js";
+import { careGate } from "./community-care.js";
 
 /** The level recipe_trust gives [t] (recipes.js recipeTrust), read without writing: 0 새싹, 1 이웃, 2 단골. */
 function rfTrust(t, now) {
@@ -23,11 +24,23 @@ function rfTrust(t, now) {
 
 export const FONT_LIMITS = { bytes: 8 * 1024 * 1024, perDay: 6, part: 1_500_000, reportsToHide: 3, name: 30,
   /** 1.36 [SEC-10] H1: fonts a network may send a day, and all phones together (8 MB each at most, so 320 MB a day at most). */
-  perNetworkDay: 3, allDay: 40 };
+  perNetworkDay: 3, allDay: 40,
+  /** 2.0.0 [RVQ-55] 검토 SVC-25: 운영자 확인을 기다리는 글꼴을 모두 합쳐 이만큼까지(넘으면 확인할 때까지 새 글꼴을 쉬어요). */
+  pendingBytes: 200 * 1024 * 1024 };
 /** What the user says its maker allows; only these may be shared. */
 export const FONT_LICENSES = ["ofl", "apache", "free"];
 /** 1.36 PC 9차: the app fonts that may stand in for a shared one (core FontCatalog's phone fonts). */
 export const FONT_FALLBACKS = ["sans", "serif", "mono", "hand", "round"];
+/**
+ * 2.0.0 [RVQ-55] 검토 SVC-25: 글꼴 파일(8MB까지)을 D1에 base64 조각으로 두면 DB가 크게 늘고 내려받기마다 조각을 모두 읽어요. R2 저장소
+ * (바인딩 ASSETS)가 묶여 있으면 새 글꼴은 그곳에 원래 크기로 두고(D1에는 parts = 0), 매시 정리 때 옛 조각도 몇 개씩 옮겨요. 묶지 않았으면
+ * 지금처럼 D1이에요. 지운 글꼴의 파일은 같은 정리 때 지워요.
+ */
+export const FONT_STORE = { movePerTick: 4, sweepPerTick: 200 };
+export const fontStore = (env) => (env?.ASSETS && typeof env.ASSETS.put === "function" && typeof env.ASSETS.get === "function" ? env.ASSETS : null);
+export const fontKey = (id) => `fonts/${id}.ttf`;
+const FONT_SWEEP_KEY = "font_store_cursor";
+
 export const FONT_LICENSE_NAMES = { ofl: "SIL 오픈 폰트 라이선스(OFL)", apache: "Apache 라이선스", free: "누구나 무료로 쓰게 공개" };
 
 export const FONT_SCHEMA = [
@@ -277,6 +290,8 @@ async function rfPost(d, env, request) {
   if (!dev) return d.json({ error: "device", field: "device" }, 400);
   const now = Date.now();
   if (!(await d.legalOpen(env, "recipe.publish", now))) return d.json({ error: "not_yet", field: "recipe.publish" }, 403);
+  // 2.0.0 [RVQ-55] 검토 SVC-16: 마을 쉬기·의견 쉬기를 이 쓰기 길에서도 서버가 막아요(전에는 앱만 막았어요). 8MB를 풀기 전에요.
+  { const held = await careGate(d, env, dev, "community", now); if (held) return held; }
   if (!FONT_LICENSES.includes(body.license)) return d.json({ error: "license", field: "license" }, 400);
   const name = rfName(body.name);
   { const why = rfNameProblem(name); if (why) return d.json({ error: why, field: "name" }, 400); }
@@ -310,8 +325,14 @@ async function rfPost(d, env, request) {
   // write, so they only help the operator (beside the font already shared that draws the same, fontAdmin).
   const state = "pending";
   const glyphs = await fontGlyphs(bytes);
+  // [RVQ-55] SVC-25: R2가 있으면 파일은 그곳에(실패하면 지금처럼 D1 조각으로). D1에 둘 때는 DB가 80%를 넘었거나 검토를 기다리는 글꼴이
+  // [FONT_LIMITS.pendingBytes]를 넘으면 쉬어요.
+  const store = fontStore(env);
+  if (!store && (await d.uploadsFull?.(env))) return d.json({ error: "paused", field: "space" }, 503);
+  { const w = await d.one(env, "SELECT COALESCE(SUM(bytes), 0) AS n FROM recipe_fonts WHERE state = 'pending'"); if ((w?.n ?? 0) + bytes.length > FONT_LIMITS.pendingBytes) return d.json({ error: "paused", field: "pending" }, 503); }
+  const stored = store ? await store.put(fontKey(id), bytes, { httpMetadata: { contentType: "font/ttf" } }).then(() => true, () => false) : false;
   const parts = [];
-  for (let i = 0; i < body.ttf.length; i += FONT_LIMITS.part) parts.push(body.ttf.slice(i, i + FONT_LIMITS.part));
+  if (!stored) for (let i = 0; i < body.ttf.length; i += FONT_LIMITS.part) parts.push(body.ttf.slice(i, i + FONT_LIMITS.part));
   await d.batch(env, [
     d.stmt(env, "INSERT INTO recipe_fonts (id, owner, name, license, bytes, parts, state, info, glyphs, fallback, at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
       id, dev, name, body.license, bytes.length, parts.length, state, JSON.stringify(info), glyphs,
@@ -348,12 +369,56 @@ async function rfFile(d, env, request, id) {
   const f = await d.one(env, "SELECT id, owner, state, parts FROM recipe_fonts WHERE id = ?", id);
   if (!f) return d.json({ error: "not_found" }, 404);
   if (f.state !== "ok" && !(await rfOwns(d, env, f, await rfDev(d, request, null)))) return d.json({ error: "not_found" }, 404);
+  const headers = { "content-type": "font/ttf", "cache-control": f.state === "ok" ? "public, max-age=86400" : "no-store", "x-content-type-options": "nosniff" };
+  // [RVQ-55] SVC-25: R2에 둔 글꼴(parts 0)은 그곳에서 그대로 흘려보내요(8MB를 D1에서 읽어 잇지 않아요).
+  if (f.parts === 0) {
+    const obj = await fontStore(env)?.get(fontKey(id)).catch(() => null);
+    if (!obj) return d.json({ error: "not_found" }, 404);
+    return new Response(obj.body, { headers });
+  }
   const rows = await d.all(env, "SELECT data FROM recipe_font_parts WHERE id = ? ORDER BY part", id);
   if (rows.length !== f.parts) return d.json({ error: "not_found" }, 404);
   const bytes = rfBytes(rows.map((r) => r.data).join(""));
-  return new Response(bytes, {
-    headers: { "content-type": "font/ttf", "cache-control": f.state === "ok" ? "public, max-age=86400" : "no-store", "x-content-type-options": "nosniff" },
-  });
+  return new Response(bytes, { headers });
+}
+
+/**
+ * [RVQ-55] 검토 SVC-25 매시 정리(prune 단계): R2가 묶여 있으면 D1 조각으로 남은 옛 글꼴을 [FONT_STORE.movePerTick]개씩 R2로 옮기고,
+ * 글꼴 줄이 없어진 파일(나눈 분이 지움, 이 휴대폰 정보 지우기)을 [FONT_STORE.sweepPerTick]개씩 훑어 지워요. 묶지 않았으면 아무것도 안 해요.
+ */
+export async function fontStoreTick(d, env) {
+  const store = fontStore(env);
+  if (!store) return { moved: 0, swept: 0 };
+  let moved = 0;
+  const old = await d.all(env, "SELECT id, parts FROM recipe_fonts WHERE parts > 0 ORDER BY at LIMIT ?", FONT_STORE.movePerTick);
+  for (const f of old) {
+    const rows = await d.all(env, "SELECT data FROM recipe_font_parts WHERE id = ? ORDER BY part", f.id);
+    const bytes = rows.length === f.parts ? rfBytes(rows.map((r) => r.data).join("")) : null;
+    if (!bytes) continue;
+    await store.put(fontKey(f.id), bytes, { httpMetadata: { contentType: "font/ttf" } });
+    await d.batch(env, [
+      d.stmt(env, "UPDATE recipe_fonts SET parts = 0 WHERE id = ? AND parts = ?", f.id, f.parts),
+      d.stmt(env, "DELETE FROM recipe_font_parts WHERE id = ? AND NOT EXISTS (SELECT 1 FROM recipe_fonts WHERE id = ? AND parts > 0)", f.id, f.id),
+    ]);
+    moved++;
+  }
+  let swept = 0;
+  if (typeof store.list === "function" && typeof store.delete === "function") {
+    const at = await d.one(env, "SELECT value FROM settings WHERE key = ?", FONT_SWEEP_KEY).catch(() => null);
+    const page = await store.list({ prefix: "fonts/", limit: FONT_STORE.sweepPerTick, ...(at?.value ? { cursor: at.value } : {}) });
+    const ids = (page.objects ?? []).map((o) => ({ key: o.key, id: o.key.slice(6).replace(/\.ttf$/, "") }));
+    const kept = new Set();
+    for (let i = 0; i < ids.length; i += 90) {
+      const part = ids.slice(i, i + 90).map((x) => x.id);
+      for (const r of await d.all(env, `SELECT id FROM recipe_fonts WHERE id IN (${part.map(() => "?").join(",")})`, ...part)) kept.add(r.id);
+    }
+    const gone = ids.filter((x) => !kept.has(x.id)).map((x) => x.key);
+    if (gone.length) await store.delete(gone);
+    swept = gone.length;
+    const next = page.truncated && page.cursor ? page.cursor : "";
+    await d.run(env, "INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT (key) DO UPDATE SET value = excluded.value", FONT_SWEEP_KEY, next);
+  }
+  return { moved, swept };
 }
 
 /** POST /api/recipes/fonts/:id/report — {device, why}: once a phone; three phones take it down until the operator looks. */

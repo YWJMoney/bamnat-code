@@ -2130,7 +2130,7 @@ function adminApp(L, BUILD, M) {
   /** One question in a list; [compact] for the list beside an open question. */
   function inquiryRow(q, { compact = false, picking = false } = {}) {
     const current = S.route.id === q.id;
-    const inner = `<span class="row-main"><b>${q.urgency === "urgent" ? '<span class="pill bad">급함</span> ' : ""}${esc(KIND_NAMES[q.kind] ?? "문의")}${q.topicName ? ` · ${esc(q.topicName)}` : ""}${!compact && q.appVersion ? ` <span class="meta">앱 ${esc(q.appVersion)}</span>` : ""}</b>
+    const inner = `<span class="row-main"><b>${q.urgency === "urgent" ? '<span class="pill bad">급함</span> ' : ""}${q.reopened ? '<span class="pill warn">다시 열림</span> ' : ""}${esc(KIND_NAMES[q.kind] ?? "문의")}${q.topicName ? ` · ${esc(q.topicName)}` : ""}${!compact && q.appVersion ? ` <span class="meta">앱 ${esc(q.appVersion)}</span>` : ""}</b>
         <span class="preview">${esc(q.preview)}</span>
         ${q.typing?.length ? `<span class="typing">${esc(q.typing.join(", "))}님이 답 쓰는 중</span>` : ""}</span>
       <span class="row-side"><span>${esc(ago(q.updatedAt ?? q.createdAt))}</span>${slaPill(q.slaLeft)}
@@ -2267,6 +2267,14 @@ function adminApp(L, BUILD, M) {
       ${moreButton(S.data.inquiries.next, "inquiries-more", S.data.inquiries.total, list.length)}</nav><div class="pane-main">${detail}</div></div>`;
   }
 
+  /** [RVQ-51] 답 알림이 못 갔을 때의 한 줄. */
+  function pushLine(p) {
+    const tail = "보낸 분이 앱을 열면 답은 보여요.";
+    if (p.why === "gone") return `알림을 보낼 수 없어요(앱을 지웠거나 알림을 껐어요). ${tail}`;
+    if (p.why === "busy" && p.retry) return `구글이 바빠 답 알림이 아직 못 갔어요. ${moment(p.retry)}에 다시 보내요. ${tail}`;
+    return `답 알림이 못 갔어요. ${tail}`;
+  }
+
   /**
    * 2.0.0 [RVA-63] HQ-124: 닫힘 문의의 멈춤 기록(있음은 파랑, 없음·안 옴은 보통 색: 빨강은 위험에만, 조건 6). 같은 모양을 운영 장부 줄도 써요.
    */
@@ -2315,15 +2323,16 @@ function adminApp(L, BUILD, M) {
       <span>Ctrl+Enter 보내고 다음 · s 건너뛰기 · e 닫고 다음</span><button class="btn small" data-act="queue-skip">건너뛰기</button><button class="btn small ghost" data-act="queue-stop">끝내기</button></div>` : "";
     return `${queueBar}${step}<div class="cols">
       <section>
-        <div class="card"><div class="card-head"><h2>${q.urgency === "urgent" ? '<span class="pill bad">급함</span> ' : ""}${esc(KIND_NAMES[q.kind] ?? "문의")}${q.topicName ? ` · ${esc(q.topicName)}` : ""}</h2><span class="pill ${status[0]}">${status[1]}</span>
+        <div class="card"><div class="card-head"><h2>${q.urgency === "urgent" ? '<span class="pill bad">급함</span> ' : ""}${esc(KIND_NAMES[q.kind] ?? "문의")}${q.topicName ? ` · ${esc(q.topicName)}` : ""}</h2><span class="pill ${status[0]}">${q.reopened ? "다시 열림" : status[1]}</span>
           <button class="btn small" data-act="inquiry-copy" data-id="${q.id}" title="개발할 때 붙여 넣을 글로 복사 (c)">${icon(P.copy)}복사</button></div>
           <p class="meta">보낸 분 앱에는 <b>${esc(stage)}</b>${q.progress?.version ? ` (${esc(q.progress.version)})` : ""}${roSuffix(stage)} 보여요.${APP_KIND_NAMES[q.kind] ? ` 앱에서 고른 종류: ${esc(APP_KIND_NAMES[q.kind])}.` : ""} ${waitPill(q)}${slaPill(q.slaLeft)}${q.rating ? ` <span class="pill ${q.rating > 0 ? "ok" : "warn"}">${q.rating > 0 ? "답이 도움 됐대요" : "답이 아쉬웠대요"}</span>` : ""}</p>
           ${crashNote(q, editable)}
           <div class="thread">${thread}${(q.held ?? []).map((h) => `<div class="bubble admin held">${esc(h.text)}</div>
             <span class="bubble-meta admin">${esc(h.by)} · ${h.person ? `<b>사람이 보내야 해요</b>${heldWhyText(h)}` : `<b>보류 중</b>, ${Math.max(1, Math.ceil((Date.parse(h.until) - Date.now()) / 60000))}분 뒤 보내져요`}${h.close ? " · 보내면 닫혀요" : ""}${editable ? `
             <button class="btn small${h.person ? " primary" : " ghost"}" data-act="held-send" data-id="${h.id}">지금 보내기</button><button class="btn small ghost" data-act="held-edit" data-id="${h.id}">고치기</button><button class="btn small ghost" data-act="held-cancel" data-id="${h.id}">보내지 않기</button>${h.person && h.why && !h.why.reply ? `<button class="linkish" type="button" data-act="held-miss" data-id="${h.id}">판정이 틀렸어요</button>` : ""}` : ""}</span>`).join("")}</div>
-          ${q.photos ? `<div class="photos">${Array.from({ length: q.photos }, (_, i) =>
-            `<a href="/api/admin/inquiries/${esc(q.id)}/photos/${i + 1}" target="_blank" rel="noopener"><img src="/api/admin/inquiries/${esc(q.id)}/photos/${i + 1}" alt="보낸 분이 붙인 사진 ${i + 1}" loading="lazy"></a>`).join("")}</div>
+          ${q.push ? `<p class="meta" role="status"><span class="pill warn">알림 못 감</span> ${esc(pushLine(q.push))}</p>` : ""}
+          ${q.photos ? `<div class="photos">${(q.photoList ?? []).map((p) =>
+            `<a href="/api/admin/inquiries/${esc(q.id)}/photos/${p.n}" target="_blank" rel="noopener"><img src="/api/admin/inquiries/${esc(q.id)}/photos/${p.n}" alt="보낸 분이 붙인 사진 ${p.n}${p.at !== q.createdAt ? " · 이어 쓴 글과 함께" : ""}" loading="lazy"></a>`).join("")}</div>
             <p class="meta">사진은 위치 정보를 지운 채로 받았어요. ${q.billing ? "결제·환불 기록이라 문의와 함께 3년 동안 둬요." : "문의를 닫고 90일 뒤에 지워져요."}</p>` : ""}</div>
         ${q.appeal ? appealCard(q, editable) : ""}
         ${q.typing?.length ? `<p class="typing" role="status">${esc(q.typing.join(", "))}님이 지금 답을 쓰고 있어요. 겹치지 않게 확인해 주세요.</p>` : ""}
@@ -6549,7 +6558,7 @@ function adminApp(L, BUILD, M) {
         <span class="row-main"><b>${esc(c.name)}</b><small>규칙 ${c.rules} · 제보 ${c.reports}</small></span><span class="pill">여기로 합치기</span></button></li>`).join("")}</ul>`
         : '<p class="meta">찾는 회사가 없어요.</p>';
     },
-    reply: async (form, submitter) => {
+    reply: async (form, submitter, again = false) => {
       const text = form.elements.text.value.trim();
       if (!text) return toast(ERRORS.text);
       const close = submitter?.dataset.close === "1";
@@ -6560,8 +6569,15 @@ function adminApp(L, BUILD, M) {
       // 1.39 [ADM3-40] 큐 모드: the same answer to the alike ones ahead, which then leave the queue.
       const alike = form.elements.alike?.checked ? queueAhead(id) : [];
       S.sending = (S.sending ?? 0) + 1;
+      // [RVQ-50] 본 글 수(seen)를 보내요: 그사이 달라졌으면 409, 적던 답은 둔 채 한 번 물어요.
+      const seen = S.data.inquiry?.id === id ? S.data.inquiry.messages?.length : undefined;
+      let changed = null;
       const q = await act(async () => {
-        const first = await api(`/inquiries/${id}/reply`, "POST", { text, ...(close ? { close: true } : {}), ...(template ? { template } : {}) });
+        const first = await api(`/inquiries/${id}/reply`, "POST", { text, ...(close ? { close: true } : {}), ...(template ? { template } : {}),
+          ...(Number.isInteger(seen) ? { seen } : {}), ...(again ? { again: true } : {}) }).catch((e) => {
+          if (e?.status === 409 && e.data?.error === "changed") changed = e.data;
+          throw changed ? Object.assign(new Error("changed"), { quiet: true, data: {} }) : e;
+        });
         const sent = [];
         for (const o of alike) await api(`/inquiries/${o}/reply`, "POST", { text, ...(close ? { close: true } : {}) }).then(() => sent.push(o), () => {});
         if (S.queue && sent.length) Object.assign(S.queue, { ids: S.queue.ids.filter((x) => !sent.includes(x)), extra: (S.queue.extra ?? 0) + sent.length });
@@ -6569,6 +6585,18 @@ function adminApp(L, BUILD, M) {
       }, (r) => (r.first?.gated ? gateWords(1, r.first.gated)
         : `${r.sent ? `${r.sent + 1}건에 ` : ""}${close ? "답하고 닫았어요" : "답했어요"}. 보낸 분 앱에 보여요${r.missed ? ` (${r.missed}건은 못 보내 큐에 남겨 뒀어요)` : ""}`))
         .then((r) => r?.first).finally(() => { S.sending--; });
+      if (changed) {
+        const who = changed.answered?.length ? `${changed.answered.map((n) => (n === "admin" ? "다른 관리자" : `${n}님`)).join(", ")}이 방금 답했어요` : "";
+        const more = changed.asked ? `보낸 분이 글을 ${changed.asked}개 더 썼어요` : "";
+        if (changed.view && S.route.name === "inquiries" && S.route.id === id) {
+          // 적던 답은 초안으로 남겨요.
+          writeDraft("reply", text, route);
+          S.data.inquiry = changed.view;
+          render();
+        }
+        return confirmBox(who ? "방금 다른 답이 갔어요" : "새 글이 왔어요", [who, more].filter(Boolean).join(". ") + ". 새 글을 읽고 정해요.",
+          "그래도 보내기", () => FORMS.reply(document.querySelector('form[data-form="reply"]') ?? form, submitter, true), "primary");
+      }
       if (!q) return;
       // [RVA-06] 보낸 글은 화면이 그사이 새로 그려졌어도 초안·답 칸에서 지워요(다시 열어도 보낸 글이 초안으로 뜨지 않게).
       writeDraft("reply", "", route);
@@ -6613,7 +6641,29 @@ function adminApp(L, BUILD, M) {
     },
     "template-add": async (form) => {
       const id = form.dataset.id;
-      const body = { label: form.elements.label.value, text: form.elements.text.value, topic: form.elements.topic.value, publicQ: form.elements.publicQ?.value ?? "" };
+      const body = { label: form.elements.label.value, text: form.elements.text.value, topic: form.elements.topic.value, publicQ: (form.elements.publicQ?.value ?? "").trim() };
+      // [RVQ-52] 공개 글은 같은 창 안 미리 보기 뒤 '올리기'로 저장.
+      const was = id ? (S.templates ?? []).find((x) => x.id === Number(id)) : null;
+      const goesPublic = body.publicQ && (!was || was.publicQ !== body.publicQ || was.text !== body.text || (was.topic ?? "") !== body.topic);
+      if (goesPublic && !form.dataset.sure) {
+        const pv = await act(() => api(id ? `/templates/${id}` : "/templates", "POST", { ...body, dry: true }));
+        if (!pv) return;
+        form.querySelector(".public-preview")?.remove();
+        form.querySelector('[name="publicQ"]')?.closest(".fieldset")?.insertAdjacentHTML("afterend", `<div class="public-preview" role="status">
+          <p class="label">밤낮 Q&A에 이렇게 보여요(누구나 봐요)</p>
+          <dl class="lines confirm-rows"><div><dt>묻는 말</dt><dd>${esc(body.publicQ)}</dd></div><div><dt>답</dt><dd>${esc(pv.publicA ?? "")}</dd></div></dl></div>`);
+        const go = form.querySelector('button[type="submit"]');
+        if (go) go.textContent = "올리기";
+        form.dataset.sure = "1";
+        form.addEventListener("input", () => {
+          delete form.dataset.sure;
+          form.querySelector(".public-preview")?.remove();
+          if (go) go.textContent = id ? "저장" : "넣기";
+        }, { once: true });
+        form.querySelector(".public-preview")?.scrollIntoView?.({ block: "nearest" });
+        return;
+      }
+      delete form.dataset.sure;
       const r = await act(() => api(id ? `/templates/${id}` : "/templates", "POST", body), id ? "고쳤어요" : "넣었어요. 답 칸 아래에서 바로 써요");
       if (!r) return;
       S.templates = r.templates;

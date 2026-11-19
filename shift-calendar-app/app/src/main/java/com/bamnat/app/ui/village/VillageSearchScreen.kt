@@ -53,6 +53,9 @@ import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import androidx.compose.ui.semantics.Role
 
+/** 2.0.0 [RVO-31] How many 장터 작품 show before '모두 보기'. */
+private const val RECIPE_FIRST = 10
+
 /**
  * 1.36 [VIL-06] 마을 V6 검색 하나: one box for 장터 작품, 광장 글 and 요청, each in its own group (동물의 숲에 검색이 없어 생긴 불편에서 착안,
  * 사용자 관찰/공개 정보). Searches as the user types, after a short pause, from two letters.
@@ -92,13 +95,16 @@ fun VillageSearchScreen(c: AppContainer, onBack: () -> Unit, onRecipe: (String) 
     var recipes by remember { mutableStateOf<List<RecipeItem>?>(null) }
     var found by remember { mutableStateOf<VillageFound?>(null) }
     var failed by remember { mutableStateOf(false) }
+    // 2.0.0 [RVO-31] PRO-25: '다시 하기' on the failure line asks again for the same words.
+    var again by remember { androidx.compose.runtime.mutableIntStateOf(0) }
+    var allRecipes by rememberSaveable(q, pickName) { mutableStateOf(false) }
     val focus = remember { FocusRequester() }
     // PC 확인: a found post opens on itself, in its own plaza's talk, not on the plaza's first screen.
     val talkScope = androidx.compose.runtime.rememberCoroutineScope()
     val talk = remember { com.bamnat.app.ui.company.TalkHolder(c, talkScope) }
     com.bamnat.app.ui.company.TalkSheet(talk)
     LaunchedEffect(Unit) { runCatching { focus.requestFocus() } }
-    LaunchedEffect(q, pick) {
+    LaunchedEffect(q, pick, again) {
         val words = q.trim()
         if (words.length < 2) { recipes = null; found = null; failed = false; return@LaunchedEffect }
         delay(350)
@@ -164,7 +170,7 @@ fun VillageSearchScreen(c: AppContainer, onBack: () -> Unit, onRecipe: (String) 
                             }
                         }
                     }
-                    failed -> item { Hint("인터넷이 없거나 서버가 바빠요. 잠시 뒤 다시 찾아 주세요") }
+                    failed -> item { com.bamnat.app.ui.components.OfflineLine(text = com.bamnat.app.ui.components.NetWords.BUSY, onRetry = { failed = false; again++ }) }
                     recipes == null && found == null -> item { Hint("찾는 중이에요") }
                     else -> {
                         // [TOWN-06] One kind picked: only its own (and what is made for every kind); 전체: mine first, then for every
@@ -183,8 +189,12 @@ fun VillageSearchScreen(c: AppContainer, onBack: () -> Unit, onRecipe: (String) 
                             (pick?.let { " (${RecipeDescribe.short(it)}만 보는 중 · 전체를 눌러 넓혀 보세요)" } ?: ". 요청 판에 ‘이런 거 있었으면’을 남겨 보세요")) }
                         if (rs.isNotEmpty()) {
                             item { Group("장터 작품 ${rs.size}") }
-                            items(rs.take(10), key = { "r" + it.code }) { r ->
+                            items(if (allRecipes) rs else rs.take(RECIPE_FIRST), key = { "r" + it.code }) { r ->
                                 Row(r.title, styleTag(r.styles) + r.summary.ifBlank { "좋아요 ${r.likes} · 넣어 본 분 ${r.users}" }) { keep(words); onRecipe(r.code) }
+                            }
+                            // 2.0.0 [RVO-31] PRO-24·U11b-14: the heading counts them all, so the rest is one tap away, not cut at ten.
+                            if (!allRecipes && rs.size > RECIPE_FIRST) item {
+                                androidx.compose.material3.TextButton(onClick = { allRecipes = true }) { Text("작품 ${rs.size}개 모두 보기\u00A0▾") }
                             }
                         }
                         if (ps.isNotEmpty()) {

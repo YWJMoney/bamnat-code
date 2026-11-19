@@ -61,6 +61,8 @@ fun MyVillagePostsScreen(c: AppContainer, onBack: () -> Unit, onPlaza: () -> Uni
     // [TOWN-02] 1.37: answers that came since this phone last looked, marked on each of my posts until I leave this screen.
     var fresh by remember { mutableStateOf<Map<String, Int>>(emptyMap()) }
     var problem by remember { mutableStateOf<String?>(null) }
+    // 2.0.0 [RVO-31] PRO-25: '다시 하기' on the failure line reads my posts again.
+    var reload by remember { androidx.compose.runtime.mutableIntStateOf(0) }
     val snack = com.bamnat.app.ui.components.AppSnack.rememberLane()
     val scope = rememberCoroutineScope()
     // PC 확인: 글 보기 opens the post itself in its plaza's talk.
@@ -81,7 +83,8 @@ fun MyVillagePostsScreen(c: AppContainer, onBack: () -> Unit, onPlaza: () -> Uni
     askFor?.let { id ->
         com.bamnat.app.ui.hub.AppealDialog(c, "post:$id", onDone = { sent -> askFor = null; sent?.let { scope.launch { snack.showSnackbar(it) } } })
     }
-    LaunchedEffect(Unit) {
+    LaunchedEffect(reload) {
+        problem = null
         mine = try {
             c.companyApi.myPosts(c.companyStore.device).also { list ->
                 fresh = com.bamnat.app.company.VillageReplies.fresh(c.appContext, list)
@@ -89,7 +92,7 @@ fun MyVillagePostsScreen(c: AppContainer, onBack: () -> Unit, onPlaza: () -> Uni
                 com.bamnat.app.company.VillageReplies.markSeen(c.appContext, list)
             }
         } catch (e: CompanyException) {
-            problem = "인터넷이 없거나 서버가 바빠요. 잠시 뒤 다시 열어 주세요"
+            problem = com.bamnat.app.ui.components.NetWords.BUSY
             null
         }
     }
@@ -127,7 +130,10 @@ fun MyVillagePostsScreen(c: AppContainer, onBack: () -> Unit, onPlaza: () -> Uni
                     else -> {
                         val list = if (tab == 1) written else replies
                         when {
-                            list == null -> item { Text(problem ?: "불러오는 중이에요", style = MaterialTheme.typography.bodyMedium) }
+                            list == null -> item {
+                                if (problem != null) com.bamnat.app.ui.components.OfflineLine(text = problem!!, onRetry = { reload++ })
+                                else Text("불러오는 중이에요", style = MaterialTheme.typography.bodyMedium)
+                            }
                             list.isEmpty() -> item {
                                 Empty(if (tab == 1) "아직 광장에 쓴 글이 없어요" else "아직 단 답글이 없어요", "광장 가기", onPlaza)
                             }

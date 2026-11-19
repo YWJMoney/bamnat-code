@@ -228,6 +228,12 @@ export const flagKeys = (store) => [...FLAG_KEYS, ...[...store.overrides.keys()]
 export const serverEval = (store, key, now = Date.now()) => FL.evalFlag(flagDef(key), store.overrides.get(key) ?? null,
   { now, policy: store.policy, checks: store.checks, phone: null });
 
+/**
+ * 2.0.0 [RVQ-56] [serverEval]'s on, but off for a key whose row is not in this code's book yet (a 처리방침 3.14 row that another
+ * 갈래 brings): code that waits for it is in place and starts the day the row and its date are.
+ */
+export const flagOn = (store, key, now = Date.now()) => Boolean(store && flagDef(key)) && serverEval(store, key, now).on === true;
+
 /** [FLAG-24] Whether one of the six switch flags is forced off now; read on every write it guards. */
 export async function switchOff(env, name) {
   await migrateFlags(env);

@@ -1,4 +1,4 @@
-import { SWITCH_FLAGS, flagDef, flagStore, migrateFlags, serverEval, setFlagForce, switchOff } from "./flags.js";
+import { SWITCH_FLAGS, flagDef, flagOn, flagStore, migrateFlags, serverEval, setFlagForce, switchOff } from "./flags.js";
 import { all, allow, appVersions, audit, batch, given, inquiryStats, iso, item, json, list, metricRange, network, one, overLimit, playVitals, randomId, readJson, refuse, run, sha256, shareStats, sharedCount, stmt, versions } from "./index.js";
 import { SLA_SQL, plainText, readSla } from "./inquiries.js";
 import { DAY, HOUR } from "./units.js";
@@ -391,8 +391,11 @@ export async function usage(request, env) {
   const style = kindOf(body.style);
   const keep = keepRows(body.keep, now);
   const obsStore = style || keep.length ? await store() : null;
+  // 2.0.0 [RVQ-56] 검토 T21-02: 처리방침 3.14(깃발 stats.kind_use)부터는 그날 쓴 기능도 유형별로 세요(날짜·판·유형·기능별 휴대폰 수만).
+  const kindUse = Boolean(style) && flagOn(obsStore, "stats.kind_use", now);
   const kindRowsIn = style && serverEval(obsStore, "stats.kind", now).on
-    ? rows.filter((r) => r[2] === 1 && (r[1] === "open" || r[1].startsWith("life_"))).map((r) => [r[0], style, r[1]]) : [];
+    ? rows.filter((r) => r[2] === 1 && (r[1] === "open" || r[1].startsWith("life_") || (kindUse && !r[1].startsWith("disc_"))))
+      .map((r) => [r[0], style, r[1]]) : [];
   const keepIn = keep.length && serverEval(obsStore, "stats.keep", now).on ? keep : [];
   // AM 1.28 [FLAG-30] Which flags were on (only phones with stats.more on send it): per day, the list sent with the day or,
   // once for the bundle, flagsOn at the top for its newest day. '*' counts the phones that sent a list at all.

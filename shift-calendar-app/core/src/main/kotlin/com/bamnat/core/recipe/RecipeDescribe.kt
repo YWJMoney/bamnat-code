@@ -250,6 +250,18 @@ object RecipeDescribe {
         com.bamnat.core.work.WorkStyle.INVEST -> "투자"
     }
 
+    /**
+     * 2.0.0 [RVO-31] U11b-12·T11b-06: 마을's head line, "[그 유형의 사람]들과": each kind in its own words (not "투자 분들과", "가게 분들과").
+     */
+    fun together(s: com.bamnat.core.work.WorkStyle): String = when (s) {
+        com.bamnat.core.work.WorkStyle.SHIFT -> "교대 근무하는 분들과"
+        com.bamnat.core.work.WorkStyle.DAY -> "직장 다니는 분들과"
+        com.bamnat.core.work.WorkStyle.HOURLY -> "알바하는 분들과"
+        com.bamnat.core.work.WorkStyle.FIELD -> "현장에서 일하는 분들과"
+        com.bamnat.core.work.WorkStyle.BUSINESS -> "가게 사장님들과"
+        com.bamnat.core.work.WorkStyle.INVEST -> "투자하는 분들과"
+    }
+
     /** "적용하면 바뀌는 것", written by the app for the 설명 틀 (만들기 4단계). */
     fun changes(r: Recipe, style: com.bamnat.core.work.WorkStyle? = null): String = r.pieces.joinToString("\n") { "• ${it.kind.label}: ${line(it, amounts = false, style = style)}" }
 }

@@ -152,6 +152,17 @@ test("[RVQ-49] U22b-11: 초대 규칙은 {dry: true}로 몇 분께 몇 건·몇 
   assert.deepEqual(await invitePreview(env, { friends: 3, days: 7, months: 1, capMonths: 1 }, Date.now()), { inviters: 2, rewards: 2, months: 2, capped: 1, more: false });
   await call("POST", "/api/admin/settings/invite", { friends: 3 }, owner);
   assert.deepEqual({ ...DB.db.prepare("SELECT COUNT(*) AS n, SUM(months) AS m FROM rewards WHERE status = 'owed' AND rule_id = 'invite'").get() }, { n: 3, m: 3 });
+  // PC-159: 활동 기록엔 내부 번호(보상 id·초대한 폰 표시) 대신 말로. 옛 줄의 폰 표시 8자는 보이지 않아요.
+  DB.db.prepare("INSERT INTO audit (at, action, target, detail, actor, actor_id) VALUES (?, 'invite_credit', 'iOLDOLDOLDOLDOLDOLDOLD', '3bf6b2f7', '', '')").run(now - DAY);
+  const log = (await call("GET", "/api/admin/audit", undefined, owner)).data.entries.filter((e) => e.action === "invite_credit");
+  assert.equal(log.length, 4);
+  for (const e of log) {
+    assert.equal(e.label, "친구 초대 보상");
+    assert.equal(e.link, "#/rewards");
+    assert.doesNotMatch(e.detail, /[0-9a-f]{8}|inviter/);
+  }
+  assert.equal(log.filter((e) => e.detail === "친구 3명 · 코드 CODE1 · 1개월 드릴 보상으로").length, 3);
+  assert.equal(log.find((e) => e.target === "iOLDOLDOLDOLDOLDOLDOLD").detail, "");
 });
 
 test("[RVQ-49] I22b-02: Claude가 친구 초대·모두의 도구 보상에도 초안(근거)을 적고, 지급은 사람이 눌러요", async () => {

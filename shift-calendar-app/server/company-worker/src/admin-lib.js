@@ -15,6 +15,8 @@ export function adminLib() {
     link: "링크·주소는 적을 수 없어요",
     chat: "단톡방·오픈 채팅 안내는 적을 수 없어요",
     title_first: "부탁 글 그대로는 올리지 않아요. 누구나 알아볼 짧은 제목으로 다듬어 주세요",
+    // 2.0.0 [RVQ-52] 검토 SVC-67: 밤낮 Q&A 공개 글.
+    public_text: "누구나 보는 글이라 AI·자동 답 말, 링크·연락처, 보안 정보, 빈 {…} 칸은 넣을 수 없어요",
     notice_risk: "판이 나갈 때 그대로 나가는 글이라 링크·전화번호·이메일, AI·자동 답이라는 말, 서버·주소 같은 보안 정보는 넣을 수 없어요",
     version_unknown: "Play에서도 서버에서도 아직 못 본 판이에요. 판 번호를 다시 봐 주세요",
     // 2.0.0 [RVD-15][RVD-16] 보상 1년 12달, 이미 바뀐 보상
@@ -1380,7 +1382,7 @@ export function adminLib() {
     play_voided: "Play에서 환불된 결제를 읽음",
     notice_add: "공지 올림", notice_edit: "공지 고침", notice_remove: "공지 내림", switch_off: "기능 끔", switch_on: "기능 다시 켬",
     ops_done: "이달 할 일 마침", ops_undo: "이달 할 일 되돌림", share_remove: "공유 링크 내림",
-    inquiry_bulk: "문의 한 번에 처리", reject_undo: "거절 되돌림", template_edit: "자주 쓰는 답 고침", sla: "답 목표 바꿈",
+    inquiry_bulk: "문의 한 번에 처리", reject_undo: "거절 되돌림", template_edit: "자주 쓰는 답 고침", template_public: "밤낮 Q&A 공개 글 바꿈", sla: "답 목표 바꿈",
     inquiry_copy: "문의 개발로 복사함", rate_set: "임금표 처리", rate_adopted: "임금표 채택", rate_hidden: "임금표 숨김", rate_pending: "임금표 다시 검토로",
     invite_credit: "친구 초대 보상 쌓임", invite_capped: "친구 초대 보상 한도에 닿음", invite_refused: "친구 초대 보상 거절", invite_burst: "친구 초대가 몰려 멈춤",
     invite_settings: "친구 초대 규칙 바꿈",

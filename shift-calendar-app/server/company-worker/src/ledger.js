@@ -578,11 +578,38 @@ async function lineLog(env, key) {
   return { key, items: out.slice(0, 80), undo: undo ? { log: undo.id, to: undo.action === "undo" ? null : undo.before, what: WORK_STATE_NAMES[undo.action] ?? undo.action } : null };
 }
 
-/** 이 관리자(또는 열쇠)가 볼 수 있는 줄인지. */
+/**
+ * 이 관리자(또는 열쇠)가 볼 수 있는 줄인지. 2.0.0 [RVQ-52] 검토 SVC-22: 줄 기록·상태·되돌리기·요약을 부를 때마다 장부 전체(문의 수백 줄과 정리함
+ * 판단)를 다시 만들던 것을, 그 줄 번호로 필요한 줄만 봐요. 문의·개발사항은 장부와 같은 조건(권한·스튜디오 요구 아님·닫힌 지 오래되지 않음)을
+ * 그 id로만 묻고, 그 밖의 할 일(신고·작품 등)은 할 일함 목록만 읽어요.
+ */
 async function visible(env, actor, now, keys) {
-  const { rows } = await ledgerList(env, actor, now, { days: LEDGER.maxDays });
-  const mine = new Set(rows.map((r) => r.key));
-  return keys.filter((k) => mine.has(k));
+  const since = now - LEDGER.maxDays * DAY;
+  const ok = new Set();
+  const ids = (type) => keys.filter((k) => k.startsWith(`${type}:`)).map((k) => k.slice(type.length + 1));
+  const marks = (list) => list.map(() => "?").join(",");
+  const inq = can(actor, "inquiries") ? ids("inquiry").slice(0, 90) : [];
+  if (inq.length) {
+    for (const r of await all(env, `SELECT id FROM inquiries WHERE id IN (${marks(inq)}) AND kind != 'studio' AND (status != 'closed' OR updated_at > ?)`, ...inq, since)) ok.add(`inquiry:${r.id}`);
+  }
+  const dev = can(actor, "inquiries") || can(actor, "dev") ? ids("dev").filter((x) => /^\d{1,12}$/.test(x)).map(Number).slice(0, 90) : [];
+  if (dev.length) {
+    for (const r of await all(env, `SELECT id FROM dev_items WHERE id IN (${marks(dev)}) AND deleted_at IS NULL AND (status IN ('todo', 'doing', 'done') OR updated_at > ?)`, ...dev, since)) ok.add(`dev:${r.id}`);
+  }
+  // 2.0.0 [RVA-50] 스토어 리뷰 줄: 장부와 같은 조건(답 안 한 것은 모두, 답한 것은 기간 안)을 그 번호로만.
+  const rv = can(actor, "inquiries") ? ids("store_review").slice(0, 90) : [];
+  if (rv.length) {
+    for (const r of await all(env, `SELECT id FROM store_reviews WHERE id IN (${marks(rv)}) AND (status <> 'replied' OR reply_at > ?)`, ...rv, since).catch(() => [])) {
+      ok.add(`store_review:${r.id}`);
+    }
+  }
+  // 2.0.0 [RVA-56] 깨진 작품 줄: 장터 건강의 마지막 결과.
+  if (keys.some((k) => k.startsWith("market_broken:"))) for (const x of await marketHealthRows(env, actor).catch(() => [])) ok.add(x.key);
+  const own = (k) => ["inquiry:", "dev:", "store_review:", "market_broken:"].some((p) => k.startsWith(p));
+  if (keys.some((k) => !own(k))) {
+    for (const x of await workList(env, actor, now)) if (x.type !== "inquiry" && x.type !== "dev") ok.add(x.key);
+  }
+  return keys.filter((k) => ok.has(k));
 }
 
 // [RVA-50] Play 리뷰 번호는 'gp:…'처럼 콜론이 있고 길어요.

@@ -96,7 +96,7 @@ export async function incidentSignals(env, now = Date.now(), vitals = null) {
  * 첫 단계 held5가 대표예요. [FIVE_STEPS]는 5분 작업의 모든 이름(1차 이름 five 포함)이라 매시 작업을 셀 때 빼요.
  */
 export const FIVE_STEP = "held5";
-export const FIVE_STEPS = ["five", "held5", "ship5", "surge"];
+export const FIVE_STEPS = ["five", "held5", "ship5", "surge", "push5"]; // 2.0.0 [RVQ-51] push5
 const FIVE_IN = FIVE_STEPS.map(() => "?").join(", ");
 
 const openOne = (env) => one(env, "SELECT * FROM incidents WHERE closed_at IS NULL ORDER BY opened_at DESC LIMIT 1").catch(() => null);
