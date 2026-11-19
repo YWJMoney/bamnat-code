@@ -2608,6 +2608,7 @@ function adminApp(L, BUILD, M) {
         <label for="dev-known">알려진 문제판에</label><select id="dev-known" name="known">${[["0", "여럿이 겪을 때만 보이기"], ["1", "늘 보이기"], ["-1", "보이지 않기"]].map(([k, v]) =>
           `<option value="${k}"${String(d.known ?? 0) === k ? " selected" : ""}>${v}</option>`).join("")}</select>
         <div class="actions"><button class="btn small" type="submit">저장</button></div></form>` : ""}
+      ${d.bundle ? bundleCard(d.bundle) : ""}
       <section class="card"><div class="card-head"><h2>연결된 문의</h2><span class="pill">${d.links}</span></div>
         ${d.inquiries.length ? `<ul class="rows">${d.inquiries.map((q) => `<li class="item"><a class="row-main" href="${href("inquiries", q.id)}">
             <b>${esc(KIND_NAMES[q.kind] ?? "문의")} <span class="pill ${q.status === "open" ? "warn" : q.status === "answered" ? "ok" : ""}">${STATUS_NAMES[q.status] ?? q.status}</span></b>
@@ -2622,6 +2623,23 @@ function adminApp(L, BUILD, M) {
       <section class="card"><h2>기록</h2><p class="hint">누가 언제 무엇을 바꿨는지 모두 남아요.</p>
         <ul class="history">${d.history.map(historyItem).join("")}</ul></section>
     </aside></div>`;
+  }
+
+  /**
+   * 2.0.0 [RVN-24] 검토 I22cc-01: 신호가 개발사항이 될 때 서버가 모은 사건 꾸러미. 한 줄 요약에 숫자, 펼치면 바꾼 것·판별 숫자·문의·리뷰·오류 묶음.
+   * 원인 후보는 자동 장부 처리가 이 꾸러미를 읽고 메모로 적어요.
+   */
+  function bundleCard(b) {
+    const list = (items, line) => (items?.length ? `<ul class="rows">${items.map((x) => `<li><small>${line(x)}</small></li>`).join("")}</ul>` : '<p class="hint">없어요</p>');
+    const v = b.versions;
+    const part = (title, n, body) => `<details><summary>${title} ${n}</summary>${body}</details>`;
+    return `<section class="card"><div class="card-head"><h2>사건 꾸러미</h2><span class="pill">${esc(moment(new Date(b.at).toISOString()))}</span></div>
+      <p class="hint">${esc(b.signal?.title ?? "")} · ${esc(String(b.signal?.now ?? "—"))}${esc(b.signal?.unit ?? "")} (기준 ${esc(String(b.signal?.base ?? "—"))}${esc(b.signal?.unit ?? "")})</p>
+      ${part("그 사이 바꾼 것", b.changes?.length ?? 0, list(b.changes, (c) => `${esc(moment(new Date(c.at).toISOString()))} · ${esc(c.text)}`))}
+      ${v ? part("판별 숫자", v.rows?.length ?? 0, `${v.worse?.length ? `<p class="meta">${v.worse.map(esc).join(" · ")}</p>` : ""}${list(v.rows, (r) => `${esc(r.app)} · 휴대폰-날 ${r.phoneDays} · 문의 ${r.inquiries} · 문제 신고 ${r.bugs}`)}`) : ""}
+      ${part("문의 첫 줄", b.inquiries?.length ?? 0, list(b.inquiries, (q) => `${esc(KIND_NAMES[q.kind] ?? "문의")} · ${esc(q.app || "판 모름")}${q.line ? ` · ${esc(q.line)}` : ""}${can("inquiries") && q.id ? ` <a href="${href("inquiries", q.id)}">열기</a>` : ""}`))}
+      ${part("리뷰 첫 줄", b.reviews?.length ?? 0, list(b.reviews, (r) => `별 ${r.stars} · ${esc(r.app || "판 모름")} · ${esc(r.line)}`))}
+      ${part("서버 오류 묶음", b.errors?.length ?? 0, list(b.errors, (e) => `${e.n}번 · ${esc(e.route)} · ${esc(e.message)}`))}</section>`;
   }
 
   /** One line of an item's history, in words, with what it was before. */
@@ -2657,6 +2675,8 @@ function adminApp(L, BUILD, M) {
       effect: () => `출시 2주 뒤 효과: <b>${esc(({ better: "좋아졌어요", same: "그대로예요", worse: "나빠졌어요", none: "잴 숫자가 없어요" })[x.effect] ?? "")}</b>${x.why ? ` · ${esc(x.why)}` : ""}`,
       basis: () => `요금 기준: ${was({ new: "새 기능", existing: "기존 기능 고침·다듬기", internal: "운영·관리자용" }[x.basis?.[0]] ?? "자동", { new: "새 기능", existing: "기존 기능 고침·다듬기", internal: "운영·관리자용" }[x.basis?.[1]] ?? "자동")}${x.note ? `<blockquote>${esc(x.note)}</blockquote>` : ""}`,
       tier: () => `요금: ${was(TIER_NAMES[x.tier?.[0]] ?? x.tier?.[0], TIER_NAMES[x.tier?.[1]] ?? x.tier?.[1])}${x.note ? `<blockquote>${esc(x.note)}</blockquote>` : ""}`,
+      // 2.0.0 [RVN-24] I22cc-01
+      bundle: () => `사건 꾸러미를 붙였어요 <span class="meta">(바꾼 것 ${x.changes?.length ?? 0} · 문의 ${x.inquiries?.length ?? 0} · 리뷰 ${x.reviews?.length ?? 0} · 오류 ${x.errors?.length ?? 0})</span>`,
     }[h.action]?.() ?? "바뀐 것이 있어요";
     if (h.action === "status" && x.why) return `<li><span class="who">${esc(h.actor || "관리자")}</span><span class="when">${esc(moment(h.at))}</span><span class="what">${what}<blockquote>${esc(x.why)}</blockquote></span></li>`;
     return `<li><span class="who">${esc(h.actor || "관리자")}</span><span class="when">${esc(moment(h.at))}</span><span class="what">${what}</span></li>`;

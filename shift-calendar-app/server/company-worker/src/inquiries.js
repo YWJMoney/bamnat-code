@@ -1692,7 +1692,7 @@ export async function devView(env, row) {
     stmt(env, "SELECT id, at, actor, action, detail FROM dev_history WHERE item_id = ? ORDER BY id DESC", row.id),
   ])).map((r) => r.results);
   const read = can(env.actor, "inquiries");
-  return {
+  const view = {
     ...devItem({ ...row, links: links.filter((l) => l.kind).length, waiting: links.filter((l) => l.status === "open").length, ideas: links.filter((l) => l.kind === "idea").length }),
     statuses: DEV.statuses,
     inquiries: read ? links.filter((l) => l.kind).map((l) => ({
@@ -1708,9 +1708,14 @@ export async function devView(env, row) {
       }
       // The words sent to questions are theirs to read who may read questions, like the previews above.
       if (!read && h.action === "reply" && detail && typeof detail === "object") delete detail.text;
+      // 2.0.0 [RVN-24] I22cc-01: so are the 문의 첫 줄 in a 사건 꾸러미.
+      if (!read && h.action === "bundle" && Array.isArray(detail?.inquiries)) detail.inquiries = detail.inquiries.map(({ line, ...q }) => q);
       return { id: h.id, at: iso(h.at), actor: h.actor, action: h.action, detail };
     }),
   };
+  // I22cc-01: the newest 사건 꾸러미 on top, for 자동 장부 처리 to read alone.
+  view.bundle = view.history.find((h) => h.action === "bundle")?.detail ?? null;
+  return view;
 }
 
 // ---- 자주 쓰는 답, shared by every admin [ADMIN-12] ----

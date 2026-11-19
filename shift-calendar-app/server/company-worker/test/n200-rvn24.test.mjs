@@ -688,3 +688,34 @@ test("[RVN-24] U22c-05 스튜디오 재료: each pack shows who changed it when,
   const log = await DB.prepare("SELECT action FROM audit WHERE action = 'material_undo'").all();
   assert.equal(log.results.length, 3);
 });
+
+test("[RVN-24] I22cc-01 a signal made a dev item brings its 사건 꾸러미: what changed, numbers by version, first lines, error groups", async (t) => {
+  t.mock.timers.enable({ apis: ["Date"], now: NOW });
+  const { call, DB } = server();
+  const h = await signIn(call);
+  const first = NOW - 3 * 3600e3;
+  const signal = { key: "delete-spike::2026-11-18", kind: "delete-spike", subject: "", tone: "bad", title: "앱 삭제가 늘었어요", why: "어제보다 두 배",
+    dev: "앱 삭제가 늘어난 이유 찾기", unit: "명", value: 40, base: 20, now: 40, first, last: NOW, at: first, state: "new" };
+  await DB.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES ('obs_signals', ?)").bind(JSON.stringify({ list: [signal] })).run();
+  // What happened around it: a switch turned off a day before, a 문제 신고 and a 1-star review after, a server error group.
+  await DB.prepare("INSERT INTO audit (at, actor, action, target, detail) VALUES (?, '관리자', 'switch_off', 'PLAZA_WRITE', '광장 쓰기 · 시험')").bind(NOW - DAY).run();
+  await DB.prepare("INSERT INTO inquiries (id, device, kind, info, status, created_at, updated_at) VALUES ('q1', 'h1', 'bug', ?, 'open', ?, ?)")
+    .bind(JSON.stringify({ app: "2.0.0 (54)" }), NOW - 3600e3, NOW - 3600e3).run();
+  await DB.prepare("INSERT INTO inquiry_messages (inquiry_id, sender, text, at) VALUES ('q1', 'user', ?, ?)").bind("달력이 안 열려요\n어제부터요", NOW - 3600e3).run();
+  await DB.prepare("INSERT INTO store_reviews (id, stars, text, app, at, fetched_at) VALUES ('r1', 1, '업데이트 뒤로 느려요', '2.0.0', ?, ?)").bind(NOW - 7200e3, NOW).run();
+  await DB.prepare("INSERT INTO error_groups (sig, route, message, app, first_at, last_at, total) VALUES ('e1', '/api/plaza/posts', 'TypeError: x', '', ?, ?, 7)").bind(NOW - DAY, NOW).run();
+  await DB.prepare("INSERT INTO error_days (day, sig, count) VALUES (?, 'e1', 7)").bind(new Date(NOW + 9 * 3600e3).toISOString().slice(0, 10)).run();
+  const r = await call("POST", "/api/admin/observe/signals", { key: signal.key, act: "dev" }, h);
+  assert.equal(r.status, 200, JSON.stringify(r.data));
+  const item = (await call("GET", `/api/admin/dev/${r.data.signal.devId}`, undefined, h)).data;
+  const b = item.bundle;
+  assert.ok(b, "the item carries its bundle");
+  assert.equal(b.signal.title, "앱 삭제가 늘었어요");
+  assert.equal(b.from, first - 2 * DAY);
+  assert.ok(b.changes.some((c) => c.kind === "switch_off"), JSON.stringify(b.changes));
+  assert.deepEqual(b.inquiries.map((q) => [q.kind, q.app, q.line]), [["bug", "2.0.0", "달력이 안 열려요"]]);
+  assert.deepEqual(b.reviews.map((x) => [x.stars, x.line]), [[1, "업데이트 뒤로 느려요"]]);
+  assert.deepEqual(b.errors.map((e) => [e.route, e.n]), [["/api/plaza/posts", 7]]);
+  assert.ok(item.history.some((x) => x.action === "bundle"));
+  assert.ok(!JSON.stringify(b).includes("h1"), "no install id");
+});

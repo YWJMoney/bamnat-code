@@ -8,6 +8,7 @@ import { MISS_PLACES } from "./growth.js";
 import { shipCode, shippedVersion } from "./desk.js";
 import { DAY, HOUR } from "./units.js";
 import { EFFECT, reachedAt } from "./loop.js";
+import { changeMarks, versionHealth } from "./release-desk.js";
 
 // ---- 1.39 [OBS2-01~08] 관측: 앱 전체 사용자의 유입·활성·이탈·품질과, 거기서 찾은 개선 신호 ----
 //
@@ -1019,6 +1020,45 @@ export async function observeTick(env, now = Date.now()) {
 
 const OBS_ACTS = { dev: "개발사항으로", watch: "지켜보기", dismiss: "아님", reopen: "다시 열기" };
 
+/** 2.0.0 [RVN-24] 검토 I22cc-01: 꾸러미가 보는 때는 신호가 처음 켜지기 이틀 전부터 지금까지예요(그 사이 바꾼 것이 원인 후보). */
+export const BUNDLE = { before: 2 * DAY, rows: 5, line: 80 };
+
+const firstLine = (t, n = BUNDLE.line) => [...String(t ?? "").split("\n").find((x) => x.trim()) ?? ""].slice(0, n).join("").trim();
+
+/**
+ * 2.0.0 [RVN-24] 검토 I22cc-01 '신호가 스스로 근거를 모으는 사건 꾸러미': 신호가 개발사항이 될 때 서버가 그 때의 바꾼 것(판·기능·공지·배포·사고),
+ * 판별 숫자(휴대폰-날·문의·문제 신고와 비율, 나빠짐), 그 사이 문제 신고·문의 첫 줄, 별 셋 아래 리뷰 첫 줄, 많이 난 서버 오류 묶음을 한 JSON으로
+ * 묶어 개발사항 기록(action 'bundle')에 붙여요. 자동 장부 처리는 이 꾸러미만 읽고 원인 후보 셋을 개발 메모로 적어요(docs/ops-desk.md).
+ * 문의 첫 줄은 문의를 읽을 수 있는 관리자에게만 보여요(devView). 설치 번호·네트워크는 넣지 않아요.
+ */
+export async function signalBundle(env, s, now = Date.now()) {
+  const from = Math.min(now, s.first ?? s.at ?? now) - BUNDLE.before;
+  const safe = (p, d) => p.catch(() => d);
+  const [changes, health, rows] = await Promise.all([
+    safe(changeMarks(env, from, now + 1), []),
+    safe(versionHealth(env, now, 7), null),
+    safe(batch(env, [
+      stmt(env, `SELECT i.id, i.kind, json_extract(i.info, '$.app') AS app, i.created_at AS at,
+          (SELECT m.text FROM inquiry_messages m WHERE m.inquiry_id = i.id ORDER BY m.id LIMIT 1) AS first
+        FROM inquiries i WHERE i.created_at >= ? ORDER BY CASE WHEN i.kind IN ('bug', 'problem') THEN 0 ELSE 1 END, i.created_at DESC LIMIT ?`, from, BUNDLE.rows),
+      stmt(env, "SELECT stars, app, text, at FROM store_reviews WHERE at >= ? AND stars <= 3 ORDER BY at DESC LIMIT ?", from, BUNDLE.rows),
+      stmt(env, `SELECT g.sig, g.route, g.message, g.app, SUM(d.count) AS n FROM error_days d JOIN error_groups g ON g.sig = d.sig
+        WHERE d.day >= ? GROUP BY g.sig ORDER BY n DESC LIMIT ?`, kstDay(from), BUNDLE.rows),
+    ]).then((r) => r.map((x) => x.results ?? [])), [[], [], []]),
+  ]);
+  const [inq, reviews, errors] = rows;
+  return {
+    signal: { key: s.key, title: s.title, why: s.why, now: s.now ?? s.value ?? null, base: s.base ?? null, unit: s.unit ?? "", first: s.first ?? null },
+    from, at: now,
+    changes: changes.slice(-20).map((c) => ({ at: c.at, kind: c.kind, text: String(c.text).slice(0, 80) })),
+    versions: health ? { latest: health.latest, prev: health.prev, worse: health.worse, serverErrors: health.serverErrors,
+      rows: health.versions.slice(0, 4).map((v) => ({ app: v.app, phoneDays: v.phoneDays, inquiries: v.inquiries, bugs: v.bugs, bugRate: v.bugRate, inquiryRate: v.inquiryRate })) } : null,
+    inquiries: inq.map((q) => ({ id: q.id, kind: q.kind, app: String(q.app ?? "").split(" ")[0], at: q.at, line: firstLine(q.first) })),
+    reviews: reviews.map((r) => ({ stars: r.stars, app: r.app, at: r.at, line: firstLine(r.text) })),
+    errors: errors.map((e) => ({ sig: e.sig, route: e.route, message: String(e.message).slice(0, 120), app: e.app, n: e.n })),
+  };
+}
+
 /**
  * GET /observe (숫자 권한) · GET /observe/signals · POST /observe/signals {key, act, title?, note?}.
  * act dev는 개발사항을 만들어 그 번호를 신호에 달아요(개발사항 고치기 권한). 아님은 이유(note)를 남겨 30일 동안 같은 신호를 다시 띄우지 않아요.
@@ -1058,10 +1098,13 @@ export async function observeRoute(request, env, path, method, now) {
     const title = plainText(body.title ?? s.dev ?? s.title, DEV.title, "title", true);
     const text = plainText(`관측 신호 ${s.key}\n${s.title}\n${s.why}\n지금 ${s.now ?? s.value}${s.unit} · 기준 ${s.base}${s.unit}${note ? `\n${note}` : ""}`, DEV.body, "body");
     const id = `d${randomId(15)}`;
+    // I22cc-01: 그 때의 근거를 한 꾸러미로 함께 붙여요(사람이 여러 화면을 돌아다니지 않게).
+    const bundle = await signalBundle(env, s, now).catch(() => null);
     await batch(env, [
       stmt(env, `INSERT INTO dev_items (id, title, body, status, reason, created_by, created_by_name, assignee, assignee_name, created_at, updated_at, deleted_at)
         VALUES (?, ?, ?, 'todo', '', ?, ?, NULL, NULL, ?, ?, NULL)`, id, title, text, actor.id, actorName(env), now, now),
       devEvent(env, id, now, "create", { title, from: "관측 신호" }),
+      ...(bundle ? [devEvent(env, id, now, "bundle", bundle)] : []),
     ]);
     Object.assign(s, { state: "dev", devId: id, by: actorName(env), at: now });
   } else if (act === "reopen") Object.assign(s, { state: s.devId ? "dev" : "new", cleared: null, after: null, by: actorName(env), at: now });
