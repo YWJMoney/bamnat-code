@@ -108,7 +108,8 @@ fun GrowSettingsCard(modifier: Modifier = Modifier) {
                     Icon(Icons.Outlined.PersonAdd, null, Modifier.size(20.dp), tint = MaterialTheme.colorScheme.primary)
                     Text(" 친구 초대", style = MaterialTheme.typography.titleSmall)
                 }
-                Text(state.rules.words() + ".", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                // 2.0.0 [RVO-24] PC-133: the one-line promise of 설정 › 프로.
+                Text(com.bamnat.core.tier.InviteRules.promise(state.rules) + ".", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 InviteProgressLines(c)
                 said?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
                 InviteShareAction(c, onMessage = { said = it }, tonal = true) {

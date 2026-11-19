@@ -299,6 +299,9 @@ fun JobDialog(
     var deposit by rememberSaveable { mutableStateOf(amountDigits(initial?.deposit ?: 0)) }
     var depositPaid by rememberSaveable { mutableStateOf(initial?.depositPaid ?: false) }
     var balancePaid by rememberSaveable { mutableStateOf(initial?.balancePaid ?: false) }
+    // 2.0.0 [RVK-46] (검토 MONEY-29·T06a-01) 나눠 받은 돈, kept through a rebuild as text.
+    var paidText by rememberSaveable { mutableStateOf(encodeJobPayments(initial?.payments.orEmpty())) }
+    val payments = decodeJobPayments(paidText, initial?.id ?: 0)
     var remind by rememberSaveable { mutableStateOf(initial?.remindMinutes) }
     var note by rememberSaveable { mutableStateOf(initial?.note.orEmpty()) }
     var days by rememberSaveable { mutableIntStateOf(initial?.days ?: 1) }
@@ -322,7 +325,8 @@ fun JobDialog(
         onDismissRequest = onDismiss,
         unsaved = title.trim() != initial?.title.orEmpty() || client.trim() != initial?.client.orEmpty() ||
             place.trim() != initial?.place.orEmpty() || amount.toAmount() != (initial?.amount ?: 0) || note.trim() != initial?.note.orEmpty() ||
-            costs.toAmount() != (initial?.costs ?: 0) || deposit.toAmount() != (initial?.deposit ?: 0) || onDay != (initial?.date ?: date),
+            costs.toAmount() != (initial?.costs ?: 0) || deposit.toAmount() != (initial?.deposit ?: 0) || onDay != (initial?.date ?: date) ||
+            paidText != encodeJobPayments(initial?.payments.orEmpty()),
         title = { Text(if (initial == null) "${Fmt.dayTitle(onDay)} 일감" else "일감 고치기") },
         text = {
             Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -350,7 +354,10 @@ fun JobDialog(
                     com.bamnat.app.ui.components.CountStepper(days, { days = it }, name = "작업 기간", range = 1..MAX_JOB_DAYS,
                         format = { "${it}일" }, valueWidth = 56.dp)
                 }
-                JobStatusRow(status, paid = balancePaid && (!hasDeposit || depositPaid) && amount.toAmount() > 0) { status = it }
+                // 2.0.0 [RVK-46] 나눠 받은 돈 counts toward 입금 완료 too.
+                val asTyped = Job(date = onDay, title = title, amount = amount.toAmount(), deposit = deposit.toAmount(), depositPaid = hasDeposit && depositPaid,
+                    balancePaid = balancePaid, withholding = withholding, payments = payments)
+                JobStatusRow(status, paid = asTyped.amount > 0 && asTyped.unpaid == 0L) { status = it }
                 AmountField("받을 금액 (전체)", amount, { amount = it })
                 SwitchRow("3.3% 떼고 받아요 (사업소득)", withholding) { withholding = it }
                 // 1.36 U8 (켜면 설명 줄이 생겨 다음 칸이 밀려요): the line is always there, two lines high.
@@ -361,6 +368,9 @@ fun JobDialog(
                 AmountField("선금 (계약금)", deposit, { deposit = it })
                 if (hasDeposit) SwitchRow("선금 받음", depositPaid) { depositPaid = it }
                 SwitchRow(if (hasDeposit) "잔금 받음" else "돈 받음", balancePaid) { balancePaid = it }
+                if (amount.toAmount() > 0 && (!balancePaid || payments.isNotEmpty())) {
+                    JobPaymentsSection(payments, left = asTyped.unpaid, hasDeposit = asTyped.deposit > 0) { paidText = encodeJobPayments(it) }
+                }
                 DueRow(due?.let(LocalDate::parse), opensOn = onDay.plusDays(days.toLong())) { due = it?.toString() }
                 Text("시작 전 알림", style = MaterialTheme.typography.labelLarge)
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -394,6 +404,7 @@ fun JobDialog(
                         endDate = onDay.plusDays(days - 1L).takeIf { days > 1 },
                         costs = costs.toAmount(), withholding = withholding,
                         status = status, units = initial?.units, due = due?.let(LocalDate::parse),
+                        payments = payments,
                     ),
                 )
             }

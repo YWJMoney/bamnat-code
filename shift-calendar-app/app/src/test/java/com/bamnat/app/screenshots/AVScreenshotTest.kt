@@ -34,7 +34,7 @@ import org.robolectric.annotation.GraphicsMode
 
 /**
  * [PHOTO-20][PHOTO-26][PHOTO-28][PHOTO-29][HOURLY-01] 1.30 묶음 AV's screenshots, numbers 1400~1409: the scanner as the first,
- * big button (and '사진 찍기' on a phone without it); the yellow lines looked at one by one ('노란 n줄 확인하기', [맞아요]·
+ * big button (and '사진 찍기' on a phone without it); the yellow lines looked at one by one ('n줄 확인하기', [맞아요]·
  * [고치기]); '+ 한 장 더' for a long payslip; '사진이 달라요' with 통상시급·기준 시간; the 기준 시간 the payslip's lines come to
  * (화학 공장 명세서 꼴, 이름 지움), at 320 wide, 200% text and dark.
  */
@@ -71,25 +71,28 @@ class AVScreenshotTest : ScreenshotBase() {
             var read by remember { mutableStateOf(READ) }
             var unsure by remember { mutableStateOf(setOf(1, 5)) }
             var same by remember { mutableStateOf<Boolean?>(null) }
-            Column(Modifier.padding(16.dp).verticalScroll(rememberScrollState())) {
+            // 2.0.0 [RVL-46] On the page's own surface, as the result screen draws it: without it the dark shot drew the
+            // names black on black.
+            androidx.compose.material3.Surface { Column(Modifier.padding(16.dp).verticalScroll(rememberScrollState())) {
                 SlipCheck(read, unsure, same, fromPhoto = true, onAnswer = { same = it }, onChange = { r, u -> read = r; unsure = u },
                     reviewingAtFirst = reviewing)
-            }
+            } }
         }
         settle()
         then()
     }
 
     @Test fun yellowFirst() = shoot("1402_av_yellow_first", FOLDED, check(false) {
-        reveal("노란 줄 2개만 사진과 맞는지 봐 주세요", exact = false)
-        reveal("노란 2줄 확인하기", exact = true)
+        // 2.0.0 [RVL-46] What the yellow lines are for, in words: here both are amounts.
+        reveal("금액 2줄만 사진과 맞는지 봐 주세요", exact = false)
+        reveal("2줄 확인하기", exact = true)
         assertTrue("노란 줄이 있으면 '네, 같아요' 한 번으로 넘기지 않아요", !sees("네, 같아요", exact = true))
     })
     @Test fun yellowOneByOne() = shoot("1403_av_yellow_one_by_one", FOLDED, check(false) {
-        tapText("노란 2줄 확인하기", exact = true)
+        tapText("2줄 확인하기", exact = true)
         settle()
         reveal("맞아요", exact = true)
-        reveal("노란 줄마다", exact = false)
+        reveal("줄마다 답을 눌러 주세요", exact = false)
     })
     @Test fun yellowAllAnswered() = shoot("1404_av_yellow_answered", FOLDED, check(true) {
         tapText("맞아요", exact = true)

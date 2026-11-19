@@ -49,7 +49,8 @@ class ReviewHShotsTest : ScreenshotBase() {
     }
 
     @Test fun shopLookSample() = all("2_shop_look_sample", WorkStyle.BUSINESS) {
-        open(FeatureRoute(Place.SETTINGS_CALENDAR))
+        // 2.0.0 [RVO-21] 화면과 글자의 묶음은 접혀 있어요: 그 줄을 가리켜 열면 '달력 칸' 묶음이 펴져요.
+        open(FeatureRoute(Place.SETTINGS_CALENDAR, "달력 모양"))
         reveal("칸 높이", across = PAGE_SIDE)
     }
 

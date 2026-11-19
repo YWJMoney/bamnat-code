@@ -292,6 +292,13 @@ class InvestAppTest {
         assertTrue(shown, shown.contains("개 예상"))
         val hidden = com.bamnat.app.invest.InvestNotices.describe(plan, book.copy(settings = book.settings.copy(hideAmounts = true)), day)
         assertFalse(hidden, hidden.contains("50만"))
+        // 2.0.0 [RVK-53] (검토 MONEY-71): how many it buys is hidden too, and the app's own 금액 가리기 counts.
+        assertFalse(hidden, hidden.contains("개 예상"))
+        val c = (androidx.test.core.app.ApplicationProvider.getApplicationContext<android.content.Context>() as com.bamnat.app.BamnatApp).container
+        c.settingsRepository.update { it.copy(hideAmounts = true) }
+        assertTrue(com.bamnat.app.invest.InvestNotices.hidden(c, book).settings.hideAmounts)
+        assertFalse(com.bamnat.app.invest.InvestNotices.describe(plan, com.bamnat.app.invest.InvestNotices.hidden(c, book), day).contains("50만"))
+        c.settingsRepository.update { it.copy(hideAmounts = false) }
         // [INV-08] Alarm 1 and alarm 129, and alarm 1 of two calendars, are three notices.
         val n = com.bamnat.app.invest.InvestNotices
         assertFalse(n.rowNoticeId(1) == n.rowNoticeId(129))
@@ -334,5 +341,10 @@ class InvestAppTest {
         assertTrue(tc.worthReading("com.kakao.talk", "[한국투자증권] 매수 체결 안내", true))
         assertFalse(tc.worthReading("com.kakao.talk", "나 오늘 삼성전자 매수 체결됐어", true))
         assertFalse(tc.worthReading("com.some.card", "스타벅스 5,600원 승인", false))
+        // 2.0.0 [RVK-50] (검토 MONEY-74): 토스·은행 앱의 결제·쇼핑은 가계부로, 'N주'·체결만 투자로.
+        assertFalse(tc.worthReading("viva.republica.toss", "무선 이어폰 2개 구매 완료 · 결제 금액 59,800원", false))
+        assertFalse(tc.worthReading("com.hanabank.ebk.channel.android.hananbank", "상품권 3개 구매 완료 30,000원", false))
+        assertTrue(tc.worthReading("viva.republica.toss", "삼성전자 3주 구매 완료 · 1주당 71,500원", false))
+        assertTrue(tc.worthReading("viva.republica.toss", "애플(AAPL) 매수 체결 · 평균가 \$189.25", false))
     }
 }
