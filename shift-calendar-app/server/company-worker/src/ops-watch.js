@@ -1,4 +1,4 @@
-import { all, audit, one, run } from "./index.js";
+import { all, audit, cfPlan, one, run } from "./index.js";
 import { DAY, HOUR } from "./units.js";
 import { SERVER_VERSION } from "./version.js";
 
@@ -14,7 +14,9 @@ import { SERVER_VERSION } from "./version.js";
 export const WATCH = {
   /** 걸린 시간 칸의 위쪽 끝(ms). 마지막 칸은 그보다 긴 것. */
   edges: [50, 100, 200, 400, 800, 1600, 3200],
-  flushMs: 60 * 1000,
+  // 2.0.0 [RVN-24] 검토 SVC-111: 30 seconds (was a minute), and a 500 is written at the end of its own request (recordRequest marks it), so
+  // an isolate that goes away loses at most half a minute of plain counts and no error.
+  flushMs: 30 * 1000,
   keepStatsDays: 14,
   keepErrorDays: 90,
   /** 이 시간 안에 같은 단계가 성공하지 않았으면 '멈춤'. 매시 작업이라 3시간. */
@@ -86,7 +88,7 @@ export function watchQuantile(buckets, q, max = 0) {
   return max || null;
 }
 
-// ---- 응답 속도: isolate 메모리에 모았다가 1분마다 ----
+// ---- 응답 속도: isolate 메모리에 모았다가 30초마다(500은 그 요청 끝에 바로) ----
 
 const buffers = new WeakMap();
 
@@ -114,7 +116,10 @@ export function recordRequest(env, path, status, ms, now = Date.now()) {
   const t = Math.max(0, Math.round(Number(ms) || 0));
   r.n += 1;
   // 2.0.0 [RVN-03] 500만 오류로 세요(SVC-84): 일부러 쉬게 한 기능의 503과 Play·공유 서버가 안 닿을 때의 502·504는 서버가 망가진 것이 아니에요.
-  if (status === 500) r.err += 1;
+  if (status === 500) {
+    r.err += 1;
+    b.urgent = true;
+  }
   r.sum += t;
   r.max = Math.max(r.max, t);
   r.b[bucketOf(t)] += 1;
@@ -134,15 +139,16 @@ export function recordRequest(env, path, status, ms, now = Date.now()) {
 /** 2.0.0 [RVQ-03] UTC 분('2026-11-12T09:41'). */
 export const verMinute = (ms) => new Date(ms).toISOString().slice(0, 16);
 
-/** 모은 것을 더해요: 1분이 지났거나 [force](정기 작업). */
+/** 모은 것을 더해요: 30초가 지났거나, 500이 섞였거나, [force](정기 작업). */
 export async function flushWatch(env, now = Date.now(), force = false) {
   const b = bufferOf(env);
-  if (!b || (!b.rows.size && !b.vers.size) || (!force && now - b.at < WATCH.flushMs)) return 0;
+  if (!b || (!b.rows.size && !b.vers.size) || (!force && !b.urgent && now - b.at < WATCH.flushMs)) return 0;
   const rows = [...b.rows.values()];
   const vers = [...b.vers.values()];
   b.rows = new Map();
   b.vers = new Map();
   b.at = now;
+  b.urgent = false;
   if (vers.length) {
     const vsql = `INSERT INTO ver_stats (minute, ver, n, err, ms_sum) VALUES (?1, ?2, ?3, ?4, ?5)
       ON CONFLICT (minute, ver) DO UPDATE SET n = n + ?3, err = err + ?4, ms_sum = ms_sum + ?5`;
@@ -472,8 +478,10 @@ export async function sharePing(env) {
 export async function healthBoard(env, now = Date.now()) {
   await flushWatch(env, now, true).catch(() => {});
   const [jobs, speed, errors, size, share] = await Promise.all([jobState(env, now), speedState(env, now), errorState(env, now), dbSize(env), sharePing(env)]);
+  // 2.0.0 [RVN-24] 검토 SVC-111: the plan's database limit (Free is 500 MB, so '5%' of a fixed 10 GB hid a full database).
+  const plan = cfPlan(env);
   return { at: now, jobs, speed, errors: { counts: errors.counts, daily: errors.daily, days: errors.days, top: errors.groups.slice(0, 5) }, dbBytes: size,
-    dbLimit: 10 * 1024 ** 3, share, setup: requiredSetup(env), version: SERVER_VERSION };
+    dbLimit: plan.dbBytes, plan: plan.name, share, setup: requiredSetup(env), version: SERVER_VERSION };
 }
 
 /**
@@ -516,8 +524,10 @@ export async function serverVersions(env) {
   const pick = (b) => ({ version: typeof b?.version === "string" ? b.version.slice(0, 20) : null,
     commit: typeof b?.commit === "string" && /^[0-9a-f]{7,40}$/.test(b.commit) ? b.commit.slice(0, 8) : null,
     id: typeof b?.id === "string" ? b.id.slice(0, 8) : null, at: Number.isFinite(b?.at) ? b.at : null });
+  // 2.0.0 [RVN-24] 검토 SVC-111: the admin token only goes over https (or to the PC's own loopback share server), never over plain http.
+  const safe = /^https:\/\//.test(base) || /^http:\/\/(127\.0\.0\.1|localhost)(:\d{2,5})?$/.test(base);
   try {
-    if (token.length >= 20) {
+    if (safe && token.length >= 20) {
       const res = await fetch(`${base}/api/admin/version`, { headers: { authorization: `Bearer ${token}` }, signal: AbortSignal.timeout(4000) });
       if (res.ok) return { company, share: { ok: true, ...pick(await res.json().catch(() => null)) } };
     }

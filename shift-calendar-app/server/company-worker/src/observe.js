@@ -459,7 +459,8 @@ export function obsRules(b) {
     if (w.n >= 10) {
       push({ kind: "config-drop", src: "server", value: obsRound1(w.now), base: obsRound1(w.before), better: "up", unit: "번/일",
         on: w.before >= 30 * t("config-drop") && w.now <= w.before * 0.6, tone: "bad", sample: Math.round(w.before),
-        caveat: "앱이 받아 둔 것을 쓰면 요청이 줄어도 사용자는 그대로일 수 있어요.",
+        // 2.0.0 [RVN-24] 검토 SVC-111: the count is of /api/config asks, so an app version that reads its settings less often moves it too.
+        caveat: "앱이 받아 둔 것을 쓰면 요청이 줄어도 사용자는 그대로일 수 있어요. 앱의 설정 읽기 주기가 바뀐 판이 퍼지는 중이면 사용자 수가 그대로여도 이 숫자가 바뀌어요(새 판 넘어옴과 같이 봐요).",
         title: `앱이 서버에 오는 횟수가 하루 ${obsRound1(w.now)}번으로 줄었어요(그 전 ${obsRound1(w.before)}번)`,
         why: "늦지 않는 숫자라 오늘 일어난 일을 먼저 보여요. 앱이 서버에 닿지 못하는지(오류·주소)도 봐요.",
         dev: "앱 → 서버 요청 감소 원인 찾기(연결·판·사용자)", to: "#/server" });

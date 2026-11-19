@@ -454,3 +454,49 @@ test("[RVN-24] SVC-106 스튜디오 요구 목록: every card's first five asks 
   assert.equal(one.nets, 2, "'x' is not counted, two clusters are");
   assert.ok(reads > 0 && reads < 20, `reads ${reads}`);
 });
+
+test("[RVN-24] SVC-111 서버 상태: the DB limit of the plan, the share token only over https, a 500 written at once and counts every 30 seconds", async (t) => {
+  t.mock.timers.enable({ apis: ["Date"], now: NOW });
+  const { healthBoard, serverVersions, recordRequest, flushWatch } = await import("../src/ops-watch.js");
+  // (1) The plan's database limit (Free 500 MB, Paid 10 GB, D1_MAX_BYTES wins).
+  const free = server({ CF_PLAN: "free" });
+  await free.call("GET", "/api/terms");
+  const b = await healthBoard(free.env, NOW);
+  assert.deepEqual([b.dbLimit, b.plan], [500 * 1024 ** 2, "Workers Free"]);
+  const paid = server();
+  await paid.call("GET", "/api/terms");
+  assert.equal((await healthBoard(paid.env, NOW)).dbLimit, 10 * 1024 ** 3);
+  const set = server({ D1_MAX_BYTES: "2147483648" });
+  await set.call("GET", "/api/terms");
+  assert.equal((await healthBoard(set.env, NOW)).dbLimit, 2 * 1024 ** 3);
+  // (2) The admin token never goes over plain http to a share server out there.
+  const sent = [];
+  t.mock.method(globalThis, "fetch", async (url, init) => {
+    sent.push([String(url), init?.headers?.authorization ?? null]);
+    return new Response(JSON.stringify({ version: "2.0.0" }), { status: 200, headers: { "content-type": "application/json" } });
+  });
+  const token = "t".repeat(32);
+  await serverVersions({ SHARE_BASE_URL: "http://share.example", SHARE_ADMIN_TOKEN: token });
+  assert.ok(sent.length > 0);
+  assert.ok(sent.every(([, auth]) => auth === null), JSON.stringify(sent));
+  sent.length = 0;
+  await serverVersions({ SHARE_BASE_URL: "https://share.example", SHARE_ADMIN_TOKEN: token });
+  assert.equal(sent[0][1], `Bearer ${token}`);
+  sent.length = 0;
+  await serverVersions({ SHARE_BASE_URL: "http://127.0.0.1:8790", SHARE_ADMIN_TOKEN: token });
+  assert.equal(sent[0][1], `Bearer ${token}`, "the PC's own share server");
+  // (3) Counts wait 30 seconds; a 500 is written at the end of its request.
+  const w = server();
+  await w.call("GET", "/api/terms");
+  await flushWatch(w.env, Date.now(), true);
+  const rows = () => w.DB.db.prepare("SELECT SUM(n) AS n, SUM(err) AS err FROM req_stats WHERE route = '/api/x'").get();
+  recordRequest(w.env, "/api/x", 200, 5, Date.now());
+  assert.equal(await flushWatch(w.env, Date.now() + 10_000), 0, "ten seconds: not yet");
+  recordRequest(w.env, "/api/x", 500, 5, Date.now());
+  assert.ok((await flushWatch(w.env, Date.now() + 11_000)) > 0, "a 500: at once");
+  assert.deepEqual({ ...rows() }, { n: 2, err: 1 });
+  recordRequest(w.env, "/api/x", 200, 5, Date.now());
+  assert.equal(await flushWatch(w.env, Date.now() + 20_000), 0);
+  assert.ok((await flushWatch(w.env, Date.now() + 42_000)) > 0, "thirty seconds after the last write");
+  assert.deepEqual({ ...rows() }, { n: 3, err: 1 });
+});

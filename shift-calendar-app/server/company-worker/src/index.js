@@ -8613,16 +8613,20 @@ const AUTO_REST = { share: 0.9, d1: ["USAGE_STATS", "INQUIRY_PHOTOS"], kv: "SHAR
  * 100만·읽기 1,000만 포함. 유료의 하루 몫은 달 포함량을 30으로 나눈 것이라 넘어도 멈추지 않고 돈이 더 나가요(그래서 90%에서 덜 중요한 것부터
  * 쉬는 규칙은 그대로). CF_PLAN(free|paid, 기본 paid)과 D1_WRITES_PER_DAY·KV_WRITES_PER_DAY로 바꿀 수 있어요.
  */
+// 2.0.0 [RVN-24] 검토 SVC-111: a database's size limit too (D1 limits, 2026-11-12: 10 GB on Paid, 500 MB on Free), so 서버 상태's DB tile
+// is a share of this plan's, not of a fixed 10 GB (D1_MAX_BYTES overrides).
 export const CF_PLANS = {
   paid: { name: "Workers Paid", d1WritesDay: Math.floor(50_000_000 / 30), d1ReadsDay: Math.floor(25_000_000_000 / 30), queriesPerCall: 1000,
-    kvWritesDay: Math.floor(1_000_000 / 30), kvReadsDay: Math.floor(10_000_000 / 30), overage: true },
-  free: { name: "Workers Free", d1WritesDay: 100_000, d1ReadsDay: 5_000_000, queriesPerCall: 50, kvWritesDay: 1000, kvReadsDay: 100_000, overage: false },
+    kvWritesDay: Math.floor(1_000_000 / 30), kvReadsDay: Math.floor(10_000_000 / 30), overage: true, dbBytes: 10 * 1024 ** 3 },
+  free: { name: "Workers Free", d1WritesDay: 100_000, d1ReadsDay: 5_000_000, queriesPerCall: 50, kvWritesDay: 1000, kvReadsDay: 100_000, overage: false,
+    dbBytes: 500 * 1024 ** 2 },
 };
 /** 2.0.0 [RVQ-12] 이 서버의 요금제와 하루 몫(환경 값이 있으면 그것). */
 export function cfPlan(env) {
   const plan = CF_PLANS[String(env?.CF_PLAN ?? "").trim().toLowerCase()] ?? CF_PLANS.paid;
   const n = (v, d) => (Number(v) > 0 ? Number(v) : d);
-  return { ...plan, d1WritesDay: n(env?.D1_WRITES_PER_DAY, plan.d1WritesDay), kvWritesDay: n(env?.KV_WRITES_PER_DAY, plan.kvWritesDay) };
+  return { ...plan, d1WritesDay: n(env?.D1_WRITES_PER_DAY, plan.d1WritesDay), kvWritesDay: n(env?.KV_WRITES_PER_DAY, plan.kvWritesDay),
+    dbBytes: n(env?.D1_MAX_BYTES, plan.dbBytes) };
 }
 /** 2.0.0 [RVQ-12] 하루 몫의 이만큼을 넘으면 관리자에게 알려요(쉬기는 90%). */
 export const BUDGET_WARN = 0.8;
