@@ -70,6 +70,7 @@ class Inbox private constructor(context: Context) {
     private val _suggestOff = MutableStateFlow(mutedPrefs.getBoolean(K_SUGGEST_OFF, false))
     private val restPrefs = app.getSharedPreferences(REST_FILE, Context.MODE_PRIVATE)
     private val _resting = MutableStateFlow(readResting())
+    private val _hushed = MutableStateFlow(readHushed())
 
     /** The rows, the newest first within each section, people first. */
     val rows: StateFlow<List<InboxRow>> = _rows.asStateFlow()
@@ -85,11 +86,31 @@ class Inbox private constructor(context: Context) {
      */
     val resting: StateFlow<Set<String>> = _resting.asStateFlow()
 
+    /**
+     * 2.0.0 갈래 P 6 검토 PC-193 (통합 5차 PC r5-008: 전체 지움 직후 권유에 '공유 안내'가 새로 올라와 '알림 2'): the day of a 전체 지움, no 권유
+     * comes in (the calendar's, or one another feature puts), so the 알림함 stays as empty as it was left. The next day they may come.
+     */
+    val hushed: StateFlow<Boolean> = _hushed.asStateFlow()
+
+    /** PC-193: 전체 지움 on [day]. */
+    fun hush(day: java.time.LocalDate = Today.date()) {
+        restPrefs.edit { putLong(K_HUSHED, day.toEpochDay()) }
+        _hushed.value = readHushed(day)
+    }
+
+    /** PC-193: 되돌리기 of 전체 지움. */
+    fun unhush() {
+        restPrefs.edit { remove(K_HUSHED) }
+        _hushed.value = false
+    }
+
+    private fun readHushed(day: java.time.LocalDate = Today.date()): Boolean = restPrefs.getLong(K_HUSHED, Long.MIN_VALUE) == day.toEpochDay()
+
     /** PC-180: the 권유 [key] was closed: it rests [SUGGEST_REST_DAYS] days from [day]. */
     fun rest(key: String, day: java.time.LocalDate = Today.date()) {
         restPrefs.edit {
             // What finished resting goes, so the file stays small (the kinds closed once stay).
-            restPrefs.all.filter { (k, v) -> k != K_CLOSED_ONCE && (v as? Long)?.let { day.toEpochDay() - it >= SUGGEST_REST_DAYS } != false }
+            restPrefs.all.filter { (k, v) -> k != K_CLOSED_ONCE && k != K_HUSHED && (v as? Long)?.let { day.toEpochDay() - it >= SUGGEST_REST_DAYS } != false }
                 .keys.forEach { remove(it) }
             putLong(key, day.toEpochDay())
         }
@@ -130,7 +151,7 @@ class Inbox private constructor(context: Context) {
     private fun closedOnce(): Set<String> = restPrefs.getStringSet(K_CLOSED_ONCE, emptySet()).orEmpty().toSet()
 
     /** PC-180: read again for a new visit, so a 권유 whose two weeks are over may come (the calendar does it as it opens). */
-    fun refreshResting(): Set<String> = readResting().also { _resting.value = it }
+    fun refreshResting(): Set<String> = readResting().also { _resting.value = it; _hushed.value = readHushed() }
 
     /** PC-180: 되돌리기 of a close. */
     fun unrest(key: String) {
@@ -140,7 +161,7 @@ class Inbox private constructor(context: Context) {
 
     /** The resting keys as of [day] (read again when the app comes back on a later day). */
     fun readResting(day: java.time.LocalDate = Today.date()): Set<String> =
-        restPrefs.all.filter { (_, v) -> (v as? Long)?.let { day.toEpochDay() - it in 0L until SUGGEST_REST_DAYS } == true }.keys
+        restPrefs.all.filter { (k, v) -> k != K_HUSHED && (v as? Long)?.let { day.toEpochDay() - it in 0L until SUGGEST_REST_DAYS } == true }.keys
 
     /** Whether a row of [kind] in [section] may come in. */
     fun allowed(kind: String, section: InboxSection): Boolean =
@@ -149,7 +170,7 @@ class Inbox private constructor(context: Context) {
     /** Puts [row] in; false (and nothing put) when its kind is turned off. A 권유 takes the place of the one before it. */
     fun post(row: InboxRow): Boolean {
         if (!allowed(row.kind, row.section)) return false
-        if (row.section == InboxSection.SUGGEST && row.key in readResting()) return false
+        if (row.section == InboxSection.SUGGEST && (row.key in readResting() || readHushed())) return false
         edit { list ->
             val rest = list.filter { it.key != row.key && !(row.section == InboxSection.SUGGEST && it.section == InboxSection.SUGGEST) }
             listOf(row) + rest
@@ -250,6 +271,8 @@ class Inbox private constructor(context: Context) {
         private const val REST_FILE = "inbox_rest"
         /** PC-180: the 권유 kinds closed with ✕ once; the next ✕ turns the kind off. */
         private const val K_CLOSED_ONCE = "closed_once"
+        /** PC-193: the day of the last 전체 지움 (no new 권유 that day). */
+        private const val K_HUSHED = "hushed_day"
         /** PC-180: how long a closed 권유 rests, as long as 친구 초대 ([com.bamnat.core.guide.GrowNudges.INVITE_EVERY_DAYS]). */
         const val SUGGEST_REST_DAYS = com.bamnat.core.guide.GrowNudges.INVITE_EVERY_DAYS
         private const val K_LABEL = "label:"
