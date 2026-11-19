@@ -1141,7 +1141,7 @@ internal fun awakeNow(posts: List<TalkPost>): Int {
  * do not lead the rest); after, each choice with its share as a bar, the picked one marked, and the same one again takes it back.
  */
 @Composable
-private fun PollView(v: com.bamnat.app.company.Poll, enabled: Boolean, byFormOn: Boolean = false, onPick: (Int) -> Unit) {
+internal fun PollView(v: com.bamnat.app.company.Poll, enabled: Boolean, byFormOn: Boolean = false, onPick: (Int) -> Unit) {
     Column(Modifier.fillMaxWidth().padding(top = 6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
         v.options.forEachIndexed { i, label ->
             val picked = v.mine == i

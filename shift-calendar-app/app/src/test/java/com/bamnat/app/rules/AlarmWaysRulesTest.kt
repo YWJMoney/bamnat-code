@@ -40,6 +40,7 @@ class AlarmWaysRulesTest {
         "alarm/TodayShiftNotice.kt" to Way.ROUGH, // 2.0.0 [RVI-97] the lock screen's 오늘 근무 bar drawn again (a 1-minute window)
         "calendar/DateNoticeAlarm.kt" to Way.ROUGH,
         "commute/CommuteRecorder.kt" to Way.ROUGH,
+        "company/PlazaAfterShift.kt" to Way.ROUGH, // 2.0.0 [RVN-24] [I10ac-03] 근무가 끝난 뒤 '오늘 어땠어요?' 한 줄(처음엔 꺼짐), 몇 분 늦어도 돼요
         "invest/InvestMonthNotice.kt" to Way.ROUGH,
         "memo/MemoMissed.kt" to Way.ROUGH, // 2.0.0 [RVI-99] [RVIB-05] 놓친 일정·근무 중에 온 일정, one card after work
         "memo/MemoRestCard.kt" to Way.ROUGH, // 2.0.0 [RVIB-05] 지난 할 일, one card on the day off morning

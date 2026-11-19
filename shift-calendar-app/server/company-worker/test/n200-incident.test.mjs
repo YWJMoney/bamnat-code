@@ -91,8 +91,8 @@ test("PC-207: 사고를 열고 닫은 뒤에도 '그 전 48시간에 바꾼 것'
   assert.equal(view.past.length, 1, "지난 사고 칸에는 남아요");
 });
 
-test("U22c-02: 활동 기록에서 사고 시작·끝은 무작위 번호가 아니라 '사고 화면'(누르면 사고 화면)으로 보여요", async (t) => {
-  const s = server({ t });
+test("U22c-02: 활동 기록에서 사고 시작·끝은 무작위 번호가 아니라 '사고 화면'(누르면 사고 화면)으로 보여요", async () => {
+  const s = server();
   const h = await signIn(s.call);
   await s.call("GET", "/api/terms");
   const first = await incidentTick(s.env, T, { crash: 0.02, users: 300 });

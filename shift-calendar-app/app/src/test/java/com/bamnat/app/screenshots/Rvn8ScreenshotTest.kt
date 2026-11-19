@@ -92,6 +92,14 @@ class Rvn8ScreenshotTest : ScreenshotBase() {
         settle()
     }
 
+    /** 투표: I voted, no 근무형태 has 5 yet; one line says when the split comes (U22c-08). */
+    private fun poll(): Screen.() -> Unit = page {
+        com.bamnat.app.ui.company.PollView(com.bamnat.app.company.Poll(listOf("국밥", "김치찌개", "샌드위치"), listOf(3, 2, 1), mine = 0),
+            enabled = true, byFormOn = true, onPick = {})
+    }
+
+    @Test fun pollLight() = shoot("rvn_155_poll_split_wait_folded", FOLDED, poll())
+    @Test fun pollDarkBig() = shoot("rvn_156_poll_split_wait_folded_dark_200", Rvn5ScreenshotTest.DARK, 2f, poll())
     @Test fun sameLight() = shoot("rvn_140_same_work_folded", FOLDED, same())
     @Test fun sameDarkBig() = shoot("rvn_141_same_work_folded_dark_200", Rvn5ScreenshotTest.DARK, 2f, same())
     @Test fun sameWide() = shoot("rvn_142_same_work_unfolded", UNFOLDED, same())

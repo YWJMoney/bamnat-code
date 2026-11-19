@@ -259,13 +259,14 @@ private fun PickResult(
                 color = MaterialTheme.colorScheme.onSurfaceVariant)
             if (far) Text("명세서 숫자를 다시 보거나, 기본급만 넣어 지금 방식으로 시작해도 돼요.", style = MaterialTheme.typography.bodyMedium)
             if (far) OutlinedButton(onClick = { onUse(pick, false) }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text("그래도 이 방식 넣기") }
-            else if (WayPick.sure(pick.tried, slip)) {
+            else {
                 // 2.0.0 [RVN-24] I10ac-01: everything agrees: put it in and say 맞아요 in one tap, or put it in alone.
-                Text(WayPickWords.AGREE_NOTE, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                Button(onClick = { onUse(pick, true) }, modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp)) { Text(WayPickWords.USE_AGREE) }
-                TextButton(onClick = { onUse(pick, false) }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text(WayPickWords.USE_ONLY) }
+                // One filled button (condition 2): its words and what it sends change, the other way is a text button.
+                val sure = WayPick.sure(pick.tried, slip)
+                if (sure) Text(WayPickWords.AGREE_NOTE, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Button(onClick = { onUse(pick, sure) }, modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp)) { Text(if (sure) WayPickWords.USE_AGREE else WayPickWords.USE) }
+                if (sure) TextButton(onClick = { onUse(pick, false) }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text(WayPickWords.USE_ONLY) }
             }
-            else Button(onClick = { onUse(pick, false) }, modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp)) { Text(WayPickWords.USE) }
         }
     }
 }
