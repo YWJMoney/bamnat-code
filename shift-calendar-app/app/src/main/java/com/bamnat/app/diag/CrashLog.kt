@@ -39,13 +39,26 @@ object CrashLog {
         installed = true
         val app = context.applicationContext
         val before = Thread.getDefaultUncaughtExceptionHandler()
-        Thread.setDefaultUncaughtExceptionHandler { thread, error ->
-            runCatching { write(app, thread.name, error, Today.millis()) }
-            // 1.32.1 [STAB-10] The stop on the 멈춤 관찰 trail too, with the memory then, written before the process ends.
-            runCatching { Trail.addNow(com.bamnat.core.diag.StopTrail.Kind.CRASH, "sig=${signature(error)} ${Trail.memoryNow()}") }
-            runCatching { noticeOnce(app, signature(error), Today.millis()) }
-            before?.uncaughtException(thread, error)
-        }
+        Thread.setDefaultUncaughtExceptionHandler { thread, error -> stopped(app, thread, error, before) }
+    }
+
+    /**
+     * What the handler [install] sets does, by name so a test can run it.
+     *
+     * 2.0.0 [RVL-87] (검토 PC-197, 통합 5차 PC: 닫힌 뒤 다시 열 때 '화면이 잠깐 멈춘 때 · 2.0초 · CrashLog.install$lambda$3:47'):
+     * that line was Android's own handler ([before]), which waits on the main thread while the system shows '계속 중단됨' and
+     * then ends the process. [MainStall]'s watcher, still running in the dying process, took that wait for a frozen screen
+     * and kept a note; the next start read it out as a freeze. Same code in 1.39.0 (the handler has not changed since 1.32.1).
+     * It never held the next start: this runs only in the process that stops. Now the watcher is told first
+     * ([MainStall.closing]) and keeps no note for the app's own last moments; the stop itself is the crash note.
+     */
+    internal fun stopped(app: Context, thread: Thread, error: Throwable, before: Thread.UncaughtExceptionHandler?) {
+        MainStall.closing = true
+        runCatching { write(app, thread.name, error, Today.millis()) }
+        // 1.32.1 [STAB-10] The stop on the 멈춤 관찰 trail too, with the memory then, written before the process ends.
+        runCatching { Trail.addNow(com.bamnat.core.diag.StopTrail.Kind.CRASH, "sig=${signature(error)} ${Trail.memoryNow()}") }
+        runCatching { noticeOnce(app, signature(error), Today.millis()) }
+        before?.uncaughtException(thread, error)
     }
 
     fun dir(context: Context) = File(context.filesDir, DIR)

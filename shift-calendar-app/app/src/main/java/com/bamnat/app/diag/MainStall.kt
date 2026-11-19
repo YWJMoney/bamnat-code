@@ -33,6 +33,12 @@ object MainStall {
     @Volatile private var watcher: Thread? = null
     @Volatile private var answeredAt = 0L
 
+    /**
+     * 2.0.0 [RVL-87] (검토 PC-197) The app is stopping ([CrashLog.stopped]): the main thread now waits in Android's own handler
+     * for the process to end, which is no frozen screen; no note is kept from here on.
+     */
+    @Volatile var closing = false
+
     // 1.32.1 [STAB-11] The screen drawn again after the app came back, and taps that changed nothing.
     const val NO_DRAW_MS = 3_000L
     const val SLOW_DRAW_MS = 1_500L
@@ -62,7 +68,7 @@ object MainStall {
                     Thread.sleep(TICK_MS)
                     val now = android.os.SystemClock.uptimeMillis()
                     val late = now - answeredAt
-                    if (late >= STALL_MS && noted == null) {
+                    if (late >= STALL_MS && noted == null && !closing) {
                         since = answeredAt
                         val frames = Looper.getMainLooper().thread.stackTrace
                         // 1.36 (PC 확인: 글자 크기를 적용한 직후 첫 그리기가 멈춤 카드에): the whole screen drawn again at a new
@@ -87,7 +93,7 @@ object MainStall {
                     }
                     // [STAB-11] Asked to draw (back on screen) and nothing drawn for a while, whether the main thread is free or not.
                     val waiting = drawWaitFrom
-                    if (waiting > 0 && !noDrawNoted && now - waiting >= NO_DRAW_MS && !keyguardShown(app)) {
+                    if (waiting > 0 && !noDrawNoted && !closing && now - waiting >= NO_DRAW_MS && !keyguardShown(app)) {
                         noDrawNoted = true
                         val frames = Looper.getMainLooper().thread.stackTrace
                         val free = late < STALL_MS

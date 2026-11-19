@@ -1407,8 +1407,10 @@ private fun HelpHome(
         // AG 1.27 [INVITE-12] What a 문의 is for, and that it is answered, said above it.
         if (query.isBlank() && vm.online) Text(com.bamnat.app.ui.grow.FEEDBACK_WORDS, style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant)
+        // 2.0.0 [RVL-89] (검토 HQ-142) The first tab's one filled button: '문의하기' here, and the same name, unfilled, under
+        // '찾는 답이 없나요?' (it was a pale '문의하기' and a filled '새 문의 쓰기' for the same thing).
         if (query.isBlank()) {
-            FilledTonalButton(onClick = { onAsk("", null) }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
+            Button(onClick = { onAsk("", null) }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
                 Icon(if (vm.online) Icons.AutoMirrored.Outlined.Send else Icons.Outlined.Email, null, modifier = Modifier.size(18.dp))
                 Spacer(Modifier.width(8.dp))
                 Text(if (vm.online) "문의하기" else "메일로 문의하기")
@@ -1599,10 +1601,11 @@ private fun AskCard(vm: InquiryViewModel, query: String, list: List<Inquiry>?, o
                 else "메일로 물어보면 개발자가 직접 읽고 메일로 답해요.",
                 style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
-            Button(onClick = onAsk, modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp)) {
+            // 2.0.0 [RVL-89] (검토 HQ-142) The same '문의하기' as at the top, not filled again.
+            OutlinedButton(onClick = onAsk, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
                 Icon(if (vm.online) Icons.Outlined.QuestionAnswer else Icons.Outlined.Email, null, modifier = Modifier.size(18.dp))
                 Spacer(Modifier.width(8.dp))
-                Text(if (vm.online) "새 문의 쓰기" else "메일로 문의하기")
+                Text(if (vm.online) "문의하기" else "메일로 문의하기")
             }
             }
             if (vm.online && !list.isNullOrEmpty()) {
