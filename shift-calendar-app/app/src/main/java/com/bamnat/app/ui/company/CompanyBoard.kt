@@ -1239,7 +1239,7 @@ private fun ProposalEditor(
                     var open by remember { mutableStateOf(false) }
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Box(Modifier.weight(1f)) {
-                            TextButton(onClick = { open = true }) { Text("바꿀 것: ${com.bamnat.app.company.Plaza.CHANGE_FIELDS[c.field]} ▾") }
+                            TextButton(onClick = { open = true }) { Text("바꿀 것: ${com.bamnat.app.company.Plaza.CHANGE_FIELDS[c.field]}\u00A0▾") }
                             DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
                                 com.bamnat.app.company.Plaza.CHANGE_FIELDS.forEach { (k, label) ->
                                     DropdownMenuItem(text = { Text(label) }, onClick = { open = false; onChange(change.toMutableList().also { it[i] = c.copy(field = k) }) })

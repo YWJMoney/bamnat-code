@@ -110,7 +110,7 @@ class RCScreenshotTest : ScreenshotBase() {
         assertTrue("탭별 작품이 골라져 있어요", nodes().any { n -> n.config.getOrNull(androidx.compose.ui.semantics.SemanticsProperties.Text).orEmpty().any { it.text == "🗂 탭별 작품" } &&
             n.config.getOrNull(androidx.compose.ui.semantics.SemanticsProperties.Selected) == true })
         back()
-        assertTrue("뒤로 → the studio", appears("화면: 달력 ▾", exact = true))
+        assertTrue("뒤로 → the studio", appears("화면: 달력\u00A0▾", exact = true))
     } }
 
     /** PC 확인 1.36: a code typed in 찾기 opens that work whatever its 구간; nothing found says what was looked for and offers the other 구간. */
