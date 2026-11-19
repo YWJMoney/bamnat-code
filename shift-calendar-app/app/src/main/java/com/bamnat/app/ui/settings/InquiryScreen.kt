@@ -42,6 +42,7 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.outlined.AddPhotoAlternate
 import androidx.compose.material.icons.outlined.Apartment
 import androidx.compose.material.icons.outlined.BugReport
 import androidx.compose.material.icons.outlined.ChatBubbleOutline
@@ -93,6 +94,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.Role
@@ -508,6 +510,8 @@ private fun InquiryCard(i: Inquiry, unread: Boolean, onClick: () -> Unit) {
 /** Where a question stands, in a few words and a tone. */
 private fun Inquiry.label(unread: Boolean): Pair<String, Tone> = when {
     unread -> "새 답이 왔어요" to Tone.GOOD
+    // 2.0.0 [RVQ-50] 검토 U22b-01: written to again after the answer, so it is the developer's turn again.
+    reopened && waiting -> "다시 물었어요" to Tone.WAIT
     status == "answered" -> "답했어요" to Tone.GOOD
     status == "closed" -> "끝났어요" to Tone.QUIET
     else -> "답을 기다려요" to Tone.WAIT
@@ -950,7 +954,24 @@ private fun InquiryThread(vm: InquiryViewModel, i: Inquiry) {
     val pasted = com.bamnat.core.diag.PastedCheck.start(text) != null
     val problem = replyProblem(vm.problem(text), pasted)
     LaunchedEffect(i.id, text) { vm.saveReply(i.id, text) }
+    // 2.0.0 [RVQ-50] 검토 U22b-01·T22b-05: more to say can bring photos too (a question takes four in all), made small and stripped
+    // on the phone like a new question's; the developer's switch can pause them.
     val scope = rememberCoroutineScope()
+    var photos by remember(i.id) { mutableStateOf<List<ByteArray>>(emptyList()) }
+    val room = com.bamnat.app.company.InquiryPhotos.left(i.photos)
+    val photosOpen = room > 0 && !context.appContainer.flags.paused(com.bamnat.core.ops.ServerSwitch.INQUIRY_PHOTOS)
+    val pickPhotos = androidx.activity.compose.rememberLauncherForActivityResult(
+        androidx.activity.result.contract.ActivityResultContracts.PickMultipleVisualMedia(com.bamnat.app.company.InquiryPhotos.MAX),
+    ) { uris ->
+        scope.launch {
+            val made = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                uris.mapNotNull { com.bamnat.app.company.InquiryPhotos.prepare(context, it) }
+            }
+            photos = (photos + made).take(room)
+            if (made.size < uris.size) error = "열 수 없는 사진은 빼고 붙였어요"
+        }
+    }
+    val fixFlow = i.askFixed || i.fixed != 0
     Column(Modifier.fillMaxSize()) {
         Column(
             Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState()).padding(horizontal = 16.dp),
@@ -973,6 +994,14 @@ private fun InquiryThread(vm: InquiryViewModel, i: Inquiry) {
                     style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
             ProgressSteps(i)
+            // 2.0.0 [RVQ-50] 검토 U22-08: which version fixed it, while this phone is still on an older one (after updating,
+            // 해결됐나요 takes its place).
+            if (i.fixedLine != null && !fixFlow) com.bamnat.app.ui.components.NudgeCard(
+                text = i.fixedLine,
+                tone = com.bamnat.app.ui.theme.Tone.Good,
+                action = "업데이트하기",
+                onAction = { com.bamnat.app.review.PlayPage.open(context) },
+            )
             // [INQ-05] I8: what came of it is in the update; its lines open from here.
             if (i.stage == "released") TextButton(onClick = { com.bamnat.app.NoticeLinks.open(com.bamnat.app.NoticeLinks.Target.WHATS_NEW) }) {
                 Text("새 기능 안내 보기")
@@ -984,7 +1013,6 @@ private fun InquiryThread(vm: InquiryViewModel, i: Inquiry) {
             }
             // 1.39 [LOOP-16] 해결됐나요: after the fixed version reached this phone, two presses say if it worked.
             // PC 1.39 G10 확인: 해결됐나요와 '답이 도움이 됐나요'가 나란히 있으면 헷갈려요. 고친 판 안내를 받은 문의는 해결됐나요만.
-            val fixFlow = i.askFixed || i.fixed != 0
             if (fixFlow) FixedAsk(i, busy, onMore = { more ->
                 error = null
                 vm.more(i.id, more) { sent, why -> if (sent == null) error = why }
@@ -1001,7 +1029,16 @@ private fun InquiryThread(vm: InquiryViewModel, i: Inquiry) {
                     Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error,
                         modifier = Modifier.semantics { liveRegion = LiveRegionMode.Assertive })
                 }
+                if (photos.isNotEmpty()) Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("사진 ${photos.size}장을 함께 보내요", style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.weight(1f))
+                    TextButton(onClick = { photos = emptyList() }) { Text("사진 빼기") }
+                }
                 Row(verticalAlignment = Alignment.CenterVertically) {
+                    if (photosOpen && photos.size < room) IconButton(onClick = {
+                        pickPhotos.launch(androidx.activity.result.PickVisualMediaRequest(
+                            androidx.activity.result.contract.ActivityResultContracts.PickVisualMedia.ImageOnly))
+                    }) { Icon(Icons.Outlined.AddPhotoAlternate, "사진 붙이기, ${room - photos.size}장 더 붙일 수 있어요") }
                     OutlinedTextField(
                         // 붙여 넣은 보고서는 6,000자까지 와요. 잘라 버리지 않아야 '붙여 넣은 기록 빼기'가 앞에 적은 말만 남겨요.
                         value = text,
@@ -1020,7 +1057,7 @@ private fun InquiryThread(vm: InquiryViewModel, i: Inquiry) {
                             scope.launch {
                                 val diag = if (withCheck) check ?: vm.alarmCheck(context, stop) else null
                                 val words = text.ifBlank { if (diag != null) com.bamnat.core.diag.PastedCheck.ONLY_RECORD else text }
-                                vm.more(i.id, words, diag) { sent, why -> if (sent != null) { text = ""; withCheck = false; showCheck = false } else { error = why } }
+                                vm.more(i.id, words, photos, diag) { sent, why -> if (sent != null) { text = ""; photos = emptyList(); withCheck = false; showCheck = false } else { error = why } }
                             }
                         },
                         enabled = (text.isNotBlank() || withCheck) && problem == null && !busy,
@@ -1077,6 +1114,10 @@ private fun ProgressSteps(i: Inquiry) {
         }
     }
 }
+
+/** The one line a narrow screen shows in place of the step names: '2.0.0 반영 · 6단계 중 6단계'. */
+internal fun stepLine(steps: List<Pair<String, String>>, at: Int): String =
+    "${steps[at].second} · ${steps.size}단계 중 ${at + 1}단계"
 
 /**
  * [INQ-02][INQ-05] I8: the steps of a question. A bug or an idea can become work, so it shows all six,

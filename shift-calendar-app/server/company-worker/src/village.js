@@ -5,6 +5,8 @@ import { DAY, HOUR } from "./units.js";
 import { lookOf } from "./recipes.js";
 // 1.36 [GRW-09] 이달의 테마로 고르면 만든 분께 프로 한 달.
 import { rewardContestPicks } from "./maker-reward.js";
+// 2.0.0 [RVQ-55] SVC-16: 마을 쉬기 중에는 공모에 넣지 못해요(빼기는 돼요).
+import { careGate } from "./community-care.js";
 
 export const VILLAGE_SCHEMA = [
   `CREATE TABLE IF NOT EXISTS plaza_topics (room TEXT NOT NULL, week TEXT NOT NULL, text TEXT NOT NULL, at INTEGER NOT NULL,
@@ -18,7 +20,7 @@ export const VILLAGE_SCHEMA = [
   "CREATE INDEX IF NOT EXISTS village_entries_device ON village_entries (device, month)",
 ];
 
-export const VILLAGE_LIMITS = { topic: 60, theme: 40, entriesPerMonth: 3, picks: 3 };
+export const VILLAGE_LIMITS = { topic: 60, theme: 40, entriesPerMonth: 3, picks: 3, entriesPerNetworkDay: 30 };
 /** [RVR-20] An entry whose work is still up and public (joined as r). */
 const SHOWN = "AND r.state = 'visible' AND r.scope = 'public'";
 /** The kinds of work a contest is for (the recipes' style keys). */
@@ -86,6 +88,9 @@ export async function villageRoute(d, request, env, path, url, now) {
       await d.run(env, "DELETE FROM village_entries WHERE month = ? AND style = ? AND code = ? AND device = ?", month, body.style, String(body.code ?? ""), dev);
       return d.json({ month, code: body.code, entered: false });
     }
+    // 2.0.0 [RVQ-55] 검토 SVC-16: 넣는 것은 다른 분께 보이는 글이라 마을 쉬기를 따르고, 한 네트워크가 하루에 넣는 횟수도 막아요.
+    { const held = await careGate(d, env, dev, "community", now); if (held) return held; }
+    { const net = await d.network(request, env, now); const hit = await d.overLimit(env, now, [["network", `ventry|${net.day}`, VILLAGE_LIMITS.entriesPerNetworkDay, DAY]]); if (hit) return hit; }
     const r = typeof body.code === "string" ? await d.one(env, "SELECT owner, state, scope, styles FROM recipes WHERE code = ?", body.code) : null;
     if (!r || r.owner !== dev || r.state !== "visible" || r.scope !== "public") return d.json({ error: "code", field: "code" }, 400);
     if (r.styles && !`,${r.styles},`.includes(`,${body.style},`)) return d.json({ error: "style", field: "style" }, 400);

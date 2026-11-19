@@ -162,6 +162,15 @@ export const RETENTION = [
     prune: "index.js",
   },
   {
+    table: "muted_kept",
+    what: "**2.0.0** 마을 쉬기·신고 누적 쓰기 막기가 덮어쓴 운영자 글쓰기 막기(설치 해시·이유·끝나는 날)",
+    why: "쉬기를 풀 때 그 글쓰기 막기를 되살리기",
+    keep: "끝나는 날",
+    link: "예",
+    device: { device: "sanction" },
+    prune: "index.js",
+  },
+  {
     table: "plaza_results",
     what: "1.23.0 [COMM-11]: 신고한 글·쓴 글이 어떻게 됐는지(가려짐·그대로 둠·지움), 글쓰기 막기 끝남. 설치 번호 해시·글 id·결과·회사 id·시각",
     why: "광장 소식으로 신고한 사람과 쓴 사람에게 알림",
@@ -536,7 +545,7 @@ export const RETENTION = [
   },
   {
     table: "usage_kinds",
-    what: "**1.39** [OBS2-08] 날짜·앱 판·일하는 방식(교대·일근·알바·현장·자영업·투자 중 하나)·이름마다 휴대폰 수. 이름은 첫 열기(`open`)와 진입·머묾(`life_*`)만. 처리방침 3.12 시행일부터 `stats.kind`가 켜진 휴대폰 것만",
+    what: "**1.39** [OBS2-08] 날짜·앱 판·일하는 방식(교대·일근·알바·현장·자영업·투자 중 하나)·이름마다 휴대폰 수. 이름은 첫 열기(`open`)와 진입·머묾(`life_*`)만. 처리방침 3.12 시행일부터 `stats.kind`가 켜진 휴대폰 것만. **2.0.0** 처리방침 3.14(30일 줄) 시행일부터 `stats.kind_use`가 켜지면 그날 쓴 기능 이름도",
     why: "유형마다 어디서 빠지는지(유형별 흐름)",
     keep: "400일",
     link: "**아니요**(설치 ID·IP·시각·회사 없음)",
@@ -781,6 +790,14 @@ export const RETENTION = [
     prune: { where: "(at < ? AND device NOT IN (SELECT device FROM push_phones)) OR at < ?", days: [30, 180] },
   },
   {
+    table: "push_fails",
+    what: "**2.0.0** [RVQ-51] 문의 답 알림이 못 간 문의: 문의 번호·까닭(바쁨·없는 토큰·그 밖)·다시 보낸 수·다음에 볼 때",
+    why: "알림이 못 간 답을 다시 보내고 관리자에게 '알림이 못 갔어요'를 보여 줌",
+    keep: "보내지면 바로, 30일, 문의가 지워질 때 함께",
+    link: "문의 번호로(설치 ID·토큰 없음)",
+    prune: { where: "at < ?", days: 30 },
+  },
+  {
     table: "push_phones",
     what: "**1.36** [PUSH-01] 휴대폰 알림 토큰(FCM)·설치 해시·받은 때(**2.0.0** 앱이 소식·문의 답을 물으면 30일에 한 번 새로 적음, 백업에는 잠가서)",
     why: "문의 답·광장 답 바로 알림",
@@ -809,11 +826,20 @@ export const RETENTION = [
   },
   {
     table: "recipe_counts",
-    what: "**1.34** 작품마다 날마다 적용한 수·7일 뒤에도 쓰는 수",
+    what: "**1.34** 작품마다 날마다 적용한 수·7일 뒤에도 쓰는 수. **2.0.0** 처리방침 3.14(30일 줄) 시행일부터 `market.wear`가 켜지면 '입은 뒤'를 재는 입기 수·그 가운데 30분 안에 뺀 수·글자 크기를 되돌린 수(휴대폰 구별 없음)",
     why: "작품 숫자와 승격 사다리",
     keep: "작품과 함께, **2.0.0** 400일",
     link: "아니요",
     prune: { where: "day < ?", days: 400, day: true },
+  },
+  {
+    table: "recipe_fair",
+    what: "**2.0.0** [RVQ-59] 처리방침 3.15 시행일부터 `market.fair_count`가 켜지면, 하루 표의 지문(표 자체가 아닌 해시 16바이트)·작품 번호·숫자 종류(쓰는 분·7일 유지)·날",
+    why: "작품 숫자를 한 사람 한 번만 세기",
+    keep: "30일",
+    link: "**아니요**(서명할 때 서버가 표를 보지 못해 휴대폰과 이을 수 없음)",
+    prune: { where: "day < ?", days: 30, day: true },
+    backup: false,
   },
   {
     table: "recipe_flags",

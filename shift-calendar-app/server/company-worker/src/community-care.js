@@ -52,6 +52,21 @@ export const CARE_SCHEMA = [
   "CREATE INDEX IF NOT EXISTS care_appeals_inquiry ON care_appeals (inquiry_id)",
 ];
 
+/**
+ * 2.0.0 [RVQ-55] 검토 SVC-37: `muted`는 휴대폰마다 한 줄(이유 하나)이라, 마을 쉬기가 운영자의 말 못 하기를 덮어쓴 뒤 쉬기를 풀면 그 말 못 하기까지
+ * 사라졌어요. 덮어쓰기 전에 다시 셀 수 없는 이유(운영자 말 못 하기)는 `muted_kept`에 두고, 한 이유를 뺄 때는 남은 것(마을 쉬기·신고 누적
+ * 쓰기 막기·둔 것) 가운데 가장 늦게 끝나는 것으로 다시 채워요.
+ */
+export const MUTED_KEPT_SCHEMA = "CREATE TABLE IF NOT EXISTS muted_kept (device TEXT NOT NULL, reason TEXT NOT NULL, until INTEGER NOT NULL, PRIMARY KEY (device, reason))";
+export const keepOtherMute = (d, env, dev, now) => d.stmt(env,
+  "INSERT OR REPLACE INTO muted_kept (device, reason, until) SELECT device, reason, until FROM muted WHERE device = ? AND reason NOT IN ('care', 'strikes') AND until > ?", dev, now);
+export const restoreMute = (d, env, dev, now) => d.stmt(env, `INSERT OR IGNORE INTO muted (device, until, reason)
+  SELECT ?1, until, reason FROM (
+    SELECT MAX(until) AS until, 'care' AS reason FROM care_notes WHERE device = ?1 AND kind = 'community' AND lifted_at IS NULL AND until > ?2
+    UNION ALL SELECT until, 'strikes' FROM write_limits WHERE device = ?1 AND per_day = 0 AND until > ?2
+    UNION ALL SELECT until, reason FROM muted_kept WHERE device = ?1 AND until > ?2
+  ) WHERE until IS NOT NULL ORDER BY until DESC LIMIT 1`, dev, now);
+
 const HOLDS = ["opinion", "community"];
 const isoOf = (ms) => (ms == null ? null : new Date(ms).toISOString());
 
@@ -181,7 +196,7 @@ export async function careHold(d, env, dev, { scope, days, reason, note = null, 
   await d.batch(env, [
     d.stmt(env, `INSERT INTO care_notes (id, device, kind, reason, note, days, at, until, by, ref) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'operator', ?)`,
       id, dev, scope, reason, note, days, now, until, ref),
-    ...(scope === "community" ? [d.stmt(env, `INSERT INTO muted (device, until, reason) VALUES (?, ?, 'care')
+    ...(scope === "community" ? [keepOtherMute(d, env, dev, now), d.stmt(env, `INSERT INTO muted (device, until, reason) VALUES (?, ?, 'care')
       ON CONFLICT (device) DO UPDATE SET until = MAX(muted.until, excluded.until), reason = CASE WHEN excluded.until >= muted.until THEN 'care' ELSE muted.reason END`,
     dev, until)] : []),
     news(d, env, dev, scope, now),
@@ -205,11 +220,8 @@ export async function careLift(d, env, id, now, { undo = false } = {}) {
       d.stmt(env, "DELETE FROM plaza_results WHERE device = ? AND kind = 'care' AND result = ? AND at = ?", r.device, r.kind, r.at)]
     : [d.stmt(env, "UPDATE care_notes SET lifted_at = ? WHERE id = ?", now, id)];
   if (r.kind === "community") {
-    const other = await d.one(env, `SELECT MAX(until) AS until FROM care_notes WHERE device = ? AND kind = 'community' AND lifted_at IS NULL AND until > ? AND id != ?`,
-      r.device, now, id);
-    stmts.push(other?.until
-      ? d.stmt(env, "UPDATE muted SET until = ? WHERE device = ? AND reason = 'care'", other.until, r.device)
-      : d.stmt(env, "DELETE FROM muted WHERE device = ? AND reason = 'care'", r.device));
+    // [RVQ-55] SVC-37: 마을 쉬기 줄을 빼고, 남은 것(다른 마을 쉬기·쓰기 막기·운영자 말 못 하기) 가운데 가장 늦게 끝나는 것으로 다시 채워요.
+    stmts.push(d.stmt(env, "DELETE FROM muted WHERE device = ? AND reason = 'care'", r.device), restoreMute(d, env, r.device, now));
   }
   if (!undo && r.kind !== "warn" && (r.until ?? 0) > now) stmts.push(news(d, env, r.device, "lifted", now));
   await d.batch(env, stmts);
@@ -344,7 +356,7 @@ export async function careList(d, env, now) {
   const all = rows.map((r) => noteView(r, now));
   // 1.39 발굴: 약속한 48시간 안에 답하도록 기다리는 해명을 오래된 것부터, 30일이 지나면 세지 않는 '확인 전' 가려짐 수.
   const [waiting, open] = await Promise.all([
-    d.all(env, "SELECT target, inquiry_id, at FROM care_appeals WHERE result IS NULL ORDER BY at ASC LIMIT 50"),
+    d.all(env, "SELECT target, inquiry_id, at FROM care_appeals WHERE result IS NULL AND inquiry_id <> '' ORDER BY at ASC LIMIT 50"),
     // 2.0.0 [RVQ-27] D·총괄 11-19: 확인 대기는 가려진 것(사람·종류·글) 하나에 한 건(같은 글이 다시 가려져 쌓인 줄은 하나로).
     d.one(env, "SELECT COUNT(DISTINCT device || '|' || kind || '|' || ref) AS n, MIN(at) AS oldest FROM write_strikes WHERE confirmed = 0 AND at > ?", now - 30 * DAY),
   ]);
@@ -404,11 +416,26 @@ export async function careAppeal(d, env, dev, body, now, makeInquiry) {
   if (!t) return { error: "not_found", status: 404 };
   const text = typeof body.text === "string" ? body.text.normalize("NFC").replace(/\r\n?/g, "\n").trim() : "";
   if ([...text].length < APPEAL.min || [...text].length > APPEAL.max) return { error: "text", status: 400 };
-  const had = await d.one(env, "SELECT inquiry_id FROM care_appeals WHERE device = ? AND target = ?", dev, t.key);
-  if (had) return { error: "already", inquiry: had.inquiry_id, status: 409 };
-  const made = await makeInquiry(`[${t.repost ? "다시 보여 주세요" : "해명"}] ${t.text}\n\n${text}`);
-  if (made.error) return made;
-  await d.run(env, "INSERT INTO care_appeals (id, device, target, inquiry_id, at) VALUES (?, ?, ?, ?, ?)", `a${d.randomId(15)}`, dev, t.key, made.id, now);
+  // 2.0.0 [RVQ-55] 검토 SVC-37: 두 번 빨리 누르면 둘 다 '없음'을 읽고 문의를 둘 만들었어요. 자리를 먼저 잡고(UNIQUE device·target),
+  // 잡은 쪽만 문의를 만들어요. 문의를 못 만들면 자리를 돌려놓아요.
+  const id = `a${d.randomId(15)}`;
+  const got = await d.run(env, "INSERT OR IGNORE INTO care_appeals (id, device, target, inquiry_id, at) VALUES (?, ?, ?, '', ?)", id, dev, t.key, now);
+  if (!got?.meta?.changes) {
+    const had = await d.one(env, "SELECT inquiry_id FROM care_appeals WHERE device = ? AND target = ?", dev, t.key);
+    return { error: "already", inquiry: had?.inquiry_id || null, status: 409 };
+  }
+  let made;
+  try {
+    made = await makeInquiry(`[${t.repost ? "다시 보여 주세요" : "해명"}] ${t.text}\n\n${text}`);
+  } catch (e) {
+    await d.run(env, "DELETE FROM care_appeals WHERE id = ?", id);
+    throw e;
+  }
+  if (made.error) {
+    await d.run(env, "DELETE FROM care_appeals WHERE id = ?", id);
+    return made;
+  }
+  await d.run(env, "UPDATE care_appeals SET inquiry_id = ? WHERE id = ?", made.id, id);
   return { inquiry: made.id, answerHours: APPEAL.answerHours };
 }
 
@@ -451,6 +478,7 @@ export async function careAppealDecide(d, env, inquiryId, result, now) {
         d.stmt(env, "UPDATE write_limits SET until = MIN(until, ?), step = MAX(0, step - 1), times = MAX(0, times - 1) WHERE device = ? AND since = ?", now, a.device, since),
         d.stmt(env, "DELETE FROM write_strikes WHERE device = ? AND at <= ? AND at > ?", a.device, since, since - 60 * DAY),
         d.stmt(env, "DELETE FROM muted WHERE device = ? AND reason = 'strikes'", a.device),
+        restoreMute(d, env, a.device, now),
         news(d, env, a.device, "lifted", now),
       );
     } else {

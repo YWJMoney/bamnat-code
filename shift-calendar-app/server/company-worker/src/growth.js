@@ -1,4 +1,4 @@
-import { all, audit, batch, iso, json, one, overLimit, randomId, readJson, run, stmt } from "./index.js";
+import { all, allow, audit, batch, iso, json, one, overLimit, randomId, readJson, run, stmt } from "./index.js";
 import { DAY } from "./units.js";
 import { autoAnswerOrHold, grams, likeness, titleFrom } from "./inbox.js";
 import { grantMakerReward } from "./maker-reward.js";
@@ -317,6 +317,10 @@ export async function growthRoute(request, env, path, url) {
     const place = Object.hasOwn(MISS_PLACES, body?.place) ? body.place : null;
     const word = missWord(body?.q);
     if (!place || !word) return json({ ok: true, counted: false });
+    // 2.0.0 [RVQ-55] 검토 SVC-30: 한 연결이 같은 말을 여러 번 보내 '찾았는데 없던 말' 신호(3번)를 혼자 만들 수 있었어요.
+    // 같은 연결·같은 말은 하루에 한 번만 세요. 기억하는 것은 연결·말·날을 섞은 해시뿐이고 하루 뒤 지워져요(누가 무엇을 찾았는지는 남기지 않아요).
+    const day = Math.floor(now / DAY);
+    if (!(await allow(env, `missone|${await sha(`${ip}|${place}|${word}|${day}`)}`, 1, DAY, now))) return json({ ok: true, counted: false });
     await run(env, `INSERT INTO search_misses (word, place, week, n) VALUES (?, ?, ?, 1)
       ON CONFLICT (word, place, week) DO UPDATE SET n = n + 1`, word, place, missWeek(now));
     return json({ ok: true, counted: true });

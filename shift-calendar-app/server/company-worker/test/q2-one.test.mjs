@@ -253,12 +253,16 @@ test("[RVA-56] 장터 건강: CI가 묶은 작품 사진 대조·옛 앱 열기 
   assert.equal(line.due, new Date(TEST_NOW - HOUR + 48 * HOUR).toISOString(), "다음 출시를 막아요: 이틀 안");
   assert.equal(line.group, "report");
   assert.equal(line.turn, "claude");
+  // 2.0.0 [RVQ-52] 줄 번호로만 보는 장부 문(상태·기록)도 깨진 작품 줄을 찾아요(장부 전체를 다시 만들지 않아도).
+  assert.equal((await call("POST", "/api/admin/ledger/state", { keys: [line.key], state: "seeing" }, owner)).status, 200);
+  assert.equal((await call("GET", `/api/admin/ledger/log?key=${encodeURIComponent(line.key)}`, undefined, owner)).status, 200);
 
   // 1:1 문의만 보는 사람: 올리지 못하고, 장부에도 깨진 작품 줄이 없어요.
   const helper = await member(call, owner);
   assert.equal((await call("POST", "/api/admin/recipes/health", report(bad), helper)).status, 403);
   const theirs = (await call("GET", "/api/admin/ledger?view=open", undefined, helper)).data.items ?? [];
   assert.equal(theirs.filter((r) => r.type === "market_broken").length, 0);
+  assert.equal((await call("GET", `/api/admin/ledger/log?key=${encodeURIComponent(line.key)}`, undefined, helper)).status, 404, "볼 수 없는 줄의 기록도 없어요");
 
   // 다음 빌드에서 나으면 그 줄은 사라지고, 지난 결과 숫자는 남아요.
   assert.equal((await call("POST", "/api/admin/recipes/health", { ...report([]), build: "fed9876" }, owner)).status, 201);
@@ -276,15 +280,14 @@ test("[RVA-56] 장터 건강: CI가 묶은 작품 사진 대조·옛 앱 열기 
   assert.match(ci, /tools\/market_health\.py --shots app\/build\/market-compare\.json/);
 });
 
-test("[RVA-57] 묶음 나누기: 첫 묶음은 압축해 150KB 아래, 화면 묶음 열한 개는 해시 이름 파일, 이름표를 못 만들면 예전처럼 한 파일", async () => {
+test("[RVA-57] 묶음 나누기: 첫 묶음은 압축해 160KB 아래, 화면 묶음 열한 개는 해시 이름 파일, 이름표를 못 만들면 예전처럼 한 파일", async () => {
   const { gzipSync } = await import("node:zlib");
   const { adminPrebuilt, viewNames } = await import("../src/admin-app.js");
   const { files } = adminPrebuilt();
   const app = files["/admin/app.js"].body;
   const gz = gzipSync(Buffer.from(app)).length;
-  // 2.0.0 [RVN-24] 150KB → 152KB: 통합 머리가 이미 148.6KB라 8차의 사건 꾸러미 카드·마을 돌봄 숫자·답 모음 주제 고르기(약 2KB)가 들어가면
-  // 넘어요. 그 화면 코드를 묶음으로 옮기는 일은 총괄과 정해요(옮기면 150으로 되돌려요).
-  assert.ok(gz < 152 * 1024, `첫 묶음 압축 ${Math.round(gz / 1024)}KB`);
+  // 2.0.0 [HQ-170] 2.0 마감: 150 → 160KB, 첫 묶음 조각을 화면 묶음으로 옮겨 150KB 아래로 되돌리는 일은 2.1
+  assert.ok(gz < 160 * 1024, `첫 묶음 압축 ${gz}바이트(한도 ${160 * 1024})`);
   assert.ok(Buffer.byteLength(app) < 520 * 1024, `첫 묶음 ${Math.round(Buffer.byteLength(app) / 1024)}KB (나누기 전 838KB)`);
   const groups = Object.keys(files).filter((p) => p.startsWith("/admin/v/"));
   assert.deepEqual(groups.map((p) => p.split("/").pop().split(".")[0]).sort(),

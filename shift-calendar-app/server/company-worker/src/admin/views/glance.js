@@ -305,9 +305,24 @@ export function glanceViews(A) {
     const row = (r, all = false) => `<tr${all ? ' class="ob-all-row"' : ""}><th scope="row">${esc(r.name)}</th><td data-label="진입">${r.new}대</td>${cell("1일째", r.d1)}${cell("7일째", r.d7)}${cell("30일째", r.d30)}</tr>`;
     return `<section class="card ob-kinds" aria-labelledby="ob-kinds-title"><div class="card-head"><h2 id="ob-kinds-title">유형별 흐름</h2><span class="meta">최근 61일 · 사용 통계 켠 휴대폰</span></div>
       <p class="hint">일하는 방식마다 처음 연 휴대폰이 며칠째 다시 열었는지예요. 한 유형만 낮으면 그 유형의 첫 설정·첫 주를 먼저 봐요.</p>
-      <table class="gl-cohort ob-kind-table"><thead><tr><th scope="col">유형</th><th scope="col">진입</th><th scope="col">1일째</th><th scope="col">7일째</th><th scope="col">30일째</th></tr></thead>
-      <tbody>${k.rows.map((r) => row(r)).join("")}${row(k.all, true)}</tbody></table></section>`;
+      <div class="ob-tw"><table class="gl-cohort ob-kind-table"><thead><tr><th scope="col">유형</th><th scope="col">진입</th><th scope="col">1일째</th><th scope="col">7일째</th><th scope="col">30일째</th></tr></thead>
+      <tbody>${k.rows.map((r) => row(r)).join("")}${row(k.all, true)}</tbody></table></div>${kindUse(k)}</section>`;
   }
+
+  /**
+   * 2.0.0 [RVQ-56] 검토 T21-02: 유형마다 전체보다 절반 아래로 쓰는 기능(최근 30일, 처리방침 3.14 깃발 stats.kind_use가 켜진 뒤 온 숫자만).
+   * 그 유형에 맞지 않아 숨길 것인지, 찾기 어려운 것인지 보는 자리예요. 깃발 전에는 줄이 오지 않아 이 부분이 없어요.
+   */
+  function kindUse(k) {
+    const uses = k.rows.filter((r) => r.use);
+    if (!uses.length) return "";
+    const line = (r) => (r.use.few ? `연 휴대폰이 ${OBS_KIND_USE_MIN}대보다 적어 아직 견주지 않아요`
+      : r.use.low.length ? r.use.low.map((x) => `${x.name} ${x.rate}% (전체 ${x.all}%)`).join(" · ") : "전체와 비슷하게 써요");
+    return `<h3 class="section">유형별로 덜 쓰는 기능</h3>
+      <p class="hint">최근 30일, 그 유형에서 전체의 절반 아래로 쓰는 기능이에요. 그 유형에 맞지 않으면 숨기고, 찾기 어려우면 안내를 고쳐요.</p>
+      <ul class="rows">${uses.map((r) => `<li><div class="row"><span class="row-main"><b>${esc(r.name)}</b><span class="meta">${esc(line(r))}</span></span>${r.use.low.length ? `<span class="pill warn">${r.use.low.length}개</span>` : ""}</div></li>`).join("")}</ul>`;
+  }
+  const OBS_KIND_USE_MIN = 20;
 
   /**
    * 1.39 [OBS2-08] 기능과 머묾: 그날 그 기능을 쓴 휴대폰이 7일 안에 다시 온 비율을, 그날 연 휴대폰 전체(기준)와 견줘요(처리방침 3.12, 깃발 stats.keep).
@@ -321,8 +336,8 @@ export function glanceViews(A) {
       : `<td data-label="기준과" class="${v > 0 ? "up" : v < 0 ? "down" : ""}">${v > 0 ? "+" : ""}${esc(`${v}%p`)}</td>`);
     return `<section class="card ob-keep" aria-labelledby="ob-keep-title"><div class="card-head"><h2 id="ob-keep-title">기능과 머묾</h2><span class="meta">${esc(`${day(k.from)} ~ ${day(k.to)}에 쓴 날`)}</span></div>
       <p class="hint">그 기능을 쓴 휴대폰이 7일 안에 다시 온 비율이에요. 기준은 그날 연 휴대폰 전체 <b>${esc(num(k.base?.rate7, "%"))}</b>. 함께 높다고 그 기능 덕분이라는 뜻은 아니에요.</p>
-      <table class="gl-cohort ob-keep-table"><thead><tr><th scope="col">기능</th><th scope="col">쓴 휴대폰</th><th scope="col">7일 안에</th><th scope="col">기준과</th><th scope="col">30일 안에</th></tr></thead>
-      <tbody>${k.rows.map((r) => `<tr><th scope="row">${esc(r.name)}</th><td data-label="쓴 휴대폰">${r.users}대</td><td data-label="7일 안에">${esc(num(r.rate7, "%"))}</td>${lift(r.lift7)}<td data-label="30일 안에">${esc(num(r.rate30, "%"))}</td></tr>`).join("")}</tbody></table>
+      <div class="ob-tw"><table class="gl-cohort ob-keep-table"><thead><tr><th scope="col">기능</th><th scope="col">쓴 휴대폰</th><th scope="col">7일 안에</th><th scope="col">기준과</th><th scope="col">30일 안에</th></tr></thead>
+      <tbody>${k.rows.map((r) => `<tr><th scope="row">${esc(r.name)}</th><td data-label="쓴 휴대폰">${r.users}대</td><td data-label="7일 안에">${esc(num(r.rate7, "%"))}</td>${lift(r.lift7)}<td data-label="30일 안에">${esc(num(r.rate30, "%"))}</td></tr>`).join("")}</tbody></table></div>
       ${k.small ? `<p class="meta">쓴 휴대폰이 ${OBS_KEEP_MIN}대보다 적은 기능 ${k.small}개는 빼고 보여요.</p>` : ""}</section>`;
   }
   const OBS_KEEP_MIN = 20;

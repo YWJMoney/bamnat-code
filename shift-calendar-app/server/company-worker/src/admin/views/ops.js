@@ -141,7 +141,7 @@ export function opsViews(A) {
         ${r.reply ? `<p class="bubble admin">${esc(r.reply)}<small> · ${esc(r.repliedBy || "Play")} ${esc(dayOf(r.replyAt))}</small></p>` : ""}
         ${r.status !== "replied" ? `<form data-form="review-draft" data-id="${esc(r.id)}"><label class="sr" for="rv-${esc(r.id)}">답 초안</label>
           <textarea id="rv-${esc(r.id)}" name="text" rows="3" maxlength="${d.replyMax}" placeholder="답 초안(${d.replyMax}자 안). Claude가 적어 두기도 해요">${esc(r.draft)}</textarea>
-          ${r.draft ? `<p class="meta">초안 · ${esc(r.draftBy)}</p>` : ""}
+          ${r.draft ? `<p class="meta">초안 · ${esc(r.draftBy)}${r.draftRisk ? ` <span class="pill warn">${esc(r.draftRisk)}</span> 보내기 전에 고쳐 주세요` : ""}</p>` : ""}
           <div class="actions start"><button class="btn small" type="submit">초안 저장</button>
           ${owner && d.ready ? `<button class="btn small primary" type="submit" name="send" value="1">Play로 보내기</button>` : ""}
           ${r.status === "new" ? `<button class="btn small ghost" type="button" data-act="review-seen" data-id="${esc(r.id)}">봤어요</button>` : ""}</div></form>` : ""}
@@ -701,12 +701,24 @@ export function opsViews(A) {
       const text = String(new FormData(form).get("text") ?? "").trim();
       const id = form.dataset.id;
       if (submitter?.name === "send") {
-        confirmBox("Play로 보낼까요?", "보내면 스토어에 공개로 보여요. 고치려면 Play Console에서 해요.", "보내기", async () => {
-          if (await act(() => api(`/reviews/${encodeURIComponent(id)}/reply`, "POST", { text }), "Play로 보냈어요")) reload("storeReviews");
-        }, "primary");
+        // 2.0.0 [RVQ-55] 검토 SVC-38: 서버가 답 글 검사(AI·자동 답 표현, 보안 정보)에 걸린 것을 알려 주면, 까닭을 보이고 한 번 더 물어요.
+        const send = async (confirm) => {
+          try {
+            await api(`/reviews/${encodeURIComponent(id)}/reply`, "POST", { text, ...(confirm ? { confirm: true } : {}) });
+            toast("Play로 보냈어요");
+            reload("storeReviews");
+          } catch (e) {
+            if (e.message !== "reply_risk" || confirm) return act(() => Promise.reject(e));
+            danger({ title: "이 답은 사람이 한 번 더 봐야 해요", text: "스토어 답은 누구나 봐요. 문의 답과 같은 검사에 걸렸어요. 고치려면 '취소'를 누르고 초안을 고쳐 주세요.",
+              rows: [["걸린 것", e.data?.risk ?? ""]], label: "그래도 보내기", run: () => send(true) });
+          }
+        };
+        confirmBox("Play로 보낼까요?", "보내면 스토어에 공개로 보여요. 고치려면 Play Console에서 해요.", "보내기", () => send(false), "primary");
         return;
       }
-      if (await act(() => api(`/reviews/${encodeURIComponent(id)}/draft`, "POST", { text }), "초안을 저장했어요")) reload("storeReviews");
+      const saved = await act(() => api(`/reviews/${encodeURIComponent(id)}/draft`, "POST", { text }),
+        (r) => (r?.risk ? `초안을 저장했어요. 걸린 것(${r.risk})은 보내기 전에 고쳐 주세요` : "초안을 저장했어요"));
+      if (saved) reload("storeReviews");
     },
     "request-new": async (form) => {
       const f = new FormData(form);

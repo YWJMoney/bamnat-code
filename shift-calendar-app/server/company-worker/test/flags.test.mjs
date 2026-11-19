@@ -22,6 +22,8 @@ const CONTRACT = ["billing", "ads", "type.shift", "type.day", "type.hourly", "ty
   "community.care" /* 1.39 CARE-01, on from the 처리방침 3.12 day and 2026-12-09 (2.0.0 RVD-18) */, "community.confirmed" /* 2.0.0 RVD-18, 3.12 */, "plaza.people" /* 1.39 PLZC-10, 3.12 */,
   "sleep.plan_share" /* 1.39 G5-N4, on from the 처리방침 3.12 day */, "stats.setup" /* 1.39 SETUP-20, 3.12 */,
   "stats.life" /* 1.39 STAT2-02, 3.12 */, "stats.kind", "stats.keep" /* 1.39 OBS2-08, 3.12 */, "stats.disc" /* 1.40 DISC-06, 3.13 */,
+  "stats.kind_use" /* 2.0.0 RVQ-56 T21-02, 3.14 30일 줄 */, "market.wear" /* 2.0.0 RVQ-56 SX-03, 3.14 30일 줄 */,
+  "market.fair_count" /* 2.0.0 RVQ-59 I22c-03, 3.15 */,
   "market.cardfonts" /* 2.0.0 RVM-21 MKT-32, 3.13 7일 줄 */];
 
 const MANAGER = { review: "edit", inquiries: "edit", dev: "edit", devStatus: "edit", companies: "edit", rewards: "edit", settings: "edit", community: "edit",

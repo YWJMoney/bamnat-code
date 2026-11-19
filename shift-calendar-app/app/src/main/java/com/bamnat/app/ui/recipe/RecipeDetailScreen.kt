@@ -18,6 +18,8 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
@@ -167,10 +169,17 @@ private fun RecipeDetailPage(vm: RecipeDetailViewModel, onBack: () -> Unit, onRe
         if (doc == null || r == null) {
             androidx.compose.runtime.SideEffect { putBar = null }
             Column(Modifier.fillMaxSize().padding(padding).padding(24.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-                if (s.error != null) {
-                    Text(s.error!!)
+                if (s.error == NEEDS_UPDATE) {
                     // PC 확인 edb46c62 LOW: a work from a newer app cannot open by trying again; only an update helps.
-                    if (!s.error!!.startsWith("새 판 밤낮")) TextButton(onClick = vm::load) { Text("다시 해 보기") }
+                    // 2.0.0 [RVQ-42] 검토 U22b-05: so the one button is the update (조건 7 빈 화면 부품).
+                    val context = androidx.compose.ui.platform.LocalContext.current
+                    val since = appVersionName(s.needsApp)
+                    com.bamnat.app.ui.components.EmptyState(since?.let { "밤낮 ${it}부터 쓸 수 있는 작품이에요" } ?: "새 판 밤낮에서 만든 작품이에요",
+                        "이 앱에서는 열 수 없어요. 앱을 업데이트하면 열려요",
+                        action = "업데이트하기" to { com.bamnat.app.review.PlayPage.open(context) })
+                } else if (s.error != null) {
+                    Text(s.error!!)
+                    TextButton(onClick = vm::load) { Text("다시 해 보기") }
                 } else CircularProgressIndicator()
             }
             return@Scaffold
@@ -665,6 +674,10 @@ private fun MakerCard(doc: com.bamnat.app.recipe.RecipeDoc, onNewVersion: (() ->
         Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
             Text("내 작품", style = MaterialTheme.typography.titleSmall)
             Text(stateLabel(doc.state, doc.scope), style = MaterialTheme.typography.bodyMedium)
+            // 2.0.0 [RVQ-42] 검토 I22bb-06: why some people do not find it in 장터.
+            if (doc.scope == "public") seenFromLine(doc.minApp)?.let {
+                Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
             // 1.36 [GRW-08] PC 8d290ec3: 새싹 첫 사진은 운영자가 본 뒤에 다른 분께 보여요.
             if (doc.photosWaiting > 0) com.bamnat.app.ui.company.StatusChip("사진 확인 중 · 보통 하루 안", com.bamnat.app.ui.company.Tone.WAIT)
             if (doc.photosHeld > 0) {
@@ -857,14 +870,21 @@ private fun TalkSection(s: RecipeDetailViewModel.State, vm: RecipeDetailViewMode
     var deleting by remember { mutableStateOf<RecipePost?>(null) }
     var flagging by remember { mutableStateOf<RecipePost?>(null) }
     // [RVF-03] A reply whose post its writer took back stays, at the top.
-    val tops = talkTops(talk.posts)
-    tops.forEach { p ->
+    // 2.0.0 [RVQ-43] 검토 U22-05: newest first (a talk with a new answer comes up), [TALK_PAGE] at a time, then 이야기 더 보기.
+    val tops = talkTops(talk.posts, newestFirst = true)
+    var shown by rememberSaveable { mutableIntStateOf(TALK_PAGE) }
+    tops.take(shown).forEach { p ->
         PostRow(p, onReply = { replyTo = p }, onLike = { vm.votePost(p.id, if (p.myVote == 1) null else 1) }, onDislike = { disliking = p },
             onDelete = { deleting = p }, onFlag = { flagging = p })
         talk.posts.filter { it.parent == p.id && !it.hidden }.forEach { c ->
             Row { Spacer(Modifier.width(20.dp)); PostRow(c, onReply = null, onLike = { vm.votePost(c.id, if (c.myVote == 1) null else 1) }, onDislike = { disliking = c },
                 onDelete = { deleting = c }, onFlag = { flagging = c }) }
         }
+    }
+    val left = tops.size - shown
+    if (left > 0 || talk.more) OutlinedButton(onClick = { shown += TALK_PAGE; if (left < TALK_PAGE) vm.loadOlderTalk() },
+        modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
+        Text(if (left > 0) "이야기 더 보기 (${left}개 더)" else "지난 이야기 더 보기")
     }
     deleting?.let { p ->
         AlertDialog(onDismissRequest = { deleting = null }, title = { Text("이 글을 지울까요?") },
@@ -906,9 +926,16 @@ private const val TALK_SETTLE_MS = 200L
 internal val TALK_FLAG_REASONS = linkedMapOf("abuse" to "욕설·비방", "personal" to "개인 정보가 있어요", "spam" to "광고·도배", "false" to "일부러 틀린 정보")
 
 /** [RVF-03] The posts that start a line: no parent, or a parent its writer took back. */
-internal fun talkTops(posts: List<RecipePost>): List<RecipePost> =
-    posts.filter { p -> !p.hidden && (p.parent == null || posts.none { it.id == p.parent && !it.hidden }) }
+internal fun talkTops(posts: List<RecipePost>, newestFirst: Boolean = false): List<RecipePost> =
+    posts.filter { p -> !p.hidden && (p.parent == null || posts.none { it.id == p.parent && !it.hidden }) }.let { tops ->
+        // [RVQ-43] U22-05: a talk's place is its latest word (its own or an answer under it).
+        if (!newestFirst) tops else tops.sortedByDescending { t -> posts.filter { it.parent == t.id && !it.hidden }.maxOfOrNull { it.at }?.let { maxOf(it, t.at) } ?: t.at }
+    }
 
+/** [RVQ-43] U22-05: talks shown at a time on a work's page. */
+internal const val TALK_PAGE = 10
+
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun PostRow(p: RecipePost, onReply: (() -> Unit)?, onLike: () -> Unit, onDislike: () -> Unit, onDelete: () -> Unit, onFlag: () -> Unit) {
     Column(Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
@@ -917,7 +944,8 @@ private fun PostRow(p: RecipePost, onReply: (() -> Unit)?, onLike: () -> Unit, o
             p.usingDays?.let { "쓰는 중 ${it}일" },
         ).joinToString(" · "), style = MaterialTheme.typography.labelMedium, color = if (p.maker) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant)
         Text(p.body, style = MaterialTheme.typography.bodyMedium)
-        Row(verticalAlignment = Alignment.CenterVertically) {
+        // Q1 3c (조건 12): four words in a row ran off a folded phone at 200% ('신고' cut to a sliver); the row wraps instead.
+        FlowRow(verticalArrangement = Arrangement.spacedBy(0.dp), itemVerticalAlignment = Alignment.CenterVertically) {
             TextButton(onClick = onLike, enabled = !p.mine) { Text("좋아요 ${p.likes}", fontSize = 12.sp) }
             TextButton(onClick = onDislike, enabled = !p.mine && p.myVote != -1) { Text("안좋아요 ${p.dislikes}", fontSize = 12.sp) }
             onReply?.let { TextButton(onClick = it) { Text("답글", fontSize = 12.sp) } }
