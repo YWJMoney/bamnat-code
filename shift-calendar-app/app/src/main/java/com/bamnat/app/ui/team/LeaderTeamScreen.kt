@@ -315,6 +315,7 @@ private fun TeamBoardScreen(team: Team, calendarId: String, onBack: () -> Unit, 
     var planAsk by remember { mutableStateOf<com.bamnat.core.tier.WorkPlanRules.Need?>(null) }
     var plans by remember { mutableStateOf<List<TeamAuto.Plan>?>(null) }
     var resent by remember { mutableStateOf<Pair<Int, List<Pair<TeamMember, String>>>?>(null) }
+    var soon by remember { mutableStateOf<List<com.bamnat.core.team.TeamReceive.Soon>>(emptyList()) }
     // 1.39 [SPREAD-07] The team's links went out for the first time: the one '다른 팀 리더께도' card may come (below the button).
     LaunchedEffect(linksFor != null) { if (linksFor != null) c.grow.peerDue(com.bamnat.core.guide.Peer.TEAM) }
     // 1.38 [P3-L-15] 병동 전체 보기 (on when this phone holds the team's table link) and 봤어요.
@@ -748,7 +749,10 @@ private fun TeamBoardScreen(team: Team, calendarId: String, onBack: () -> Unit, 
                     made.onSuccess { l ->
                         freshIds = l.fresh
                         // 1.39 G2: a link the server no longer had was made anew, so "팀원 링크는 그대로" would be wrong: the new ones are shown to send.
-                        if (state.state == MonthState.CONFIRMED && !again && l.fresh.isEmpty()) resent = m.version to l.list else linksFor = l.list
+                        if (state.state == MonthState.CONFIRMED && !again && l.fresh.isEmpty()) {
+                            soon = com.bamnat.core.team.TeamReceive.soon(team, b, was, Today.date())
+                            resent = m.version to l.list
+                        } else linksFor = l.list
                     }.onFailure { e ->
                         val why = when ((e as? com.bamnat.app.share.ShareLinkException)?.message) {
                             "days" -> "칸이 모두 빈 팀원이 있어 링크를 못 만들었어요. 칠한 뒤 다시 눌러 주세요."
@@ -1055,11 +1059,10 @@ private fun TeamBoardScreen(team: Team, calendarId: String, onBack: () -> Unit, 
         }, confirmButton = { TextButton(onClick = { plans = null }) { Text("닫기") } })
     }
     resent?.let { (v, list) ->
-        AlertDialog(onDismissRequest = { resent = null }, title = { Text("${v}판으로 다시 확정했어요") }, text = {
-            Text("팀원 링크는 그대로이고, 링크를 열면 바뀐 근무가 보여요. 밤낮 1.39 이상을 쓰는 팀원은 6시간 안에 바뀐 날이 자기 달력과 알람에 들어가요. " +
-                "아이폰 팀원이 링크에서 '캘린더에 넣기'를 해 두었다면 그 캘린더도 몇 시간 안에 따라 바뀌어요. 그 밖의 팀원은 저절로 알지 못하니 '그래도 알리기'로 알려 주세요.", style = MaterialTheme.typography.bodyMedium)
-        }, confirmButton = { TextButton(onClick = { resent = null }) { Text("알겠어요") } },
-            dismissButton = { TextButton(onClick = { resent = null; linksFor = list }) { Text("그래도 알리기") } })
+        // 2.0.0 [RVJ-98] 검토 U05-06: who works differently today or tomorrow is told now, with their own links.
+        ReconfirmedDialog(v, soon, onTellSoon = {
+            send(context, com.bamnat.core.team.TeamReceive.soonMessage(team, soon, list.associate { (m, u) -> m.id to u }), "바뀐 근무 알리기")
+        }, onSendAll = { resent = null; linksFor = list }, onClose = { resent = null })
     }
     linksFor?.let { list ->
         val fresh = list.filter { it.first.id in freshIds }

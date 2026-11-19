@@ -371,7 +371,7 @@ internal fun PayrollScreen(roster: StaffRoster, startMonth: YearMonth? = null,
         importing?.let { (lines, photo, unread) ->
             // How many more fit now: the free 3, or the band held.
             val room = (1..200).takeWhile { gate.staff(counted + it).allowed }.size
-            StaffImportDialog(lines, photo, room, unread, onDismiss = { importing = null }) { add, over ->
+            StaffImportDialog(lines, photo, room, unread, wageOn(ym), place.legalBreaks, onDismiss = { importing = null }) { add, over ->
                 importing = null
                 scope.launch {
                     add.forEach { store.saveStaff(it.member, place.id) }

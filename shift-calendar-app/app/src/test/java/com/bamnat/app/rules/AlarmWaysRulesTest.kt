@@ -47,6 +47,7 @@ class AlarmWaysRulesTest {
         "money/DayCloseNotice.kt" to Way.ROUGH,
         "money/ShiftPreviewNotice.kt" to Way.ROUGH,
         "pay/LeaveReminder.kt" to Way.ROUGH,
+        "share/RosterFollowAhead.kt" to Way.ROUGH, // 2.0.0 [RVJ-99] 리더 링크를 근무 알람 1시간 반 전에 한 번 더 보기(몇 분은 괜찮아요)
         "share/ShareExpiryReminder.kt" to Way.ROUGH,
         "sleep/QuietHold.kt" to Way.ROUGH,
         "tier/TrialNotice.kt" to Way.ROUGH,

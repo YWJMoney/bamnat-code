@@ -188,4 +188,53 @@ class StaffImportTest {
         assertEquals(listOf(150_000L, 2_500_000L), s.rows.map { it.base })
         assertEquals(listOf(StaffTax.DAILY, StaffTax.WAGE), s.rows.map { it.tax })
     }
+
+    // ---- 2.0.0 [RVJ-97] 검토 U05c-02: 가져오기 창에서 줄을 고치기 ----
+
+    @Test fun aLineFixedInTheWindowIsInsuredByTheLawAgainAndItsChecksGo() {
+        val mon = mapOf(DayOfWeek.MONDAY to (LocalTime.of(9, 0) to LocalTime.of(13, 0)))
+        val l = StaffImport.lines(listOf(StaffRow("김알바", WageForm.HOUR, 9_000, mon, doubtful = setOf("base", "tax"))), emptyList(), on)[0]
+        assertEquals(listOf("금액", "2026년 최저시급 10,320원보다 적어요", "소득세 떼는 법"), l.check)
+        assertFalse("주 4시간은 4대보험이 없어요", l.member.insurance.any)
+        assertEquals("4대보험 없음 · 주 15시간 미만이라 빠져요", StaffImport.insuranceSay(l.member))
+
+        val week = (1..5).associate { DayOfWeek.of(it) to com.bamnat.core.work.StaffShift(LocalTime.of(9, 0), LocalTime.of(18, 0)) }
+        val e = StaffImport.Edit.of(l.member).copy(base = 11_000, weekly = week)
+        val fixed = StaffImport.edit(l, e, on)
+        assertEquals("고친 금액·요일의 확인은 지워지고 손대지 않은 소득세는 남아요", listOf("소득세 떼는 법"), fixed.check)
+        assertEquals(11_000L, fixed.member.base)
+        assertTrue("주 40시간은 법대로 넷 다", fixed.member.insurance.pension && fixed.member.insurance.health && fixed.member.insurance.employment)
+        assertEquals("4대보험 법대로 국민연금·건강보험·고용보험", StaffImport.insuranceSay(fixed.member))
+
+        // A sum still under the 최저시급 is said again, first, as the reader said it.
+        assertEquals(listOf("2026년 최저시급 10,320원보다 적어요", "소득세 떼는 법"), StaffImport.edit(l, e.copy(base = 10_000), on).check)
+        // 3.3%: no 4대보험, and the 소득세 line is looked at.
+        val biz = StaffImport.edit(l, e.copy(tax = StaffTax.BIZ), on)
+        assertEquals(emptyList<String>(), biz.check)
+        assertFalse(biz.member.insurance.any)
+        assertEquals("4대보험 없음 · 3.3%로 주는 분은 4대보험이 없어요", StaffImport.insuranceSay(biz.member))
+        // Nothing changed: nothing is taken away.
+        assertEquals(l.check, StaffImport.edit(l, StaffImport.Edit.of(l.member), on).check)
+    }
+
+    @Test fun aSumTypedInMakesTheLineAddable() {
+        val l = StaffImport.lines(listOf(StaffRow("이주방")), emptyList(), on)[0]
+        assertTrue(l.noAmount)
+        val month = StaffImport.edit(l, StaffImport.Edit.of(l.member).copy(form = WageForm.MONTH, base = 2_500_000), on)
+        assertFalse(month.noAmount)
+        assertEquals(listOf("근무 요일·시간이 없어요"), month.check)
+        assertTrue("월급은 넷 다", month.member.insurance.pension && month.member.insurance.employment)
+        assertEquals("4대보험 없음 · 일하는 요일·시간을 넣으면 채워요", StaffImport.insuranceSay(l.member))
+        assertEquals("4대보험 법대로 고용보험 · 한 달 넘게 월 8일 이상이면 국민연금·건강보험도(확인 필요)",
+            StaffImport.insuranceSay(StaffImport.edit(l, StaffImport.Edit.of(l.member).copy(form = WageForm.DAY, base = 150_000, tax = StaffTax.DAILY), on).member))
+    }
+
+    @Test fun anEditIsKeptAsAShortString() {
+        val e = StaffImport.Edit(WageForm.DAY, 150_000, StaffTax.DAILY, mapOf(
+            DayOfWeek.SATURDAY to com.bamnat.core.work.StaffShift(LocalTime.of(10, 0), LocalTime.of(16, 30)),
+            DayOfWeek.MONDAY to com.bamnat.core.work.StaffShift(LocalTime.of(22, 0), LocalTime.of(6, 0))))
+        assertEquals(e, StaffImport.Edit.decode(e.encode()))
+        assertEquals(e.copy(weekly = emptyMap()), StaffImport.Edit.decode(e.copy(weekly = emptyMap()).encode()))
+        assertNull(StaffImport.Edit.decode("HOUR|x"))
+    }
 }
