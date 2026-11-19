@@ -589,6 +589,9 @@ class LegalPagesTest {
         assertTrue(text.contains("운영자가 이용자를 대신해 서버 자료를 찾아 내보내거나 지울 수 있습니다"))
         assertTrue(text.contains("요청을 닫은 날부터 <b>3년</b> 보관한 뒤 지웁니다(운영 기준)"))
         assertTrue(text.contains("<b>열람·삭제 요청을 대신 처리한 기록</b>(6항, ${p30}부터)"))
+        // 10항 운영자 로그인 기기 목록 (이용자 정보 아님, 7일 줄).
+        assertTrue(text.contains("<b>운영자 로그인 기기 목록</b>(10항, ${p7}부터)"))
+        assertTrue(text.contains("로그인한 기기 목록: 기기 이름(브라우저·기기 종류 정도로 줄인 표시), 로그인 방법(비밀번호·패스키)"))
         // 광장 운영 규칙 3: 4항 '금액과 연락처' from the 7-day line, the 2판 kept as (이전).
         assertTrue(rules.contains("운영 규칙 3 · 앱 버전 2.0.0 기준 · 게시일 $posted · 시행일 $p7"))
         assertTrue(rules.contains("<h2>4. 금액과 연락처</h2>"))
