@@ -1058,6 +1058,8 @@ export async function adminInquiryView(env, row) {
     ...view,
     // 1.38 [DESK-09] Claude 답 중 아직 가지 않은 것. 2.0.0 [RVA-41] 사람이 보내야 하는 답에는 왜 그런지(걸린 말)를 같이.
     held: await heldWhy(env, row, await heldOf(env, row.id)),
+    // 2.0.0 [RVA-70] PC-205: 사람이 봐야 하는 문의(돈·법·개인정보 등)인지와 걸린 말. 답 칸 위에 미리 한 줄로 알려요(멈추는 것은 sendGate가 정해요).
+    ...(await (async () => { const a = await needsPersonWhy(env, row.id); return a ? { sendAsk: { key: a.key, name: a.name, ...(a.word ? { word: a.word } : {}) } } : {}; })()),
     events: timeline(events, links),
     typing: typingByInquiry(typing, env.actor?.id ?? "")[row.id] ?? [],
     // AT 1.29 [ADMCP-03][ADMCP-06] 복사함, the phone's short mark and how many other questions it sent.

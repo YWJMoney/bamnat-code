@@ -3921,3 +3921,25 @@ test("[RVA-69] 2.0.0 문의의 기록 부탁은 답장으로, 답장과 함께 �
   assert.ok(!u.$('#main [data-act="crash-draft"]'), "기록이 오면 부탁 답 단추는 없어요");
   assert.deepEqual(u.errors, []);
 });
+
+test("[RVA-70] 사람이 봐야 하는 문의는 답 칸 위에 미리 한 줄로, 멈춘 답을 '지금 보내기'로 풀 때는 걸린 까닭을 한 번 더 말해요", async () => {
+  const { call, env } = await world();
+  // 지어낸 값: 환불을 묻는 문의 하나, 보통 문의 하나.
+  const refund = (await call("POST", "/api/inquiries", { v: 1, device: "test-device-00000083", kind: "question", text: "프로 결제했는데 환불해 주세요" }, from(83))).data.id;
+  const plain = (await call("POST", "/api/inquiries", { v: 1, device: "test-device-00000084", kind: "question", text: "알람 소리를 바꾸고 싶어요" }, from(84))).data.id;
+  const u = await signedIn(env);
+  await u.go(`#/inquiries/${refund}`);
+  await u.settle(30);
+  const line = u.$("#main .composer .send-ask");
+  assert.match(line.textContent, /환불·결제·보상 문의예요\(보낸 분 글의 ‘[^’]+’\)\. 여기서 직접 쓴 답은 바로 가요\./, "최고 관리자에게는 멈추지 않고 알게만");
+  await u.go(`#/inquiries/${plain}`);
+  await u.settle(30);
+  assert.equal(u.$("#main .composer .send-ask"), null, "보통 문의에는 없어요");
+  // 답 글에 AI 표현이 있으면 최고 관리자 답도 멈추고, 풀 때 그 까닭을 말해요.
+  await u.type("#reply", "저는 AI 상담원이에요. 설정 › 알람에서 바꿔요.");
+  await u.click('#main form[data-form="reply"] button.primary[type="submit"]');
+  await u.settle(30);
+  await u.click('#main [data-act="held-send"]');
+  assert.match(u.text("dialog form[data-form=confirm] p"), /^답에 AI·자동 답 표현이 있어 멈췄어요\. 고친 뒤 보내는 게 좋아요\. 보낸 분 앱에 바로 보이고 알림이 가요\.$/);
+  assert.deepEqual(u.errors, []);
+});
