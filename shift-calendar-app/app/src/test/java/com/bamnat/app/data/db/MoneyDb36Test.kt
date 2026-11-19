@@ -68,7 +68,8 @@ class MoneyDb36Test {
                 assertNull("$version: 반복 이체는 어디로가 없던 그대로", fixed.toAccountId)
                 assertNull(UpcomingPayments.entry(fixed, LocalDate.of(2026, 11, 25)).toAccountId)
                 assertEquals("$version: 예산은 모두 매달", listOf(MoneyBudget("", 1_500_000), MoneyBudget("식비", 400_000)), money.allBudgets().sortedBy { it.category })
-                assertEquals(CategoryEdit(MoneyKind.EXPENSE, "운동", 0, false, icon = "", color = 0), money.allCategories().single())
+                // 2.0.0 [RVK-60] (DB 37) with the id its name stands for.
+                assertEquals(CategoryEdit(MoneyKind.EXPENSE, "운동", 0, false, icon = "", color = 0, id = "n.x.운동"), money.allCategories().single())
                 val book = money.book.first()
                 assertEquals("$version: 받을 돈 그대로", 1, book.receivables.size)
                 assertTrue("$version: 줄 돈은 없음", book.payables.isEmpty())

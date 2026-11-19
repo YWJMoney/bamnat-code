@@ -59,6 +59,12 @@ data class MoneyEntryEntity(
     @ColumnInfo(defaultValue = "''") val receipt: String = "",
     /** Version 22 [LEDX-17]: 유이자 할부's yearly fee in percent; 0 for 무이자. */
     @ColumnInfo(defaultValue = "0") val installmentRate: Double = 0.0,
+    /**
+     * Version 37 (2.0.0 [RVK-60] 검토 I06ab-01): the category's fixed id ([com.bamnat.core.money.CategoryIds]); [category] is its name as
+     * shown. [partIds]: each split part's id, one a line in [parts]' order, kept apart so an older app reading [parts] sees what it knew.
+     */
+    @ColumnInfo(defaultValue = "''") val categoryId: String = "",
+    @ColumnInfo(defaultValue = "''") val partIds: String = "",
 )
 
 /** [LEDG-05] Money leaving on a set day each month; version 9. [LEDG-09] Any repeating line since version 15. */
@@ -80,6 +86,8 @@ data class FixedCostEntity(
     @ColumnInfo(defaultValue = "NULL") val endEpochDay: Long? = null,
     /** Version 36 (2.0.0 [RVK-46] 검토 MONEY-07): where a repeating 이체 goes (적금·대출 상환·내 다른 계좌); null for spending or income. */
     @ColumnInfo(defaultValue = "NULL") val toAccountId: Long? = null,
+    /** Version 37 (2.0.0 [RVK-60] 검토 I06ab-01): the category's fixed id; [category] is its name. */
+    @ColumnInfo(defaultValue = "''") val categoryId: String = "",
 )
 
 /** [LEDG-08] Cash, bank accounts, cards and pay balances; version 15. */
@@ -153,6 +161,14 @@ data class MoneyCategoryEntity(
     /** Version 36 (2.0.0 [RVK-46] 검토 U06a-15·I06aa-09): the icon and color the user picked ([com.bamnat.core.money.CategoryEdit]); "" and 0 for the usual. */
     @ColumnInfo(defaultValue = "''") val icon: String = "",
     @ColumnInfo(defaultValue = "0") val color: Int = 0,
+    /**
+     * Version 37 (2.0.0 [RVK-60] 검토 I06ab-01): the fixed id lines point at ([com.bamnat.core.money.CategoryIds]), what the sums read it
+     * as ([com.bamnat.core.money.CategoryRole.name], "" for none), 집·일 ([com.bamnat.core.money.CategoryScope.code]) and its 표준 묶음.
+     */
+    @ColumnInfo(defaultValue = "''") val uid: String = "",
+    @ColumnInfo(defaultValue = "''") val role: String = "",
+    @ColumnInfo(defaultValue = "0") val scope: Int = 0,
+    @ColumnInfo(defaultValue = "''") val std: String = "",
 )
 
 /** [LEDG-04] The category the user gave a place; it wins over the built-in dictionary. Version 9. */
@@ -461,6 +477,17 @@ interface MoneyDao {
     @Query("UPDATE fixed_costs SET category = :to WHERE kind = :kind AND category = :from")
     suspend fun renameInFixed(kind: String, from: String, to: String)
 
+    /** 2.0.0 [RVK-60] Lines of category [id] show its name [name]. */
+    @Query("UPDATE money_entries SET category = :name WHERE kind = :kind AND categoryId = :id AND category != :name")
+    suspend fun nameLinesOf(kind: String, id: String, name: String)
+
+    @Query("UPDATE fixed_costs SET category = :name WHERE kind = :kind AND categoryId = :id AND category != :name")
+    suspend fun nameFixedOf(kind: String, id: String, name: String)
+
+    /** 2.0.0 [RVK-60] Lines with a split part that may be category [id]'s. */
+    @Query("SELECT * FROM money_entries WHERE kind = :kind AND partIds LIKE '%' || :id || '%'")
+    suspend fun entriesWithPartId(kind: String, id: String): List<MoneyEntryEntity>
+
     @Query("UPDATE category_rules SET category = :to WHERE category = :from")
     suspend fun renameInRules(from: String, to: String)
 
@@ -484,12 +511,13 @@ fun MoneyEntryEntity.toModel() = MoneyEntry(
     toAccountId = toAccountId,
     memo = memo,
     tags = tags.split(',').map { it.trim() }.filter { it.isNotEmpty() },
-    parts = decodeParts(parts),
+    parts = decodeParts(parts, partIds),
     installments = installments.coerceAtLeast(1),
     fixedId = fixedId,
     proof = proof,
     receipt = receipt,
     installmentRate = installmentRate.coerceIn(0.0, MoneyEntry.MAX_INSTALLMENT_RATE),
+    categoryId = categoryId,
 )
 
 fun MoneyEntry.toEntity(createdAt: Long = Today.millis()) = MoneyEntryEntity(
@@ -499,17 +527,26 @@ fun MoneyEntry.toEntity(createdAt: Long = Today.millis()) = MoneyEntryEntity(
     accountId = accountId, toAccountId = toAccountId, memo = memo, tags = tags.joinToString(","),
     parts = encodeParts(parts), installments = installments.coerceAtLeast(1), fixedId = fixedId,
     proof = proof, receipt = receipt, installmentRate = installmentRate.coerceIn(0.0, MoneyEntry.MAX_INSTALLMENT_RATE),
+    categoryId = categoryId, partIds = encodePartIds(parts),
 )
 
 /** [LEDG-11] Split parts as "amount<TAB>category" lines; categories never hold a tab ([MoneyCategories.clean]). */
 fun encodeParts(parts: List<EntryPart>): String = parts.joinToString("\n") { "${it.amount}\t${it.category}" }
 
-fun decodeParts(text: String): List<EntryPart> = if (text.isBlank()) emptyList() else text.lines().mapNotNull { line ->
-    val tab = line.indexOf('\t')
-    if (tab <= 0) return@mapNotNull null
-    val amount = line.substring(0, tab).toLongOrNull() ?: return@mapNotNull null
-    val category = line.substring(tab + 1).trim()
-    if (category.isEmpty()) null else EntryPart(category, amount)
+/** 2.0.0 [RVK-60] The parts' ids, one a line in the same order; "" when none has one. */
+fun encodePartIds(parts: List<EntryPart>): String = if (parts.all { it.id.isEmpty() }) "" else parts.joinToString("\n") { it.id }
+
+/** [LEDG-11] [encodeParts] read back; 2.0.0 [RVK-60] with each part's id from [ids] ([encodePartIds]) where it has one. */
+fun decodeParts(text: String, ids: String = ""): List<EntryPart> {
+    if (text.isBlank()) return emptyList()
+    val idLines = if (ids.isEmpty()) emptyList() else ids.lines()
+    return text.lines().mapIndexedNotNull { i, line ->
+        val tab = line.indexOf('\t')
+        if (tab <= 0) return@mapIndexedNotNull null
+        val amount = line.substring(0, tab).toLongOrNull() ?: return@mapIndexedNotNull null
+        val category = line.substring(tab + 1).trim()
+        if (category.isEmpty()) null else EntryPart(category, amount, idLines.getOrNull(i)?.trim().orEmpty())
+    }
 }
 
 fun FixedCostEntity.toModel() = FixedCost(
@@ -519,6 +556,7 @@ fun FixedCostEntity.toModel() = FixedCost(
     accountId = accountId, auto = auto,
     start = startEpochDay?.let(LocalDate::ofEpochDay), end = endEpochDay?.let(LocalDate::ofEpochDay),
     toAccountId = toAccountId?.takeIf { kind == MoneyKind.TRANSFER.name && it != accountId },
+    categoryId = categoryId,
 )
 
 fun FixedCost.toEntity() = FixedCostEntity(
@@ -526,6 +564,7 @@ fun FixedCost.toEntity() = FixedCostEntity(
     repeat = repeat.name, monthOfYear = monthOfYear, accountId = accountId, auto = auto,
     startEpochDay = start?.toEpochDay(), endEpochDay = end?.toEpochDay(),
     toAccountId = toAccountId?.takeIf { kind == MoneyKind.TRANSFER && it != accountId },
+    categoryId = categoryId,
 )
 
 fun MoneyAccountEntity.toModel() = MoneyAccount(
@@ -547,9 +586,17 @@ fun MoneyBudgetEntity.toModel() = MoneyBudget(category, amount, MoneyBudget.mont
 fun MoneyBudget.toEntity() = MoneyBudgetEntity(category, amount, MoneyBudget.code(month))
 
 fun MoneyCategoryEntity.toModel(): CategoryEdit? =
-    runCatching { MoneyKind.valueOf(kind) }.getOrNull()?.let { CategoryEdit(it, name, position, hidden, icon, color) }
+    runCatching { MoneyKind.valueOf(kind) }.getOrNull()?.let {
+        CategoryEdit(it, name, position, hidden, icon, color, id = uid, scope = com.bamnat.core.money.CategoryScope.of(scope), standard = std)
+    }
 
-fun CategoryEdit.toEntity() = MoneyCategoryEntity(kind.name, name, position, hidden, icon, color)
+/** 2.0.0 [RVK-60] A category without an id takes its name's ([com.bamnat.core.money.CategoryIds.of]); its role follows from the id. */
+fun CategoryEdit.toEntity(): MoneyCategoryEntity {
+    val uid = id.ifEmpty { com.bamnat.core.money.CategoryIds.of(kind, name) }
+    return MoneyCategoryEntity(kind.name, name, position, hidden, icon, color, uid = uid,
+        role = com.bamnat.core.money.CategoryIds.role(uid)?.name.orEmpty(), scope = scope.code,
+        std = standard.ifEmpty { com.bamnat.core.money.CategoryIds.standard(uid) })
+}
 
 fun JobEntity.toModel(payments: List<JobPaymentEntity> = emptyList()) = Job(
     id = id, date = LocalDate.ofEpochDay(epochDay), title = title, client = client, place = place,

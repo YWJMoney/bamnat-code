@@ -189,7 +189,7 @@ private fun Leaf(b: Block, onSet: (Block) -> Unit) {
 private fun OpChip(b: Block.Op, onPick: (String) -> Unit) {
     var open by remember { mutableStateOf(false) }
     val family = if (b.op in FormulaBlocks.COMPARE) FormulaBlocks.COMPARE else FormulaBlocks.MATH
-    AssistChip(onClick = { open = true }, label = { Text(FormulaBlocks.opWord(b.op) + " ▾") })
+    AssistChip(onClick = { open = true }, label = { Text(FormulaBlocks.opWord(b.op) + "\u00A0▾") })
     DropdownMenu(open, { open = false }) {
         family.forEach { (k, w) -> DropdownMenuItem(text = { Text("$w ($k)") }, onClick = { open = false; onPick(k) }) }
     }

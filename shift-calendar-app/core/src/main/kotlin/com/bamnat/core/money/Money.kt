@@ -45,6 +45,11 @@ data class MoneyEntry(
     val receipt: String = "",
     /** 1.32 [LEDX-17] 유이자 할부: the card's yearly 할부 수수료율 in percent (e.g. 15.9); 0 for 무이자. */
     val installmentRate: Double = 0.0,
+    /**
+     * 2.0.0 [RVK-60] (검토 I06ab-01, DB 37) The category's fixed id ([CategoryIds]); [category] is only its name now. Empty for a line
+     * made in code and not saved yet: the ledger gives it the id its name stands for when it is saved.
+     */
+    val categoryId: String = "",
 ) {
     /** What a list shows as the line's name. */
     // 1.32 [LEDX-12] A company's legal name shows as the shop people know (우아한형제들 → 배달의민족); [merchant] keeps what the text said.
@@ -54,19 +59,29 @@ data class MoneyEntry(
      * [LEDG-11] What each category got of this line, signed like [amount]: the parts of a split
      * payment, or the whole amount under [category]. The pieces always add up to [amount].
      */
-    fun shares(): List<Pair<String, Long>> {
-        if (parts.isEmpty()) return listOf(category to amount)
+    fun shares(): List<Pair<String, Long>> =
+        pieces().groupBy { it.category }.map { (c, list) -> c to list.sumOf { it.amount } }
+
+    /** [shares] piece by piece, each with its category's id (2.0.0 [RVK-60]), signed like [amount]; nothing of 0. */
+    fun pieces(): List<EntryPart> {
+        if (parts.isEmpty()) return listOf(EntryPart(category, amount, categoryId))
         val sign = if (amount < 0) -1 else 1
         val whole = kotlin.math.abs(amount)
         val given = parts.filter { it.amount > 0 }
         val sum = given.sumOf { it.amount }
         // Parts that no longer add up (the amount was changed elsewhere) leave the difference with the main category.
-        val fixed = if (sum == whole) given else given + EntryPart(category, whole - sum)
-        return fixed.filter { it.amount != 0L }.groupBy { it.category }.map { (c, list) -> c to sign * list.sumOf { it.amount } }
+        val fixed = if (sum == whole) given else given + EntryPart(category, whole - sum, categoryId)
+        return fixed.filter { it.amount != 0L }.map { it.copy(amount = sign * it.amount) }
     }
 
     /** [LEDG-11] What [c] got of this line; 0 when it has no part of it. */
     fun shareOf(c: String): Long = shares().filter { it.first == c }.sumOf { it.second }
+
+    /** 2.0.0 [RVK-60] Whether the line is [role]'s (급여, 카드값 …), whatever the user calls that category now. */
+    fun isRole(role: CategoryRole): Boolean = CategoryIds.matches(categoryId, category, role)
+
+    /** 2.0.0 [RVK-60] What [role]'s category got of this line, signed like [amount], by id: a renamed 급여 is still pay. */
+    fun shareOf(role: CategoryRole): Long = pieces().filter { CategoryIds.matches(it.id, it.category, role) }.sumOf { it.amount }
 
     /** Spread over more than one category. */
     val isSplit: Boolean get() = shares().size > 1
@@ -78,7 +93,7 @@ data class MoneyEntry(
 }
 
 /** [LEDG-11] One category's piece of a split payment, in whole won. */
-data class EntryPart(val category: String, val amount: Long)
+data class EntryPart(val category: String, val amount: Long, val id: String = "")
 
 /**
  * A booked job for field and freelance work [WORK-02]: who, where, when and for how much, with
@@ -271,7 +286,9 @@ object MoneyCategories {
         val mine = edits.filter { it.kind == kind }.sortedWith(compareBy({ it.position }, { it.name }))
         if (mine.isEmpty()) return base
         val touched = mine.map { it.name }.toSet()
-        val shown = mine.filter { !it.hidden }.map { it.name } + base.filter { it !in touched }
+        // 2.0.0 [RVK-60] A built-in one the user renamed (식비 → 외식) is theirs by its id: its first name does not come back as well.
+        val touchedIds = mine.map { it.id.ifEmpty { CategoryIds.of(kind, it.name) } }.toSet()
+        val shown = mine.filter { !it.hidden }.map { it.name } + base.filter { it !in touched && CategoryIds.of(kind, it) !in touchedIds }
         return shown.filter { it != OTHER }.distinct() + OTHER
     }
 
@@ -279,14 +296,21 @@ object MoneyCategories {
     fun clean(name: String): String = name.replace(Regex("[\\t\\n\\r,#]"), " ").replace(Regex("\\s+"), " ").trim().take(MAX_NAME)
 
     /**
-     * 2.0.0 [RVK-08] (검토 MONEY-03·T06a-10): categories the sums find by their name — 급여 (받은 급여가 예상 대신 들어감),
-     * 카드값·내 계좌 (이체의 '어디로', 카드값 맞추기, 앞으로의 돈), 이자·금융·대출 상환 (빚 갚기), 기타. Renamed, 급여 would be
-     * counted twice and 카드값 would stop filling itself, so they keep their names; hiding one is still fine.
+     * 2.0.0 [RVK-08] (검토 MONEY-03·T06a-10) kept 급여·카드값·내 계좌·이자·금융·대출 상환 from being renamed, as the sums found them by
+     * name. 2.0.0 [RVK-60] (검토 I06ab-01, DB 37) The sums find them by their fixed id ([CategoryRole]) now, so only 기타, where every
+     * line without a home goes, keeps its name.
      */
-    val FIXED_NAMES: Set<String> = setOf(SALARY, "카드값", "내 계좌", INTEREST, "대출 상환", OTHER)
+    val FIXED_NAMES: Set<String> = setOf(OTHER)
 
-    /** False for a category the sums read by name ([FIXED_NAMES]). */
+    /** False for 기타 ([FIXED_NAMES]). */
     fun renamable(name: String): Boolean = name !in FIXED_NAMES
+
+    /**
+     * 2.0.0 [RVK-60] Whether [name] may be given to the category with [id] of [kind]: never the first name of a 급여·카드값-like
+     * category ([CategoryRole]) that is another one's, so 부수입 renamed 급여 is never taken for pay.
+     */
+    fun nameFree(kind: MoneyKind, name: String, id: String): Boolean =
+        CategoryRole.entries.none { it.kind == kind && it.builtin == name && it.id != id }
 
     /**
      * 2.0.0 [RVK-09] (검토 MONEY-02): renames given as (이름 → 새 이름) all meant at once, put in an order that never lands
@@ -315,6 +339,12 @@ object MoneyCategories {
 data class CategoryEdit(
     val kind: MoneyKind, val name: String, val position: Int, val hidden: Boolean = false,
     val icon: String = "", val color: Int = 0,
+    /** 2.0.0 [RVK-60] (검토 I06ab-01, DB 37) Its fixed id ([CategoryIds]); empty for one written before 37 or by code, which takes its name's. */
+    val id: String = "",
+    /** 2.0.0 [RVK-60] 집 or 일·가게 money, when the user said ([CategoryScope.FOLLOW] when not). */
+    val scope: CategoryScope = CategoryScope.FOLLOW,
+    /** 2.0.0 [RVK-60] The 표준 묶음 the user joined it to ("" for none; a built-in one has its own, [CategoryIds.standard]). */
+    val standard: String = "",
 )
 
 /**
@@ -337,8 +367,12 @@ object CategoryLook {
     fun color(place: Int): Int = place.takeIf { it in 1..COLORS } ?: 0
 
     /** The user's look for each name that has one; a name in two kinds takes the first that set one. */
+    // 2.0.0 [RVK-60] A built-in one renamed (급여 → 월급) is here too, so it keeps its usual picture under its new name.
     fun byName(edits: List<CategoryEdit>): Map<String, CategoryEdit> =
-        edits.filter { icon(it.icon).isNotEmpty() || color(it.color) != 0 }.groupBy { it.name }.mapValues { it.value.first() }
+        edits.filter { icon(it.icon).isNotEmpty() || color(it.color) != 0 || renamedBuiltin(it) != null }.groupBy { it.name }.mapValues { it.value.first() }
+
+    /** 2.0.0 [RVK-60] The first name of a built-in category [edit] renamed; null when it is not one or keeps that name. */
+    fun renamedBuiltin(edit: CategoryEdit): String? = CategoryIds.builtinName(edit.id)?.takeIf { it != edit.name }
 }
 
 data class CategoryTotal(val category: String, val amount: Long, val count: Int)
@@ -436,7 +470,7 @@ object MoneyCalculator {
         val s = sales.filter { inMonth(it.date) }
         val incomes = e.filter { it.kind == MoneyKind.INCOME }
         // [LEDG-11] A split income line counts its 급여 share as pay, the rest as other income ([com.bamnat.core.pay.PayGaps]).
-        val salary = incomes.sumOf { it.shareOf(MoneyCategories.SALARY) }
+        val salary = incomes.sumOf { it.shareOf(CategoryRole.SALARY) }
         val spent = e.filter { it.kind == MoneyKind.EXPENSE }
         // [LEDG-11] A split payment counts under each of its categories.
         val shares = spent.flatMap { it.shares() }

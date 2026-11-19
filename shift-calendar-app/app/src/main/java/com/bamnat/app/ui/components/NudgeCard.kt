@@ -1,6 +1,7 @@
 package com.bamnat.app.ui.components
 
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -29,6 +30,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.layout.AlignmentLine
+import androidx.compose.ui.layout.FirstBaseline
+import androidx.compose.ui.layout.Measured
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.liveRegion
@@ -36,6 +40,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.unit.dp
 import com.bamnat.app.ui.theme.Tone
+import kotlin.math.roundToInt
 import com.bamnat.app.ui.theme.color
 
 /**
@@ -123,8 +128,20 @@ fun NudgeCard(
                 else if (showKani) Kani(kani!!, night = isDarkSurface(), size = 36.dp)
                 else Icon(mark, contentDescription = null, tint = tint, modifier = Modifier.size(22.dp))
             }
+            // 검토 HQ-136 (조건 12, 총괄 #532 사진: 글자 200%·알림함에서 편 카드): a card taller than the 56dp band kept its icon, its X and
+            // its button in the middle of its height, beside nothing; they stand at the words' first line now. A card of one band (one
+            // line, or two in 56dp) keeps them in its middle as before.
+            val bandPx = with(density) { NudgeHeight.roundToPx() }
+            val lift = remember(textStyle, density) {
+                measurer.measure("가", textStyle).let { it.firstBaseline - (it.getLineTop(0) + it.getLineBottom(0)) / 2f }
+            }
+            val middle: (Measured) -> Int = { it.measuredHeight / 2 }
+            val firstLine: (Measured) -> Int = { m ->
+                val first = m[FirstBaseline]
+                if (m.measuredHeight <= bandPx || first == AlignmentLine.Unspecified) m.measuredHeight / 2 else first - lift.roundToInt()
+            }
             val words: @Composable (Modifier) -> Unit = { m ->
-                Column(m.padding(vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                Column(m.heightIn(min = NudgeHeight).padding(vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(2.dp, Alignment.CenterVertically)) {
                     Text(text, style = textStyle, color = MaterialTheme.colorScheme.onSurface)
                     // 갈래 P 3/3 (R 점검 360dp: 공유 안내의 설명 줄이 '…'로 잘림, 조건 12): the detail is never cut either; a long one takes
                     // its lines (the band says the notice's one line, so this is the card opened whole in the 알림함).
@@ -138,10 +155,11 @@ fun NudgeCard(
                 }
             }
             if (besideClose) Row(Modifier.heightIn(min = NudgeHeight).padding(start = 12.dp), verticalAlignment = Alignment.CenterVertically) {
-                lead()
+                Box(Modifier.alignBy(middle)) { lead() }
                 Spacer(Modifier.width(10.dp))
-                words(Modifier.weight(1f))
-                Column(horizontalAlignment = Alignment.End) {
+                words(Modifier.weight(1f).alignBy(firstLine))
+                // The X at the first line, its button under it.
+                Column(Modifier.alignBy { with(density) { 24.dp.roundToPx() } }, horizontalAlignment = Alignment.End) {
                     close()
                     TextButton(onClick = onAction) { Text(action!!, maxLines = 1) }
                 }
@@ -149,17 +167,17 @@ fun NudgeCard(
                 Modifier.heightIn(min = NudgeHeight).padding(start = 12.dp, end = if (onClose != null) 0.dp else 8.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                lead()
+                Box(Modifier.alignBy(middle)) { lead() }
                 Spacer(Modifier.width(10.dp))
-                words(Modifier.weight(1f))
-                if (action != null) TextButton(onClick = onAction) { Text(action, maxLines = 1) }
-                close()
+                words(Modifier.weight(1f).alignBy(firstLine))
+                if (action != null) Box(Modifier.alignBy(middle)) { TextButton(onClick = onAction) { Text(action, maxLines = 1) } }
+                Box(Modifier.alignBy(middle)) { close() }
             } else Column(Modifier.padding(start = 12.dp, end = if (onClose != null) 0.dp else 8.dp, bottom = 4.dp)) {
                 Row(Modifier.heightIn(min = NudgeHeight), verticalAlignment = Alignment.CenterVertically) {
-                    lead()
+                    Box(Modifier.alignBy(middle)) { lead() }
                     Spacer(Modifier.width(10.dp))
-                    words(Modifier.weight(1f))
-                    close()
+                    words(Modifier.weight(1f).alignBy(firstLine))
+                    Box(Modifier.alignBy(middle)) { close() }
                 }
                 TextButton(onClick = onAction, modifier = Modifier.align(Alignment.End).padding(end = 8.dp)) { Text(action!!) }
             }

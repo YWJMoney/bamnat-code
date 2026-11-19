@@ -1,5 +1,8 @@
 package com.bamnat.app.screenshots
 
+import androidx.compose.foundation.layout.padding
+import androidx.compose.ui.semantics.getOrNull
+import androidx.compose.ui.unit.dp
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.bamnat.app.data.PersonalCalendar
 import com.bamnat.app.tier.Tier
@@ -379,5 +382,219 @@ class ReviewOShotsTest : ScreenshotBase() {
         }
         if (sent.size != looks.size || sent.any { it.isNullOrBlank() }) missed += "답장과 함께 간 기록: $sent"
         org.junit.Assert.assertEquals(emptyList<String>(), missed)
+    }
+
+    // ---- 7차: PC-204 결제·환불 안내, HQ-154 단계 띠, HQ-152 홀로 남는 점 ----
+
+    /**
+     * 2.0.0 [RVO-29] PC-204 (조건 4·13): 결제·환불 문의의 보내기 위 안내는 그 종류의 말로 시작하고, 예시대로 Play 주문 번호를 적어도
+     * '금액' 말이 나오지 않아요. 보관 글은 '보관 기간·지우기' ⓘ 뒤.
+     */
+    @Test fun billingNotice() {
+        val missed = mutableListOf<String>()
+        val lead = com.bamnat.app.ui.settings.inquiryNotice(com.bamnat.app.company.InquiryKind.BILLING, share = false).lead
+        all("24_billing_notice") {
+            inquiriesOn()
+            // The order number as the 결제·환불 example asks, written in (InquiryStart.text fills the field as the user would).
+            askFromScreen(com.bamnat.app.ui.settings.InquiryStart(about = "프로·결제", kind = com.bamnat.app.company.InquiryKind.BILLING,
+                text = "어제 프로 1년을 결제했는데 아직 안 열려요. Play 주문 번호는 GPA.3312-4459-2207-48812예요"))
+            reveal("보관 기간·지우기", exact = true)
+            val look = "${RuntimeEnvironment.getQualifiers().substringBefore("-port")} ${app.resources.configuration.fontScale}"
+            if (!shows(lead, exact = true)) missed += "$look: 결제·환불 안내 첫 문장이 없음"
+            if (shows("회사 방식은", exact = false)) missed += "$look: 결제 문의에 회사 방식 글"
+            if (shows("금액은 적지 말아 주세요", exact = false)) missed += "$look: 주문 번호가 금액으로 막힘"
+        }
+        org.junit.Assert.assertEquals(emptyList<String>(), missed)
+    }
+
+    /**
+     * 2.0.0 [RVO-30] PC-214 (조건 7·13): a 결제·환불 question is kept for the 운영팀 only whatever the switch said; the 내 문의 row says
+     * "나만 보기" and the thread opens with the line that says why nobody else sees it (and who answers).
+     */
+    @Test fun billingPrivateLine() {
+        val missed = mutableListOf<String>()
+        all("27_billing_private") {
+            inquiriesOn(asked = true)
+            (app.container.inquiryApi as FakeInquiryApi).addBilling()
+            askFromScreen(com.bamnat.app.ui.settings.InquiryStart(help = true))
+            tapText("내 문의:", prefix = true, scrolls = 30)
+            val look = "${RuntimeEnvironment.getQualifiers().substringBefore("-port")} ${app.resources.configuration.fontScale}"
+            if (!shows("결제·환불 · 나만 보기", exact = false)) missed += "$look: 내 문의 줄에 '나만 보기'가 없음"
+            tapText("어제 프로 1년을", prefix = true)
+            if (!shows("나만 보기 · 운영팀이 직접 읽고 답해요", exact = true)) missed += "$look: 문의 안에 나만 보기 한 줄이 없음"
+            if (shows("모두의 문의에 올라가 있어요", exact = false)) missed += "$look: 나만 보기 문의에 '올라가 있어요'"
+        }
+        org.junit.Assert.assertEquals(emptyList<String>(), missed)
+    }
+
+    // ---- 8차: 마을의 찾기·넘겨 보기·내 글 (PRO-21·23·24·25, U11b-12·14·19·21, T11b-06) ----
+
+    private val sampleRecipeApi: () -> com.bamnat.app.recipe.RecipeApi = {
+        val before = app.container.recipeApi
+        object : com.bamnat.app.recipe.RecipeApi by before {
+            override val enabled = true
+            override suspend fun list(style: com.bamnat.core.work.WorkStyle?, sort: String, q: String, cursor: Int, kind: String?) =
+                com.bamnat.app.recipe.RecipePage((1..14).map { n ->
+                    com.bamnat.app.recipe.RecipeItem("AB${"%02d".format(n)}2345", "야간 근무 달력 $n", "야간 근무를 한눈에 보는 달력이에요", setOf(com.bamnat.core.work.WorkStyle.SHIFT),
+                        com.bamnat.core.recipe.Recipe("x", styles = setOf(com.bamnat.core.work.WorkStyle.SHIFT), pieces = emptyList()).cover, "밤낮", 1,
+                        likes = n, dislikes = 0, users = n, kept = 0, official = false, publicData = false, parent = null,
+                        at = java.time.Instant.parse("2026-11-09T00:00:00Z"), scope = "theme")
+                }, null)
+        }
+    }
+    private val downRecipeApi: () -> com.bamnat.app.recipe.RecipeApi = {
+        val before = app.container.recipeApi
+        object : com.bamnat.app.recipe.RecipeApi by before {
+            override val enabled = true
+            override suspend fun list(style: com.bamnat.core.work.WorkStyle?, sort: String, q: String, cursor: Int, kind: String?) =
+                throw java.io.IOException("down")
+        }
+    }
+
+    /**
+     * 2.0.0 [RVO-31] PRO-24·U11b-14 (조건 8): the search's "장터 작품 14" is not cut at ten with no way on: one line '작품 14개 모두 보기 ▾'
+     * under the tenth; tapping it shows all.
+     */
+    @Test fun searchShowsAllWorks() {
+        val missed = mutableListOf<String>()
+        all("28_search_more") {
+            val before = app.container.recipeApi
+            app.container.recipeApi = sampleRecipeApi()
+            try {
+                app.container.recipes.setOn(true)
+                content { com.bamnat.app.ui.village.VillageSearchScreen(app.container, {}, {}, {}, {}) }
+                typeInto("작품·글·요청을 한 번에 (예: 야간, 다크, 알람)", "야간")
+                Thread.sleep(700); settle(); Thread.sleep(300); settle()
+                val look = "${RuntimeEnvironment.getQualifiers().substringBefore("-port")} ${app.resources.configuration.fontScale}"
+                if (!shows("장터 작품 14", exact = true)) missed += "$look: 제목이 '장터 작품 14'가 아님"
+                reveal("작품 14개 모두 보기", exact = false)
+                tapText("작품 14개 모두 보기", prefix = true)
+                if (!shows("야간 근무 달력 14", exact = false)) { reveal("야간 근무 달력 14", exact = false) }
+                if (!shows("야간 근무 달력 14", exact = false)) missed += "$look: 모두 보기를 눌러도 14번째 작품이 없음"
+            } finally { app.container.recipeApi = before }
+        }
+        org.junit.Assert.assertEquals(emptyList<String>(), missed)
+    }
+
+    /** 2.0.0 [RVO-31] PRO-25 (조건 7): a search, 넘겨 보기 and 내 글 that could not read say it the common way, with '다시 하기'. */
+    @Test fun failuresCanBeTriedAgain() {
+        val missed = mutableListOf<String>()
+        all("29_retry_lines") {
+            val before = app.container.recipeApi
+            app.container.recipeApi = downRecipeApi()
+            try {
+                val look = "${RuntimeEnvironment.getQualifiers().substringBefore("-port")} ${app.resources.configuration.fontScale}"
+                content { com.bamnat.app.ui.village.SwipeThemesScreen(app.container, null, {}, {}) }
+                settle(); Thread.sleep(200); settle()
+                if (!shows("다시 하기", exact = true)) missed += "$look: 넘겨 보기 실패에 '다시 하기'가 없음"
+                content { com.bamnat.app.ui.village.MyVillagePostsScreen(app.container, {}, {}) }
+                settle(); Thread.sleep(200); settle()
+                tapText("내 글", prefix = true, scrolls = 0)
+                if (!shows("다시 하기", exact = true)) missed += "$look: 내 글 실패에 '다시 하기'가 없음"
+                content { com.bamnat.app.ui.village.VillageSearchScreen(app.container, {}, {}, {}, {}) }
+                typeInto("작품·글·요청을 한 번에 (예: 야간, 다크, 알람)", "야간")
+                Thread.sleep(700); settle(); Thread.sleep(300); settle()
+                if (!shows("다시 하기", exact = true)) missed += "$look: 찾기 실패에 '다시 하기'가 없음"
+            } finally { app.container.recipeApi = before }
+        }
+        org.junit.Assert.assertEquals(emptyList<String>(), missed)
+    }
+
+    /**
+     * 2.0.0 [RVO-31] PRO-25·U11b-21 (조건 12): a page of 넘겨 보기 keeps '입어 보기' and '다음 테마' on screen at every look; what
+     * would not fit (the long explaining lines) goes first, the picture only gets smaller.
+     */
+    @Test fun swipePageFits() {
+        val missed = mutableListOf<String>()
+        all("30_swipe_fits") {
+            val before = app.container.recipeApi
+            app.container.recipeApi = sampleRecipeApi()
+            try {
+                content { com.bamnat.app.ui.village.SwipeThemesScreen(app.container, null, {}, {}) }
+                settle(); Thread.sleep(300); settle()
+                val look = "${RuntimeEnvironment.getQualifiers().substringBefore("-port")} ${app.resources.configuration.fontScale}"
+                val m = app.resources.displayMetrics
+                for (w in listOf("입어 보기", "다음 테마")) {
+                    val n = nodes().firstOrNull { n -> n.config.getOrNull(androidx.compose.ui.semantics.SemanticsProperties.Text).orEmpty().any { it.text == w } }
+                    if (n == null) missed += "$look: '$w'가 화면에 없음"
+                    else if (n.boundsInWindow.bottom > m.heightPixels + 1f) missed += "$look: '$w'가 화면 아래로 잘림"
+                }
+            } finally { app.container.recipeApi = before }
+        }
+        org.junit.Assert.assertEquals(emptyList<String>(), missed)
+    }
+
+    /**
+     * 2.0.0 [RVO-31] PRO-21 (조건 11): after the 공방 tab was tapped again once, coming back into 공방 from another part does not go to
+     * the top each time (only a tap on the tab itself does); where it was left stays.
+     */
+    @Test fun partKeepsItsPlaceAfterATabTap() {
+        val missed = mutableListOf<String>()
+        var checked = 0
+        all("31_keeps_place") {
+            style(WorkStyle.SHIFT).invoke(this)
+            fun seen() = nodes().flatMap { n -> n.config.getOrNull(androidx.compose.ui.semantics.SemanticsProperties.Text).orEmpty().map { it.text } }.toSet()
+            val look = "${RuntimeEnvironment.getQualifiers().substringBefore("-port")} ${app.resources.configuration.fontScale}"
+            tapText("마을", exact = true, scrolls = 0); settle()
+            for ((part, other) in listOf("공방" to "테마", "테마" to "공방", "광장" to "테마")) {
+                tapText(part, exact = true, scrolls = 0); settle()
+                tapText(part, exact = true, scrolls = 0); settle()
+                val top = seen()
+                scrollUp(700); settle()
+                if (seen() == top) continue
+                checked++
+                tapText(other, exact = true, scrolls = 0); settle()
+                tapText(part, exact = true, scrolls = 0); settle(); Thread.sleep(300); settle()
+                if (seen() == top) missed += "$look: 다른 곳에 다녀오니 $part 이(가) 맨 위로 갔음"
+            }
+        }
+        org.junit.Assert.assertTrue("내려가는 곳이 하나도 없어 시험이 못 함", checked > 0)
+        org.junit.Assert.assertEquals(emptyList<String>(), missed)
+    }
+
+    /**
+     * 2.0.0 [RVO-29] HQ-154 (조건 12): 내 문의의 단계 띠. 이름이 칸에 맞으면 여섯 이름, 맞지 않으면(접은 폭 200%) 띠 아래 '답변 · 3/6' 한 줄.
+     * 어느 쪽이든 말줄임표(…)로 잘린 이름이 없어요.
+     */
+    @Test fun stepsNeverCut() {
+        val missed = mutableListOf<String>()
+        all("25_steps") {
+            inquiriesOn(asked = true)
+            inquiryThread()
+            val look = "${RuntimeEnvironment.getQualifiers().substringBefore("-port")} ${app.resources.configuration.fontScale}"
+            val texts = nodes(merged = false).flatMap { n ->
+                n.config.getOrElseNullable(androidx.compose.ui.semantics.SemanticsProperties.Text) { null }.orEmpty().map { it.text }
+            }
+            val names = listOf("접수", "확인 중", "답변", "개발 목록", "만드는 중", "반영")
+            if (!(names.all { it in texts } || "답변 · 3/6" in texts)) missed += "$look: 단계 이름도 '답변 · 3/6'도 없음 $texts"
+            if (texts.any { it.endsWith("…") && names.any { n -> n.startsWith(it.dropLast(1)) } }) missed += "$look: 잘린 이름"
+        }
+        org.junit.Assert.assertEquals(emptyList<String>(), missed)
+    }
+
+    /**
+     * 2.0.0 [RVO-29] HQ-152 (조건 12): the lines joined by dots (친구 초대 진행, 결제 고지, 요금제 창의 가격·할인, 약관 링크) side by side:
+     * at 100% on the open width each is one line with its dots; where it does not fit, one part a line and no dot left alone.
+     */
+    @Test fun noDotLeftAlone() = all("26_dot_lines") {
+        content {
+            androidx.compose.foundation.layout.Column(androidx.compose.ui.Modifier.padding(16.dp),
+                verticalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(12.dp)) {
+                val plans = samplePlans
+                com.bamnat.app.ui.components.DotText(com.bamnat.core.tier.InviteRules.next(3, 2, com.bamnat.core.tier.InviteTerms.DEFAULT),
+                    androidx.compose.material3.MaterialTheme.typography.titleMedium)
+                com.bamnat.app.ui.components.DotText(com.bamnat.app.ui.pro.priceLine(plans)!!, androidx.compose.material3.MaterialTheme.typography.labelLarge,
+                    androidx.compose.material3.MaterialTheme.colorScheme.primary)
+                com.bamnat.app.ui.components.DotText(com.bamnat.app.ui.pro.trialHead(com.bamnat.core.time.Today.date(), "연 39,000원"),
+                    androidx.compose.material3.MaterialTheme.typography.labelLarge, androidx.compose.material3.MaterialTheme.colorScheme.primary)
+                com.bamnat.app.ui.pro.PayNotice(plans, null)
+                com.bamnat.app.ui.pro.PolicyLinks()
+            }
+        }
+        settle()
+        val texts = nodes(merged = false).flatMap { n ->
+            n.config.getOrElseNullable(androidx.compose.ui.semantics.SemanticsProperties.Text) { null }.orEmpty().map { it.text }
+        }
+        org.junit.Assert.assertFalse("홀로 남은 점: $texts", texts.any { it.trim() == "·" || it.trimEnd().endsWith(" ·") || it.trimStart().startsWith("· ") })
     }
 }

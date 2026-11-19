@@ -277,7 +277,7 @@ class AGScreenshotTest : ScreenshotBase() {
         lockedPay().invoke(this)
         openPayGuides()
         tapText("금액 비교하기", scrolls = 30)
-        reveal("‘명세서 대조’ · 프로 기능이에요")
+        reveal("‘명세서 대조’")
         assertTrue(appears("광고 보고 급여 7일 열기", exact = true))
         assertTrue(appears("미리 보기에서는 광고가 나오지 않아요"))
         // 2.0.0 [RVO-13] (HQ-48) the same name and one-line promise as on 프로.
@@ -318,7 +318,7 @@ class AGScreenshotTest : ScreenshotBase() {
         settle()
         reveal(com.bamnat.app.ui.pro.INVITE_FREE_TITLE, exact = true)
         tapText(com.bamnat.app.ui.pro.INVITE_FREE_TITLE, exact = true)
-        reveal("‘근무·급여 비교’ · 프로 기능이에요")
+        reveal("‘근무·급여 비교’")
         assertTrue(appears("미리 보기에서는 광고가 나오지 않아요"))
     }
 
@@ -342,6 +342,19 @@ class AGScreenshotTest : ScreenshotBase() {
         assertTrue(store.undone())
         assertFalse("once in two weeks", store.undone())
         assertEquals(Today.date(), store.current.undoToldOn)
+    }
+
+    // ---- 2.0.0 [RVO-29] HQ-152: the same card folded as it first shows (before its ⓘ), at 100% and at the folded width 200% dark ----
+    @Test fun theProScreenNextFolded() {
+        for ((name, q, scale) in listOf(Triple("1090b_ag_pro_next_folded_light_100", PHONE_393, 1f),
+            Triple("1090c_ag_pro_next_folded_dark_200", "w369dp-h905dp-port-night-420dpi", 2f))) shoot(name, q, scale, style(WorkStyle.SHIFT) {
+            api.viewAnswer = view(progress = 3, waiting = 2, friends = 8, given = 1)
+            runBlocking { c.invites.makeLink() }
+            tab(SETTINGS_TAB, wide = false)
+            tapText("프로", exact = true)
+            tapText("친구 초대", exact = true, scrolls = 30)
+            reveal("친구 2명이 더 7일 쓰면 프로 1개월", exact = false)
+        })
     }
 
     // ---- 432 [INVITE-09] ----
