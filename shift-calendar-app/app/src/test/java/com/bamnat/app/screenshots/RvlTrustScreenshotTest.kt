@@ -72,7 +72,8 @@ class RvlTrustScreenshotTest : ScreenshotBase() {
 
     // ---- RVL-59: 알람 점검's first line names the button that is there ----
     private fun diagnostics(): Screen.() -> Unit = {
-        content { DiagnosticsScreen(DiagnosticsViewModel(c), onBack = {}) }
+        val vm = DiagnosticsViewModel(c)
+        content { DiagnosticsScreen(vm, onBack = {}) }
         settle()
         assertTrue(appears("‘점검 내용과 함께 문의하기’"))
         assertFalse(shows("오른쪽 위 복사 단추"))

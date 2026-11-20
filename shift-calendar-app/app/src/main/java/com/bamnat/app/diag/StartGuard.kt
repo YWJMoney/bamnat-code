@@ -44,10 +44,18 @@ object StartGuard {
         p.edit().putInt(K_UNSETTLED, n + 1).apply()
     }
 
-    /** [RVL-88] The person's own end of the app, by Android's record: not a stop. */
-    internal fun byThePerson(reason: Int?): Boolean = reason == android.app.ApplicationExitInfo.REASON_USER_REQUESTED ||
-        reason == android.app.ApplicationExitInfo.REASON_USER_STOPPED || reason == android.app.ApplicationExitInfo.REASON_PACKAGE_UPDATED ||
-        reason == SWIPED
+    /**
+     * [RVL-88] The person's own end of the app, by Android's record: not a stop. Android writes a reason only from Android 11
+     * ([lastEnd] reads none before) and 'an update' only from Android 14, so each number is read where it has that meaning.
+     */
+    internal fun byThePerson(reason: Int?): Boolean = when {
+        reason == null -> false
+        reason == SWIPED -> true
+        android.os.Build.VERSION.SDK_INT >= 34 && reason == android.app.ApplicationExitInfo.REASON_PACKAGE_UPDATED -> true
+        android.os.Build.VERSION.SDK_INT >= 30 ->
+            reason == android.app.ApplicationExitInfo.REASON_USER_REQUESTED || reason == android.app.ApplicationExitInfo.REASON_USER_STOPPED
+        else -> false
+    }
 
     /** [RVL-88] Closed from 최근 앱: Android records it as 'other' or a signal with "remove task" (as [Trail] reads it); told apart here by its own number. */
     internal const val SWIPED = -2

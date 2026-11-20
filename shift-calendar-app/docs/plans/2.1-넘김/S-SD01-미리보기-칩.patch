@@ -1,0 +1,289 @@
+diff --git a/shift-calendar-app/app/src/main/java/com/bamnat/app/ui/recipe/LiveTryOn.kt b/shift-calendar-app/app/src/main/java/com/bamnat/app/ui/recipe/LiveTryOn.kt
+index fa0678b7a..875ad9eef 100644
+--- a/shift-calendar-app/app/src/main/java/com/bamnat/app/ui/recipe/LiveTryOn.kt
++++ b/shift-calendar-app/app/src/main/java/com/bamnat/app/ui/recipe/LiveTryOn.kt
+@@ -50,6 +50,11 @@ object LiveTryOn {
+         data class Sheet(val r: Recipe, val code: String, val ver: Int) : From
+         /** 1.39 [MKF-01] 장터 크게 넘겨 보기 ([MarketFlip]) at [at] of the list, [code] the work tried. */
+         data class Flip(val code: String, val at: Int) : From
++        /**
++         * 2.0.0 [RVS-01] 검토 SD-01 '진짜 달력으로 보기': the studio's draft tried on the real app. 끝내기 goes back to the studio (its draft
++         * is kept), and there is no 입기 here (the studio has its own 내 앱에 입히기), so nothing is opened again.
++         */
++        data object Studio : From
+     }
+ 
+     data class Trial(
+@@ -103,7 +108,7 @@ object LiveTryOn {
+         val all = com.bamnat.core.recipe.LookParts.of(r).map { it.id }.toSet()
+         val worn = if (picked.containsAll(all)) r else com.bamnat.core.recipe.LookParts.pick(r, picked)
+         val look = if (all.isEmpty() || picked.isEmpty()) emptyMap() else runCatching { c.wardrobe.trialLook(worn, own, answers) }.getOrDefault(emptyMap())
+-        val code = when (from) { is From.Detail -> from.code; is From.Sheet -> from.code; is From.Flip -> from.code }
++        val code = when (from) { is From.Detail -> from.code; is From.Sheet -> from.code; is From.Flip -> from.code; From.Studio -> "" }
+         // The 기능 go on first (for real, kept to be put back); the looks are laid over what that leaves.
+         val fn = if (functions.isEmpty()) emptyList() else runCatching {
+             com.bamnat.app.recipe.FunctionTrial(c).start(r, code, cal, functions.keys, functions, answers)
+@@ -158,7 +163,7 @@ object LiveTryOn {
+         if (t.functions.isNotEmpty()) { c.appScope.launch { finish(c, keepMine = false) }; return }
+         drop(c)
+         back?.invoke()
+-        _reopen.value = Reopen(t.from, t.picked, t.tab)
++        if (t.from !is From.Studio) _reopen.value = Reopen(t.from, t.picked, t.tab)
+     }
+ 
+     /**
+@@ -174,7 +179,7 @@ object LiveTryOn {
+         lookOff(c)
+         if (t != null) {
+             goBack?.let { go -> kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main.immediate) { runCatching { go() } } }
+-            if (t.hasLook) _reopen.value = Reopen(t.from, t.picked, t.tab)
++            if (t.hasLook && t.from !is From.Studio) _reopen.value = Reopen(t.from, t.picked, t.tab)
+         }
+         // PC 03111522 (같은 글이 카드와 스낵으로 두 번): back on the page it came from, its card says it.
+         tell(e, snack = t?.from !is From.Detail)
+@@ -350,7 +355,8 @@ fun LiveTryOnBand(c: AppContainer) {
+                     Text("끝내기", style = MaterialTheme.typography.labelMedium)
+                 }
+                 // [TRY-07] 입기 (넣기) right here: the page it came from goes on to its own 입기, the same parts, ad and 프로 as ever.
+-                FilledTonalButton(onClick = { ending = true; scope.launch { LiveTryOn.wear(c) } }, enabled = !ending, modifier = Modifier.heightIn(min = 40.dp),
++                // 2.0.0 [RVS-01] SD-01: not from the studio, which has its own 내 앱에 입히기 (끝내기 goes back to it).
++                if (trial.from !is LiveTryOn.From.Studio) FilledTonalButton(onClick = { ending = true; scope.launch { LiveTryOn.wear(c) } }, enabled = !ending, modifier = Modifier.heightIn(min = 40.dp),
+                     contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 12.dp)) {
+                     Text(if (fn) "넣기" else "입기", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold)
+                 }
+diff --git a/shift-calendar-app/app/src/main/java/com/bamnat/app/ui/studio/StudioMoreTools.kt b/shift-calendar-app/app/src/main/java/com/bamnat/app/ui/studio/StudioMoreTools.kt
+index 0a2d70159..750c63f65 100644
+--- a/shift-calendar-app/app/src/main/java/com/bamnat/app/ui/studio/StudioMoreTools.kt
++++ b/shift-calendar-app/app/src/main/java/com/bamnat/app/ui/studio/StudioMoreTools.kt
+@@ -160,13 +160,15 @@ internal val canSeeAsCvd: Boolean get() = Build.VERSION.SDK_INT >= Build.VERSION
+  * colours as they are), with big letters (1.5배) or through 적록 색약 eyes.
+  */
+ @Composable
+-internal fun Conditioned(dark: Boolean, big: Boolean, cvd: Boolean, accent: Long, content: @Composable () -> Unit) {
++internal fun Conditioned(dark: Boolean, big: Boolean, cvd: Boolean, accent: Long, still: Boolean = false, content: @Composable () -> Unit) {
+     val m = if (cvd && canSeeAsCvd) Modifier.graphicsLayer {
+         renderEffect = android.graphics.RenderEffect.createColorFilterEffect(ColorMatrixColorFilter(DEUTAN)).asComposeRenderEffect()
+     } else Modifier
+     val base = LocalDensity.current
+     val inner: @Composable () -> Unit = {
+-        CompositionLocalProvider(LocalDensity provides if (big) Density(base.density, base.fontScale * 1.5f) else base) { Box(m) { content() } }
++        // 2.0.0 [RVS-01] SD-01: 움직임 끄기 as the phone draws it (still shaders, no squish, no slide), so a maker sees what a person who turned motion off sees.
++        CompositionLocalProvider(LocalDensity provides if (big) Density(base.density, base.fontScale * 1.5f) else base,
++            *(if (still) arrayOf(com.bamnat.app.ui.theme.LocalMotionOff provides true) else emptyArray())) { Box(m) { content() } }
+     }
+     // B 11차 PC (어두운 화면 미리 보기에서 달력 제목·탭 막대 글자가 거의 안 보임): text that takes the colour around it (no card of its
+     // own) reads light on the dark ground, as under the app's own Surface.
+@@ -178,14 +180,24 @@ internal fun Conditioned(dark: Boolean, big: Boolean, cvd: Boolean, accent: Long
+ /** [STU-36] The chips that turn the conditions on, in a row under the example's own chips. */
+ @Composable
+ internal fun ConditionChips(dark: Boolean, big: Boolean, cvd: Boolean, onDark: (Boolean) -> Unit, onBig: (Boolean) -> Unit, onCvd: (Boolean) -> Unit,
+-                            wide: Boolean = false, onWide: (Boolean) -> Unit = {}) {
++                            wide: Boolean = false, onWide: (Boolean) -> Unit = {},
++                            still: Boolean = false, onStill: (Boolean) -> Unit = {}, old: Boolean = false, onOld: (Boolean) -> Unit = {},
++                            onReal: (() -> Unit)? = null) {
+     FilterChip(selected = dark, onClick = { onDark(!dark) }, label = { Text("어두운 화면") })
+     FilterChip(selected = big, onClick = { onBig(!big) }, label = { Text("큰 글자") })
+     // 2.0.0 [RVS-03] 검토 U09a-06: how the work lays out on a Fold opened (673dp); the example is a folded phone's width otherwise.
+     FilterChip(selected = wide, onClick = { onWide(!wide) }, label = { Text("편 화면") })
+     if (canSeeAsCvd) FilterChip(selected = cvd, onClick = { onCvd(!cvd) }, label = { Text("색약 눈") })
++    // 2.0.0 [RVS-01] 검토 SD-01 (미리 보기 = 실제): the two more ways a phone differs, and the real app itself for the last word.
++    FilterChip(selected = still, onClick = { onStill(!still) }, label = { Text("움직임 끔") })
++    FilterChip(selected = old, onClick = { onOld(!old) }, label = { Text("옛 판 폰") },
++        modifier = Modifier.semantics { contentDescription = "업데이트하지 않은 폰에서 보기, " + com.bamnat.core.recipe.RecipeNeeds.nameOf(OLD_APP) })
++    if (onReal != null) androidx.compose.material3.AssistChip(onClick = onReal, label = { Text("진짜 화면으로 보기") })
+ }
+ 
++/** 2.0.0 [RVS-01] SD-01 '옛 판 폰': the app two steps before the newest, which a good share of phones still run. */
++internal val OLD_APP: Int get() = com.bamnat.core.recipe.RecipeNeeds.NAMES.keys.max() - 2
++
+ // ---- 2.0.0 [RVS-18] 작품 크기·호환 ----
+ 
+ /**
+diff --git a/shift-calendar-app/app/src/main/java/com/bamnat/app/ui/studio/StudioScreen.kt b/shift-calendar-app/app/src/main/java/com/bamnat/app/ui/studio/StudioScreen.kt
+index 63008b519..5fdb0ff98 100644
+--- a/shift-calendar-app/app/src/main/java/com/bamnat/app/ui/studio/StudioScreen.kt
++++ b/shift-calendar-app/app/src/main/java/com/bamnat/app/ui/studio/StudioScreen.kt
+@@ -503,6 +503,8 @@ fun StudioScreen(vm: StudioViewModel, onBack: () -> Unit, onOpen: (String) -> Un
+     var seeBig by rememberSaveable { mutableStateOf(false) }
+     var seeCvd by rememberSaveable { mutableStateOf(false) }
+     var seeWide by rememberSaveable { mutableStateOf(false) }
++    var seeStill by rememberSaveable { mutableStateOf(false) }
++    var seeOld by rememberSaveable { mutableStateOf(false) }
+ 
+     val d = s.draft
+     val looks = remember(d.screenLooks) { ScreenLooks.decode(d.screenLooks) }
+@@ -513,7 +515,7 @@ fun StudioScreen(vm: StudioViewModel, onBack: () -> Unit, onOpen: (String) -> Un
+     // [LAY-04] 1.36 꾸밈 층 being made.
+     val decor = remember(d.decor) { com.bamnat.core.recipe.Decor.decode(d.decor) }
+     // [STU-21] The example draws the 기능 that show (근무 색, 메모 틀, 투자 일지) along with the look.
+-    val now = remember(s.pieces, s.extras) { vm.shown(s) }
++    val now = remember(s.pieces, s.extras, seeOld) { vm.shown(s).let { if (seeOld) com.bamnat.core.recipe.RecipeNeeds.asSeenBy(it, OLD_APP) else it } }
+     val before = remember(s.basePieces) { Recipe("처음", styles = WorkStyle.entries.toSet(), pieces = s.basePieces) }
+     // [BLU-06] The bar counts what the 바꾼 곳 sheet lists (PC 3차: 막대는 1개인데 시트는 2줄).
+     val changedCount = remember(before, now) { LookParts.changed(before, now).size }
+@@ -841,7 +843,15 @@ fun StudioScreen(vm: StudioViewModel, onBack: () -> Unit, onOpen: (String) -> Un
+                         }
+                         Box(Modifier.size(1.dp, 24.dp).background(MaterialTheme.colorScheme.outlineVariant))
+                         // [STU-36] 어두운 화면·큰 글자·색약 눈으로 보기.
+-                        ConditionChips(seeDark, seeBig, seeCvd, { seeDark = it }, { seeBig = it }, { seeCvd = it }, seeWide, { seeWide = it })
++                        ConditionChips(seeDark, seeBig, seeCvd, { seeDark = it }, { seeBig = it }, { seeCvd = it }, seeWide, { seeWide = it },
++                            seeStill, { seeStill = it }, seeOld, { seeOld = it }, onReal = {
++                                // 2.0.0 [RVS-01] SD-01: the draft on the real app (the same paths as 입어 보기), 끝내기 comes back here.
++                                scope.launch {
++                                    val ok = runCatching { com.bamnat.app.ui.recipe.LiveTryOn.start(c, vm.recipe(), own = true,
++                                        com.bamnat.core.recipe.LookParts.of(vm.recipe()).map { it.id }.toSet(), area.tab, com.bamnat.app.ui.recipe.LiveTryOn.From.Studio) }.getOrDefault(false)
++                                    if (!ok) snack.showSnackbar("아직 바꾼 곳이 없어서 진짜 화면도 그대로예요")
++                                }
++                            })
+                     }
+                     com.bamnat.app.ui.components.FoldRow("studio.tools", what = "도구 줄", over = true) {
+                         // [CNV-07] 숨긴 카드 다시 넣기 (빈 판에서 카드 넣기도 여기서).
+@@ -902,7 +912,7 @@ fun StudioScreen(vm: StudioViewModel, onBack: () -> Unit, onOpen: (String) -> Un
+                         CompositionLocalProvider(com.bamnat.app.ui.recipe.LocalMockPick provides ::picked,
+                             com.bamnat.app.ui.parts.LocalPartSpots provides (if (spotsOn) spots else null), LocalRealLook provides !shotExample,
+                             com.bamnat.app.ui.recipe.LocalMockWide provides seeWide) {
+-                        Conditioned(seeDark, seeBig, seeCvd, c.settingsRepository.current.accentColor) {
++                        Conditioned(seeDark, seeBig, seeCvd, c.settingsRepository.current.accentColor, seeStill) {
+                         if (!detail && !area.detailOnly) {
+                             // [TRY-04] 누르고 있으면 전 모양 too: in the draft's places, so only the looks change under the finger.
+                             val prev = remember(s.prevPieces, s.past) { vm.previous(s) }
+diff --git a/shift-calendar-app/app/src/test/java/com/bamnat/app/screenshots/S5ScreenshotTest.kt b/shift-calendar-app/app/src/test/java/com/bamnat/app/screenshots/S5ScreenshotTest.kt
+new file mode 100644
+index 000000000..6ab52a6f0
+--- /dev/null
++++ b/shift-calendar-app/app/src/test/java/com/bamnat/app/screenshots/S5ScreenshotTest.kt
+@@ -0,0 +1,59 @@
++package com.bamnat.app.screenshots
++
++import androidx.test.ext.junit.runners.AndroidJUnit4
++import org.junit.Assert.assertTrue
++import org.junit.Test
++import org.junit.runner.RunWith
++import org.robolectric.annotation.Config
++import org.robolectric.annotation.GraphicsMode
++
++/**
++ * 2.0.0 갈래 S 5묶음의 사진 (디자인 품질 조건 12·14, `build/screenshots/s5/`): 스튜디오 미리 보기 = 실제 (검토 SD-01) 등.
++ * Each screen in the four looks that see every pair of 밝은·어두운 × 글자 100·200% × 접은·편 폭 once.
++ */
++@RunWith(AndroidJUnit4::class)
++@GraphicsMode(GraphicsMode.Mode.NATIVE)
++@Config(sdk = [35])
++class S5ScreenshotTest : ScreenshotBase() {
++    private val looks = listOf(
++        Triple(false, 1f, FOLDED), Triple(true, 2f, FOLDED), Triple(false, 2f, UNFOLDED), Triple(true, 1f, UNFOLDED),
++    )
++
++    private fun night(q: String) = q.replace("-port-", "-port-night-")
++    private fun lookName(dark: Boolean, font: Float, q: String) =
++        "${if (dark) "dark" else "light"}_${(font * 100).toInt()}_${if (q == FOLDED) "folded" else "unfolded"}"
++
++    private fun fourLooks(name: String, what: ScreenshotBase.Screen.() -> String?) {
++        val misses = ArrayList<String>()
++        for ((dark, font, q) in looks) {
++            val n = "s5/${name}_${lookName(dark, font, q)}"
++            shoot(n, if (dark) night(q) else q, font) { what()?.let { misses += "$n: $it" } }
++        }
++        assertTrue(misses.joinToString("\n"), misses.isEmpty())
++    }
++
++    /** SD-01: the example's conditions — 움직임 끔, 옛 판 폰 — are chips like the others, and 진짜 화면으로 보기 says so when the draft changes nothing. */
++    @Test fun theStudioShowsWhatAnotherPhoneShows() = fourLooks("sd01_conditions") {
++        tapText("도구")
++        tapText("카드 배치", exact = true)
++        settle()
++        // The folded line opens over the example and shuts again after a pick: open it for each chip.
++        for (chip in listOf("움직임 끔", "옛 판 폰", "진짜 화면으로 보기")) {
++            runCatching { tapText("화면 줄 모두 펼쳐 보기", exact = true, scrolls = 0) }
++            settle()
++            tapText(chip, exact = true)
++            settle()
++        }
++        // The draft is on the real app (the band says so, and 입기 is not offered: the work is not made yet); 끝내기 comes back to the studio.
++        val onReal = appears("실제 화면이에요", ms = 8_000)
++        val offersWear = shows("입기", exact = true)
++        if (onReal && !offersWear) tapText("끝내기", exact = true)
++        settle()
++        when {
++            !onReal -> "the real app did not open"
++            offersWear -> "입기 is offered on a studio trial"
++            !appears("스튜디오", exact = true, ms = 8_000) -> "끝내기 did not come back to the studio"
++            else -> null
++        }
++    }
++}
+diff --git a/shift-calendar-app/core/src/main/kotlin/com/bamnat/core/recipe/RecipeNeeds.kt b/shift-calendar-app/core/src/main/kotlin/com/bamnat/core/recipe/RecipeNeeds.kt
+index af1508964..563c3c4bc 100644
+--- a/shift-calendar-app/core/src/main/kotlin/com/bamnat/core/recipe/RecipeNeeds.kt
++++ b/shift-calendar-app/core/src/main/kotlin/com/bamnat/core/recipe/RecipeNeeds.kt
+@@ -54,6 +54,26 @@ object RecipeNeeds {
+     fun of(r: Recipe, table: Map<String, Map<String, Int>> = PartsSinceTable.MAP): Need =
+         ofJson(Json.parse(RecipeCodec.write(r)), table)
+ 
++    /**
++     * 2.0.0 [RVS-01] 검토 SD-01 '옛 판' (스튜디오 조사 5장 S1): [r] as an app of versionCode [app] would draw it. A 부품 line whose part (or
++     * whose '어떤 때') that app does not read yet is left out, as an older app leaves it; everything else is as it is. The studio's '옛 판'
++     * chip draws the example from this, so a maker sees what a phone that has not updated shows (1.38 draws no 밤 화면 부품 …).
++     */
++    @Suppress("UNCHECKED_CAST")
++    fun asSeenBy(r: Recipe, app: Int, table: Map<String, Map<String, Int>> = PartsSinceTable.MAP): Recipe {
++        val ids = table["ids"].orEmpty()
++        val states = table["states"].orEmpty()
++        fun unknown(l: Map<String, Any?>): Boolean =
++            ((l["id"] as? String)?.let { ids[it] } ?: 0) > app || ((l["on"] as? String)?.let { states[it] } ?: 0) > app
++        if (r.pieces.none { it.kind == PieceKind.PARTS }) return r
++        return r.copy(pieces = r.pieces.map { p ->
++            if (p.kind != PieceKind.PARTS) p else {
++                val lines = (p.values["parts"] as? List<Map<String, Any?>>).orEmpty()
++                p.copy(values = p.values + ("parts" to lines.filterNot(::unknown)))
++            }
++        })
++    }
++
+     /** What a recipe as JSON ([Json.parse]) needs: the server's partsMinApp, step for step. */
+     fun ofJson(recipe: Any?, table: Map<String, Map<String, Int>> = PartsSinceTable.MAP): Need {
+         val hits = ArrayList<Pair<Int, Why>>()
+diff --git a/shift-calendar-app/core/src/test/kotlin/com/bamnat/core/recipe/AsSeenByTest.kt b/shift-calendar-app/core/src/test/kotlin/com/bamnat/core/recipe/AsSeenByTest.kt
+new file mode 100644
+index 000000000..2c5acfef0
+--- /dev/null
++++ b/shift-calendar-app/core/src/test/kotlin/com/bamnat/core/recipe/AsSeenByTest.kt
+@@ -0,0 +1,38 @@
++package com.bamnat.core.recipe
++
++import org.junit.Assert.assertEquals
++import org.junit.Test
++
++/**
++ * 2.0.0 [RVS-01] 검토 SD-01 '옛 판': what an older phone draws of a work leaves out the parts it does not read yet, nothing else.
++ */
++class AsSeenByTest {
++    private fun work(vararg lines: Map<String, Any?>) = Recipe("옛 판", styles = com.bamnat.core.work.WorkStyle.entries.toSet(),
++        pieces = listOf(Piece(PieceKind.PARTS, mapOf("parts" to lines.toList()))))
++
++    @Suppress("UNCHECKED_CAST")
++    private fun ids(r: Recipe) = (r.pieces.first().values["parts"] as List<Map<String, Any?>>).map { it["id"] }
++
++    @Test fun anOlderPhoneLeavesOutWhatItDoesNotRead() {
++        val w = work(mapOf("id" to "cal.cell", "fill" to 0xFFE0F2F1L), mapOf("id" to "night.clock", "size" to 40L), mapOf("id" to "memo.page", "fill" to 0xFFFFFFFFL))
++        // 1.38.0 (52) reads 메모 종이 but not the 밤 화면 (53).
++        assertEquals(listOf<Any?>("cal.cell", "memo.page"), ids(RecipeNeeds.asSeenBy(w, 52)))
++        // 1.36.1 (50) reads neither.
++        assertEquals(listOf<Any?>("cal.cell"), ids(RecipeNeeds.asSeenBy(w, 50)))
++        // 1.39.0 (53) and later read all of it.
++        assertEquals(ids(w), ids(RecipeNeeds.asSeenBy(w, 53)))
++    }
++
++    @Test fun aStateAnOlderPhoneDoesNotReadTakesItsLineOut() {
++        val w = work(mapOf("id" to "pay.row", "fill" to 0xFFFFFFFFL), mapOf("id" to "pay.row", "on" to "late", "fill" to 0xFFFFCDD2L))
++        val seen = RecipeNeeds.asSeenBy(w, 52)
++        assertEquals(1, (seen.pieces.first().values["parts"] as List<*>).size)
++        // The recipe itself is not changed.
++        assertEquals(2, (w.pieces.first().values["parts"] as List<*>).size)
++    }
++
++    @Test fun aWorkWithoutPartsIsLeftAlone() {
++        val w = Recipe("무", styles = com.bamnat.core.work.WorkStyle.entries.toSet(), pieces = emptyList())
++        assertEquals(w, RecipeNeeds.asSeenBy(w, 50))
++    }
++}

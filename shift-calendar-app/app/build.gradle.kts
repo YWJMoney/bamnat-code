@@ -225,6 +225,12 @@ android {
             it.outputs.dir(layout.buildDirectory.dir("screenshots"))
             // 2.0.0 [RVR-21] MarketWorksShotsTest's fingerprints, for tools/market_shots.py (same reason).
             it.outputs.dir(layout.buildDirectory.dir("market-shots"))
+            // 2.0.0 [RVR-19] (검토 TEST-20 ④, 총괄 출시 마무리) ShareLinkTest's three payloads for the share server's tests ([SHR-01],
+            // BAMNAT_NEED_APP_PAYLOADS) are outputs for the same reason: a push that changed nothing the tests read (documents only)
+            // came back FROM-CACHE without them and the server half failed 'share-payload.json is missing' (run 44493609020).
+            listOf("share-payload.json", "share-payload-v2.json", "share-payload-field.json").forEach { f ->
+                it.outputs.file(layout.buildDirectory.file(f)).optional()
+            }
             // [REL-14] Where Robolectric fetches the Android jars of older versions (default Maven Central).
             (findProperty("bamnat.robolectricRepo") as String?)?.let { url -> it.systemProperty("robolectric.dependency.repo.url", url) }
             // 1.39 [MKP-06] -Pbamnat.marketChars=all: MarketCharsTest draws every 출시 작품 and writes the letters it saw.

@@ -107,7 +107,7 @@ import { PHOTO_COLUMNS, PHOTO_SCHEMA, flagRecipeImages } from "./photo-guard.js"
 import { Refuse, refuse, TIME, DAYS, BASES, UNITS, CADENCES, BREAK_PAY, COVERABLE, KIND_KEY, LEGACY_KINDS, SCOPE, TIMING, given, object, list, bool, int, real, oneOf, time, str, date, TWO_PART_KEYS, MIN_PART, minutesOf, clock, DAY_MIN, twoParts, cleanSetup, usesNewer, period, kindRef, rules, extraRule, tiers, premium, item } from "./company-setup.js";
 import { FCM_SCHEMA, fcmRoute, pushRetry, stillHere } from "./fcm.js";
 import { PLAZA_PUSH_SCHEMA, plazaPushAfter, plazaWatchRoute, plazaQuietRoute } from "./plaza-push.js";
-import { WORK_SCHEMA, workRoute } from "./work.js";
+import { WORK, WORK_SCHEMA, workRoute } from "./work.js";
 // 1.37 [ADM2] 운영 장부: 나간 판·흐름·Claude 운영 열쇠·장부.
 import { DESK_COLUMNS, DESK_SCHEMA, DESK_SEED, deskRoute, keySession, keyView } from "./desk.js";
 import { LEDGER_SCHEMA, ledgerQuery, ledgerRoute } from "./ledger.js";
@@ -117,7 +117,7 @@ import { releaseTick } from "./release-desk.js";
 import { OPS_ALERT_SQL, OPS_BADGE_SQL, OPS_SCHEMA, morningExtra, opsAlertsFrom, opsArea, opsRoute, opsSteps } from "./admin-ops.js";
 // 1.38 [ADM3-01] 패스키(지문) 로그인.
 import { PASSKEY_SCHEMA, passkeyCheck, passkeyMine, passkeyStart } from "./passkey.js";
-import { canaryStats, countFailure, dbSizeTick, deployInfo, flushWatch, jobRow, pruneWatch, recordError, recordRequest, recordRowErrors, rowTroubleQuery, rowTroubleRows, runJobs, serverVersions, uploadsFull, noteShareDeploy } from "./ops-watch.js";
+import { LIVE_JOBS, canaryStats, countFailure, dbSizeTick, deployInfo, flushWatch, jobRow, pruneWatch, recordError, recordRequest, recordRowErrors, rowTroubleQuery, rowTroubleRows, runJobs, serverVersions, uploadsFull, noteShareDeploy } from "./ops-watch.js";
 import { FIVE_STEPS, hourlyAgo, hourlyWatch } from "./incident.js";
 import { RETENTION, deviceColumns, forgetSweep, retentionPrune } from "./retention.js";
 import { TEXT_RULES } from "./text-rules.js";
@@ -5319,7 +5319,7 @@ export async function deployState(env, now = Date.now()) {
     out.checks.write = false;
   }
   try {
-    const jobs = (await all(env, "SELECT step, ok_at, fail_at, error FROM job_runs")).map((r) => jobRow(r, now, env));
+    const jobs = (await all(env, `SELECT step, ok_at, fail_at, error FROM job_runs WHERE ${LIVE_JOBS}`)).map((r) => jobRow(r, now, env));
     out.checks.jobs = !jobs.some((j) => j.state === "fail" || j.state === "stale");
     out.checks.jobsBad = jobs.filter((j) => j.state === "fail" || j.state === "stale").map((j) => j.name);
   } catch {
@@ -6820,6 +6820,9 @@ async function today(env, actor, now) {
     doneToday: ["SELECT COUNT(*) AS n FROM audit WHERE actor_id = ? AND at >= ? AND action NOT IN ('login', 'login_failed')", actor.id, start],
   };
   for (const [k, v] of Object.entries(inboxQueries(actor, now))) q[`inbox_${k}`] = Array.isArray(v) ? v : [v];
+  // 2.0.0 장부·할 일함에서 '기다림'으로 둔 문의와 '끝'낸 문의는 오늘도 같은 기록을 따라요(전에는 오늘만 이 기록을 몰라, 기다림으로 둔 문의가
+  // 답 목표 시간이 지나면 '기한 N시간 넘김'으로 계속 맨 위에 떴어요: 실서버 11-19 앱 닫힘 문의).
+  if (can(actor, "inquiries")) q.inbox_states = ["SELECT key, state, at FROM work_states WHERE key LIKE 'inquiry:%' AND state IN ('waiting', 'done') AND at >= ?", now - WORK.backDays * DAY];
   if (can(actor, "audit")) q.recent = [`${AUDIT_SELECT} WHERE a.action NOT IN ('login', 'login_failed') ORDER BY a.id DESC LIMIT 10`];
   if (can(actor, "inquiries")) {
     q.inquiriesToday = ["SELECT COUNT(*) AS n FROM inquiries WHERE created_at >= ?", start];
@@ -6864,7 +6867,9 @@ async function today(env, actor, now) {
   if (inbox.inquiries) {
     // How many waiting questions reach their answer target before today ends.
     const sla = readSla(inbox.sla);
-    out.slaLateToday = inbox.inquiries.filter((r) => r.last === "user" && r.updated_at + sla[slaKey(r.kind)] * HOUR < start + DAY).length;
+    const states = inquiryStates(inbox.states);
+    out.slaLateToday = inbox.inquiries.filter((r) => r.last === "user" && !quietInquiry(states.get(r.id), r.updated_at)
+      && r.updated_at + sla[slaKey(r.kind)] * HOUR < start + DAY).length;
     out.assigned = got.assigned.map((a) => ({ id: a.id, name: a.name ?? "", n: a.n }));
   }
   if (got.recent) {
@@ -8349,6 +8354,19 @@ export async function legacyTodo(env, actor, now) {
   return inboxItems(got, actor, now).items;
 }
 
+/** 2.0.0 오늘이 읽은 work_states 줄(문의만)을 문의 번호로. 읽지 않았으면(할 일함 길) 빈 표. */
+const inquiryStates = (rows) => new Map((rows ?? []).map((r) => [String(r.key).slice(8), r]));
+
+/**
+ * 2.0.0 '기다림'으로 둔 문의는 둔 때부터 7일(WORK.backDays)이 기한이고, '끝'낸 문의는 그 뒤 새 움직임이 없는 동안 오늘에서 빠져요
+ * (할 일함 workList와 같은 규칙). 둔 뒤에 사용자가 새로 말했으면(updated_at이 더 늦으면) 기다림도 풀려 다시 답 목표로 세요.
+ */
+function quietInquiry(state, updatedAt) {
+  if (!state || updatedAt > state.at) return null;
+  if (state.state === "done") return { hide: true };
+  return state.state === "waiting" ? { due: state.at + WORK.backDays * DAY } : null;
+}
+
 /** [ADMUX-17] The list from what [inboxQueries] read (inside /today's one trip). */
 function inboxItems(got, actor, now) {
   const items = [];
@@ -8356,9 +8374,12 @@ function inboxItems(got, actor, now) {
   const short = (t) => [...String(t ?? "")].slice(0, 80).join("");
   if (got.inquiries) {
     const sla = readSla(got.sla);
+    const states = inquiryStates(got.states);
     for (const r of got.inquiries) {
       if (r.last !== "user") continue;
-      add({ type: "inquiry", id: r.id, kind: r.kind, title: short(r.first) || "(내용 없음)", at: r.updated_at, due: r.updated_at + sla[slaKey(r.kind)] * HOUR,
+      const held = quietInquiry(states.get(r.id), r.updated_at);
+      if (held?.hide) continue;
+      add({ type: "inquiry", id: r.id, kind: r.kind, title: short(r.first) || "(내용 없음)", at: r.updated_at, due: held ? held.due : r.updated_at + sla[slaKey(r.kind)] * HOUR,
         same: r.same ?? 0, mine: r.assignee === actor.id, assignee: r.assignee ? { id: r.assignee, name: r.assignee_name ?? "" } : null });
     }
   }

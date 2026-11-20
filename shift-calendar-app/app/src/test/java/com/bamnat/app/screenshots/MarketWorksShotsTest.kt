@@ -96,8 +96,16 @@ class MarketWorksShotsTest : ScreenshotBase() {
         lateinit var base: Bitmap
         ActivityScenario.launch(MainActivity::class.java).use { scenario ->
             val first = steady(scenario)
-            base = first
             if (mode != null) File(png, "_start.png").outputStream().use { first.compress(Bitmap.CompressFormat.PNG, 100, it) }
+            // 2.0.0 (총괄, 검토 HQ-177: 실행마다 다른 작품 하나가 '되돌린 뒤 20px 다름'): the weekly 데이터 점검 ([RVL-71]) runs 90 seconds
+            // after the app starts, in the middle of the works, and what it puts right on the calendar was counted against the work
+            // being looked at just then. It is the app's own change, not a work's: it runs here, before the base is taken, and what it
+            // changed is kept as _checked.png beside _start.png (and said in the log).
+            runBlocking { c.dataSelfCheck.runNow() }
+            val checked = steady(scenario)
+            if (mode != null) File(png, "_checked.png").outputStream().use { checked.compress(Bitmap.CompressFormat.PNG, 100, it) }
+            System.err.println("market shots: 데이터 점검 뒤 달력 ${changedPixels(checked, first)}px 바뀜")
+            base = checked
             for ((n, w) in works.withIndex()) {
                 if (mode != null && n % 25 == 0) File(out, "progress.txt").apply { parentFile!!.mkdirs() }.writeText("$n/${works.size}")
                 val row = JSONObject().put("title", w.title)

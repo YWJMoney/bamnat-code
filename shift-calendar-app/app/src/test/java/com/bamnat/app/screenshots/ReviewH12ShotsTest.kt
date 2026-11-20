@@ -77,9 +77,8 @@ class ReviewH12ShotsTest : ScreenshotBase() {
                 val day = (3..20).map { Today.date().minusDays(it.toLong()) }.first { !pattern.resolver.resolve(it).isOff }
                 repo.setLeave(day, com.bamnat.core.model.Leave())
             }
-            content {
-                com.bamnat.app.ui.leave.LeaveScreen(com.bamnat.app.ui.leave.LeaveViewModel(app.container, com.bamnat.app.data.PersonalCalendar.MAIN), {}, {})
-            }
+            val vm = com.bamnat.app.ui.leave.LeaveViewModel(app.container, com.bamnat.app.data.PersonalCalendar.MAIN)
+            content { com.bamnat.app.ui.leave.LeaveScreen(vm, {}, {}) }
             settle()
             val words = shownWords().joinToString(" ")
             assertTrue("$look: 아직 세지 않았어요 ${shownWords().take(30)}", "아직 세지 않았어요" in words)
@@ -112,7 +111,8 @@ class ReviewH12ShotsTest : ScreenshotBase() {
                 repo.addExtra(day, com.bamnat.core.model.ExtraEntry(com.bamnat.core.model.ExtraKind.COVER_ID, LocalTime.of(9, 0), LocalTime.of(18, 0)))
                 day
             }
-            content { com.bamnat.app.ui.calendar.YearScreen(com.bamnat.app.ui.calendar.YearViewModel(app.container, com.bamnat.app.data.PersonalCalendar.MAIN), {}) }
+            val vm = com.bamnat.app.ui.calendar.YearViewModel(app.container, com.bamnat.app.data.PersonalCalendar.MAIN)
+            content { com.bamnat.app.ui.calendar.YearScreen(vm, {}) }
             settle()
             val s = runBlocking { app.container.scheduleRepository.snapshot.first() }
             val days = (1..today.lengthOfMonth()).associate { today.withDayOfMonth(it) to s.resolver.resolve(today.withDayOfMonth(it)) }

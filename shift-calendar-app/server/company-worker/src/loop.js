@@ -697,7 +697,9 @@ async function syncOne(env, x, { ver, sha, pr }, now, answer) {
   if (x.check !== undefined) put("check_text", plainText(x.check, 1000, "check"));
   const itemPr = Number.isInteger(x.pr) && x.pr > 0 ? x.pr : pr;
   if (itemPr && itemPr !== row.pr) set.pr = itemPr;
-  if (sha && sha !== row.sha) set.sha = sha;
+  // 2.0.0 커밋 번호는 다른 칸이 바뀔 때 함께만 적어요. 동기화는 바뀌지 않은 줄까지 모두 보내고 커밋 번호는 보낼 때마다 달라서, 전에는 매번
+  // 모든 줄이 '바뀜'이 되고 기록이 한 줄씩 쌓였어요(실서버 11-19: 개발 기록 976줄 × 16번 = 오늘 '저절로 끝난 일 15780건', 줄마다 기록 14개).
+  if (sha && sha !== row.sha && Object.keys(set).length) set.sha = sha;
   const fields = Object.keys(set);
   if (fields.length) {
     await batch(env, [stmt(env, `UPDATE dev_items SET ${fields.map((c) => `${c} = ?`).join(", ")}, updated_at = ? WHERE id = ?`, ...fields.map((c) => set[c]), Math.max(now, row.updated_at + 1), row.id),

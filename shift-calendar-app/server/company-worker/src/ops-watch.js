@@ -287,9 +287,18 @@ export async function runJobs(env, steps, now = Date.now()) {
   return out;
 }
 
-/** 지운 지 오래된 숫자: 응답 속도 14일, 오류 날짜 90일, 90일 동안 다시 안 난 오류 묶음. */
+/**
+ * 2.0.0 [RVQ-12] 5분 작업을 단계로 나누기 전의 이름들. 이 이름으로는 더 돌지 않는데 줄이 남아 3시간 뒤부터 '멈춤'으로 보였어요
+ * (실서버 11-19: 5분 작업은 2분 전에도 돌았는데, 엿새 동안 오늘 맨 위에 '정기 작업 1개 멈춤'). 화면·점검은 이 줄을 읽지 않고(LIVE_JOBS),
+ * 매시 지우기(pruneWatch)가 치워요. 단계 이름을 또 바꾸면 옛 이름을 여기에 더해요.
+ */
+export const RETIRED_STEPS = ["five"];
+export const LIVE_JOBS = `step NOT IN (${RETIRED_STEPS.map((s) => `'${s}'`).join(", ")})`;
+
+/** 지운 지 오래된 숫자: 응답 속도 14일, 오류 날짜 90일, 90일 동안 다시 안 난 오류 묶음, 쓰지 않는 옛 정기 작업 이름. */
 export async function pruneWatch(env, now = Date.now()) {
   await env.DB.batch([
+    env.DB.prepare(`DELETE FROM job_runs WHERE step IN (${RETIRED_STEPS.map(() => "?").join(", ")})`).bind(...RETIRED_STEPS),
     env.DB.prepare("DELETE FROM req_stats WHERE hour < ?").bind(watchHour(now - WATCH.keepStatsDays * DAY)),
     env.DB.prepare("DELETE FROM error_days WHERE day < ?").bind(watchDay(now - WATCH.keepErrorDays * DAY)),
     env.DB.prepare("DELETE FROM error_groups WHERE last_at < ?").bind(now - WATCH.keepErrorDays * DAY),
@@ -345,7 +354,7 @@ export function jobRow(r, now = Date.now(), env = null) {
 }
 
 export async function jobState(env, now = Date.now()) {
-  return (await all(env, "SELECT * FROM job_runs ORDER BY step")).map((r) => jobRow(r, now, env));
+  return (await all(env, `SELECT * FROM job_runs WHERE ${LIVE_JOBS} ORDER BY step`)).map((r) => jobRow(r, now, env));
 }
 
 /** 응답 속도: 지난 [hours]시간, 주소마다(느린 것 먼저)와 시간마다. */

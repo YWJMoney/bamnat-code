@@ -170,13 +170,24 @@ private fun SizedBox(known: Dp, modifier: Modifier, content: @Composable android
 val WEEK_BAR_SPACE = 5.dp
 
 /**
- * [VIS-02] What a bigger system font adds to a day cell. The date and the badges keep their size; only
- * the line under the badge grows, up to 13dp, so the cell grows by that much.
+ * [VIS-02] What a bigger system font adds to a day cell. The badges keep their size; the line under the badge grows, up to
+ * 13dp, and the date's row grows with the circle that holds today's number ([dateRing]), so the cell grows by both.
+ *
+ * 2.0.0 (총괄, 검토 HQ-157 뒤 ABScreenshotTest.calendarOffToday200): [RVH-95] made the date's row as tall as the bigger circle
+ * (20dp → 23dp at a big font) inside a cell that was sized for 20dp, so at 320~360dp wide and 200% the line under the badge
+ * ('11h', '개천절') lost its bottom in every cell. The cell now holds the row it draws.
  */
 @Composable
 internal fun cellTextGrowth(): Dp = with(LocalDensity.current) {
-    ((minOf(11.sp.toDp(), 13.dp) - 11.dp) * FOOTER_LINE).coerceAtLeast(0.dp)
+    ((minOf(11.sp.toDp(), 13.dp) - 11.dp) * FOOTER_LINE).coerceAtLeast(0.dp) + (dateRing(LocalCalendarView.current.textBump) - DATE_RING)
 }
+
+/** [CAL-01] The date in a cell: 14sp, growing with the font setting only as far as 17dp (달력 모양's 글씨 moves both by 2). */
+private fun androidx.compose.ui.unit.Density.dateHeight(bump: Int): Dp = minOf((14 + bump * 2).sp.toDp(), (17 + bump * 2).dp)
+
+/** [RVH-95] Today's circle: 20dp, and 6dp more than a number that has grown, so a 17dp '22' stays inside it. The date's row is this tall. */
+private fun androidx.compose.ui.unit.Density.dateRing(bump: Int): Dp = maxOf(DATE_RING, dateHeight(bump) + 6.dp)
+private val DATE_RING = 20.dp
 
 private const val FOOTER_LINE = 1.15f
 private const val HOLIDAY_SCALE = 0.9f
@@ -684,7 +695,7 @@ private fun DayCell(
     }
     // [CAL-01] Date 14sp and the line under it 11sp, growing with the font setting only as far as the cell holds.
     val density = LocalDensity.current
-    val dateSize = with(density) { minOf((14 + view.textBump * 2).sp.toDp(), (17 + view.textBump * 2).dp).toSp() }
+    val dateSize = with(density) { dateHeight(view.textBump).toSp() }
     val footerSize = with(density) { minOf((11 + view.textBump * 1.5f).sp.toDp(), (13 + view.textBump * 2).dp).toSp() }
     val date = day.date
     val type = day.shiftType
@@ -1004,8 +1015,9 @@ private fun DayCell(
         ) {
             // Inside the column's 2dp at either side.
             // 2.0.0 [RVH-95] 검토 HQ-157 (접은 폭 글자 200%: 오늘 날짜 동그라미 윗부분이 잘리고 '22'가 밖으로 나감): the circle is 20dp as before
-            // and grows with the number it holds (the date line's height + 6dp), so a 17dp '22' stays inside it.
-            val ring = maxOf(20.dp, with(density) { dateSize.toDp() } + 6.dp)
+            // and grows with the number it holds (the date line's height + 6dp), so a 17dp '22' stays inside it. The cell is
+            // that much taller too ([cellTextGrowth]), so the row does not take its room from the line under the badge.
+            val ring = with(density) { dateRing(view.textBump) }
             SizedBox(inside - 4.dp, Modifier.fillMaxWidth().height(ring)) { maxWidth ->
                 val dots = maxWidth < DOT_CELL_WIDTH || density.fontScale >= 1.5f
                 Box(
