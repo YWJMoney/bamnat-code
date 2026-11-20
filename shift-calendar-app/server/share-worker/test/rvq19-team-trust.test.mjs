@@ -321,9 +321,10 @@ test("[RVQ-25] I22a-04: a swap page reads asks to me from the round's summary; a
 
 test("[POLICY-314] 처리방침 3.14 전(스위치 꺼짐): 확인했어요 칸·저장·watch·okAt이 없고, 피곤해요는 누른 수로 세고 표시를 남기지 않아요", async () => {
   readsForget();
-  // 저장소의 기본값은 꺼짐이에요(3.14 시행일이 정해지면 한 줄에 날짜를 적어요).
-  assert.equal(POLICY_314_FROM, "");
-  assert.equal(policy314({}), false);
+  // 저장소의 값은 꺼짐("")이거나, 게시하는 날 legal_dates.py --share가 적은 30일 줄 날짜예요(3.14: 게시 2026-11-21 → 2026-12-21).
+  // 어느 쪽이든 게시일에는 꺼져 있어요.
+  assert.match(POLICY_314_FROM, /^(\d{4}-\d{2}-\d{2})?$/);
+  assert.equal(policy314({}, Date.parse("2026-11-21T00:00:00+09:00")), false);
   assert.equal(policy314({ POLICY_314_FROM: "언젠가" }), false);
   // 그날 0시(한국 시간)부터 켜져요.
   const day = Date.parse("2026-12-14T00:00:00+09:00");

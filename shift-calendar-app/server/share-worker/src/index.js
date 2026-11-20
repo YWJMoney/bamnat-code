@@ -97,7 +97,7 @@ import { SHIFT_RULES } from "./shift-rules.js";
  * 않아요(앱은 옛 '열어 본 사람' 줄만). 피곤해요는 지금 실서버처럼 누른 수로 세고 새 표시를 남기지 않아요('누르지 않은 링크 2개
  * 미만이면 숨김'처럼 새 정보를 남기지 않는 보호는 그대로예요).
  */
-export const POLICY_314_FROM = "";
+export const POLICY_314_FROM = "2026-12-21";
 
 /** Whether 처리방침 3.14 is in force (see [POLICY_314_FROM]). */
 export function policy314(env, now = Date.now()) {
